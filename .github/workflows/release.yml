@@ -23,6 +23,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Read release notes
+        id: release-notes
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            const config = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+            if (context.ref !== `refs/tags/v${config.version}`) throw new Error('Tag and application version differ');
+            const release = JSON.parse(fs.readFileSync('.github/release.json', 'utf8'));
+            if (release.version !== config.version || typeof release.notes !== 'string' || !release.notes.trim()) {
+              throw new Error('Release notes missing or version mismatch; use npm run release');
+            }
+            core.setOutput('notes', release.notes);
+
       - name: Publish Tauri release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -32,7 +46,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: PrintFlow ${{ github.ref_name }}
-          releaseBody: 自动构建并发布 PrintFlow 更新包。
+          releaseBody: ${{ steps.release-notes.outputs.notes }}
           releaseDraft: false
           prerelease: false
           updaterJsonPreferNsis: true

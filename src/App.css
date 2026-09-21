@@ -51,7 +51,7 @@
 .tool-label{font-size:12px;color:#2563eb;margin-right:8px}
 .canvas-footer{padding:0 14px;gap:14px;white-space:nowrap;font-size:11px}
 button:disabled{cursor:not-allowed;opacity:.45}
-.product-upload-page{flex:1;min-height:0;overflow:auto;background:#f1f5f9;padding:32px;display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,34%);gap:24px;align-items:stretch}
+.product-upload-page{flex:1;min-height:0;background:#f1f5f9;display:grid;align-items:stretch}
 .product-upload-card{width:min(760px,100%);background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:28px;box-shadow:0 8px 30px rgba(15,23,42,.06)}
 .import-progress{margin-top:18px}.import-progress-title{font-size:13px;font-weight:600;color:#334155;margin-bottom:10px}.import-stage{margin-top:10px;opacity:.55}.import-stage.is-active{opacity:1}.import-stage-label{display:flex;justify-content:space-between;margin-bottom:5px;font-size:12px;color:#64748b}.import-stage.is-active .import-stage-label{color:#2563eb}.import-stage.is-done .import-stage-label{color:#16a34a}.import-stage .ant-progress{line-height:1}.import-stage .ant-progress-bg{background:linear-gradient(90deg,#1677ff,#69b1ff,#1677ff);background-size:200% 100%}.import-stage.is-active .ant-progress-bg{animation:import-progress-flow 1.4s linear infinite}@keyframes import-progress-flow{from{background-position:0 0}to{background-position:200% 0}}
 .upload-zone.is-drop-active{border-color:#1677ff;background:#eaf3ff;box-shadow:0 0 0 3px rgba(22,119,255,.14)}
@@ -226,4 +226,10 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .coreldraw-tool{display:none;margin-top:16px;padding:14px;border:1px solid #e2e8f0;border-radius:8px;background:#fafcff}.coreldraw-tool-title{font-weight:600;color:#334155}.coreldraw-tool p{font-size:11px;color:#64748b;margin:6px 0 10px}
 
 .topbar-actions{display:flex;align-items:center;gap:10px;margin-left:auto}
+
+.account-popover.account-popover{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px 8px}
+.account-popover-title{grid-column:1 / -1}
+.account-popover label{min-width:0}
+.account-popover>.ant-btn{align-self:end}
+.account-popover>.update-button{grid-column:1 / -1;width:100%;justify-content:center}
 .account-popover{width:220px;padding:14px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 10px 28px rgba(15,23,42,.14);display:flex;flex-direction:column;gap:10px}.account-popover-title{display:flex;align-items:center;gap:7px;color:#1e3a5f;font-weight:600}.account-popover label{display:flex;flex-direction:column;gap:5px;color:#64748b;font-size:12px}.account-popover .ant-btn{align-self:flex-end}.topbar-actions .update-button{font-size:12px}

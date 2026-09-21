@@ -1,4 +1,4 @@
-.product-upload-page { padding:0 16px 16px; gap:16px; grid-template-columns:minmax(0,1fr) 352px; }
+.product-upload-page { padding:0 12px; gap:16px; grid-template-columns:minmax(0,1fr) 352px; }
 .product-upload-page.has-product-categories { padding-left:0; grid-template-columns:84px minmax(0,1fr) 352px; }
 .upload-product-nav { position:relative; z-index:3; width:140px; height:100%; margin-right:-56px; background:linear-gradient(to right,#fff 83px,#e2e8f0 83px,#e2e8f0 84px,transparent 84px); border-right:0; padding:18px 0 0; display:flex; flex-direction:column; min-width:0; min-height:0; overflow:hidden; pointer-events:none; }
 .upload-product-nav h2 { flex-shrink:0; width:72px; margin:0 0 4px 6px; font-size:12px; font-weight:700; color:#000; text-align:center; }
@@ -14,8 +14,8 @@
 .upload-product-nav button:focus-visible { outline:2px solid var(--category-active,#1677ff); outline-offset:2px; }
 .upload-product-nav button:disabled { cursor:default; }
 @media(prefers-reduced-motion:reduce) { .upload-product-nav button { transition:none; } }
-.product-upload-page > .uploaded-assets-panel { margin-top:16px; padding:16px; }
-.product-upload-page > .upload-column { margin-top:16px; }
+.product-upload-page > .uploaded-assets-panel { margin-block:12px; padding:16px; }
+.product-upload-page > .upload-column { margin-block:12px; }
 .product-upload-page .product-upload-card { padding:18px 14px; }
 .product-upload-page .upload-page-title { flex-wrap:wrap; gap:10px; }
 .product-upload-page .upload-page-title h1 { font-size:20px; }

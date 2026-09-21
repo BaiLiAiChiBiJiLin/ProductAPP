@@ -1,9 +1,10 @@
 {
   "name": "productionapp",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.1",
   "type": "module",
   "scripts": {
+    "release": "node scripts/release.mjs",
     "dev": "vite",
     "protect-source": "node scripts/protect-source.mjs",
     "restore-source": "node scripts/restore-source.mjs",

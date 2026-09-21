@@ -18,6 +18,12 @@ let startupProductConfigRefresh: Promise<void> | undefined
 export default function App() {
   const [notice, noticeContext] = message.useMessage()
   const [active, setActive] = useState('schematic')
+  const [leaving, setLeaving] = useState<string | null>(null)
+  useEffect(() => {
+    if (!leaving) return
+    const timer = window.setTimeout(() => setLeaving(null), 540)
+    return () => window.clearTimeout(timer)
+  }, [active, leaving])
   const [visitedModules, setVisitedModules] = useState(() => new Set(['schematic']))
   const [transitionDirection, setTransitionDirection] = useState<'forward' | 'backward'>('forward')
   const activeIndex = modules.findIndex(module => module.id === active)
@@ -41,9 +47,10 @@ export default function App() {
     const nextIndex = modules.findIndex(module => module.id === id)
     setTransitionDirection(nextIndex >= activeIndex ? 'forward' : 'backward')
     setVisitedModules(current => new Set(current).add(id))
+    setLeaving(active)
     setActive(id)
   }
-  return <>{noticeContext}<div className="app-shell"><header className="topbar"><div className="brand"><div className="brand-mark"><img src={printflowIcon} alt="PrintFlow" /></div><span>PrintFlow</span></div><nav className="workflow">{modules.map(module => <button key={module.id} className={active === module.id ? 'active' : ''} onClick={() => switchModule(module.id)}>{module.label}</button>)}</nav><div className="topbar-actions"><UpdateButton autoCheck showButton={false} /><Dropdown trigger={['click']} dropdownRender={() => userMenu}><button className="user-menu"><span className="avatar">{accountName.slice(0, 1)}</span><span>{accountName}</span><ChevronDown size={14}/></button></Dropdown></div></header><main className={`module-stage direction-${transitionDirection}`}>{modules.map(module => visitedModules.has(module.id) && <section key={module.id} className={`module-view ${active === module.id ? 'is-active' : 'is-hidden'}`} aria-hidden={active !== module.id}>{module.id === 'schematic' ? <SchematicPage /> : <div className="module-placeholder"><h1>{module.label}</h1><p>模块正在建设中</p></div>}</section>)}</main></div></>
+  return <>{noticeContext}<div className="app-shell"><header className="topbar"><div className="brand"><div className="brand-mark"><img src={printflowIcon} alt="PrintFlow" /></div><span>PrintFlow</span></div><nav className="workflow">{modules.map(module => <button key={module.id} className={active === module.id ? 'active' : ''} onClick={() => switchModule(module.id)}>{module.label}</button>)}</nav><div className="topbar-actions"><UpdateButton autoCheck showButton={false} /><Dropdown trigger={['click']} dropdownRender={() => userMenu}><button className="user-menu"><span className="avatar">{accountName.slice(0, 1)}</span><span>{accountName}</span><ChevronDown size={14}/></button></Dropdown></div></header><main className={`module-stage direction-${transitionDirection}`}>{modules.map(module => visitedModules.has(module.id) && <section key={module.id} className={`module-view ${active === module.id ? (leaving ? 'is-active is-entering' : 'is-active') : leaving === module.id ? 'is-leaving' : 'is-hidden'}`} inert={active !== module.id} aria-hidden={active !== module.id}>{module.id === 'schematic' ? <SchematicPage /> : <div className="module-placeholder"><h1>{module.label}</h1><p>模块正在建设中</p></div>}</section>)}</main></div></>
 }
 
 

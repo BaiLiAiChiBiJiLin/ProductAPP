@@ -1,15 +1,21 @@
 .module-stage{position:relative;flex:1;min-height:0;overflow:hidden;background:#f1f5f9}
-.module-view{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;contain:layout paint;will-change:transform,opacity}
+.module-view{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;contain:layout paint;background:#f1f5f9}
 .module-view>.product-upload-page,.module-view>.arrange-page{flex:1;min-height:0}
-.module-view.is-hidden{visibility:hidden;pointer-events:none;z-index:0}
-.module-view.is-active{visibility:visible;pointer-events:auto;z-index:1;animation:module-enter-forward .42s cubic-bezier(.22,.8,.28,1)}
-.module-stage.direction-backward .module-view.is-active{animation-name:module-enter-backward}
+.module-view.is-hidden{display:none;pointer-events:none}
+.module-view.is-active{z-index:2}
+.module-view.is-entering,.module-view.is-leaving{will-change:transform;animation-duration:.52s;animation-timing-function:cubic-bezier(.4,0,.2,1);animation-fill-mode:both;pointer-events:none}
+.module-view.is-entering{animation-name:module-enter-forward}
+.module-view.is-leaving{z-index:1;animation-name:module-exit-forward}
+.module-stage.direction-backward .module-view.is-entering{animation-name:module-enter-backward}
+.module-stage.direction-backward .module-view.is-leaving{animation-name:module-exit-backward}
 .module-placeholder{height:100%;display:grid;place-content:center;text-align:center;color:#64748b}
 .module-placeholder h1{margin:0 0 8px;color:#1e3a5f}.module-placeholder p{margin:0}
 .workflow button{transition:color .24s ease,transform .24s ease,text-shadow .24s ease}
 .workflow button.active{transform:translateY(-1px) scale(1.04);text-shadow:0 3px 12px rgba(37,99,235,.18)}
 .workflow button.active:after{animation:workflow-indicator-in .3s cubic-bezier(.22,.8,.28,1)}
 @keyframes workflow-indicator-in{from{transform:scaleX(.2);opacity:.2}to{transform:scaleX(1);opacity:1}}
-@keyframes module-enter-forward{from{opacity:.35;transform:translateX(42px) scale(.965)}to{opacity:1;transform:translateX(0) scale(1)}}
-@keyframes module-enter-backward{from{opacity:.35;transform:translateX(-42px) scale(.965)}to{opacity:1;transform:translateX(0) scale(1)}}
-@media (prefers-reduced-motion:reduce){.module-view.is-active,.workflow button.active:after{animation:none}.workflow button{transition:none}}
+@keyframes module-enter-forward{0%,18%{transform:translateX(100%) scale(.96)}78%{transform:translateX(0) scale(.96)}100%{transform:none}}
+@keyframes module-enter-backward{0%,18%{transform:translateX(-100%) scale(.96)}78%{transform:translateX(0) scale(.96)}100%{transform:none}}
+@keyframes module-exit-forward{0%{transform:none}18%{transform:scale(.96)}100%{transform:translateX(-100%) scale(.96)}}
+@keyframes module-exit-backward{0%{transform:none}18%{transform:scale(.96)}100%{transform:translateX(100%) scale(.96)}}
+@media (prefers-reduced-motion:reduce){.module-view.is-entering,.workflow button.active:after{animation:none}.module-view.is-leaving{display:none}.workflow button{transition:none}}
