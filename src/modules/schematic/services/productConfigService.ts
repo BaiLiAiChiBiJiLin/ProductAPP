@@ -95,6 +95,22 @@ export function normalizeProductConfigs(value: unknown): ProductConfig[] {
 let productConfigsRequest: Promise<ProductConfig[]> | undefined
 
 export const PRODUCT_CONFIGS_UPDATED_EVENT = 'printflow-product-configs-updated'
+export const PRODUCT_CONFIGS_STATUS_EVENT = 'printflow-product-configs-status'
+let refreshRequest: Promise<ProductConfig[]> | undefined
+let refreshError = ''
+export const productConfigRefreshError = () => refreshError
+export function reportProductConfigError(reason: unknown) {
+  refreshError = reason instanceof Error ? reason.message : String(reason ?? '')
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(PRODUCT_CONFIGS_STATUS_EVENT))
+}
+export function refreshProductConfigs(): Promise<ProductConfig[]> {
+  if (refreshRequest) return refreshRequest
+  reportProductConfigError('')
+  refreshRequest = invoke('refresh_product_configs').then(() => loadProductConfigs(true))
+    .catch(reason => { reportProductConfigError(reason); throw reason })
+    .finally(() => { refreshRequest = undefined })
+  return refreshRequest
+}
 
 export function loadProductConfigs(force = false): Promise<ProductConfig[]> {
   if (!isTauri()) return Promise.resolve([])
@@ -102,7 +118,11 @@ export function loadProductConfigs(force = false): Promise<ProductConfig[]> {
   // Share the normalized catalog between the dropdown and cards. Read the
   // large local cache once, rather than once per component or image.
   productConfigsRequest ??= invoke<string>('load_product_configs')
-    .then(raw => normalizeProductConfigs(JSON.parse(raw)))
+    .then(raw => {
+      const products = normalizeProductConfigs(JSON.parse(raw))
+      if (!products.length) throw new Error('产品配置中没有可用产品，请刷新重新获取。')
+      return products
+    })
     .catch(error => {
       productConfigsRequest = undefined
       throw error

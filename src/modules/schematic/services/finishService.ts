@@ -5,6 +5,8 @@ export type FinishLookup = ReadonlyMap<string, string>
 const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase().replace(/[\s_-]+/g, '')
 let request: Promise<FinishLookup> | undefined
 
+export function invalidateFinishNames() { request = undefined }
+
 export function loadFinishNames(force = false): Promise<FinishLookup> {
   if (force) request = undefined
   if (!isTauri()) return Promise.resolve(new Map<string, string>())

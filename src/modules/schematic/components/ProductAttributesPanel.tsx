@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type SetStateAction } from 'react'
-import { Button, Empty, InputNumber, Select, Tabs, Tooltip, message } from 'antd'
+import { Alert, Button, InputNumber, Select, Tabs, Tooltip, message } from 'antd'
 import AssetNotesEditor from './AssetNotesEditor'
 import type { Asset } from '../../../model'
 import Loading from '../../../components/Loading'
@@ -18,7 +18,7 @@ import { orderAssetsByProductGroup } from '../services/productGroupOrdering'
 
 type Props = { assets: Asset[]; selectedAssetIds: Set<string>; onConfirmAttributes: (patch: ProductAttributePatch) => Promise<void>; disabled?: boolean; selectionHint?: string; allowGrouping?: boolean }
 export default function ProductAttributesPanel({ assets, selectedAssetIds, onConfirmAttributes, disabled = false, selectionHint, allowGrouping = true }: Props) {
-  const { products, loading, error: configError } = useProductConfigs()
+  const { products, loading, error: configError, refreshing, refresh } = useProductConfigs()
   const grouping = useProductGroup()
   const session = allowGrouping ? grouping?.session : undefined
   const selected = useMemo(() => {
@@ -115,8 +115,9 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
       <Tabs activeKey={mode} className="product-attribute-mode-tabs" onChange={key => { const nextMode = key as 'existing' | 'custom'; const nextEditor = { ...editor, mode: nextMode }; changeEditor(nextEditor, nextMode === 'custom' && Boolean(groupingTrigger(nextEditor, products))) }} items={[{ key: 'existing', label: '已有产品', disabled: locked }, { key: 'custom', label: '自定义', disabled: locked }]}/>
       <div hidden={mode !== 'existing'}>
         {loading && <Loading size="small" text="正在加载产品选项…"/>}
-        {configError && <div role="alert">{configError}</div>}
-        {!loading && !products.length && <Empty description="暂无产品配置"/>}
+        {(configError || (!loading && !products.length)) && <Alert type="warning" showIcon
+          message={products.length ? '产品配置更新失败，当前使用本地缓存' : '产品配置不可用'}
+          description={<><div>{configError || '本地没有可用的产品配置，请刷新从接口重新获取。'}</div><Button style={{ marginTop: 8 }} disabled={refreshing || loading} icon={refreshing ? <Loading size="small" inline/> : undefined} onClick={() => void refresh()}>{refreshing ? '正在刷新…' : '刷新产品配置'}</Button></>}/>} 
         <div className="product-config-form">
           <label className="product-config-field"><span>产品</span><Select aria-label="产品" showSearch optionFilterProp="label" disabled={!selected.length || loading || locked} placeholder="请选择产品" value={product?.id} options={products.map(item => ({ value: item.id, label: item.title }))} onChange={id => changeEditor({ ...editor, draft: { ...draft, productId: id, attributes: {}, images: {} } }, true)}/></label>
           {product?.options.map(option => { const values = availableOptionValues(option, draft.attributes); return values.length ? <ProductOptionField key={`${product.id}:${option.name}`} option={option} values={values} value={draft.attributes[option.name]} imageOverride={draft.images[option.name]} disabled={!selected.length || (locked && lockedOptions.has(option.name))} onChange={(value, image) => changeOption(option.name, value, image)}/> : null })}

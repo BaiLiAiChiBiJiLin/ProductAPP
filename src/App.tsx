@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Button, Dropdown, Input, message } from 'antd'
-import { invoke, isTauri } from '@tauri-apps/api/core'
+import { isTauri } from '@tauri-apps/api/core'
 import { orderModule, imageEditModule, schematicModule, impositionModule, progressModule } from './modules'
 import SchematicPage from './modules/schematic/SchematicPage'
 import { Check, ChevronDown, UserRound } from 'lucide-react'
@@ -8,7 +8,8 @@ import './App.css'
 import './module-shell.css'
 import printflowIcon from './assets/printflow-icon.png'
 import { SOFTWARE_ACCOUNT_NAME } from './config/account'
-import { loadProductConfigs } from './modules/schematic/services/productConfigService'
+import { refreshProductConfigs } from './modules/schematic/services/productConfigService'
+import { invalidateFinishNames } from './modules/schematic/services/finishService'
 import UpdateButton from './modules/update/UpdateButton'
 const modules = [orderModule, imageEditModule, schematicModule, impositionModule, progressModule]
 // React StrictMode mounts effects twice in development. Keep the startup
@@ -33,9 +34,12 @@ export default function App() {
     if (!isTauri()) return
     const key = 'product-config-startup'
     notice.open({ key, type: 'loading', content: '正在请求产品配置接口…', duration: 0 })
-    startupProductConfigRefresh ??= invoke('refresh_product_configs').then(() => loadProductConfigs(true).then(() => undefined))
+    startupProductConfigRefresh ??= refreshProductConfigs().then(() => {
+      invalidateFinishNames()
+      return undefined
+    })
     void startupProductConfigRefresh.then(() => {
-      notice.success({ key, content: '产品配置接口请求完成，已更新本地缓存', duration: 2.5 })
+      notice.success({ key, content: '产品配置及工艺数据已更新到本地缓存', duration: 2.5 })
     }).catch(error => {
       notice.warning({ key, content: '产品配置接口请求失败，继续使用本地缓存', duration: 5 })
       console.warn('产品配置接口请求失败，继续使用本地缓存', error)

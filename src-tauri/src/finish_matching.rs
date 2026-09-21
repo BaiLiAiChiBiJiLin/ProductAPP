@@ -3,6 +3,11 @@ use std::{collections::HashMap, fs, path::Path, sync::{Mutex, OnceLock}, time::S
 use crate::assets::Asset;
 type Cache = Option<(std::path::PathBuf, Option<SystemTime>, HashMap<String, String>)>;
 static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
+pub fn invalidate() {
+    if let Some(cache) = CACHE.get() {
+        if let Ok(mut cache) = cache.lock() { *cache = None; }
+    }
+}
 fn key(value: &str) -> String { value.chars().filter(|c| !c.is_whitespace() && *c != '_' && *c != '-').flat_map(char::to_lowercase).collect() }
 fn excluded(name: &str) -> bool {
     let name = key(name);

@@ -5,6 +5,7 @@ mod fonts;
 mod geometry;
 mod compositor;
 mod finish_matching;
+mod product_config_cache;
 pub mod svg_measure;
 use assets::Asset;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -316,12 +317,9 @@ fn product_configs_cache_path() -> PathBuf {
 }
 
 fn finish_catalog_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    // Development uses the editable project catalog. Installed builds resolve
-    // the bundled resource independently of the shortcut's working directory.
-    if cfg!(debug_assertions) {
-        let local = project_data_dir().join("cache/finish.json");
-        if local.is_file() { return Ok(local); }
-    }
+    // Refreshed catalogs override the bundled offline fallback in all builds.
+    let local = project_data_dir().join("cache/finish.json");
+    if local.is_file() { return Ok(local); }
     app.path().resolve("printflow-data/cache/finish.json", tauri::path::BaseDirectory::Resource)
         .map_err(|e| format!("工艺资源路径不可用：{e}"))
 }
@@ -346,19 +344,12 @@ async fn refresh_product_configs_inner() -> Result<(), String> {
         }
         bytes.extend_from_slice(&chunk);
     }
-    // Validate the response without materialising the 9 MB catalog as a
-    // serde_json::Value. The Value tree can be many times larger than the
-    // wire payload and used to create a large startup allocation peak.
-    let mut deserializer = serde_json::Deserializer::from_slice(&bytes);
-    serde::de::IgnoredAny::deserialize(&mut deserializer).map_err(|e| format!("产品选项 JSON 无效：{e}"))?;
-    deserializer.end().map_err(|e| format!("产品选项 JSON 无效：{e}"))?;
     let path = product_configs_cache_path();
-    let parent = path.parent().ok_or("产品选项缓存目录无效")?.to_path_buf();
-    tokio::fs::create_dir_all(&parent).await.map_err(|e| e.to_string())?;
-    let temp = path.with_extension("json.tmp");
-    tokio::fs::write(&temp, &bytes).await.map_err(|e| e.to_string())?;
-    tokio::fs::rename(&temp, &path).await.map_err(|e| e.to_string())?;
-    log::info!(target: "printflow::product-configs", "产品配置缓存完成：bytes={} elapsed_ms={}", bytes.len(), started.elapsed().as_millis());
+    let byte_count = bytes.len();
+    let finish_count = tauri::async_runtime::spawn_blocking(move || product_config_cache::refresh(&path, &bytes))
+        .await.map_err(|e| e.to_string())??;
+    finish_matching::invalidate();
+    log::info!(target: "printflow::product-configs", "产品配置及工艺缓存完成：bytes={} finish_items={} elapsed_ms={}", byte_count, finish_count, started.elapsed().as_millis());
     Ok(())
 }
 
