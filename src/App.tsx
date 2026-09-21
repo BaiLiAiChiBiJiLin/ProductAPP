@@ -5,6 +5,7 @@ import { orderModule, imageEditModule, schematicModule, impositionModule, progre
 import SchematicPage from './modules/schematic/SchematicPage'
 import { Check, ChevronDown, UserRound } from 'lucide-react'
 import './App.css'
+import './module-shell.css'
 import printflowIcon from './assets/printflow-icon.png'
 import { SOFTWARE_ACCOUNT_NAME } from './config/account'
 import { loadProductConfigs } from './modules/schematic/services/productConfigService'
@@ -17,6 +18,9 @@ let startupProductConfigRefresh: Promise<void> | undefined
 export default function App() {
   const [notice, noticeContext] = message.useMessage()
   const [active, setActive] = useState('schematic')
+  const [visitedModules, setVisitedModules] = useState(() => new Set(['schematic']))
+  const [transitionDirection, setTransitionDirection] = useState<'forward' | 'backward'>('forward')
+  const activeIndex = modules.findIndex(module => module.id === active)
   const [accountName, setAccountName] = useState(() => localStorage.getItem('printflow-account-name') || SOFTWARE_ACCOUNT_NAME)
   const [draftAccountName, setDraftAccountName] = useState(accountName)
   useEffect(() => {
@@ -32,7 +36,14 @@ export default function App() {
     })
   }, [notice])
   const userMenu = <div className="account-popover"><div className="account-popover-title"><UserRound size={16}/>用户信息</div><label>用户名<Input size="small" value={draftAccountName} maxLength={30} onChange={event => setDraftAccountName(event.target.value)} onPressEnter={() => { const value = draftAccountName.trim(); if (value) { localStorage.setItem('printflow-account-name', value); setAccountName(value); message.success('用户名已保存') } }}/></label><Button type="primary" size="small" icon={<Check size={14}/>} onClick={() => { const value = draftAccountName.trim(); if (value) { localStorage.setItem('printflow-account-name', value); setAccountName(value); message.success('用户名已保存') } }}>保存</Button><UpdateButton /></div>
-  return <>{noticeContext}<div className="app-shell"><header className="topbar"><div className="brand"><div className="brand-mark"><img src={printflowIcon} alt="PrintFlow" /></div><span>PrintFlow</span></div><nav className="workflow">{modules.map(module => <button key={module.id} className={active === module.id ? 'active' : ''} onClick={() => setActive(module.id)}>{module.label}</button>)}</nav><div className="topbar-actions"><UpdateButton autoCheck showButton={false} /><Dropdown trigger={['click']} dropdownRender={() => userMenu}><button className="user-menu"><span className="avatar">{accountName.slice(0, 1)}</span><span>{accountName}</span><ChevronDown size={14}/></button></Dropdown></div></header>{active === 'schematic' && <SchematicPage />}</div></>
+  const switchModule = (id: string) => {
+    if (id === active) return
+    const nextIndex = modules.findIndex(module => module.id === id)
+    setTransitionDirection(nextIndex >= activeIndex ? 'forward' : 'backward')
+    setVisitedModules(current => new Set(current).add(id))
+    setActive(id)
+  }
+  return <>{noticeContext}<div className="app-shell"><header className="topbar"><div className="brand"><div className="brand-mark"><img src={printflowIcon} alt="PrintFlow" /></div><span>PrintFlow</span></div><nav className="workflow">{modules.map(module => <button key={module.id} className={active === module.id ? 'active' : ''} onClick={() => switchModule(module.id)}>{module.label}</button>)}</nav><div className="topbar-actions"><UpdateButton autoCheck showButton={false} /><Dropdown trigger={['click']} dropdownRender={() => userMenu}><button className="user-menu"><span className="avatar">{accountName.slice(0, 1)}</span><span>{accountName}</span><ChevronDown size={14}/></button></Dropdown></div></header><main className={`module-stage direction-${transitionDirection}`}>{modules.map(module => visitedModules.has(module.id) && <section key={module.id} className={`module-view ${active === module.id ? 'is-active' : 'is-hidden'}`} aria-hidden={active !== module.id}>{module.id === 'schematic' ? <SchematicPage /> : <div className="module-placeholder"><h1>{module.label}</h1><p>模块正在建设中</p></div>}</section>)}</main></div></>
 }
 
 

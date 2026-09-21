@@ -1,5 +1,5 @@
 /* Bound both columns to the workspace. Only their content regions may scroll. */
-.app-shell > .product-upload-page {
+.product-upload-page {
   grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
 }
