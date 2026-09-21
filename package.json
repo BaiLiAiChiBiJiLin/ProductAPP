@@ -1,0 +1,45 @@
+{
+  "name": "productionapp",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "protect-source": "node scripts/protect-source.mjs",
+    "restore-source": "node scripts/restore-source.mjs",
+    "build": "npm run protect-source && tsc -b && vite build",
+    "lint": "oxlint",
+    "test": "node --test tests/*.test.mjs",
+    "preview": "vite preview",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@ant-design/cssinjs": "^2.1.2",
+    "@ant-design/cssinjs-utils": "^2.1.2",
+    "@babel/runtime": "^8.0.5",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.3",
+    "antd": "^5.27.6",
+    "antd-masonry": "npm:antd@6.6.4",
+    "dayjs": "^1.11.13",
+    "konva": "^10.5.0",
+    "lucide-react": "^1.45.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-konva": "^19.2.7",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "@testing-library/react": "^16.3.3",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "jsdom": "^30.0.1",
+    "oxlint": "^1.81.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.0"
+  }
+}

@@ -1,0 +1,79 @@
+[package]
+name = "app"
+version = "0.1.0"
+description = "PrintFlow production layout desktop app"
+authors = ["PrintFlow"]
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2.11.3", features = [] }
+tauri-plugin-log = "2"
+tauri-plugin-dialog = "2"
+tokio = { version = "1", features = ["fs", "rt-multi-thread"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "blocking"] }
+rquickjs = { version = "0.9", optional = true }
+rusqlite = { version = "0.32", features = ["bundled"] }
+usvg = "0.45"
+resvg = "0.45"
+tiny-skia = "0.11"
+base64 = "0.22"
+roxmltree = "0.20"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+printpdf = { version = "0.7", default-features = false, features = ["embedded_images", "svg"] }
+pdf-writer = "0.12.1"
+svg2pdf = "0.13"
+image24 = { package = "image", version = "0.24.9", default-features = false, features = ["png"] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61.3", features = ["Win32_Graphics_DirectWrite"] }
+
+# Keep Windows development builds within a bounded memory budget. Full debug
+# symbols and incremental state exhausted system commit during dependency mmap.
+[profile.dev]
+debug = 0
+incremental = false
+
+# Preserve original SVG/PNG data while optimizing CPU-heavy export dependencies.
+[profile.dev.package.miniz_oxide]
+opt-level = 3
+
+[profile.dev.package.svg2pdf]
+opt-level = 3
+
+[profile.dev.package.image]
+opt-level = 3
+
+[profile.dev.package.png]
+opt-level = 3
+
+[profile.dev.package.fdeflate]
+opt-level = 3
+
+[profile.dev.package.flate2]
+opt-level = 3
+
+[profile.dev.package.usvg]
+opt-level = 3
+
+[profile.dev.package.base64]
+opt-level = 3
+
+[profile.dev.package.roxmltree]
+opt-level = 3
+
+[profile.dev.package.fontdb]
+opt-level = 3
+
+[profile.dev.package.ttf-parser]
+opt-level = 3

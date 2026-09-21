@@ -1,0 +1,7 @@
+.pool-asset-card { position: relative; }
+.pool-asset-drag { width: 100%; border: 0; padding: 0; background: transparent; color: inherit; font: inherit; text-align: left; touch-action: none; user-select: none; cursor: grab; }
+.pool-asset-drag:active { cursor: grabbing; }
+.pool-asset-drag img { pointer-events: none; -webkit-user-drag: none; }
+.pool-asset-drag > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pool-asset-preview-button { position: absolute; top: 3px; right: 3px; display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid #cbd5e1; border-radius: 4px; background: white; color: #475569; cursor: zoom-in; }
+.pool-drag-feedback { position: fixed; z-index: 9999; pointer-events: none; padding: 6px 10px; border: 1px solid #93c5fd; border-radius: 6px; background: #eff6ff; color: #1d4ed8; max-width: 200px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

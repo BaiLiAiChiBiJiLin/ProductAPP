@@ -1,0 +1,16 @@
+.review-asset-picker-modal.ant-modal { width:min(92vw, 1180px) !important; max-width:calc(100vw - 32px); }
+.review-asset-picker-modal .ant-modal-content { display:flex; flex-direction:column; max-height:min(88vh, 860px); }
+.review-asset-picker-modal .ant-modal-body { min-height:0; overflow:auto; padding:0 20px 16px; }
+.review-asset-picker-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:0 0 12px; color:#475569; font-size:13px; }
+.review-asset-picker-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(138px, 1fr)); gap:14px; }
+.review-asset-picker-item { position:relative; min-width:0; aspect-ratio:1; padding:7px; overflow:hidden; border:2px solid #d9e2ec; border-radius:9px; background:#f8fafc; cursor:pointer; transition:border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+.review-asset-picker-item:hover { border-color:#91caff; transform:translateY(-1px); }
+.review-asset-picker-item.is-selected { border-color:#1677ff; box-shadow:0 0 0 2px rgb(22 119 255 / 16%); background:#e6f4ff; }
+.review-asset-picker-item.has-product-group { border-color:color-mix(in srgb, #1677ff 28%, var(--group-color, #d9e2ec)); }
+.review-asset-picker-item > img, .review-asset-picker-item > svg { display:block; width:100%; height:100%; object-fit:contain; pointer-events:none; }
+.review-asset-picker-check { position:absolute; top:6px; right:6px; display:grid; place-items:center; width:22px; height:22px; border-radius:5px; background:rgb(255 255 255 / 90%); pointer-events:none; }
+.review-asset-picker-check .ant-checkbox { pointer-events:none; }
+.review-asset-picker-group-mark { position:absolute; left:6px; bottom:6px; padding:2px 6px; border-radius:999px; color:#1f2937; background:rgb(255 255 255 / 82%); font-size:11px; font-weight:600; line-height:1.3; pointer-events:none; }
+.review-asset-picker-footer { display:flex; align-items:center; justify-content:flex-end; gap:10px; }
+.review-asset-picker-footer > span { margin-right:auto; color:#64748b; font-size:12px; }
+@media (max-width:760px) { .review-asset-picker-modal.ant-modal { width:calc(100vw - 24px) !important; max-width:calc(100vw - 24px); } .review-asset-picker-modal .ant-modal-body { padding-inline:12px; } .review-asset-picker-grid { grid-template-columns:repeat(3, minmax(78px, 1fr)); gap:8px; } .review-asset-picker-footer { flex-wrap:wrap; } .review-asset-picker-footer > span { order:-1; width:100%; } }

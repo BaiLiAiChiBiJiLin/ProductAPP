@@ -1,0 +1,45 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+.npm-cache
+.test-output
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Runtime data and local history. Keep the bundled finish catalog below.
+printflow-data/*
+!printflow-data/cache/
+printflow-data/cache/*
+!printflow-data/cache/finish.json
+printflow-data/assets/
+printflow-data/temp-assets/
+printflow-data/*.sqlite
+printflow-data/*.db
+src-tauri/printflow-data/
+
+# Local build and measurement output
+.cargo-target/
+.cargo-test-target/
+artifacts/
+measurement-output/
+.source-backups/
+.measure-groups-output.txt

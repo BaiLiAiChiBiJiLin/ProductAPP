@@ -1,0 +1,14 @@
+.canvas-area .toolbar { overflow-x: auto; gap: 4px; }
+.canvas-area .toolbar { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+.canvas-area .toolbar::-webkit-scrollbar { height: 4px; }
+.canvas-area .toolbar::-webkit-scrollbar-track { background: transparent; }
+.canvas-area .toolbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+.canvas-area .toolbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+.canvas-area .toolbar::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+@supports selector(::-webkit-scrollbar) {
+  .canvas-area .toolbar { scrollbar-width: auto; scrollbar-color: auto; }
+}
+.toolbar > * { flex-shrink: 0; }
+.toolbar .toolbar-divider { width: 1px; height: 20px; background: #d4d4d4; margin: 0 7px; }
+.toolbar label { display: inline-flex; align-items: center; gap: 3px; }
+.stage-wrap.is-select-mode { touch-action: none; }

@@ -1,0 +1,40 @@
+/* Bound both columns to the workspace. Only their content regions may scroll. */
+.app-shell > .product-upload-page {
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+}
+.app-shell > .topbar { flex-shrink: 0; }
+.product-upload-page > .uploaded-assets-panel,
+.product-upload-page > .upload-column { min-height: 0; }
+.upload-column > .product-upload-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.product-upload-card > .upload-panel-tabs { flex-shrink: 0; }
+.product-upload-card > .upload-tab-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+  padding-right: 3px;
+}
+.upload-tab-content::-webkit-scrollbar { width: 5px; }
+.upload-tab-content::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+.upload-column > .generate-schematic-button { flex-shrink: 0; }
+.product-upload-card .image-attributes-panel { min-height: 0; }
+.image-attributes-panel .product-config-form { overflow: visible; }
+.image-attributes-panel > .product-config-selected-count { margin-top: 16px; overflow-wrap: anywhere; }
+.product-attribute-mode-tabs { margin-top: 10px; }
+.product-attribute-mode-tabs .ant-tabs-nav { margin-bottom: 12px; }
+.product-attribute-mode-tabs .ant-tabs-tab { color: #111827; }
+.custom-product-presets { display: flex; align-items: flex-end; gap: 8px; }
+.custom-product-presets > label { flex: 1; min-width: 0; }
+.custom-product-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 10px; }
+.custom-product-notice { color: #15803d; font-size: 12px; margin: 8px 0; }
+.custom-product-image-field { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; color: #334155; font-size: 12px; font-weight: 500; }
+.custom-product-image-field img { width: 96px; height: 96px; object-fit: contain; border: 1px solid #dbe3ef; border-radius: 6px; background: #f8fafc; }

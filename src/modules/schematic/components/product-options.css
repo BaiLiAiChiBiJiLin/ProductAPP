@@ -1,0 +1,15 @@
+.product-config-form { align-items: start; }
+.product-option-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 108px;
+  padding: 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+.product-option-preview .ant-image { flex: 0 0 auto; }
+.product-option-image-error { color: #64748b; font-size: 12px; }
+.product-option-hover-target { width:100%; min-height:24px; }
+.accessory-option-hover-preview { display:flex; flex-direction:column; align-items:center; gap:8px; max-width:180px; overflow-wrap:anywhere; }
