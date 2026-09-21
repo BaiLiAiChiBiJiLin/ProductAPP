@@ -1,13 +1,22 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>productionapp</title>
+    <title>PrintFlow</title>
+    <style>
+      html,body { margin:0; background:#f5f7fb; }
+      #startup-screen { position:fixed; inset:0; z-index:99999; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; background:#f5f7fb; color:#334155; font:14px "Microsoft YaHei",sans-serif; transition:opacity .2s ease; }
+      #startup-screen img { width:64px; height:64px; object-fit:contain; }
+      #startup-screen strong { font-size:24px; color:#1677ff; }
+      #startup-retry { border:0; border-radius:6px; padding:8px 20px; background:#1677ff; color:white; cursor:pointer; }
+      @media(prefers-reduced-motion:reduce) { #startup-screen { transition:none; } }
+    </style>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <div id="startup-screen" role="status" aria-live="polite"><img src="/src/assets/loading.gif" alt=""/><strong>PrintFlow</strong><span id="startup-message">正在启动，请稍候…</span><button id="startup-retry" hidden>重新加载</button></div>
+    <script type="module" src="/src/startup.ts"></script>
   </body>
 </html>

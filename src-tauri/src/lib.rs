@@ -504,9 +504,42 @@ async fn save_workspace(app: tauri::AppHandle, pages: String) -> Result<(), Stri
 }
 
 #[tauri::command]
-async fn delete_asset(app: tauri::AppHandle, id: String) -> Result<(), String> {
+async fn delete_asset(app: tauri::AppHandle, id: String, batch_id: Option<String>) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        database(&app)?.execute("DELETE FROM assets WHERE id=?1", [id]).map_err(|e| e.to_string())?;
+        let mut conn = database(&app)?;
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+        if let Some(batch_id) = batch_id {
+            let payload: Option<String> = tx
+                .query_row("SELECT payload FROM batches WHERE id=?1", [&batch_id], |row| row.get(0))
+                .optional()
+                .map_err(|e| e.to_string())?;
+            if let Some(payload) = payload {
+                let mut assets: Vec<Asset> = serde_json::from_str(&payload).map_err(|e| e.to_string())?;
+                assets.retain(|asset| asset.id != id);
+                let compact: Vec<_> = assets.iter().map(compact_asset).collect();
+                tx.execute(
+                    "UPDATE batches SET payload=?1 WHERE id=?2",
+                    params![serde_json::to_string(&compact).map_err(|e| e.to_string())?, batch_id],
+                ).map_err(|e| e.to_string())?;
+            }
+        }
+
+        // Keep an asset row while another saved batch still references it.
+        let mut referenced_elsewhere = false;
+        let mut stmt = tx.prepare("SELECT payload FROM batches").map_err(|e| e.to_string())?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0)).map_err(|e| e.to_string())?;
+        for row in rows {
+            let value = row.map_err(|e| e.to_string())?;
+            if let Ok(other) = serde_json::from_str::<Vec<Asset>>(&value) {
+                if other.iter().any(|asset| asset.id == id) { referenced_elsewhere = true; break; }
+            }
+        }
+        drop(stmt);
+        if !referenced_elsewhere {
+            tx.execute("DELETE FROM assets WHERE id=?1", [&id]).map_err(|e| e.to_string())?;
+        }
+        tx.commit().map_err(|e| e.to_string())?;
         Ok(())
     }).await.map_err(|e| e.to_string())?
 }

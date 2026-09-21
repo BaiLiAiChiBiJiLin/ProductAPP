@@ -1,4 +1,6 @@
 .update-button { border-radius: 7px; }
 .update-spin { animation: update-spin 1s linear infinite; }
 .update-notes { white-space: pre-wrap; max-height: 180px; overflow: auto; padding: 10px 12px; background: #f7f8fa; border-radius: 8px; }
+.update-download-progress { margin-top: 18px; }
+.update-download-progress-label { display: flex; justify-content: space-between; margin-top: 6px; color: #667085; font-size: 12px; }
 @keyframes update-spin { to { transform: rotate(360deg); } }

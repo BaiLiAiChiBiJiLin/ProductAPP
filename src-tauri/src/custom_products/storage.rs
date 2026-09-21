@@ -37,6 +37,25 @@ pub(super) fn read(conn: &Connection) -> Result<Vec<CustomProduct>, String> {
     rows.map(|row| serde_json::from_str(&row.map_err(|e| e.to_string())?).map_err(|e| e.to_string())).collect()
 }
 
+/// Seed only an empty preset library, once. Never overwrite user edits on upgrade.
+pub(super) fn seed(conn: &mut Connection, json: &str) -> Result<(), String> {
+    let products: Vec<CustomProduct> = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    tx.execute_batch("CREATE TABLE IF NOT EXISTS preset_metadata(key TEXT PRIMARY KEY)").map_err(|e| e.to_string())?;
+    let initialized: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM preset_metadata WHERE key='bundled-initialized')", [], |r| r.get(0)).map_err(|e| e.to_string())?;
+    if !initialized {
+        let count: i64 = tx.query_row("SELECT COUNT(*) FROM custom_products", [], |r| r.get(0)).map_err(|e| e.to_string())?;
+        if count == 0 {
+            for product in products {
+                let payload = serde_json::to_string(&product).map_err(|e| e.to_string())?;
+                tx.execute("INSERT INTO custom_products(id,payload) VALUES(?1,?2)", params![product.id, payload]).map_err(|e| e.to_string())?;
+            }
+        }
+        tx.execute("INSERT INTO preset_metadata(key) VALUES('bundled-initialized')", []).map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())
+}
+
 pub(super) fn write(conn: &mut Connection, mut product: CustomProduct) -> Result<CustomProduct, String> {
     product.name = product.name.trim().to_string();
     if product.name.is_empty() { return Err("请填写产品名称".into()); }
@@ -65,6 +84,21 @@ mod tests {
     use super::*;
     fn sample() -> CustomProduct {
         CustomProduct { id: None, name: "自定义立牌".into(), size: "10cm".into(), print_option: "双面同图".into(), finish: "亮面".into(), accessory_color: "金色".into(), accessory_color_image: String::new(), qt: 5 }
+    }
+    #[test]
+    fn bundled_presets_seed_once_and_keep_user_changes() {
+        let path = std::env::temp_dir().join(format!("preset-seed-{}.sqlite", std::process::id()));
+        let mut conn = connect(&path).unwrap();
+        let mut product = sample(); product.id = Some(43);
+        let json = serde_json::to_string(&vec![product.clone()]).unwrap();
+        seed(&mut conn, &json).unwrap();
+        assert_eq!(read(&conn).unwrap(), vec![product.clone()]);
+        product.qt = 99;
+        write(&mut conn, product.clone()).unwrap();
+        seed(&mut conn, &json).unwrap();
+        assert_eq!(read(&conn).unwrap(), vec![product]);
+        drop(conn);
+        std::fs::remove_file(path).unwrap();
     }
     #[test]
     fn presets_survive_reopen_and_updates_keep_id() {

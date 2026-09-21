@@ -1,18 +1,20 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "PrintFlow",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "identifier": "com.printflow.desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://127.0.0.1:5173",
     "beforeDevCommand": "node scripts/tauri-dev.mjs",
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "node scripts/bundle-custom-products.mjs && npm run build"
   },
   "app": {
     "windows": [
       {
         "title": "PrintFlow",
+        "visible": false,
+        "backgroundColor": "#f5f7fb",
         "width": 1280,
         "height": 800,
         "minWidth": 1100,
@@ -31,7 +33,8 @@
     "createUpdaterArtifacts": true,
     "targets": "all",
     "resources": {
-      "../printflow-data/cache/finish.json": "printflow-data/cache/finish.json"
+      "../printflow-data/cache/finish.json": "printflow-data/cache/finish.json",
+      "resources/custom-products.json": "presets/custom-products.json"
     },
     "icon": [
       "icons/32x32.png",

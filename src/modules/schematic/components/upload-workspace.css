@@ -33,6 +33,8 @@
 .upload-image-card-head label { display:flex; align-items:center; gap:6px; color:#64748b; font-size:11px; cursor:pointer; }
 .upload-image-card-head input { width:16px; height:16px; margin:0; accent-color:#1677ff; }
 .upload-image-card-head .ant-tag { margin:0; font-size:10px; padding:0 5px; }
+.upload-image-card-actions { display:inline-flex; align-items:center; gap:4px; }
+.upload-image-card-actions .ant-btn { flex:0 0 auto; }
 .upload-image-art { display:block; border:1px solid #eef2f7; background:#f8fafc; border-radius:6px; width:100%; height:auto; aspect-ratio:1; padding:8px; cursor:zoom-in; }
 .upload-image-art img { width:100%; height:100%; object-fit:contain; }
 .upload-image-card-info { display:flex; flex-direction:column; min-width:0; gap:6px; font-size:11px; color:#64748b; overflow-wrap:anywhere; }

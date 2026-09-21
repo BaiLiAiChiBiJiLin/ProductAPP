@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { Modal, Tag } from 'antd'
+import { Button, Modal, Popconfirm, Tag } from 'antd'
 import type { Asset } from '../../../model'
 import { svgDataUrl } from '../../../model'
 import LazySvgImage from './LazySvgImage'
@@ -8,9 +8,10 @@ import { useProductGroup } from '../grouping/useProductGrouping'
 import { canSelectGroupAsset } from '../grouping/productGroupSelection'
 import { orderAssetsByProductGroup } from '../services/productGroupOrdering'
 import UploadImageGrid from './UploadImageGrid'
+import { Trash2 } from 'lucide-react'
 
-export default function UploadImageList({ assets, allAssets, selectedIds, onSelectionChange, products, disabled }: {
-  assets: Asset[]; allAssets: Asset[]; selectedIds: Set<string>; onSelectionChange: (ids: Set<string>) => void; products: ProductConfig[]; disabled: boolean
+export default function UploadImageList({ assets, allAssets, selectedIds, onSelectionChange, products, disabled, onDelete }: {
+  assets: Asset[]; allAssets: Asset[]; selectedIds: Set<string>; onSelectionChange: (ids: Set<string>) => void; products: ProductConfig[]; disabled: boolean; onDelete: (asset: Asset) => Promise<void>
 }) {
   const anchor = useRef<string | null>(null)
   const grouping = useProductGroup()
@@ -41,7 +42,7 @@ export default function UploadImageList({ assets, allAssets, selectedIds, onSele
       const member = session?.memberIds.includes(asset.id)
       const blocked = Boolean(session && !canSelectGroupAsset(asset, session.memberIds, 'list', session.trigger.kind === 'free'))
       return <article key={asset.id} data-asset-id={asset.id} data-product-group={asset.productGroupId || undefined} style={{ backgroundColor: blocked ? undefined : asset.productGroupId ? asset.productGroupColor : undefined }} className={`upload-image-card ${selectedIds.has(asset.id) ? 'is-selected' : ''} ${session ? blocked ? 'is-guide-blocked' : member ? 'is-guide-member' : 'is-guide-dimmed' : ''}`} onMouseDown={event => { if (event.shiftKey) event.preventDefault() }} onClick={event => select(asset, event)}>
-      <div className="upload-image-card-head"><label onClick={event => event.stopPropagation()}><input type="checkbox" checked={selectedIds.has(asset.id)} disabled={disabled || blocked} aria-label={`选择 ${asset.name}`} onChange={() => {}} onClick={event => select(asset, event)}/><span>NO: {orderedAllAssets.indexOf(asset) + 1}</span></label><Tag color={asset.attributesConfirmed ? session ? 'red' : 'blue' : 'default'} title={blocked ? '已选产品，不能加入当前组' : undefined}>{asset.attributesConfirmed ? '已选产品' : '未选产品'}</Tag></div>
+      <div className="upload-image-card-head"><label onClick={event => event.stopPropagation()}><input type="checkbox" checked={selectedIds.has(asset.id)} disabled={disabled || blocked} aria-label={`选择 ${asset.name}`} onChange={() => {}} onClick={event => select(asset, event)}/><span>NO: {orderedAllAssets.indexOf(asset) + 1}</span></label><span className="upload-image-card-actions" onClick={event => event.stopPropagation()} onMouseDown={event => event.stopPropagation()}><Tag color={asset.attributesConfirmed ? session ? 'red' : 'blue' : 'default'} title={blocked ? '已选产品，不能加入当前组' : undefined}>{asset.attributesConfirmed ? '已选产品' : '未选产品'}</Tag><Popconfirm title="删除这张图片？" description="删除后将从当前批次中移除，无法在列表中恢复。" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => onDelete(asset)}><Button type="text" danger size="small" icon={<Trash2 size={14}/>} aria-label={`删除 ${asset.name}`} title="删除图片" disabled={disabled || Boolean(session)} onClick={event => event.stopPropagation()}/></Popconfirm></span></div>
       <div className="upload-image-card-media">
         <button type="button" className="upload-image-art" aria-label={`预览 ${asset.name}`} onClick={event => { event.stopPropagation(); setPreview({ name: asset.name, src: svgDataUrl(asset.svg) }) }}><LazySvgImage svg={asset.svg} alt={asset.name}/></button>
         {accessoryImage && <button type="button" className="card-accessory-preview" aria-label={`预览配件颜色 ${asset.name}`} onClick={event => { event.stopPropagation(); setPreview({ name: `${asset.name} · 配件颜色`, src: accessoryImage }) }}><img src={accessoryImage} alt={`${asset.name} · 配件颜色`} loading="lazy" decoding="async"/></button>}

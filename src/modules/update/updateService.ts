@@ -8,15 +8,19 @@ export async function checkForUpdate(): Promise<Update | null> {
 
 export async function downloadAndInstallUpdate(update: Update, onProgress: (progress: UpdateProgress) => void): Promise<void> {
   let downloaded = 0
+  let total: number | undefined
   await update.downloadAndInstall((event: DownloadEvent) => {
     if (event.event === 'Started') {
       downloaded = 0
-      onProgress({ downloaded, total: event.data.contentLength })
+      total = event.data.contentLength
+      onProgress({ downloaded, total })
     } else if (event.event === 'Progress') {
       downloaded += event.data.chunkLength
-      onProgress({ downloaded })
+      // Progress events only contain the chunk size. Keep the total from the
+      // Started event so the UI can calculate a percentage for every update.
+      onProgress({ downloaded, total })
     } else {
-      onProgress({ downloaded })
+      onProgress({ downloaded, total })
     }
   }, { restartAfterInstall: true })
 }

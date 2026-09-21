@@ -33,6 +33,7 @@ export default function UpdateButton({ autoCheck = false, showButton = true }: P
   const install = async () => {
     if (!update || downloading) return
     setDownloading(true)
+    setProgress({ downloaded: 0, total: undefined })
     try { await downloadAndInstallUpdate(update, setProgress) }
     catch (error) { setDownloading(false); notice.error(`下载更新失败：${String(error)}`) }
   }
@@ -43,7 +44,12 @@ export default function UpdateButton({ autoCheck = false, showButton = true }: P
     <Modal open={Boolean(update)} title={`发现新版本 ${update?.version ?? ''}`} closable={!downloading} maskClosable={!downloading} onCancel={() => !downloading && setUpdate(null)} okText={downloading ? '正在下载…' : '下载并安装'} cancelText="稍后更新" onOk={install} okButtonProps={{ loading: downloading, disabled: downloading }} cancelButtonProps={{ disabled: downloading }}>
       <p>当前版本：{update?.currentVersion}</p>
       {update?.body && <div className="update-notes">{update.body}</div>}
-      {downloading && <Progress percent={percent} status="active" format={() => percent === undefined ? `${Math.round(progress.downloaded / 1024 / 1024)} MB` : `${percent}%`}/>} 
+      {downloading && <div className="update-download-progress"><Progress percent={percent} status="active" showInfo={false}/><div className="update-download-progress-label"><span>{percent === undefined ? '正在下载…' : `${percent}%`}</span><span>{formatBytes(progress.downloaded)}{progress.total ? ` / ${formatBytes(progress.total)}` : ''}</span></div></div>}
     </Modal>
   </>
+}
+
+function formatBytes(value: number) {
+  if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`
+  return `${(value / 1024 / 1024).toFixed(1)} MB`
 }

@@ -14,6 +14,7 @@ import { pdfProgressText, type PdfExportProgress } from './services/exportServic
 import type { ProductAttributePatch } from './services/productOptionRules'
 
 type Props = {
+  sortMode: 'default' | 'upload'
   context: ReactNode
   assets: Asset[]
   pages: Page[]
@@ -28,7 +29,7 @@ type Props = {
   onDeleteGroups: (ids: string[]) => void
   onConfirmAssetAttributes: (assetId: string, patch: ProductAttributePatch) => Promise<void>
   onAddPage: () => void
-  onAutoArrange: () => void
+  onAutoArrange: (mode?: 'default' | 'upload') => void
   onCombine: () => void
   onSelectGroup: (id: string, ctrlKey: boolean) => void
   onBack: () => void
@@ -44,7 +45,7 @@ type Props = {
   onRemoveHeaderBlock: (id: string) => void
 }
 
-export default function ArrangePage({ context, assets, pages, activePage, selectedItem, selectedGroupIds, onSelectPage, onSelectItem, onSelectGroup, onChangeItem, onChangeRulers, onDropAsset, onDeleteGroups, onConfirmAssetAttributes, onAddPage, onAutoArrange, onCombine, onBack, onExport, exporting = false, exportProgress = { phase: 'rendering', completed: 0, total: 1 }, metadata = {}, onMetadataChange, layoutBounds, onBoundsChange, onAddHeaderBlock, onChangeHeaderBlock, onRemoveHeaderBlock }: Props) {
+export default function ArrangePage({ context, assets, pages, activePage, selectedItem, selectedGroupIds, sortMode, onSelectPage, onSelectItem, onSelectGroup, onChangeItem, onChangeRulers, onDropAsset, onDeleteGroups, onConfirmAssetAttributes, onAddPage, onAutoArrange, onCombine, onBack, onExport, exporting = false, exportProgress = { phase: 'rendering', completed: 0, total: 1 }, metadata = {}, onMetadataChange, layoutBounds, onBoundsChange, onAddHeaderBlock, onChangeHeaderBlock, onRemoveHeaderBlock }: Props) {
   const [exportFormat, setExportFormat] = useState<'jpg' | 'png' | 'svg' | 'pdf'>('pdf')
   const [canvasMode, setCanvasMode] = useState<'select' | 'pan'>('select')
   const [sidePanel, setSidePanel] = useState<'pool' | 'attributes'>('pool')
@@ -98,7 +99,7 @@ export default function ArrangePage({ context, assets, pages, activePage, select
         <Button type="text" className={canvasMode === 'select' ? 'toolbar-mode-active' : ''} icon={<MousePointer2 size={15}/>} onClick={() => setCanvasMode('select')}>选择</Button>
         <Button type="text" className={canvasMode === 'pan' ? 'toolbar-mode-active' : ''} icon={<Hand size={15}/>} onClick={() => setCanvasMode('pan')}>平移</Button>
         <span className="toolbar-divider" role="separator" aria-orientation="vertical"/>
-        <Button type="text" icon={<WandSparkles size={15}/>} onClick={() => { setBoxSelection([]); onAutoArrange() }}>自动排列</Button>
+        <Button type="text" icon={<WandSparkles size={15}/>} title={`点击后按${sortMode === 'default' ? '上传顺序' : '产品排序'}重新排列当前画布`} onClick={() => { setBoxSelection([]); onAutoArrange(sortMode === 'default' ? 'upload' : 'default') }}>自动排列 · 切换为{sortMode === 'default' ? '上传顺序' : '产品排序'}</Button>
         <span className="toolbar-divider" role="separator" aria-orientation="vertical"/>
         <Button type="text" icon={<Combine size={15}/>} disabled={selectedGroupIds.length !== 2} onClick={() => { setBoxSelection([]); onCombine() }}>组合</Button>
         {selectedGroupIds.length > 0 && <span className="muted">已选 {selectedGroupIds.length}/2 组（按住 Ctrl 选择）</span>}
