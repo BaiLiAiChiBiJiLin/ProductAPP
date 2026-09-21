@@ -1,0 +1,4 @@
+.update-button { border-radius: 7px; }
+.update-spin { animation: update-spin 1s linear infinite; }
+.update-notes { white-space: pre-wrap; max-height: 180px; overflow: auto; padding: 10px 12px; background: #f7f8fa; border-radius: 8px; }
+@keyframes update-spin { to { transform: rotate(360deg); } }

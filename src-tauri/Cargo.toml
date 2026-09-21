@@ -34,6 +34,8 @@ printpdf = { version = "0.7", default-features = false, features = ["embedded_im
 pdf-writer = "0.12.1"
 svg2pdf = "0.13"
 image24 = { package = "image", version = "0.24.9", default-features = false, features = ["png"] }
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61.3", features = ["Win32_Graphics_DirectWrite"] }

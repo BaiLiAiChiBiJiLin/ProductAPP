@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
-import { message } from 'antd'
+import { Button, Dropdown, Input, message } from 'antd'
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { orderModule, imageEditModule, schematicModule, impositionModule, progressModule } from './modules'
 import SchematicPage from './modules/schematic/SchematicPage'
-import { ChevronDown } from 'lucide-react'
+import { Check, ChevronDown, UserRound } from 'lucide-react'
 import './App.css'
 import printflowIcon from './assets/printflow-icon.png'
 import { SOFTWARE_ACCOUNT_NAME } from './config/account'
 import { loadProductConfigs } from './modules/schematic/services/productConfigService'
+import UpdateButton from './modules/update/UpdateButton'
 const modules = [orderModule, imageEditModule, schematicModule, impositionModule, progressModule]
 // React StrictMode mounts effects twice in development. Keep the startup
 // refresh single-flight so two 9 MB responses cannot overlap and double the
@@ -16,6 +17,8 @@ let startupProductConfigRefresh: Promise<void> | undefined
 export default function App() {
   const [notice, noticeContext] = message.useMessage()
   const [active, setActive] = useState('schematic')
+  const [accountName, setAccountName] = useState(() => localStorage.getItem('printflow-account-name') || SOFTWARE_ACCOUNT_NAME)
+  const [draftAccountName, setDraftAccountName] = useState(accountName)
   useEffect(() => {
     if (!isTauri()) return
     const key = 'product-config-startup'
@@ -28,7 +31,8 @@ export default function App() {
       console.warn('产品配置接口请求失败，继续使用本地缓存', error)
     })
   }, [notice])
-  return <>{noticeContext}<div className="app-shell"><header className="topbar"><div className="brand"><div className="brand-mark"><img src={printflowIcon} alt="PrintFlow" /></div><span>PrintFlow</span></div><nav className="workflow">{modules.map(module => <button key={module.id} className={active === module.id ? 'active' : ''} onClick={() => setActive(module.id)}>{module.label}</button>)}</nav><button className="user-menu"><span className="avatar">{SOFTWARE_ACCOUNT_NAME.slice(0, 1)}</span><span>{SOFTWARE_ACCOUNT_NAME}</span><ChevronDown size={14}/></button></header>{active === 'schematic' && <SchematicPage />}</div></>
+  const userMenu = <div className="account-popover"><div className="account-popover-title"><UserRound size={16}/>用户信息</div><label>用户名<Input size="small" value={draftAccountName} maxLength={30} onChange={event => setDraftAccountName(event.target.value)} onPressEnter={() => { const value = draftAccountName.trim(); if (value) { localStorage.setItem('printflow-account-name', value); setAccountName(value); message.success('用户名已保存') } }}/></label><Button type="primary" size="small" icon={<Check size={14}/>} onClick={() => { const value = draftAccountName.trim(); if (value) { localStorage.setItem('printflow-account-name', value); setAccountName(value); message.success('用户名已保存') } }}>保存</Button><UpdateButton /></div>
+  return <>{noticeContext}<div className="app-shell"><header className="topbar"><div className="brand"><div className="brand-mark"><img src={printflowIcon} alt="PrintFlow" /></div><span>PrintFlow</span></div><nav className="workflow">{modules.map(module => <button key={module.id} className={active === module.id ? 'active' : ''} onClick={() => setActive(module.id)}>{module.label}</button>)}</nav><div className="topbar-actions"><UpdateButton autoCheck showButton={false} /><Dropdown trigger={['click']} dropdownRender={() => userMenu}><button className="user-menu"><span className="avatar">{accountName.slice(0, 1)}</span><span>{accountName}</span><ChevronDown size={14}/></button></Dropdown></div></header>{active === 'schematic' && <SchematicPage />}</div></>
 }
 
 

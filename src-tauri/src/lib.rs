@@ -892,6 +892,8 @@ pub fn run() {
     let _ = fs::create_dir_all(&log_dir);
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_log::Builder::new().targets([
             Target::new(TargetKind::Stdout),
             Target::new(TargetKind::Folder { path: log_dir, file_name: Some("printflow.log".into()) }),

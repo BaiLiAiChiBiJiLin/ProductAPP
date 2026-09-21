@@ -28,6 +28,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "resources": {
       "../printflow-data/cache/finish.json": "printflow-data/cache/finish.json"
@@ -41,6 +42,14 @@
     ],
     "android": {
       "debugApplicationIdSuffix": ".debug"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUxRDJGNjExRUZFMzNDQ0UKUldUT1BPUHZFZmJTVWZTaGw5SzRXeVc2UW4yRWIwM0VRTDhEUjY3eHU2Y3Q1b2p1UUQxUkRsU3IK",
+      "endpoints": [
+        "https://github.com/BaiLiAiChiBiJiLin/ProductAPP/releases/latest/download/latest.json"
+      ]
     }
   }
 }
