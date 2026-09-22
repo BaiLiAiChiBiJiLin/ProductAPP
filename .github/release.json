@@ -1,4 +1,4 @@
 {
-  "version": "0.1.5",
-  "notes": "自动构建并发布 PrintFlow 更新包。"
+  "version": "0.1.6",
+  "notes": "# 更新简介\r\n- 处理导出pdf出现图片丢失，配件图过小问题"
 }

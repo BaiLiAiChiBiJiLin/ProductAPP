@@ -1,4 +1,5 @@
 import type { Page } from '../../../model.ts'
+import { resolveRemoteImage } from './remoteImageService.ts'
 
 const sizes = new Map<string, { width: number; height: number }>()
 type Crop = { x: number; y: number; width: number; height: number }
@@ -57,21 +58,22 @@ export function accessoryFrame(src: string, x: number, y: number, size: number, 
 export async function prepareAccessoryFrames(pages: Page[], onProgress?: (completed: number, total: number) => void) {
   const sources = [...new Set(pages.flatMap(page => (page.imageGroups ?? []).flatMap(group =>
     [group.details, ...(group.detailGroups ?? []).map(panel => panel.details)].flatMap(details => details?.accessoryImage ? [details.accessoryImage] : []))))]
-    .filter(src => !sizes.has(src))
+    .filter(src => !crops.has(src))
   let index = 0
   let completed = 0
   onProgress?.(0, sources.length)
   await Promise.all(Array.from({ length: Math.min(4, sources.length) }, async () => {
     while (index < sources.length) {
       const src = sources[index++]
-      await new Promise<void>(resolve => {
+      const resolved = await resolveRemoteImage(src)
+      await new Promise<void>((resolve, reject) => {
         const image = new Image()
         const done = () => { clearTimeout(timer); image.onload = null; image.onerror = null; resolve() }
-        const timer = setTimeout(done, 10000)
+        const timer = setTimeout(() => { image.onload = null; image.onerror = null; reject(new Error('配件图片加载超时，请重试导出')) }, 10000)
         image.crossOrigin = 'anonymous'
         image.onload = () => { rememberAccessoryImage(src, image); done() }
-        image.onerror = done
-        image.src = src
+        image.onerror = () => { clearTimeout(timer); image.onload = null; image.onerror = null; reject(new Error('配件图片加载失败，无法确认导出裁剪尺寸')) }
+        image.src = resolved
       })
       onProgress?.(++completed, sources.length)
     }

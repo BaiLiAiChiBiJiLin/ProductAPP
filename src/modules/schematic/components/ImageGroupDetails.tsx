@@ -11,45 +11,34 @@ const imageCache = new Map<string, HTMLImageElement>()
 
 function AccessoryImage({ src, x, y, width, height, code, framed = false }: { src: string; x: number; y: number; width: number; height: number; code?: string; framed?: boolean }) {
   const [image, setImage] = useState<HTMLImageElement>()
-  const [resolvedSrc, setResolvedSrc] = useState(src)
   useEffect(() => {
     let cancelled = false
-    setImage(undefined)
-    resolveRemoteImage(src).then(value => { if (!cancelled) setResolvedSrc(value) }).catch(() => { if (!cancelled) setResolvedSrc(src) })
-    return () => { cancelled = true }
-  }, [src])
-  useEffect(() => {
-    const cached = imageCache.get(resolvedSrc)
-    if (cached) { rememberAccessoryImage(resolvedSrc, cached); setImage(cached); return }
-    let cancelled = false
-    let attempt = 0
     let element: HTMLImageElement | undefined
-    // Product configuration stores remote accessory URLs. Try a CORS-safe
-    // image first (needed by export), then retry without the attribute so a
-    // browser can still display servers that do not send CORS headers.
-    const load = () => {
+    setImage(undefined)
+    const load = async () => {
+      const resolved = await resolveRemoteImage(src)
+      if (cancelled) return
+      const cached = imageCache.get(resolved)
+      if (cached) { rememberAccessoryImage(src, cached); setImage(cached); return }
       element = new window.Image()
-      if (attempt === 0) element.crossOrigin = 'anonymous'
+      element.crossOrigin = 'anonymous'
       element.onload = () => {
         if (!cancelled && element) {
-          // Calculate the visible crop before the first paint. Otherwise the
-          // accessory briefly uses its full source canvas and the white
-          // backing can become the cached geometry for this panel.
-          rememberAccessoryImage(resolvedSrc, element)
-          imageCache.set(resolvedSrc, element)
+          rememberAccessoryImage(src, element)
+          imageCache.set(resolved, element)
           setImage(element)
         }
       }
-      element.onerror = () => { if (!cancelled && attempt === 0) { attempt = 1; load() } }
-      element.src = resolvedSrc
+      element.onerror = () => { if (!cancelled) console.warn('配件或备注图片解码失败') }
+      element.src = resolved
     }
-    load()
+    void load().catch(error => { if (!cancelled) console.warn('配件或备注图片加载失败', error) })
     return () => { cancelled = true; if (element) { element.onload = null; element.onerror = null } }
-  }, [resolvedSrc])
+  }, [src])
   if (!image) return null
-  if (framed) rememberAccessoryImage(resolvedSrc, image)
+  if (framed) rememberAccessoryImage(src, image)
   if (framed) {
-    const frame = accessoryFrame(resolvedSrc, x, y, width, code)
+    const frame = accessoryFrame(src, x, y, width, code)
     return <Group listening={false}>
       <Rect x={frame.x} y={frame.y} width={frame.frameWidth} height={frame.frameHeight} fill="#fff" cornerRadius={1}/>
       <KonvaImage image={image} crop={frame.crop} x={frame.imageX} y={frame.imageY} width={frame.width} height={frame.height}/>

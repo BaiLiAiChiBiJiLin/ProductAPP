@@ -38,6 +38,7 @@ fn database(app: &tauri::AppHandle) -> Result<Connection, String> {
 
 fn flatten_embedded_svg_images(mut svg: String) -> Result<String, String> {
     let marker = "data:image/svg+xml;base64,";
+    let mut instance = 0;
     loop {
         let Some(marker_pos_global) = svg.find(marker) else { break };
         let image_start = svg[..marker_pos_global].rfind("<image").ok_or("SVG 图片资源缺少 image 标签")?;
@@ -48,6 +49,16 @@ fn flatten_embedded_svg_images(mut svg: String) -> Result<String, String> {
         let encoded_end = tag[encoded_start..].find(['"', '\'', ')', ' ']).map(|i| encoded_start + i).unwrap_or(tag.len());
         let inner_svg = String::from_utf8(base64::engine::general_purpose::STANDARD.decode(&tag[encoded_start..encoded_end]).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
         let inner_svg = flatten_embedded_svg_images(inner_svg)?;
+        // Each embedded image is an isolated SVG document. Resolve its CSS,
+        // root transforms and resource references before combining documents;
+        // repeated CorelDRAW clip IDs must never bind to a sibling artwork.
+        let tree = usvg::Tree::from_str(&inner_svg, &assets::export_options()?)
+            .map_err(|error| format!("嵌入 SVG 解析失败：{error}"))?;
+        let inner_svg = tree.to_string(&usvg::WriteOptions {
+            id_prefix: Some(format!("pf_embed_{instance}_")),
+            ..Default::default()
+        });
+        instance += 1;
         // A valid viewBox already defines the coordinate system. Parsing the
         // complete artwork here decodes embedded images again for every copy.
         let view_box = if let Some(view_box) = embedded_svg_view_box(&inner_svg) { view_box } else {
@@ -199,7 +210,7 @@ mod export_tests {
         assert!(!flattened.contains("DOCTYPE"));
         assert!(!flattened.contains("<?xml"));
         let parsed = roxmltree::Document::parse(&flattened).unwrap();
-        assert!(parsed.descendants().any(|node| node.has_tag_name("use") && node.attribute(("http://www.w3.org/1999/xlink", "href")) == Some("#shape")));
+        assert!(parsed.descendants().any(|node| node.has_tag_name("path")));
         let tree = usvg::Tree::from_str(&flattened, &usvg::Options::default()).unwrap();
         assert!(!tree.root().children().is_empty());
     }
@@ -238,8 +249,32 @@ mod export_tests {
         let encoded = base64::engine::general_purpose::STANDARD.encode(inner);
         let page = format!(r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><image x="5" y="6" width="20" height="20" href="data:image/svg+xml;base64,{encoded}"/></svg>"#);
         let flattened = flatten_embedded_svg_images(page).unwrap();
-        assert!(flattened.contains("<circle"));
+        assert!(flattened.contains("<path"));
         assert!(!flattened.contains("data:image/svg+xml"));
+    }
+
+    #[test]
+    fn repeated_clip_ids_preserve_independent_artwork_pixels() {
+        let first = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><clipPath id="clip"><rect x="10" y="10" width="30" height="80"/></clipPath></defs><rect width="100" height="100" fill="red" clip-path="url(#clip)"/></svg>"##;
+        let second = first.replace("x=\"10\"", "x=\"60\"").replace("fill=\"red\"", "fill=\"blue\"");
+        let page = format!(r#"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100"><image width="100" height="100" href="data:image/svg+xml;base64,{}"/><image x="100" width="100" height="100" href="data:image/svg+xml;base64,{}"/></svg>"#,
+            base64::engine::general_purpose::STANDARD.encode(first), base64::engine::general_purpose::STANDARD.encode(second));
+        let render = |source: &str| {
+            let tree = usvg::Tree::from_str(source, &usvg::Options::default()).unwrap();
+            let mut pixmap = tiny_skia::Pixmap::new(200, 100).unwrap();
+            resvg::render(&tree, tiny_skia::Transform::identity(), &mut pixmap.as_mut());
+            pixmap
+        };
+        let original = render(&page);
+        let flattened = flatten_embedded_svg_images(page).unwrap();
+        let result = render(&flattened);
+        assert_eq!(original.data(), result.data(), "embedded SVG clip resources leaked across artwork");
+        let dir = std::path::Path::new("../.test-output/pdf-resource-regression");
+        std::fs::create_dir_all(dir).unwrap();
+        original.save_png(dir.join("reference.png")).unwrap();
+        let tree = usvg::Tree::from_str(&flattened, &usvg::Options::default()).unwrap();
+        let pdf = svg2pdf::to_pdf(&tree, Default::default(), Default::default()).unwrap();
+        std::fs::write(dir.join("verified.pdf"), pdf).unwrap();
     }
 
     #[test]
