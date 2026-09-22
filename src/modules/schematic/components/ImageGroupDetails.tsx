@@ -5,14 +5,22 @@ import { imageDetailsLayout } from '../services/imageDetailsLayoutService'
 import { detailPanelsForGroup } from '../arrangement/productGroupDetails'
 import { finishLabel } from '../services/finishLabelService'
 import { accessoryFrame, rememberAccessoryImage } from '../services/accessoryFrameService'
+import { resolveRemoteImage } from '../services/remoteImageService'
 
 const imageCache = new Map<string, HTMLImageElement>()
 
 function AccessoryImage({ src, x, y, width, height, code, framed = false }: { src: string; x: number; y: number; width: number; height: number; code?: string; framed?: boolean }) {
   const [image, setImage] = useState<HTMLImageElement>()
+  const [resolvedSrc, setResolvedSrc] = useState(src)
   useEffect(() => {
-    const cached = imageCache.get(src)
-    if (cached) { setImage(cached); return }
+    let cancelled = false
+    setImage(undefined)
+    resolveRemoteImage(src).then(value => { if (!cancelled) setResolvedSrc(value) }).catch(() => { if (!cancelled) setResolvedSrc(src) })
+    return () => { cancelled = true }
+  }, [src])
+  useEffect(() => {
+    const cached = imageCache.get(resolvedSrc)
+    if (cached) { rememberAccessoryImage(resolvedSrc, cached); setImage(cached); return }
     let cancelled = false
     let attempt = 0
     let element: HTMLImageElement | undefined
@@ -22,17 +30,26 @@ function AccessoryImage({ src, x, y, width, height, code, framed = false }: { sr
     const load = () => {
       element = new window.Image()
       if (attempt === 0) element.crossOrigin = 'anonymous'
-      element.onload = () => { if (!cancelled && element) { imageCache.set(src, element); setImage(element) } }
+      element.onload = () => {
+        if (!cancelled && element) {
+          // Calculate the visible crop before the first paint. Otherwise the
+          // accessory briefly uses its full source canvas and the white
+          // backing can become the cached geometry for this panel.
+          rememberAccessoryImage(resolvedSrc, element)
+          imageCache.set(resolvedSrc, element)
+          setImage(element)
+        }
+      }
       element.onerror = () => { if (!cancelled && attempt === 0) { attempt = 1; load() } }
-      element.src = src
+      element.src = resolvedSrc
     }
     load()
     return () => { cancelled = true; if (element) { element.onload = null; element.onerror = null } }
-  }, [src])
+  }, [resolvedSrc])
   if (!image) return null
-  if (framed) rememberAccessoryImage(src, image)
+  if (framed) rememberAccessoryImage(resolvedSrc, image)
   if (framed) {
-    const frame = accessoryFrame(src, x, y, width, code)
+    const frame = accessoryFrame(resolvedSrc, x, y, width, code)
     return <Group listening={false}>
       <Rect x={frame.x} y={frame.y} width={frame.frameWidth} height={frame.frameHeight} fill="#fff" cornerRadius={1}/>
       <KonvaImage image={image} crop={frame.crop} x={frame.imageX} y={frame.imageY} width={frame.width} height={frame.height}/>
@@ -57,7 +74,7 @@ function DetailsPanel({ group }: { group: ImageGroup }) {
   return <Group x={x} y={y} listening={false}>
     {fields.map((field, index) => <Text key={field.key} y={index * line} text={field.text} width={width} height={line} fontSize={Math.min(fontSize, field.fontSize ?? fontSize)} wrap="none" fontStyle="bold" fill="#475569" ellipsis/>)}
     {details.accessoryImage && <AccessoryImage src={details.accessoryImage} x={0} y={bodyY - y} width={imageSize} height={imageSize} code={details.accessoryCode} framed/>}
-    {noteLines.map((value, index) => <Text key={`note-${index}`} x={noteX - x} y={noteY - y + index * noteLine} text={value} width={noteWidth} height={noteLine} fontSize={noteFontSize} fill="#475569" ellipsis/>)}
-    {details.noteImage && noteImageSize > 0 && <AccessoryImage src={details.noteImage} x={noteX - x} y={noteImageY - y} width={noteImageSize} height={noteImageSize}/>} 
+    {noteLines.map((value, index) => <Text key={`note-${index}`} x={noteX - x} y={noteY - y + index * noteLine} text={value} width={noteWidth} align="center" height={noteLine} fontSize={noteFontSize} fill="#475569" ellipsis/>)}
+    {details.noteImage && noteImageSize > 0 && <AccessoryImage src={details.noteImage} x={noteX - x + (noteWidth - noteImageSize) / 2} y={noteImageY - y} width={noteImageSize} height={noteImageSize}/>} 
   </Group>
 }

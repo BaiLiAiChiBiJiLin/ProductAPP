@@ -150,9 +150,10 @@ export function imageDimensionMarkerLayout(group: ImageGroup, page: Page, assets
   const labelWidth = Math.max(16, dimension.label.length * 4 + 4)
   const gap = labelWidth / 2 + 3
   if (dimension.horizontal) {
-    const imageAreaRight = group.detailsX ?? group.x + group.width / 2
-    const x1 = clamp(imageLeft, group.x + 4, imageAreaRight - 12)
-    const x2 = clamp(imageRight, x1 + 16, imageAreaRight - 4)
+    // Placement already constrains the artwork to its cell. A ruler measures
+    // those actual edges, including when artwork fills the details boundary.
+    const x1 = imageLeft
+    const x2 = imageRight
     // Keep the label just above the measurement line inside the green image
     // cell. The short extension lines then reach the actual artwork edge.
     const y = Math.max(group.y + 3, imageTop - 2)

@@ -28,3 +28,23 @@ test('landscape accessory with no code has exactly four extra units on each dime
   assert.equal(frame.frameWidth, frame.width + 4)
   assert.equal(frame.frameHeight, frame.height + 4)
 })
+test('only accessories that do not trigger wide scaling receive a four-unit top gap', () => {
+  rememberAccessorySize('thin-gap',20,100)
+  const thin=accessoryFrame('thin-gap',0,10,50,'98')
+  assert.equal(thin.imageY,14)
+  assert.equal(thin.height,50)
+  rememberAccessorySize('wide-no-gap',60,100)
+  const wide=accessoryFrame('wide-no-gap',0,10,50,'33')
+  assert.equal(wide.imageY,10+(50-wide.height)/2)
+})
+test('wide accessories use a relative width cap while thin accessories retain their scale', () => {
+  rememberAccessorySize('heart', 60, 100)
+  for (const size of [30, 60, 90]) {
+    const frame = accessoryFrame('heart', 0, 0, size, '33')
+    assert.ok(Math.abs(frame.width - size * 0.4) < 1e-7)
+    assert.ok(Math.abs(frame.width / frame.height - 0.6) < 1e-7)
+    assert.equal(frame.frameWidth, frame.width + 4)
+    rememberAccessorySize('thin', 10, 100)
+    assert.equal(accessoryFrame('thin', 0, 0, size).height, size)
+  }
+})

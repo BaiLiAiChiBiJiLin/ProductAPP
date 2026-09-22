@@ -30,13 +30,23 @@ export function rememberAccessorySize(src: string, width: number, height: number
   if (width > 0 && height > 0) sizes.set(src, { width, height })
 }
 
+export function accessoryTopGap(src: string) {
+  const natural = sizes.get(src)
+  if (!natural) return 0
+  const crop = crops.get(src) ?? natural
+  return crop.width / Math.max(natural.width, natural.height) <= 0.4 ? 4 : 0
+}
+
 /** Two units of white padding on each side of the fitted image and its code. */
 export function accessoryFrame(src: string, x: number, y: number, size: number, code = '') {
   const natural = sizes.get(src) ?? { width: 1, height: 1 }
-  const scale = size / Math.max(natural.width, natural.height)
   const crop = crops.get(src) ?? { x: 0, y: 0, ...natural }
+  // Use a relative width limit so wide accessories shrink consistently at
+  // every canvas zoom; thin accessories keep their existing scale.
+  const fittedScale = size / Math.max(natural.width, natural.height)
+  const scale = Math.min(fittedScale, size * 0.4 / crop.width)
   const width = crop.width * scale, height = crop.height * scale
-  const imageX = x + (size - width) / 2, imageY = y + (size - height) / 2
+  const imageX = x + (size - width) / 2, imageY = y + accessoryTopGap(src) + (size - height) / 2
   const frameWidth = Math.max(width, code.length * 5) + 4
   return { imageX, imageY, width, height, crop, natural, x: x + size / 2 - frameWidth / 2,
     y: imageY - 2, frameWidth, frameHeight: height + (code ? 13 : 0) + 4,

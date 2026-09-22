@@ -11,6 +11,19 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     watch: { ignored: ['**/src-tauri/**', '**/.cargo-target/**', '**/.test-output/**', '**/.npm-cache/**'] },
+    proxy: {
+      '/__printflow_remote': {
+        target: 'https://fakestar-oss.oss-us-west-1.aliyuncs.com',
+        changeOrigin: true,
+        rewrite: (path) => {
+          const raw = path.match(/[?&]url=([^&]+)/)?.[1]
+          if (!raw) return '/'
+          const remote = new URL(decodeURIComponent(raw))
+          if (remote.protocol !== 'https:' && remote.protocol !== 'http:') return '/'
+          return remote.pathname + remote.search
+        },
+      },
+    },
   },
 })
 

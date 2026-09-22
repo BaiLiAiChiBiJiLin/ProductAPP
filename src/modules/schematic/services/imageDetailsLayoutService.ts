@@ -1,5 +1,6 @@
 import { DETAIL_ACCESSORY_SIZE_RATIO, DETAIL_LABEL_FONT_SIZE, DETAIL_LINE_HEIGHT, DETAIL_NOTE_IMAGE_SIZE_RATIO } from '../../../model.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
+import { accessoryTopGap } from './accessoryFrameService.ts'
 
 /** Arial bold advances for the numeric Size label, with a little font fallback slack. */
 export function sizeLabelWidth(label: string, fontSize = DETAIL_LABEL_FONT_SIZE) {
@@ -37,9 +38,15 @@ export function imageDetailsLayout(group: ImageGroup) {
     fields.push({ key: 'qt', text: `QT: ${details.qt || '-'}` })
     if (details.fields) fields.push(...details.fields)
   }
-  const detailsX = group.detailsX ?? group.x + group.width / 2
-  const detailPanelWidth = group.detailWidth ?? group.width / 2
-  const x = detailsX + 4
+  // The details panel belongs to the group's right edge. Older/reflowed
+  // groups may retain a stale detailsX or an oversized detailWidth, so clamp
+  // both values before laying out text and accessory images.
+  const groupRight = group.x + group.width
+  const requestedWidth = group.detailWidth ?? group.width / 2
+  const detailPanelWidth = Math.min(Math.max(1, requestedWidth), Math.max(1, group.width - 1))
+  const requestedX = group.detailsX ?? groupRight - detailPanelWidth
+  const detailsX = Math.max(group.x, Math.min(requestedX, groupRight - detailPanelWidth))
+  const x = Math.min(groupRight - 1, detailsX + 4)
   const y = group.y + 4
   const width = Math.max(1, detailPanelWidth - 8)
   // Product groups may contain longer product names/individual option lists.
@@ -55,7 +62,7 @@ export function imageDetailsLayout(group: ImageGroup) {
   const bodyY = y + fields.length * line
   const bodyHeight = Math.max(0, group.height - 8 - fields.length * line)
   const hasNote = !!details?.note?.trim() || !!details?.noteImage
-  const accessoryExtra = details?.accessoryImage ? (details.accessoryCode ? 14 : 4) : 0
+  const accessoryExtra = details?.accessoryImage ? (details.accessoryCode ? 14 : 4) + accessoryTopGap(details.accessoryImage) : 0
   const desiredAccessorySize = details?.accessoryImage ? Math.min(Math.max(1, width - 4), group.height * DETAIL_ACCESSORY_SIZE_RATIO) : 0
   const besideImageSize = Math.max(0, Math.min(desiredAccessorySize, bodyHeight - accessoryExtra))
   // Leave 4 units between the accessory's white backing and the note column.

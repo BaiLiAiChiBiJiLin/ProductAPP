@@ -1,4 +1,4 @@
 {
-  "version": "0.1.3",
-  "notes": "```markdown\r\n本次更新\r\n- 启动动画过渡\r\n- 上传列表删除按钮\r\n- 自由切换排列方式\r\n```"
+  "version": "0.1.5",
+  "notes": "自动构建并发布 PrintFlow 更新包。"
 }

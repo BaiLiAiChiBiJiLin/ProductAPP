@@ -27,3 +27,12 @@ test('actual export embeds only first image for Back and applies exactly one out
  assert.equal(inner.querySelectorAll('image').length,1);assert.equal(inner.querySelector('image').id,'first')
  assert.doesNotMatch(nested,/scale\(-1/)
 })
+test('standee back can fit its first authored image viewport without changing default back extraction',()=>{
+ const fitted=backLayerSvg(svg,true)
+ const doc=new JSDOM(fitted,{contentType:'image/svg+xml'}).window.document
+ assert.equal(doc.documentElement.getAttribute('viewBox'),'20 30 100 120')
+ const source='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000"><image x="200" y="100" width="300" height="500" href="back.png"/><image x="0" y="0" width="1000" height="1000" href="front.png"/></svg>'
+ const cropped=backLayerSvg(source,true)
+ assert.match(cropped,/viewBox="200 100 300 500"/)
+ assert.equal((cropped.match(/<image\b/g) ?? []).length,1)
+})

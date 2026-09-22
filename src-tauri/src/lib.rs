@@ -21,6 +21,7 @@ const PRODUCT_CONFIGS_URL: &str = "https://edit.feykan.com/apps/keychain-designe
 // responses before collecting them in memory; this prevents a bad/proxy
 // response from making reqwest reserve hundreds of megabytes at startup.
 const MAX_PRODUCT_CONFIG_BYTES: usize = 32 * 1024 * 1024;
+const MAX_REMOTE_IMAGE_BYTES: usize = 12 * 1024 * 1024;
 
 fn database(app: &tauri::AppHandle) -> Result<Connection, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
@@ -544,6 +545,30 @@ async fn delete_asset(app: tauri::AppHandle, id: String, batch_id: Option<String
     }).await.map_err(|e| e.to_string())?
 }
 
+/// Fetch remote catalog images inside the desktop process. WebView image
+/// requests are subject to the source server's CORS policy; returning a data
+/// URL makes the same image available to Konva and the SVG/PDF exporter.
+#[tauri::command]
+async fn fetch_remote_image(url: String) -> Result<String, String> {
+    let parsed = reqwest::Url::parse(&url).map_err(|_| "远程图片地址无效".to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https") { return Err("远程图片只支持 HTTP/HTTPS".into()); }
+    tauri::async_runtime::spawn_blocking(move || {
+        let client = reqwest::blocking::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_secs(20))
+            .build().map_err(|e| format!("远程图片客户端初始化失败：{e}"))?;
+        let response = client.get(parsed).send().map_err(|e| format!("远程图片读取失败：{e}"))?;
+        if !response.status().is_success() { return Err(format!("远程图片返回 HTTP {}", response.status())); }
+        if response.content_length().is_some_and(|size| size > MAX_REMOTE_IMAGE_BYTES as u64) { return Err("远程图片超过 12 MB 限制".into()); }
+        let content_type = response.headers().get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()).and_then(|value| value.split(';').next())
+            .filter(|value| value.starts_with("image/")).unwrap_or("image/png").to_string();
+        let bytes = response.bytes().map_err(|e| format!("远程图片读取失败：{e}"))?;
+        if bytes.len() > MAX_REMOTE_IMAGE_BYTES { return Err("远程图片超过 12 MB 限制".into()); }
+        Ok(format!("data:{content_type};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
+    }).await.map_err(|e| e.to_string())?
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct BatchMetadata {
@@ -923,7 +948,7 @@ pub fn run() {
             Target::new(TargetKind::Folder { path: log_dir, file_name: Some("printflow.log".into()) }),
         ]).build())
         .setup(|_app| Ok(()))
-        .invoke_handler(tauri::generate_handler![import_assets, load_workspace, save_workspace, delete_asset, save_batch, persist_batch_assets, discard_temp_assets, list_batches, load_batch, delete_batch, export_artwork, export_pdf, stage_pdf_page, clear_pdf_pages, export_staged_pdf, load_product_configs, load_finish_names, refresh_product_configs, custom_products::list_custom_products, custom_products::save_custom_product, custom_products::import_custom_product_image, coreldraw::open_with_coreldraw])
+        .invoke_handler(tauri::generate_handler![import_assets, load_workspace, save_workspace, delete_asset, save_batch, persist_batch_assets, discard_temp_assets, list_batches, load_batch, delete_batch, export_artwork, export_pdf, stage_pdf_page, clear_pdf_pages, export_staged_pdf, load_product_configs, fetch_remote_image, load_finish_names, refresh_product_configs, custom_products::list_custom_products, custom_products::save_custom_product, custom_products::import_custom_product_image, coreldraw::open_with_coreldraw])
         .run(tauri::generate_context!()).expect("error while running tauri application");
 }
 

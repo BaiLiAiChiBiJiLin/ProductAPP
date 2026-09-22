@@ -1,10 +1,40 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { paginateAssets } from '../src/modules/schematic/services/paginationService.ts'
+import { paginateAssets, autoArrangePages } from '../src/modules/schematic/services/paginationService.ts'
 import { dimensionGroups, imageDimensionMarkerLayout, dimensionForItem, physicalSourceSize } from '../src/modules/schematic/services/imageDimensionService.ts'
 
 import { defaultLayoutBounds, GROUP_GAP, PAPER_HEIGHT, PAPER_WIDTH, pageSvg } from '../src/model.ts'
+import { imageDetailsLayout } from '../src/modules/schematic/services/imageDetailsLayoutService.ts'
 const asset = (id, productName = 'Keychains', attributes = {}, productGroupId = '') => ({ id, name: id, productId: productName, productName, width: 100, height: 120, svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 120"><rect width="100" height="120" fill="red"/></svg>', previewUrl: '', thumbnailUrl: '', attributes, productGroupId })
+
+test('photo holder roles share a longest edge and no member is enlarged', () => {
+ for (const name of ['Photocard Holders','照片夹']) {
+  const sources=['Example','Front','Inside','Back','extra'].map((id,i)=>({...asset(id,name,{},'holder'),width:300-i*30,height:60,sourceGroupWidthMm:75-i*7.5,sourceGroupHeightMm:15}))
+  const [page]=paginateAssets(sources)
+  const roles=page.items.slice(0,4)
+  const group=page.imageGroups[0]
+  for(const [index,item] of roles.slice(1).entries()) {
+   const cell=group.imageCells.find(c=>c.itemId===item.id)
+   assert.equal(cell.width,group.width/3)
+   assert.ok(Math.abs(item.x-(group.x+(index+0.5)*group.width/3))<1e-7)
+   assert.ok(group.y+group.detailsHeight<=cell.y+1e-7)
+  }
+  for(const item of roles) assert.ok(Math.abs(Math.max(item.w,item.h)-Math.max(roles[0].w,roles[0].h))<1e-7)
+  for(const item of page.items) {
+   const source=sources.find(s=>s.id===item.assetId)
+   assert.ok(item.w<=source.sourceGroupWidthMm*PAPER_WIDTH/210+1e-7)
+   assert.ok(Math.abs(item.w/item.h-source.width/source.height)<1e-7)
+  }
+ }
+})
+test('vertical different-design pair with Finish uses identical front and back dimensions', () => {
+ const source={...asset('pair','Keychains',{'Print Option':'Double Sided Different Design',Finish:'Epoxy'}),width:80,height:140}
+ const [page]=paginateAssets([source])
+ const [front,back]=page.items
+ assert.equal(front.w,back.w);assert.equal(front.h,back.h)
+ const group=page.imageGroups[0]
+ assert.ok(back.y+back.h/2<=group.y+group.height-16+1e-7)
+})
 
 test('Finish overlays a single line without changing group height or pagination', () => {
  const assets = [asset('finish', 'Keychains', { Finish: 'Epoxy' })]
@@ -13,9 +43,26 @@ test('Finish overlays a single line without changing group height or pagination'
  const item = page.items[0]
  const [plain] = paginateAssets([asset('finish', 'Keychains')], 1000)
  assert.equal(group.height, plain.imageGroups[0].height)
- assert.equal(item.y, plain.items[0].y)
+ assert.ok(item.y < plain.items[0].y)
+ assert.ok(item.y + item.h / 2 <= group.y + group.height - 16 + 1e-7)
  const svg = pageSvg(page, new Map(assets.map(asset => [asset.id, asset])))
  assert.match(svg, /text-anchor="end"[^>]*font-size="10"[^>]*fill="#ff4d4f">Epoxy/)
+})
+test('a group with one image centers the artwork vertically inside its image cell', () => {
+ const source = { ...asset('single-center'), width: 100, height: 45 }
+ const [page] = paginateAssets([source])
+ const group = page.imageGroups[0], item = page.items[0], cell = group.imageCells[0]
+ const top = 14, bottom = 14
+ assert.ok(Math.abs(item.y - (cell.y + (cell.height + top - bottom) / 2)) < 1e-7)
+ assert.ok(item.y - item.h / 2 >= cell.y + top - 1e-7)
+ assert.ok(item.y + item.h / 2 <= cell.y + cell.height - bottom + 1e-7)
+})
+test('image properties clamp to the group right edge when an old layout has stale detail geometry', () => {
+ const group={...asset('details'),x:100,y:20,width:180,height:120,detailsX:70,detailWidth:240,details:{size:'50 mm',qt:'1',finish:'',fields:[]}}
+ const layout=imageDetailsLayout(group)
+ assert.ok(layout.x >= group.x)
+ assert.ok(layout.x + layout.width <= group.x + group.width + 1e-7)
+ assert.equal(layout.width,Math.max(1,group.width-1-8))
 })
 test('v2 ordinary arrangement uses three columns and fits proportionally within each image cell', () => {
  const assets = Array.from({length: 20}, (_,i) => asset(String(i)))
@@ -29,12 +76,16 @@ test('wide artwork fills available width while ruler and physical label stay ins
  const source = { ...asset('wide'), width: 20, height: 10, sourceGroupWidthMm: 5, sourceGroupHeightMm: 2.5 }
  const [page] = paginateAssets([source])
  const item = page.items[0], cell = page.imageGroups[0].imageCells[0]
- assert.ok(Math.abs(item.w - (cell.width - 9)) < 1e-7)
+ assert.ok(Math.abs(item.w - (cell.width - 4)) < 1e-7)
+ assert.ok(Math.abs(item.x + item.w / 2 - page.imageGroups[0].detailsX) < 1e-7)
  assert.equal(item.w / item.h, 2)
  assert.ok(item.w > 5 * PAPER_WIDTH / 210)
  const marker = imageDimensionMarkerLayout(dimensionGroups(page)[0], page, new Map([[source.id, source]]))
  assert.equal(marker.label, '5 mm')
  assert.ok(marker.x1 >= cell.x && marker.x2 <= cell.x + cell.width)
+ assert.equal(marker.x1,item.x-item.w/2)
+ assert.equal(marker.x2,item.x+item.w/2)
+ assert.equal(marker.extension[1][0],item.x+item.w/2)
  assert.ok(marker.textY - 7 >= cell.y)
  assert.equal(source.sourceGroupWidthMm, 5)
 })
@@ -56,6 +107,71 @@ test('v2 standees put last base in details and mirror only different-design memb
  const assets = [asset('a','Acrylic Standees',{'Print Option':'Double Sided Different Design'},'g'),asset('b','Acrylic Standees',{},'g'),asset('base','Acrylic Standees',{},'g')]
  const [page]=paginateAssets(assets); const [front,back,other,base]=page.items
  assert.equal(back.y,front.y); assert.ok(back.x>front.x); assert.equal(back.caption,undefined); assert.ok(base.x>=page.imageGroups[0].detailsX); assert.equal(other.derivedFrom,undefined)
+})
+test('different-design standees span two of three base columns with a matching Front/Back header through reordering', () => {
+ const assets=Array.from({length:12},(_,i)=>asset(`stand-${i}`,'Broken Glass Acrylic Standees',{'Print Option':'Double Sided Different Design'}))
+ const columnWidth=(PAPER_WIDTH-defaultLayoutBounds.left-defaultLayoutBounds.right-2*GROUP_GAP)/3
+ let pages=paginateAssets(assets)
+ for(const order of [assets,[...assets].reverse(),assets]) {
+  pages=autoArrangePages(pages,1,order,defaultLayoutBounds)
+  assert.equal(pages.flatMap(p=>p.items).filter(i=>!i.derivedFrom).length,12)
+  for(const page of pages) for(const group of page.imageGroups) {
+   assert.ok(Math.abs(group.width-(2*columnWidth+GROUP_GAP))<1e-7)
+   const header=page.headerBlocks.filter(h=>h.y<group.y).at(-1)
+   assert.ok(header.columns.every(c=>c.imageMode==='front-back'))
+   assert.equal(header.width,group.width)
+   const [front,back]=page.items.filter(i=>group.itemIds.includes(i.id))
+   assert.equal(front.y,back.y);assert.equal(front.w,back.w);assert.equal(front.h,back.h)
+   assert.ok(back.x>front.x);assert.ok(back.suppressRuler)
+   assert.ok(group.x+group.width<=PAPER_WIDTH-defaultLayoutBounds.right+1e-7)
+   for(const other of page.imageGroups.filter(g=>g!==group)) assert.ok(group.x+group.width<=other.x || other.x+other.width<=group.x || group.y+group.height<=other.y || other.y+other.height<=group.y)
+  }
+ }
+})
+test('same-design standees keep three columns and Front/Back headers; a different-design base alone does not widen the group', () => {
+ const assets=Array.from({length:3},(_,i)=>asset(`same-${i}`,'Acrylic Standees',{'Print Option':'Double Sided Same Design'}))
+ const [page]=paginateAssets(assets)
+ assert.equal(page.headerBlocks[0].columns.length,3)
+ assert.ok(page.headerBlocks[0].columns.every(c=>c.imageMode==='front-back'))
+ const [basePage]=paginateAssets([asset('front','Acrylic Standees',{},'g'),asset('base','Acrylic Standees',{'Print Option':'Double Sided Different Design'},'g')])
+ assert.equal(basePage.imageGroups[0].width,page.imageGroups[0].width)
+})
+test('single-column products fill beside two-column standees from this page and later pages without resizing', async () => {
+ const standees=Array.from({length:3},(_,i)=>asset(`wide-${i}`,'Acrylic Standees',{'Print Option':'Double Sided Different Design'}))
+ const singles=Array.from({length:24},(_,i)=>asset(`single-${i}`))
+ const assets=[...standees,...singles]
+ const [reference]=paginateAssets([singles[0]])
+ let pages=paginateAssets(assets)
+ for(let run=0;run<2;run++) {
+  const first=pages[0], wide=first.imageGroups.find(g=>g.id==='group-wide-0')
+  const beside=first.imageGroups.filter(g=>g.x>wide.x+wide.width)
+  assert.ok(beside.length>=3,'right-hand column should fill alongside all three standees')
+  assert.equal(beside[0].y,wide.y)
+  assert.equal(beside[0].itemIds[0],'item-single-0','prefer the earliest available following product')
+  const sideHeader=first.headerBlocks.find(h=>Math.abs(h.x-beside[0].x)<1e-7)
+  assert.equal(sideHeader.columns.length,1);assert.equal(sideHeader.columns[0].imageMode,'photo')
+  assert.equal(sideHeader.width,beside[0].width)
+  const {removeCanvasGroups}=await import('../src/modules/schematic/services/removeCanvasGroups.ts')
+  const afterDelete=removeCanvasGroups(pages,beside.map(g=>g.id))[0]
+  assert.ok(!afterDelete.headerBlocks.some(h=>h.id===sideHeader.id))
+  assert.ok(afterDelete.headerBlocks.some(h=>h.columns[0].imageMode==='front-back'),'deleting side products must preserve the standee header')
+  const {compactPageSections}=await import('../src/modules/schematic/arrangement/backfillPages.ts')
+  const compacted=structuredClone(first)
+  compactPageSections(compacted,defaultLayoutBounds)
+  assert.deepEqual(compacted,first,'side-by-side sections must remain stable on a second compaction')
+  const originals=pages.flatMap(p=>p.items).filter(i=>!i.derivedFrom)
+  assert.equal(originals.length,assets.length);assert.equal(new Set(originals.map(i=>i.assetId)).size,assets.length)
+  for(const page of pages) for(const group of page.imageGroups) {
+   assert.ok(group.x+group.width<=PAPER_WIDTH-defaultLayoutBounds.right+1e-7)
+   assert.ok(group.y+group.height<=PAPER_HEIGHT-defaultLayoutBounds.bottom+1e-7)
+   for(const other of page.imageGroups.filter(g=>g!==group)) assert.ok(group.x+group.width<=other.x+1e-7 || other.x+other.width<=group.x+1e-7 || group.y+group.height<=other.y+1e-7 || other.y+other.height<=group.y+1e-7)
+   for(const header of page.headerBlocks) assert.ok(group.x+group.width<=header.x+1e-7 || header.x+header.width<=group.x+1e-7 || group.y+group.height<=header.y+1e-7 || header.y+26<=group.y+1e-7)
+   for(const item of page.items.filter(i=>group.itemIds.includes(i.id)&&i.assetId.startsWith('single-'))) {
+    assert.equal(item.w,reference.items[0].w);assert.equal(item.h,reference.items[0].h)
+   }
+  }
+  pages=autoArrangePages(pages,1,assets,defaultLayoutBounds)
+ }
 })
 test('v2 chains keep details right and arrange horizontal front/back pairs',()=>{
  const assets=Array.from({length:6},(_,i)=>asset(String(i),'串串',{'Print Option':i%2?'Double Sided Same Design':'Double Sided Different Design'},'g'))

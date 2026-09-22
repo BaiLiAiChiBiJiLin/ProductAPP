@@ -3,6 +3,7 @@ import { detailsForAsset } from '../services/assetDetailsService.ts'
 import { dimensionForItem, physicalSourceSize } from '../services/imageDimensionService.ts'
 import { backLayerSvg } from '../services/svgBackLayerService.ts'
 import { backfillPages } from './backfillPages.ts'
+import { fillFreeRegions } from './freeRegionPacking.ts'
 import { imageDetailsLayout, sizeLabelWidth } from '../services/imageDetailsLayoutService.ts'
 import type { ProductConfig } from '../services/productConfigService.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
@@ -13,7 +14,7 @@ type Unit = { assets: Asset[]; kind: Kind }
 const GAP = GROUP_GAP
 export function productLayoutKind(asset: Asset): Kind {
   const name = `${asset.productName ?? ''} ${asset.productId}`.toLowerCase()
-  if (/photocard holders|shaker|摇摇乐/.test(name)) return 'holder'
+  if (/photocard holders|照片夹|shaker|摇摇乐/.test(name)) return 'holder'
   if (/standees|立牌/.test(name)) return 'standee'
   if (/串串|串联|串連|chained|linked charm|connecting charm/.test(name)) return 'chain'
   return 'ordinary'
@@ -44,17 +45,24 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
   const available = bottom - contentTop
   const pages: Page[] = []
   let page: Page, y = bottom, column = 0, rowHeight = 0
-  let headerColumns = 0
-  const newPage = (columns: number) => {
-    page = { id: pages.length + 1, name: `页面 ${pages.length + 1}`, items: [], imageGroups: [], headerBlocks: [{ id: `header-${pages.length + 1}`, x: area.left, y: area.top, width, auto: true, columns: Array.from({ length: columns }, (_, i) => ({ id: `column-${i}`, imageMode: 'photo', detailLabel: 'Size/QT/Finish/Accessory' })) }] }
-    pages.push(page); headerColumns = columns; y = contentTop; column = 0; rowHeight = 0
+  let headerKey = ''
+  const newPage = (columns: number, sectionWidth: number, imageMode: 'photo' | 'front-back', key: string) => {
+    page = { id: pages.length + 1, name: `页面 ${pages.length + 1}`, items: [], imageGroups: [], headerBlocks: [{ id: `header-${pages.length + 1}`, x: area.left, y: area.top, width: sectionWidth, auto: true, columns: Array.from({ length: columns }, (_, i) => ({ id: `column-${i}`, imageMode, detailLabel: 'Size/QT/Finish/Accessory' })) }] }
+    pages.push(page); headerKey = key; y = contentTop; column = 0; rowHeight = 0
   }
   for (const unit of unitsFor(assets)) {
     const leader = unit.assets[0]
     const shaker = unit.assets.some(asset => /shaker|摇摇乐/i.test(`${asset.productName ?? ''} ${asset.productId}`))
-    const columns = unit.kind === 'holder' ? 1 : unit.kind === 'chain' && unit.assets.some(isDifferentDesign) ? 2 : 3
-    const groupWidth = (width - GAP * (columns - 1)) / columns
-    const detailWidth = Math.max(minimumDetailsWidth, columns === 1 ? Math.min(100, width * 0.24) : 0)
+    // The final member of a multi-member standee is a base, not a front/back pair.
+    const standeePictures = unit.assets.length > 1 ? unit.assets.slice(0, -1) : unit.assets
+    const wideStandee = unit.kind === 'standee' && standeePictures.some(isDifferentDesign)
+    const columns = wideStandee || unit.kind === 'holder' ? 1 : unit.kind === 'chain' && unit.assets.some(isDifferentDesign) ? 2 : 3
+    // Merge exactly two base slots (including their intervening gap), not half a page.
+    const sectionWidth = wideStandee ? 2 * (width - 2 * GAP) / 3 + GAP : width
+    const imageMode = unit.kind === 'standee' ? 'front-back' : 'photo'
+    const sectionKey = `${columns}:${sectionWidth}:${imageMode}`
+    const groupWidth = (sectionWidth - GAP * (columns - 1)) / columns
+    const detailWidth = Math.max(minimumDetailsWidth, unit.kind === 'holder' ? Math.min(100, width * 0.24) : 0)
     if (groupWidth - detailWidth < 36) throw new Error('排列区域过窄，无法同时容纳图片和完整 Size，请增大排列区域宽度。')
     const imageWidth = groupWidth - detailWidth
     const cells: Cell[] = []
@@ -72,7 +80,8 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
         const asset = findRole(name) ?? unit.assets.find(asset => !used.has(asset.id))
         if (!asset || used.has(asset.id)) continue
         used.add(asset.id)
-        cells.push({ asset, x: index * imageWidth / 3, y: firstHeight, width: imageWidth / 3, height: secondHeight, caption: name, ruler: false })
+        const roleRowWidth = shaker ? imageWidth : groupWidth
+        cells.push({ asset, x: index * roleRowWidth / 3, y: firstHeight, width: roleRowWidth / 3, height: secondHeight, caption: name, ruler: false })
       }
       const rest = unit.assets.filter(asset => !used.has(asset.id))
       const columns = Math.max(1, Math.min(5, rest.length)), rows = Math.ceil(rest.length / columns)
@@ -141,20 +150,35 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
     }
     const groupDetails = detailsForAsset(leader, configs)
     groupDetails.finish = [...new Set(unit.assets.map(asset => detailsForAsset(asset, configs).finish).filter(Boolean))].join(' / ')
-    if (pages.length && headerColumns !== columns) {
+    if (pages.length && headerKey !== sectionKey) {
       if (column) { y += rowHeight + GAP; column = 0; rowHeight = 0 }
       if (y + HEADER_BLOCK_HEIGHT + GAP + height <= bottom) {
-        page!.headerBlocks!.push({ id: `header-${pages.length}-${y}`, x: area.left, y, width, auto: true, detailWidth, columns: Array.from({ length: columns }, (_,i) => ({ id: `column-${y}-${i}`, imageMode: 'photo', detailLabel: 'Size/QT/Finish/Accessory' })) })
-        y += HEADER_BLOCK_HEIGHT + GAP; headerColumns = columns
+        page!.headerBlocks!.push({ id: `header-${pages.length}-${y}`, x: area.left, y, width: sectionWidth, auto: true, detailWidth, columns: Array.from({ length: columns }, (_,i) => ({ id: `column-${y}-${i}`, imageMode, detailLabel: 'Size/QT/Finish/Accessory' })) })
+        y += HEADER_BLOCK_HEIGHT + GAP; headerKey = sectionKey
       } else y = bottom
     }
-    if (!pages.length || y + height > bottom + 1e-7) newPage(columns)
+    if (!pages.length || y + height > bottom + 1e-7) newPage(columns, sectionWidth, imageMode, sectionKey)
     page!.headerBlocks!.at(-1)!.detailWidth = detailWidth
     if (height > available + 1e-7) throw new Error('排列区域太小，无法容纳产品组，请增大排列区域。')
     const x = area.left + column * (groupWidth + GAP)
     const group: ImageGroup = { id: `group-${leader.id}`, productGroupId: leader.productGroupId, itemIds: [], x, y, width: groupWidth, height, detailsX: x + imageWidth, detailWidth, details: detailsForAsset(leader, configs), detailsHeight: unit.kind === 'standee' && unit.assets.length > 1 ? height * 0.6 : undefined, imageCells: [] }
     group.details = groupDetails
+    // The full-width role row starts below Example. Keep all property content
+    // in the upper-right panel so accessories/notes cannot cover Back.
+    if (unit.kind === 'holder' && !shaker) group.detailsHeight = height * 0.32
     if (unit.kind === 'chain' && group.details) group.details.sizes = unit.assets.map(asset => ({ itemId: `item-${asset.id}`, label: dimensionForItem(asset, {}).label }))
+    const verticallyCenterSingleImage = cells.length === 1 && !cells[0].back && !cells[0].caption && unit.kind !== 'chain'
+    const photoHolder = unit.kind === 'holder' && !shaker
+    const roleCells = photoHolder ? cells.filter(cell => cell.caption).slice(0, 4) : []
+    // A common longest edge keeps role artwork visually consistent without
+    // distorting aspect ratios or enlarging any source beyond its physical size.
+    const roleLongest = Math.min(...roleCells.map(cell => {
+      const physical = physicalSourceSize(cell.asset)
+      const w = physical.width * PAPER_WIDTH / 210, h = physical.height * PAPER_WIDTH / 210
+      const left = w >= h ? 4 : 13
+      const bottom = groupDetails.finish && cell.y + cell.height >= height - 0.1 ? 16 : 5
+      return Math.max(w, h) * Math.min(1, Math.max(1, cell.width - left - 5) / w, Math.max(1, cell.height - 23 - bottom) / h)
+    }))
     cells.forEach(cell => {
       const physical = physicalSourceSize(cell.asset)
       const originalW = physical.width * PAPER_WIDTH / 210, originalH = physical.height * PAPER_WIDTH / 210
@@ -162,17 +186,27 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       // Horizontal artwork only needs side arrow clearance. The larger left
       // gutter is reserved for vertical measurement text, not every image.
       const left = shaker ? 13 : originalW >= originalH ? 4 : 13
-      const right = 5
-      const bottomPadding = groupDetails.finish && cell.y + cell.height >= height - 0.1 ? 16 : 5
+      // A lone landscape artwork can use the full image column up to the
+      // details boundary; the details renderer already provides text padding.
+      const fillSingleLandscape = verticallyCenterSingleImage && originalW > originalH && !shaker && !chainReference
+      const right = fillSingleLandscape ? 0 : 5
+      // Front and derived Back share the most restrictive bottom clearance.
+      const pairedAtBottom = cells.some(other => other.asset.id === cell.asset.id && other.y + other.height >= height - 0.1)
+      const bottomPadding = groupDetails.finish && pairedAtBottom ? 16 : verticallyCenterSingleImage ? top : 5
       const sourceLongest = Math.max(originalW, originalH)
       const sharedScale = chainReference && sourceLongest > 0
         ? Math.min(1, chainReference * 1.08 * PAPER_WIDTH / 210 / sourceLongest)
-        : shaker ? 1 : Infinity
+        : roleCells.includes(cell) ? Math.min(1, roleLongest / sourceLongest)
+        : unit.kind === 'holder' ? 1 : Infinity
       const scale = Math.min(sharedScale, Math.max(1, cell.width - left - right) / originalW, Math.max(1, cell.height - top - bottomPadding) / originalH)
       const w = originalW * scale, h = originalH * scale
       const sourceId = `item-${cell.asset.id}`
-      const item: Item = { id: cell.back ? `${sourceId}-back` : sourceId, assetId: cell.asset.id, x: x + cell.x + left + (cell.width - left - right) / 2, y: y + cell.y + top + h / 2, w, h, rotation: 0, caption: cell.caption, mirrorX: cell.back, backSvg: cell.back ? backLayerSvg(cell.asset.svg) : undefined, derivedFrom: cell.back ? sourceId : undefined, suppressRuler: cell.ruler === false }
+      const centerY = verticallyCenterSingleImage
+        ? y + cell.y + (cell.height + top - bottomPadding) / 2
+        : y + cell.y + top + h / 2
+      const item: Item = { id: cell.back ? `${sourceId}-back` : sourceId, assetId: cell.asset.id, x: x + cell.x + left + (cell.width - left - right) / 2, y: centerY, w, h, rotation: 0, caption: cell.caption, mirrorX: cell.back, backSvg: cell.back ? backLayerSvg(cell.asset.svg, unit.kind === 'standee') : undefined, derivedFrom: cell.back ? sourceId : undefined, suppressRuler: cell.ruler === false }
       page!.items.push(item); group.itemIds.push(item.id)
+      if (photoHolder && cell.caption && cell.caption !== 'Example') item.x = x + cell.x + cell.width / 2
       group.imageCells!.push({ itemId: item.id, x: x + cell.x, y: y + cell.y, width: cell.width, height: cell.height })
     })
     page!.imageGroups!.push(group)
@@ -180,7 +214,7 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
     column += 1
     if (column >= columns) { y += rowHeight + GAP; column = 0; rowHeight = 0 }
   }
-  return backfillPages(pages, area)
+  return fillFreeRegions(backfillPages(pages, area), area)
 }
 
 
