@@ -2,7 +2,7 @@ import type { Asset } from '../../../model'
 import type { AttributeDraft } from '../services/attributeDraftService'
 import { catalogConfirmationPatch } from '../services/attributeDraftService.ts'
 import type { CustomProduct } from '../services/customProductService'
-import { customProductPatch } from '../services/customProductService.ts'
+import { customProductPatch, customAttributes, customImages } from '../services/customProductService.ts'
 import type { ProductConfig, ProductOptionValue } from '../services/productConfigService'
 import { applyProductAttributePatch, availableOptionValues } from '../services/productOptionRules.ts'
 
@@ -41,6 +41,18 @@ export function groupingTrigger(editor: GroupEditor, products: ProductConfig[]):
 /** Fixed captions used by the first four members of Shaker/Photocard Holder groups. */
 export const fixedGroupSlotLabels = (kind: GroupTrigger['kind']): string[] | null =>
   kind === 'shaker' || kind === 'photo-holder' ? ['Example', 'Front', 'inside', 'Back'] : null
+
+/** Sorting follows the current product, even if the guide began as a free group. */
+export function groupSlotLabels(session: ProductGroupSession, products: ProductConfig[]): string[] | null {
+  if (session.trigger.kind !== 'free') return fixedGroupSlotLabels(session.trigger.kind)
+  for (const id of session.memberIds) {
+    const editor = session.editors[id]
+    const trigger = editor && groupingTrigger(editor, products)
+    const labels = trigger && fixedGroupSlotLabels(trigger.kind)
+    if (labels) return labels
+  }
+  return null
+}
 
 // Only quantity fields are shared. Technique and other parents remain per-image.
 export function sharedOptionNames(leader: GroupEditor, products: ProductConfig[]): Set<string> {
@@ -96,10 +108,32 @@ export function readGroupAssetEditor(asset: Asset): GroupEditor {
 }
 
 export function editorForGroupAsset(asset: Asset, leader: GroupEditor, products: ProductConfig[]): GroupEditor {
-  return inheritGroupIdentity(readGroupAssetEditor(asset), leader, products)
+  return copyEpoxy(inheritGroupIdentity(readGroupAssetEditor(asset), leader, products), leader)
+}
+
+const epoxyKey = 'Epoxy Style'
+const epoxyValues = (editor: GroupEditor) => editor.mode === 'custom'
+  ? [customAttributes(editor.custom)[epoxyKey], customImages(editor.custom)[epoxyKey]]
+  : [editor.draft.attributes[epoxyKey], editor.draft.images[epoxyKey]]
+
+export function copyEpoxy(editor: GroupEditor, source: GroupEditor): GroupEditor {
+  const [value, image] = epoxyValues(source)
+  const patch = { attribute: { key: epoxyKey, value: value ?? '' }, attributeImage: { key: epoxyKey, url: image ?? '' } }
+  const attributes = applyProductAttributePatch({ attributes: editor.mode === 'custom' ? customAttributes(editor.custom) : editor.draft.attributes,
+    attributeImages: editor.mode === 'custom' ? customImages(editor.custom) : editor.draft.images } as Asset, patch)
+  return editor.mode === 'custom' ? { ...editor, custom: { ...editor.custom, attributes: attributes.attributes, attributeImages: attributes.attributeImages } }
+    : { ...editor, draft: { ...editor.draft, attributes: attributes.attributes!, images: attributes.attributeImages! } }
 }
 
 export function updateGroupEditor(session: ProductGroupSession, editor: GroupEditor, products: ProductConfig[]): ProductGroupSession {
+  const before = epoxyValues(session.editors[session.activeId])
+  const after = epoxyValues(editor)
+  const next = updateGroupEditorLocal(session, editor, products)
+  if (before[0] === after[0] && before[1] === after[1]) return next
+  return { ...next, editors: Object.fromEntries(next.memberIds.map(id => [id, copyEpoxy(next.editors[id], editor)])) }
+}
+
+function updateGroupEditorLocal(session: ProductGroupSession, editor: GroupEditor, products: ProductConfig[]): ProductGroupSession {
   const editors = { ...session.editors }
   if (session.trigger.kind === 'free') {
     editors[session.activeId] = editor
@@ -131,9 +165,9 @@ export function newGroupColor(assets: Asset[]): string {
   return palette[Math.floor(Math.random() * palette.length)]
 }
 
-/** Confirm each member's own draft, enforcing only the shared product and piece count. */
+/** Confirm each member's draft with shared identity/count rules and group-wide epoxy. */
 export function confirmGroupEditor(asset: Asset, editor: GroupEditor, leader: GroupEditor, products: ProductConfig[], independent = false): Asset {
-  const fixed = independent ? editor : inheritGroupIdentity(editor, leader, products)
+  const fixed = copyEpoxy(independent ? editor : inheritGroupIdentity(editor, leader, products), leader)
   const product = products.find(item => item.id === fixed.draft.productId)
   // A free group is also useful for images whose attributes have not been
   // selected yet; keep their artwork/group membership and let them be edited

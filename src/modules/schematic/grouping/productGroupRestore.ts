@@ -1,6 +1,6 @@
 import type { Asset } from '../../../model'
 import type { ProductConfig } from '../services/productConfigService'
-import { confirmGroupEditor, groupingTrigger, inheritGroupIdentity, newGroupColor, readGroupAssetEditor, type GroupEditor, type ProductGroupSession } from './productGrouping.ts'
+import { confirmGroupEditor, copyEpoxy, groupingTrigger, inheritGroupIdentity, newGroupColor, readGroupAssetEditor, type GroupEditor, type ProductGroupSession } from './productGrouping.ts'
 import { applyProductAttributePatch, type ProductAttributePatch } from '../services/productOptionRules.ts'
 
 /** Reopen saved membership, including confirmed images, without recruiting unrelated cards. */
@@ -28,7 +28,7 @@ export function restoreProductGroup(assets: Asset[], activeId: string, products:
     leaderId: leader.id, activeId, memberIds: members.some(asset => (asset.productGroupPosition ?? 0) > 0)
       ? members.map(asset => asset.id)
       : [leader.id, ...members.filter(asset => asset.id !== leader.id).map(asset => asset.id)],
-    editors: Object.fromEntries(members.map(asset => [asset.id, asset.id === leader.id ? editor : free ? readEditor(asset) : inheritGroupIdentity(readEditor(asset), editor, products)])),
+    editors: Object.fromEntries(members.map(asset => [asset.id, copyEpoxy(asset.id === leader.id ? editor : free ? readEditor(asset) : inheritGroupIdentity(readEditor(asset), editor, products), editor)])),
     trigger,
   }
 }

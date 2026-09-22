@@ -6,7 +6,7 @@ import { emptyAttributeDraft } from '../services/attributeDraftService'
 import { removeProductGroupMember } from './productGroupRemoval'
 import { restoreProductGroup } from './productGroupRestore'
 import { canSelectGroupAsset, initialGroupAssets } from './productGroupSelection'
-import { applyProductGroup, editorForGroupAsset, groupingTrigger, inheritGroupIdentity, newGroupColor, readGroupAssetEditor, updateGroupEditor, type GroupEditor, type ProductGroupSession } from './productGrouping'
+import { applyProductGroup, copyEpoxy, groupSlotLabels, editorForGroupAsset, groupingTrigger, inheritGroupIdentity, newGroupColor, readGroupAssetEditor, updateGroupEditor, type GroupEditor, type ProductGroupSession } from './productGrouping'
 
 type Props = { assets: Asset[]; products: ProductConfig[]; save: (assets: Asset[]) => Promise<void>; activate: (id: string | null, memberIds?: string[]) => void; revealAll: () => void }
 export function useProductGrouping({ assets, products, save, activate, revealAll }: Props) {
@@ -31,6 +31,7 @@ export function useProductGrouping({ assets, products, save, activate, revealAll
     for (const id of memberIds) editors[id] = id === leader.id ? editor : manual
       ? readGroupAssetEditor(assets.find(asset => asset.id === id)!)
       : drafts.current[id] ? inheritGroupIdentity(drafts.current[id], editor, products) : editorForGroupAsset(assets.find(asset => asset.id === id)!, editor, products)
+    for (const id of memberIds) editors[id] = copyEpoxy(editors[id], editors[leader.id])
     dirty.current = new Set(memberIds)
     const reuseGroup = leader.productGroupId && !assets.some(asset => asset.productGroupId === leader.productGroupId && !memberIds.includes(asset.id))
     commit({ id: reuseGroup ? leader.productGroupId! : crypto.randomUUID(), color: reuseGroup && leader.productGroupColor || newGroupColor(assets), leaderId: leader.id, activeId: leader.id, memberIds, editors, trigger })
@@ -43,7 +44,7 @@ export function useProductGrouping({ assets, products, save, activate, revealAll
     const exists = group.memberIds.includes(id)
     if (!exists) dirty.current.add(id)
     commit({ ...group, activeId: id, memberIds: exists ? group.memberIds : [...group.memberIds, id],
-      editors: exists ? group.editors : { ...group.editors, [id]: group.trigger.kind === 'free' ? readGroupAssetEditor(asset) : editorForGroupAsset(asset, group.editors[group.leaderId], products) } })
+      editors: exists ? group.editors : { ...group.editors, [id]: copyEpoxy(group.trigger.kind === 'free' ? readGroupAssetEditor(asset) : editorForGroupAsset(asset, group.editors[group.leaderId], products), group.editors[group.leaderId]) } })
     setError(''); activate(id)
   }
   const reorderMembers = (fromId: string, toId: string) => {
@@ -132,7 +133,7 @@ export function useProductGrouping({ assets, products, save, activate, revealAll
   }
   const isPending = (id: string) => Boolean(drafts.current[id]) || Boolean(current.current && dirty.current.has(id))
   const clearDrafts = (ids: string[]) => ids.forEach(id => { delete drafts.current[id]; delete clearedEditors.current[id] })
-  return { session, saving, removingId, error, start, resumeGroup, selectMember, reorderMembers, removeMember, updateEditor, persist, cancelGuide, reset, readDraft, rememberDraft, isPending, clearDrafts }
+  return { session, slotLabels: session ? groupSlotLabels(session, products) : null, saving, removingId, error, start, resumeGroup, selectMember, reorderMembers, removeMember, updateEditor, persist, cancelGuide, reset, readDraft, rememberDraft, isPending, clearDrafts }
 }
 
 export type ProductGroupingController = ReturnType<typeof useProductGrouping>

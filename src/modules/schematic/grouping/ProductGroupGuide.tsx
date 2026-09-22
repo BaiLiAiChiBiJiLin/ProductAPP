@@ -5,7 +5,6 @@ import { Trash2 } from 'lucide-react'
 import Loading from '../../../components/Loading'
 import LazySvgImage from '../components/LazySvgImage'
 import { useProductGroup } from './useProductGrouping'
-import { fixedGroupSlotLabels } from './productGrouping'
 import { orderAssetsByProductGroup } from '../services/productGroupOrdering'
 import './product-grouping.css'
 
@@ -18,7 +17,7 @@ export default function ProductGroupGuide({ assets }: { assets: Asset[] }) {
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
   if (!session) return null
   const orderedAssets = orderAssetsByProductGroup(assets)
-  const fixedSlots = fixedGroupSlotLabels(session.trigger.kind)
+  const fixedSlots = grouping.slotLabels
   const targetAt = (event: ReactPointerEvent<HTMLElement>) => [...event.currentTarget.querySelectorAll<HTMLElement>('[data-group-member-id]')].find(element => {
     const rect = element.getBoundingClientRect()
     return event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom
@@ -49,6 +48,7 @@ export default function ProductGroupGuide({ assets }: { assets: Asset[] }) {
   return <section className="product-group-guide" aria-label="产品分组引导" onPointerMove={handlePointerMove} onPointerUp={finishPointer} onPointerCancel={finishPointer}>
     <strong>{session.trigger.label} · 已加入 {session.memberIds.length} 张图片</strong>
     <p>{session.trigger.kind === 'free' ? '这是自由图片组，可点击暗色图片继续加入，产品和所有属性都可以分别设置。' : fixedSlots ? '点击暗色的未选产品卡片加入组，前四张按固定槽位排列，之后仍可继续添加图片。点击缩略图分别设置属性。' : '点击暗色的未选产品卡片加入组，点击缩略图分别设置属性。'}点击“确认”保存全组各自的属性并退出引导；“保存批次”保存后继续编辑。{session.trigger.kind !== 'free' && '已选产品显示红色，不能加入。'}</p>
+    {fixedSlots && <p>拖动缩略图调整顺序，前四个位置固定为 Example、Front、inside、Back；之后仍可添加图片。</p>}
     <p>“退出引导”或“取消选择”保留已保存内容，放弃本次未保存的修改。</p>
     {session.trigger.count && <p>所选立牌数量：{session.trigger.count} 件，请核对组内图片。</p>}
     <div className="product-group-thumbnails">

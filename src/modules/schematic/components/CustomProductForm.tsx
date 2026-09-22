@@ -1,4 +1,4 @@
-import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
+import { Fragment, useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 import { AutoComplete, Button, InputNumber } from 'antd'
 import Loading from '../../../components/Loading'
 import { customAttributes, customImages, listCustomProducts, loadCustomProductConfig, addCustomProductName, type CustomProductName, type CustomProduct } from '../services/customProductService'
@@ -44,6 +44,9 @@ export default function CustomProductForm({ draft, onDraftChange: setDraft, prod
     const patch = { attribute: { key: name, value }, attributeImage: { key: name, url: image ?? '' }, clearAttributeKeys: dependentOptionNames(catalog?.options ?? [], name) }
     setDraft(current => ({ ...current, attributes: applyAttributeValues(customAttributes(current), patch), attributeImages: applyAttributeImages(customImages(current), patch) }))
   }
+  const quantityField = <label className="product-config-field"><span>QT（数量）</span><InputNumber aria-label="自定义QT（数量）" min={1} max={2147483647} precision={0} value={draft.qt} disabled={saving}
+          onChange={value => setDraft(current => ({ ...current, qt: value ?? 1 }))}/></label>
+  const accessoryIndex = catalog?.options.findIndex(option => option.name === 'Accessories Style') ?? -1
   return <div className="custom-product-editor" aria-label="自定义产品设置">
     {loading ? <Loading size="small" text="正在加载自定义产品…"/> : <>
       <p className="custom-product-hint">下拉可选择本地产品，输入后点击新增可保存到本地</p>
@@ -56,13 +59,13 @@ export default function CustomProductForm({ draft, onDraftChange: setDraft, prod
         <Button loading={saving} disabled={loading || saving || productLocked || nameExists || !draft.name.trim()} onClick={() => void save()}>新增</Button>
       </div>
       <div className="product-config-form custom-product-fields">
-        {catalog?.options.map(option => {
+        {accessoryIndex < 0 && quantityField}
+        {catalog?.options.map((option, index) => {
           const values = availableOptionValues(option, attributes)
-          return values.length ? <ProductOptionField key={option.name} option={option} values={values} value={attributes[option.name]} imageOverride={images[option.name]} disabled={saving}
-            onChange={(value, image) => changeOption(option.name, value, image)}/> : null
+          return <Fragment key={option.name}>{index === accessoryIndex && quantityField}{values.length ? <ProductOptionField option={option} values={values} value={attributes[option.name]} imageOverride={images[option.name]} disabled={saving}
+            onChange={(value, image) => changeOption(option.name, value, image)}/> : null}</Fragment>
         })}
-        <label className="product-config-field"><span>QT（数量）</span><InputNumber aria-label="自定义QT（数量）" min={1} max={2147483647} precision={0} value={draft.qt} disabled={saving}
-          onChange={value => setDraft(current => ({ ...current, qt: value ?? 1 }))}/></label>
+
       </div>
     </>}
     {error && <div className="product-config-error" role="alert">{error}<Button type="link" disabled={saving || loading} onClick={() => setReload(value => value + 1)}>重新读取</Button></div>}

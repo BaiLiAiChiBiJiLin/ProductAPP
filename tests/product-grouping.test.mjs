@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { groupingTrigger, fixedGroupSlotLabels, editorForGroupAsset, updateGroupEditor, applyProductGroup, sharedOptionNames } from '../src/modules/schematic/grouping/productGrouping.ts'
+import { groupingTrigger, fixedGroupSlotLabels, groupSlotLabels, editorForGroupAsset, updateGroupEditor, applyProductGroup, sharedOptionNames } from '../src/modules/schematic/grouping/productGrouping.ts'
 import { applyGroupedAttributePatch } from '../src/modules/schematic/grouping/productGroupRestore.ts'
 import { normalizeProductConfigs } from '../src/modules/schematic/services/productConfigService.ts'
 import { emptyCustomProduct } from '../src/modules/schematic/services/customProductService.ts'
@@ -199,4 +199,40 @@ test('saving commits each member draft and maps quantity to its own updated tech
   assert.equal(saved[1].attributesConfirmed, true)
   assert.equal(saved[2].attributes.Count, '2')
   assert.equal(saved[2].attributes.QT, '8')
+})
+
+test('free groups enable fixed sorting after selecting a holder or shaker, including followers and reopen', () => {
+  for (const name of ['摇摇乐', '照片夹', 'Custom Shaker', 'Custom Photocard Holders']) {
+    const assets = [asset('1'), asset('2')]
+    let session = { ...sessionFor(assets), activeId: '2', trigger: { kind: 'free', label: '自由图片组' } }
+    assert.equal(groupSlotLabels(session, products), null)
+    const chosen = { ...session.editors['2'], mode: 'custom', custom: { ...emptyCustomProduct(), id: 7, name } }
+    session = updateGroupEditor(session, chosen, products)
+    assert.deepEqual(groupSlotLabels(session, products), ['Example', 'Front', 'inside', 'Back'])
+    assert.equal(session.trigger.kind, 'free')
+    session.memberIds = ['2', '1']
+    const saved = applyProductGroup(assets, session, products)
+    const reopened = restoreProductGroup(saved, '1', products)
+    assert.deepEqual(reopened.memberIds, ['2', '1'])
+    assert.deepEqual(groupSlotLabels(reopened, products), ['Example', 'Front', 'inside', 'Back'])
+    session = updateGroupEditor(session, { ...chosen, custom: { ...chosen.custom, name: '普通产品' } }, products)
+    assert.equal(groupSlotLabels(session, products), null)
+  }
+})
+
+test('custom epoxy changes from any member sync the group while QT and size stay independent', () => {
+  for (const kind of ['free', 'shaker']) {
+    const assets = [asset('1'), asset('2')]
+    let session = { ...sessionFor(assets), activeId: '2', trigger: { kind, label: 'test' } }
+    session.editors = Object.fromEntries(assets.map((a, i) => [a.id, { ...leader, mode: 'custom', custom: { ...emptyCustomProduct(), id: 7, name: '摇摇乐', qt: i + 1, attributes: { Size: String(i), 'Epoxy Style': 'old' }, attributeImages: {} } }]))
+    const edited = { ...session.editors['2'], custom: { ...session.editors['2'].custom, attributes: { ...session.editors['2'].custom.attributes, 'Epoxy Style': 'new' } } }
+    session = updateGroupEditor(session, edited, products)
+    assert.equal(session.editors['1'].custom.attributes['Epoxy Style'], 'new')
+    assert.equal(session.editors['1'].custom.attributes.Size, '0')
+    assert.equal(session.editors['1'].custom.qt, 1)
+    const saved = applyProductGroup(assets, session, products)
+    assert.deepEqual(saved.map(a => a.attributes['Epoxy Style']), ['new', 'new'])
+    const reopened = restoreProductGroup(saved, '1', products)
+    assert.equal(reopened.editors['2'].custom.attributes['Epoxy Style'], 'new')
+  }
 })

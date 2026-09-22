@@ -53,7 +53,7 @@ export default function UploadImageList({ assets, allAssets, selectedIds, onSele
         <span className="card-physical-size">真实尺寸：{Number.isFinite(asset.sourceGroupWidthMm) && Number.isFinite(asset.sourceGroupHeightMm) && asset.sourceGroupWidthMm! > 0 && asset.sourceGroupHeightMm! > 0
           ? `${asset.sourceGroupWidthMm!.toFixed(3)} × ${asset.sourceGroupHeightMm!.toFixed(3)} mm`
           : '未记录'}</span>
-        {Object.entries(asset.attributes ?? {}).filter(([, value]) => value).map(([key, value]) => <span key={key}>{products.find(product => product.id === asset.productId)?.options.find(option => option.name === key)?.label || key}：{value}</span>)}
+        {Object.entries(asset.attributes ?? {}).filter(([key, value]) => value && !(asset.productId?.startsWith('custom:') && key === 'Finish')).map(([key, value]) => <span key={key}>{products.find(product => product.id === asset.productId)?.options.find(option => option.name === key)?.label || key}：{value}</span>)}
         {asset.note && <span className="card-note">备注：{asset.note}</span>}
         {asset.noteImage && <button type="button" className="card-note-preview" aria-label={`预览备注 ${asset.name}`} onClick={event => { event.stopPropagation(); setPreview({ name: `${asset.name} · 备注`, src: asset.noteImage! }) }}><img src={asset.noteImage} alt="备注图片" loading="lazy"/></button>}
       </div>
