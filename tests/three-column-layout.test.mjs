@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { paginateAssets, autoArrangePages } from '../src/modules/schematic/services/paginationService.ts'
 import { dimensionGroups, imageDimensionMarkerLayout, dimensionForItem, physicalSourceSize } from '../src/modules/schematic/services/imageDimensionService.ts'
 
-import { defaultLayoutBounds, GROUP_GAP, PAPER_HEIGHT, PAPER_WIDTH, pageSvg } from '../src/model.ts'
+import { defaultLayoutBounds, GROUP_GAP, HEADER_BLOCK_HEIGHT, PAPER_HEIGHT, PAPER_WIDTH, pageSvg } from '../src/model.ts'
 import { imageDetailsLayout } from '../src/modules/schematic/services/imageDetailsLayoutService.ts'
 const asset = (id, productName = 'Keychains', attributes = {}, productGroupId = '') => ({ id, name: id, productId: productName, productName, width: 100, height: 120, svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 120"><rect width="100" height="120" fill="red"/></svg>', previewUrl: '', thumbnailUrl: '', attributes, productGroupId })
 
@@ -92,7 +92,7 @@ test('wide artwork fills available width while ruler and physical label stay ins
 test('v2 holder reserves half area, explicit roles and third-row rulers', () => {
  const assets = ['Example','Front','Inside','Back','bead1','bead2'].map(id=>asset(id,'Photocard Holders',{},'group'))
  const [page] = paginateAssets(assets,1000)
- assert.equal(page.imageGroups[0].height,(PAPER_HEIGHT-defaultLayoutBounds.top-defaultLayoutBounds.bottom)/2)
+ assert.equal(page.imageGroups[0].height,(PAPER_HEIGHT-defaultLayoutBounds.top-defaultLayoutBounds.bottom)/2-HEADER_BLOCK_HEIGHT-2*GROUP_GAP)
  assert.deepEqual(page.items.slice(0,4).map(i=>i.caption),['Example','Front','Inside','Back'])
  assert.deepEqual(page.items.slice(0,4).map(i=>!!i.suppressRuler),[false,true,true,true])
  assert.equal(dimensionGroups(page).length,3)
@@ -362,12 +362,33 @@ test('Shaker keeps original-size cap and default role layout for every member', 
  for (const name of ['Shaker','摇摇乐']) {
   const assets=['Example','Front','Inside','Back','extra'].map(id=>({...asset(id,name,{},'shaker'),width:40,height:20,sourceGroupWidthMm:10,sourceGroupHeightMm:5}))
   const [page]=paginateAssets(assets)
-  assert.equal(page.imageGroups[0].height,(PAPER_HEIGHT-defaultLayoutBounds.top-defaultLayoutBounds.bottom)/2)
+  assert.equal(page.imageGroups[0].height,(PAPER_HEIGHT-defaultLayoutBounds.top-defaultLayoutBounds.bottom)/2-HEADER_BLOCK_HEIGHT-2*GROUP_GAP)
   assert.deepEqual(page.items.slice(0,4).map(i=>i.caption),['Example','Front','Inside','Back'])
+  const group=page.imageGroups[0]
+  for(const [index,item] of page.items.slice(1,4).entries()) {
+   const cell=group.imageCells.find(cell=>cell.itemId===item.id)
+   assert.equal(cell.width,group.width/3)
+   assert.ok(Math.abs(item.x-(group.x+(index+0.5)*group.width/3))<1e-7)
+   assert.ok(group.y+group.detailsHeight<=cell.y+1e-7)
+  }
   for(const item of page.items) {
    assert.ok(item.w<=10*PAPER_WIDTH/210+1e-7)
    assert.ok(item.h<=5*PAPER_WIDTH/210+1e-7)
    assert.ok(Math.abs(item.w/item.h-2)<1e-7)
+  }
+ }
+})
+
+
+test('two holder groups fit one page with headers and gaps included in each half-area budget', () => {
+ for (const name of ['Shaker', 'Photocard Holders', '照片夹']) {
+  const sources = ['one','two'].flatMap(group => ['Example','Front','Inside','Back'].map(role => ({...asset(`${group}-${role}`,name,{},group), name:role})))
+  const pages=paginateAssets(sources)
+  assert.equal(pages.length,1)
+  assert.equal(pages[0].imageGroups.length,2)
+  for(const group of pages[0].imageGroups) {
+   assert.ok(Math.abs(group.height+HEADER_BLOCK_HEIGHT+2*GROUP_GAP-(PAPER_HEIGHT-defaultLayoutBounds.top-defaultLayoutBounds.bottom)/2)<1e-7)
+   assert.ok(group.y+group.height<=PAPER_HEIGHT-defaultLayoutBounds.bottom)
   }
  }
 })

@@ -1,8 +1,18 @@
 mod storage;
+mod names;
 pub use storage::CustomProduct;
-use storage::{connect, read, write};
+use storage::connect;
 use base64::Engine;
 use tauri::Manager;
+
+#[tauri::command]
+pub async fn load_custom_product_config(app: tauri::AppHandle) -> Result<String, String> {
+    let local = crate::project_data_dir().join("cache/custom-clear-acrylic.json");
+    let path = if local.is_file() { local } else {
+        app.path().resolve("presets/custom-clear-acrylic.json", tauri::path::BaseDirectory::Resource).map_err(|e| e.to_string())?
+    };
+    tokio::fs::read_to_string(path).await.map_err(|e| format!("自定义产品选项读取失败：{e}"))
+}
 
 fn product_connection(app: &tauri::AppHandle) -> Result<rusqlite::Connection, String> {
     let mut conn = connect(&crate::project_data_dir().join("custom-products.sqlite"))?;
@@ -27,15 +37,24 @@ pub async fn import_custom_product_image(path: String) -> Result<String, String>
 }
 
 #[tauri::command]
-pub async fn list_custom_products(app: tauri::AppHandle) -> Result<Vec<CustomProduct>, String> {
+pub async fn list_custom_products(app: tauri::AppHandle) -> Result<Vec<names::ProductName>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        read(&product_connection(&app)?)
+        names::list(&product_connection(&app)?)
     }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn save_custom_product(app: tauri::AppHandle, product: CustomProduct) -> Result<CustomProduct, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        write(&mut product_connection(&app)?, product)
+        let mut product = product;
+        let existing = names::list(&product_connection(&app)?)?.into_iter().find(|item| item.name == product.name.trim()).ok_or("请先点击新增保存产品名称")?;
+        product.id = Some(existing.id);
+        product.name = existing.name;
+        Ok(product)
     }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn add_custom_product_name(app: tauri::AppHandle, name: String) -> Result<names::ProductName, String> {
+    tauri::async_runtime::spawn_blocking(move || names::add(&mut product_connection(&app)?, &name)).await.map_err(|e| e.to_string())?
 }

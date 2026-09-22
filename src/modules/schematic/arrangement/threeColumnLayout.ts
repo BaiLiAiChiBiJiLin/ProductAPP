@@ -69,7 +69,9 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
     let height = 120
     let chainReference: number | undefined
     if (unit.kind === 'holder') {
-      height = (bottom - area.top) / 2
+      // Half an arrangement area includes the header, its gap and the
+      // trailing group gap; the artwork itself uses only the remainder.
+      height = (bottom - area.top) / 2 - HEADER_BLOCK_HEIGHT - 2 * GAP
       const firstHeight = height * 0.32, secondHeight = height * 0.38
       const role = (asset: Asset) => `${asset.name} ${Object.values(asset.attributes ?? {}).join(' ')}`.toLowerCase()
       const findRole = (name: string) => unit.assets.find(asset => new RegExp(`\\b${name}\\b`, 'i').test(role(asset)))
@@ -80,7 +82,7 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
         const asset = findRole(name) ?? unit.assets.find(asset => !used.has(asset.id))
         if (!asset || used.has(asset.id)) continue
         used.add(asset.id)
-        const roleRowWidth = shaker ? imageWidth : groupWidth
+        const roleRowWidth = groupWidth
         cells.push({ asset, x: index * roleRowWidth / 3, y: firstHeight, width: roleRowWidth / 3, height: secondHeight, caption: name, ruler: false })
       }
       const rest = unit.assets.filter(asset => !used.has(asset.id))
@@ -165,7 +167,7 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
     group.details = groupDetails
     // The full-width role row starts below Example. Keep all property content
     // in the upper-right panel so accessories/notes cannot cover Back.
-    if (unit.kind === 'holder' && !shaker) group.detailsHeight = height * 0.32
+    if (unit.kind === 'holder') group.detailsHeight = height * 0.32
     if (unit.kind === 'chain' && group.details) group.details.sizes = unit.assets.map(asset => ({ itemId: `item-${asset.id}`, label: dimensionForItem(asset, {}).label }))
     const verticallyCenterSingleImage = cells.length === 1 && !cells[0].back && !cells[0].caption && unit.kind !== 'chain'
     const photoHolder = unit.kind === 'holder' && !shaker
@@ -206,7 +208,7 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
         : y + cell.y + top + h / 2
       const item: Item = { id: cell.back ? `${sourceId}-back` : sourceId, assetId: cell.asset.id, x: x + cell.x + left + (cell.width - left - right) / 2, y: centerY, w, h, rotation: 0, caption: cell.caption, mirrorX: cell.back, backSvg: cell.back ? backLayerSvg(cell.asset.svg, unit.kind === 'standee') : undefined, derivedFrom: cell.back ? sourceId : undefined, suppressRuler: cell.ruler === false }
       page!.items.push(item); group.itemIds.push(item.id)
-      if (photoHolder && cell.caption && cell.caption !== 'Example') item.x = x + cell.x + cell.width / 2
+      if (unit.kind === 'holder' && cell.caption && cell.caption !== 'Example') item.x = x + cell.x + cell.width / 2
       group.imageCells!.push({ itemId: item.id, x: x + cell.x, y: y + cell.y, width: cell.width, height: cell.height })
     })
     page!.imageGroups!.push(group)

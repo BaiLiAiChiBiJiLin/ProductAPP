@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type SetStateAction } from 'react'
+import { useEffect, useMemo, useRef, useState, type SetStateAction } from 'react'
 import { Alert, Button, InputNumber, Select, Tabs, Tooltip, message } from 'antd'
 import AssetNotesEditor from './AssetNotesEditor'
 import type { Asset } from '../../../model'
@@ -42,6 +42,7 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
   const [uploadingNote, setUploadingNote] = useState(false)
   const confirmingRef = useRef(false)
   const [error, setError] = useState('')
+  const groupEntryRef = useRef<HTMLDivElement>(null)
   const selectionKey = `${session?.id ?? ''}:${selected.map(asset => asset.id).join('|')}`
   const [previousSelection, setPreviousSelection] = useState<string | null>(null)
   if (selectionKey !== previousSelection) {
@@ -54,12 +55,15 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
       setDraft(next)
       const isCustom = next.productId.startsWith('custom:')
       setMode(isCustom ? 'custom' : 'existing')
-      if (isCustom) setCustom({ id: Number(next.productId.slice(7)), name: selected[0]?.productName ?? '', size: next.attributes.Size ?? '', printOption: next.attributes['Print Option'] ?? '', finish: next.attributes.Finish ?? '', accessoryColor: next.attributes['Accessories Color'] ?? '', accessoryColorImage: next.images['Accessories Color'] ?? '', qt: Number(next.attributes.QT) || 1 })
+      if (isCustom) setCustom({ id: Number(next.productId.slice(7)), name: selected[0]?.productName ?? '', size: next.attributes.Size ?? '', printOption: next.attributes['Print Option'] ?? '', finish: next.attributes.Finish ?? '', accessoryColor: next.attributes['Accessories Color'] ?? '', accessoryColorImage: next.images['Accessories Color'] ?? '', qt: Number(next.attributes.QT) || 1, attributes: { ...next.attributes }, attributeImages: { ...next.images } })
     } else if (!session && selected.length === 1 && (selected[0].note || selected[0].noteImage)) {
       // Notes remain independent when a product has been cleared from an image.
       setDraft({ ...draft, note: selected[0].note ?? '', noteImage: selected[0].noteImage ?? '' })
     }
   }
+  useEffect(() => {
+    if (session) { const panel = groupEntryRef.current?.closest('.upload-tab-content'); panel?.scrollTo({ top: panel.scrollHeight, behavior: 'smooth' }) }
+  }, [session?.id])
   const changeEditor = (next: GroupEditor, mayStart = false) => {
     setMode(next.mode); setDraft(next.draft); setCustom(next.custom)
     if (session) grouping!.updateEditor(next, session.activeId)
@@ -110,7 +114,7 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
     <div className="upload-panel-hint"><p>{selectionHint ?? '选择左侧图片修改属性，可多选可单选'}</p><p>{selectionHint ? '修改后点击确认保存。' : '点击单选，Ctrl 多选，Shift 连选；填写后点击确认保存。'}</p></div>
     <div className="product-config-selected-count">{selectionLabel}</div>
     {allowGrouping && savedGroup && <div className="product-group-edit-entry"><span>{savedGroup.trigger.kind === 'free' ? '已加入自由图片组，可单独修改这组中的任意图片。' : '已加入产品组，可单独修改此图属性。产品和立牌数量请在组内修改。'}</span><Button disabled={disabled || confirming || selected.length !== 1} onClick={() => grouping?.resumeGroup(selected[0].id)}>编辑组合</Button></div>}
-    {allowGrouping && !savedGroup && !session && selected.length > 0 && <div className="product-group-edit-entry"><span>{groupGuideTrigger ? `当前${groupGuideTrigger.label}支持多图分组引导。` : '当前选中的图片可自由组合，不受产品限制。'}</span><Button disabled={disabled || confirming || grouping?.saving} onClick={() => grouping?.start(editor, selected.map(asset => asset.id), !groupGuideTrigger, selected.some(asset => asset.attributesConfirmed))}>图片组合</Button></div>}
+    {allowGrouping && !savedGroup && !session && selected.length > 0 && <div className="product-group-edit-entry"><span>{groupGuideTrigger ? `当前${groupGuideTrigger.label}支持多图分组引导。` : '组合时先选完图片再选产品'}</span><Button disabled={disabled || confirming || grouping?.saving} onClick={() => grouping?.start(editor, selected.map(asset => asset.id), !groupGuideTrigger, selected.some(asset => asset.attributesConfirmed))}>图片组合</Button></div>}
     <fieldset className="attribute-edit-fields" disabled={disabled || confirming || grouping?.saving} inert={disabled || confirming || grouping?.saving}>
       <Tabs activeKey={mode} className="product-attribute-mode-tabs" onChange={key => { const nextMode = key as 'existing' | 'custom'; const nextEditor = { ...editor, mode: nextMode }; changeEditor(nextEditor, nextMode === 'custom' && Boolean(groupingTrigger(nextEditor, products))) }} items={[{ key: 'existing', label: '已有产品', disabled: locked }, { key: 'custom', label: '自定义', disabled: locked }]}/>
       <div hidden={mode !== 'existing'}>
@@ -130,6 +134,6 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
     {error && <div role="alert" className="product-config-error">{error}</div>}
     <ProductGroupGuide assets={assets}/>
     {!session && selected.length === 1 && grouping?.isPending(selected[0].id) && <p role="status" className="product-group-pending">这张图片的分组已保存，属性尚未确认，请点击“确认”保存。</p>}
-    <div className="attribute-confirm">{session && <Tooltip title="取消选择并退出引导，保留已保存内容，放弃尚未保存的修改"><Button disabled={disabled || confirming || uploadingNote || grouping?.saving} onClick={() => grouping!.cancelGuide()}>退出引导</Button></Tooltip>}<Button type="primary" disabled={!selected.length || disabled || confirming || uploadingNote || grouping?.saving} icon={confirming || grouping?.saving ? <Loading size="small" inline/> : undefined} onClick={() => void confirm()}>{confirming || grouping?.saving ? '正在保存…' : '确认'}</Button></div>
+    <div ref={groupEntryRef} className="attribute-confirm">{session && <Tooltip title="取消选择并退出引导，保留已保存内容，放弃尚未保存的修改"><Button disabled={disabled || confirming || uploadingNote || grouping?.saving} onClick={() => grouping!.cancelGuide()}>退出引导</Button></Tooltip>}<Button type="primary" disabled={!selected.length || disabled || confirming || uploadingNote || grouping?.saving} icon={confirming || grouping?.saving ? <Loading size="small" inline/> : undefined} onClick={() => void confirm()}>{confirming || grouping?.saving ? '正在保存…' : '确认'}</Button></div>
   </div>
 }

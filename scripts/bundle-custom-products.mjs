@@ -11,8 +11,8 @@ try { await access(source) } catch {
 }
 const db = new DatabaseSync(source, { readOnly: true })
 try {
-  const products = db.prepare('SELECT payload FROM custom_products ORDER BY id').all().map(row => JSON.parse(row.payload))
+  const products = db.prepare("SELECT MIN(id) AS id, trim(json_extract(payload, '$.name')) AS name FROM custom_products WHERE name <> '' GROUP BY name ORDER BY MIN(id)").all()
   await mkdir(new URL('../src-tauri/resources/', import.meta.url), { recursive: true })
   await writeFile(destination, JSON.stringify(products))
-  console.log(`Bundled ${products.length} custom-product presets (including embedded images)`)
+  console.log(`Bundled ${products.length} custom-product names`)
 } finally { db.close() }

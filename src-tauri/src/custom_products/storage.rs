@@ -8,15 +8,25 @@ use std::path::Path;
 pub struct CustomProduct {
     pub id: Option<i64>,
     pub name: String,
+    #[serde(default)]
     pub size: String,
+    #[serde(default)]
     pub print_option: String,
+    #[serde(default)]
     pub finish: String,
     #[serde(default)]
     pub accessory_color: String,
     #[serde(default)]
     pub accessory_color_image: String,
+    #[serde(default = "default_quantity")]
     pub qt: u32,
+    #[serde(default)]
+    pub attributes: Option<std::collections::HashMap<String, String>>,
+    #[serde(default)]
+    pub attribute_images: Option<std::collections::HashMap<String, String>>,
 }
+
+fn default_quantity() -> u32 { 1 }
 
 pub(super) fn connect(path: &Path) -> Result<Connection, String> {
     if let Some(parent) = path.parent() {
@@ -31,6 +41,7 @@ pub(super) fn connect(path: &Path) -> Result<Connection, String> {
     Ok(conn)
 }
 
+#[cfg(test)]
 pub(super) fn read(conn: &Connection) -> Result<Vec<CustomProduct>, String> {
     let mut stmt = conn.prepare("SELECT payload FROM custom_products ORDER BY updated_at DESC, id DESC").map_err(|e| e.to_string())?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(0)).map_err(|e| e.to_string())?;
@@ -56,6 +67,7 @@ pub(super) fn seed(conn: &mut Connection, json: &str) -> Result<(), String> {
     tx.commit().map_err(|e| e.to_string())
 }
 
+#[cfg(test)]
 pub(super) fn write(conn: &mut Connection, mut product: CustomProduct) -> Result<CustomProduct, String> {
     product.name = product.name.trim().to_string();
     if product.name.is_empty() { return Err("请填写产品名称".into()); }
@@ -83,7 +95,7 @@ pub(super) fn write(conn: &mut Connection, mut product: CustomProduct) -> Result
 mod tests {
     use super::*;
     fn sample() -> CustomProduct {
-        CustomProduct { id: None, name: "自定义立牌".into(), size: "10cm".into(), print_option: "双面同图".into(), finish: "亮面".into(), accessory_color: "金色".into(), accessory_color_image: String::new(), qt: 5 }
+        CustomProduct { id: None, name: "自定义立牌".into(), size: "10cm".into(), print_option: "双面同图".into(), finish: "亮面".into(), accessory_color: "金色".into(), accessory_color_image: String::new(), qt: 5, attributes: None, attribute_images: None }
     }
     #[test]
     fn bundled_presets_seed_once_and_keep_user_changes() {

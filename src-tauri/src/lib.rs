@@ -491,26 +491,47 @@ fn persist_assets(app_assets: Vec<Asset>) -> Result<Vec<Asset>, String> {
 async fn import_assets(app: tauri::AppHandle, path: String, product_id: String, mode: String, request_id: String) -> Result<Vec<Asset>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let temp_dir = project_data_dir().join("temp-assets");
+        let import_started = Instant::now();
+        log::info!(target: "printflow::import", "导入开始 request={request_id}");
         fs::create_dir_all(&temp_dir).map_err(|e| e.to_string())?;
         let pending_assets: Arc<Mutex<Vec<Asset>>> = Arc::new(Mutex::new(Vec::with_capacity(8)));
         let pending_for_callback = Arc::clone(&pending_assets);
+        let delivery_error = Mutex::new(None::<String>);
         let assets = assets::import_with_stage(&PathBuf::from(path), &product_id, &mode, &request_id, |phase, completed, total| {
             let _ = app.emit("import-progress", ImportProgress { request_id: request_id.clone(), phase: phase.to_owned(), completed, total });
         }, |asset| {
             let temp_path = temp_dir.join(format!("{}.svg", safe_asset_file_name(&asset.id)));
             let mut streamed_asset = asset.clone();
-            if fs::write(&temp_path, asset.svg.as_bytes()).is_ok() { streamed_asset.storage_path = temp_path.to_string_lossy().to_string(); }
+            if let Err(error) = fs::write(&temp_path, asset.svg.as_bytes()) {
+                *delivery_error.lock().unwrap() = Some(format!("临时图片写入失败：{error}"));
+                return;
+            }
+            streamed_asset.storage_path = temp_path.to_string_lossy().to_string();
             let batch = {
                 let Ok(mut pending) = pending_for_callback.lock() else { return };
                 pending.push(streamed_asset);
                 if pending.len() >= 8 { std::mem::take(&mut *pending) } else { Vec::new() }
             };
-            if !batch.is_empty() { let _ = app.emit("import-asset-batch", ImportAssetBatch { request_id: request_id.clone(), assets: batch }); }
+            if !batch.is_empty() {
+                if let Err(error) = app.emit("import-asset-batch", ImportAssetBatch { request_id: request_id.clone(), assets: batch }) {
+                    *delivery_error.lock().unwrap() = Some(format!("图片传输失败：{error}"));
+                }
+            }
         })?;
         if let Ok(mut pending) = pending_assets.lock() {
-            if !pending.is_empty() { let batch = std::mem::take(&mut *pending); let _ = app.emit("import-asset-batch", ImportAssetBatch { request_id: request_id.clone(), assets: batch }); }
+            if !pending.is_empty() { let batch = std::mem::take(&mut *pending); app.emit("import-asset-batch", ImportAssetBatch { request_id: request_id.clone(), assets: batch }).map_err(|e| format!("图片传输失败：{e}"))?; }
         }
-        Ok(assets)
+        if let Some(error) = delivery_error.into_inner().map_err(|e| e.to_string())? { return Err(error); }
+        log::info!(target: "printflow::import", "导入完成 request={} assets={} svg_bytes={} elapsed_ms={} completion=metadata-only", request_id, assets.len(), assets.iter().map(|asset| asset.svg.len()).sum::<usize>(), import_started.elapsed().as_millis());
+        // Artwork has already been delivered through import-asset-batch.
+        // Returning it again makes WebView serialize the entire batch at once.
+        Ok(assets.into_iter().map(|mut asset| {
+            asset.svg = String::new();
+            asset.preview_url = String::new();
+            asset.thumbnail_url = String::new();
+            asset.storage_path = temp_dir.join(format!("{}.svg", safe_asset_file_name(&asset.id))).to_string_lossy().into_owned();
+            asset
+        }).collect())
     }).await.map_err(|e| e.to_string())?
 }
 
@@ -983,7 +1004,7 @@ pub fn run() {
             Target::new(TargetKind::Folder { path: log_dir, file_name: Some("printflow.log".into()) }),
         ]).build())
         .setup(|_app| Ok(()))
-        .invoke_handler(tauri::generate_handler![import_assets, load_workspace, save_workspace, delete_asset, save_batch, persist_batch_assets, discard_temp_assets, list_batches, load_batch, delete_batch, export_artwork, export_pdf, stage_pdf_page, clear_pdf_pages, export_staged_pdf, load_product_configs, fetch_remote_image, load_finish_names, refresh_product_configs, custom_products::list_custom_products, custom_products::save_custom_product, custom_products::import_custom_product_image, coreldraw::open_with_coreldraw])
+        .invoke_handler(tauri::generate_handler![import_assets, load_workspace, save_workspace, delete_asset, save_batch, persist_batch_assets, discard_temp_assets, list_batches, load_batch, delete_batch, export_artwork, export_pdf, stage_pdf_page, clear_pdf_pages, export_staged_pdf, load_product_configs, fetch_remote_image, load_finish_names, refresh_product_configs, custom_products::load_custom_product_config, custom_products::add_custom_product_name, custom_products::list_custom_products, custom_products::save_custom_product, custom_products::import_custom_product_image, coreldraw::open_with_coreldraw])
         .run(tauri::generate_context!()).expect("error while running tauri application");
 }
 

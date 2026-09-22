@@ -8,7 +8,7 @@ import { restoreProductGroup } from './productGroupRestore'
 import { canSelectGroupAsset, initialGroupAssets } from './productGroupSelection'
 import { applyProductGroup, editorForGroupAsset, groupingTrigger, inheritGroupIdentity, newGroupColor, readGroupAssetEditor, updateGroupEditor, type GroupEditor, type ProductGroupSession } from './productGrouping'
 
-type Props = { assets: Asset[]; products: ProductConfig[]; save: (assets: Asset[]) => Promise<void>; activate: (id: string | null) => void; revealAll: () => void }
+type Props = { assets: Asset[]; products: ProductConfig[]; save: (assets: Asset[]) => Promise<void>; activate: (id: string | null, memberIds?: string[]) => void; revealAll: () => void }
 export function useProductGrouping({ assets, products, save, activate, revealAll }: Props) {
   const [session, setSession] = useState<ProductGroupSession | null>(null)
   const current = useRef(session)
@@ -34,7 +34,7 @@ export function useProductGrouping({ assets, products, save, activate, revealAll
     dirty.current = new Set(memberIds)
     const reuseGroup = leader.productGroupId && !assets.some(asset => asset.productGroupId === leader.productGroupId && !memberIds.includes(asset.id))
     commit({ id: reuseGroup ? leader.productGroupId! : crypto.randomUUID(), color: reuseGroup && leader.productGroupColor || newGroupColor(assets), leaderId: leader.id, activeId: leader.id, memberIds, editors, trigger })
-    setError(''); revealAll(); activate(leader.id)
+    setError(''); revealAll(); activate(leader.id, memberIds)
   }
   const selectMember = (id: string, source: 'list' | 'thumbnail' = 'list') => {
     const group = current.current
@@ -62,7 +62,7 @@ export function useProductGrouping({ assets, products, save, activate, revealAll
     const restored = restoreProductGroup(assets, id, products, drafts.current)
     if (!restored) return false
     dirty.current = new Set(restored.memberIds.filter(memberId => drafts.current[memberId] || !assets.find(asset => asset.id === memberId)?.attributesConfirmed))
-    commit(restored); setError(''); revealAll(); activate(id)
+    commit(restored); setError(''); revealAll(); activate(id, restored.memberIds)
     return true
   }
   const updateEditor = (editor: GroupEditor, assetId: string) => {

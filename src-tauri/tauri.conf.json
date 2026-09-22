@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "PrintFlow",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "identifier": "com.printflow.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -34,6 +34,7 @@
     "targets": "all",
     "resources": {
       "../printflow-data/cache/finish.json": "printflow-data/cache/finish.json",
+      "resources/custom-clear-acrylic.json": "presets/custom-clear-acrylic.json",
       "resources/custom-products.json": "presets/custom-products.json"
     },
     "icon": [

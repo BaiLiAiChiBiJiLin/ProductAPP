@@ -100,7 +100,7 @@ export default function SchematicPage() { const [toast, context] = message.useMe
     finally { saveLock.current = false; setSavingBatch(false) }
   }
   const grouping = useProductGrouping({ assets, products: productConfigs, save: saveBatch,
-    activate: id => { setSelectedAssetIds(new Set(id ? [id] : [])); setUploadPanelTab('attributes') }, revealAll: () => setCategory('') })
+    activate: (id, memberIds) => { setSelectedAssetIds(new Set(memberIds ?? (id ? [id] : []))); setUploadPanelTab('attributes') }, revealAll: () => setCategory('') })
   const guideActive = Boolean(grouping.session)
   const confirmAttributes = async (patch: ProductAttributePatch) => {
     if (!selectedAssetIds.size || busy) return
@@ -129,7 +129,13 @@ export default function SchematicPage() { const [toast, context] = message.useMe
   const selectAssets = (ids: Set<string>) => {
     if (guideActive) { const id = [...ids].at(-1); if (id) grouping.selectMember(id); return }
     setSelectedAssetIds(ids)
-    if (ids.size) setUploadPanelTab('attributes')
+    if (ids.size) {
+      setUploadPanelTab('attributes')
+      if (ids.size === 1) {
+        const asset = assets.find(item => item.id === [...ids][0])
+        if (asset?.productGroupId) grouping.resumeGroup(asset.id)
+      }
+    }
   }
   const visibleAssets = category ? assets.filter(asset => asset.productId === category) : assets
   const changeCategory = (id: string) => { setCategory(id); setSelectedAssetIds(new Set()) }
