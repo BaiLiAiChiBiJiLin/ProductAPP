@@ -7,6 +7,21 @@ import { defaultLayoutBounds, GROUP_GAP, HEADER_BLOCK_HEIGHT, PAPER_HEIGHT, PAPE
 import { imageDetailsLayout } from '../src/modules/schematic/services/imageDetailsLayoutService.ts'
 const asset = (id, productName = 'Keychains', attributes = {}, productGroupId = '') => ({ id, name: id, productId: productName, productName, width: 100, height: 120, svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 120"><rect width="100" height="120" fill="red"/></svg>', previewUrl: '', thumbnailUrl: '', attributes, productGroupId })
 
+test('mixed custom product group retains ordinary members with its photo holder', () => {
+ const sources = ['pen cli', 'pen cli', 'pen cli', 'pen cli', '照片夹'].map((name, i) => ({
+  ...asset(`mixed-${i}`, name, {}, 'saved-mixed-group'), productGroupPosition: i + 1,
+ }))
+ const pages = paginateAssets(sources)
+ const groups = pages.flatMap(page => page.imageGroups)
+ assert.equal(groups.length, 1)
+ assert.equal(groups[0].itemIds.length, 5)
+ assert.deepEqual(pages.flatMap(page => page.items).map(item => item.assetId), sources.map(asset => asset.id))
+ assert.deepEqual(pages.flatMap(page => page.items).slice(0, 4).map(item => item.caption), ['Example', 'Front', 'Inside', 'Back'])
+ const rearranged = autoArrangePages(pages, 1, sources, defaultLayoutBounds)
+ assert.equal(rearranged.flatMap(page => page.imageGroups).length, 1)
+ assert.equal(rearranged.flatMap(page => page.items).length, 5)
+})
+
 test('photo holder roles share a longest edge and no member is enlarged', () => {
  for (const name of ['Photocard Holders','照片夹']) {
   const sources=['Example','Front','Inside','Back','extra'].map((id,i)=>({...asset(id,name,{},'holder'),width:300-i*30,height:60,sourceGroupWidthMm:75-i*7.5,sourceGroupHeightMm:15}))
@@ -26,6 +41,16 @@ test('photo holder roles share a longest edge and no member is enlarged', () => 
    assert.ok(Math.abs(item.w/item.h-source.width/source.height)<1e-7)
   }
  }
+})
+
+test('Front Side Epoxy does not consume the Front slot of a saved holder group', () => {
+ const sources = Array.from({ length: 5 }, (_, i) => ({
+  ...asset(`epoxy-${i}`, '照片夹', { 'Epoxy Style': 'Front Side Epoxy' }, 'epoxy-group'),
+  productGroupPosition: i + 1,
+ }))
+ const items = paginateAssets(sources).flatMap(page => page.items)
+ assert.deepEqual(items.slice(0, 4).map(item => item.caption), ['Example', 'Front', 'Inside', 'Back'])
+ assert.deepEqual(items.map(item => item.assetId), sources.map(source => source.id))
 })
 test('vertical different-design pair with Finish uses identical front and back dimensions', () => {
  const source={...asset('pair','Keychains',{'Print Option':'Double Sided Different Design',Finish:'Epoxy'}),width:80,height:140}

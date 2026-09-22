@@ -24,10 +24,20 @@ export function isDifferentDesign(asset: Asset) {
 }
 function unitsFor(assets: Asset[]): Unit[] {
   const result: Unit[] = [], groups = new Map<string, Unit>()
+  // A free combination may mix ordinary products with a holder/standee/chain.
+  // Resolve its layout once for the whole group before collecting any members.
+  const groupKinds = new Map<string, Kind>()
   for (const asset of assets) {
-    const id = productLayoutKind(asset) === 'ordinary' && !asset.productGroupId?.startsWith('group-combined-') ? undefined : asset.productGroupId
+    const kind = productLayoutKind(asset)
+    if (asset.productGroupId && kind !== 'ordinary' && !groupKinds.has(asset.productGroupId)) {
+      groupKinds.set(asset.productGroupId, kind)
+    }
+  }
+  for (const asset of assets) {
+    const kind = (asset.productGroupId && groupKinds.get(asset.productGroupId)) || productLayoutKind(asset)
+    const id = kind === 'ordinary' && !asset.productGroupId?.startsWith('group-combined-') ? undefined : asset.productGroupId
     let unit = id ? groups.get(id) : undefined
-    if (!unit) { unit = { assets: [], kind: productLayoutKind(asset) }; result.push(unit); if (id) groups.set(id, unit) }
+    if (!unit) { unit = { assets: [], kind }; result.push(unit); if (id) groups.set(id, unit) }
     unit.assets.push(asset)
   }
   for (const unit of result) unit.assets.sort((a, b) => (a.productGroupPosition ?? 0) - (b.productGroupPosition ?? 0))
@@ -73,13 +83,17 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       // trailing group gap; the artwork itself uses only the remainder.
       height = (bottom - area.top) / 2 - HEADER_BLOCK_HEIGHT - 2 * GAP
       const firstHeight = height * 0.32, secondHeight = height * 0.38
-      const role = (asset: Asset) => `${asset.name} ${Object.values(asset.attributes ?? {}).join(' ')}`.toLowerCase()
-      const findRole = (name: string) => unit.assets.find(asset => new RegExp(`\\b${name}\\b`, 'i').test(role(asset)))
+      const hasSavedOrder = unit.assets.some(asset => (asset.productGroupPosition ?? 0) > 0)
+      // Saved combination order owns the fixed slots. Legacy names may identify
+      // a role, but product attributes such as "Front Side Epoxy" never do.
+      const findRole = (name: string) => hasSavedOrder ? undefined
+        : unit.assets.find(asset => new RegExp(`\\b${name}\\b`, 'i').test(asset.name))
       const example = findRole('example') ?? unit.assets[0]
       cells.push({ asset: example, x: 0, y: 0, width: imageWidth, height: firstHeight, caption: 'Example' })
       const used = new Set([example.id])
       for (const [index, name] of ['Front', 'Inside', 'Back'].entries()) {
-        const asset = findRole(name) ?? unit.assets.find(asset => !used.has(asset.id))
+        const named = findRole(name)
+        const asset = named && !used.has(named.id) ? named : unit.assets.find(asset => !used.has(asset.id))
         if (!asset || used.has(asset.id)) continue
         used.add(asset.id)
         const roleRowWidth = groupWidth
