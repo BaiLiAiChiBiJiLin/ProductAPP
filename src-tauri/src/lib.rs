@@ -899,6 +899,28 @@ async fn export_staged_pdf(app: tauri::AppHandle, output: String, ids: Vec<Strin
     result
 }
 
+/// Export every staged page as its own PDF and then write the same pages into
+/// one combined PDF in the selected directory.
+#[tauri::command]
+async fn export_staged_pdf_bundle(app: tauri::AppHandle, output_dir: String, base_name: String, ids: Vec<String>) -> Result<(), String> {
+    if ids.is_empty() { return Err("没有可导出的页面".into()); }
+    let paths = ids.iter().map(|id| pdf_stage_path(id)).collect::<Result<Vec<_>, _>>()?;
+    let directory = PathBuf::from(output_dir);
+    tokio::fs::create_dir_all(&directory).await.map_err(|e| format!("无法创建 PDF 导出文件夹：{e}"))?;
+    let safe_base = base_name.trim().trim_end_matches(".pdf").trim_end_matches(".PDF");
+    let safe_base = if safe_base.is_empty() { "示意图" } else { safe_base };
+    let result = async {
+        for (index, source) in paths.iter().enumerate() {
+            let output = directory.join(format!("{}.pdf", index + 1));
+            export_pdf_sources(output.to_string_lossy().into_owned(), vec![source.to_string_lossy().into_owned()], Some(app.clone()), true).await?;
+        }
+        let combined = directory.join(format!("{safe_base}.pdf"));
+        export_pdf_sources(combined.to_string_lossy().into_owned(), paths.iter().map(|path| path.to_string_lossy().into_owned()).collect(), Some(app), true).await
+    }.await;
+    for path in paths { let _ = tokio::fs::remove_file(path).await; }
+    result
+}
+
 #[cfg(test)]
 async fn export_pdf_for_test(output: String, pages: Vec<String>) -> Result<(), String> {
     export_pdf_with_progress(output, pages, None).await
@@ -1005,7 +1027,7 @@ pub fn run() {
             Target::new(TargetKind::Folder { path: log_dir, file_name: Some("printflow.log".into()) }),
         ]).build())
         .setup(|app| { let status_path = project_data_dir().join("cache/local-api.json"); let port = local_api::start(app.handle().clone(), &status_path).map_err(|e| format!("本地 API 启动失败：{e}"))?; log::info!(target: "printflow::local-api", "本地 SVG API 已监听 127.0.0.1:{port}"); Ok(()) })
-        .invoke_handler(tauri::generate_handler![import_assets, load_workspace, save_workspace, delete_asset, save_batch, persist_batch_assets, discard_temp_assets, list_batches, load_batch, delete_batch, export_artwork, export_pdf, stage_pdf_page, clear_pdf_pages, export_staged_pdf, load_product_configs, fetch_remote_image, load_finish_names, refresh_product_configs, custom_products::load_custom_product_config, custom_products::add_custom_product_name, custom_products::list_custom_products, custom_products::save_custom_product, custom_products::import_custom_product_image, coreldraw::open_with_coreldraw])
+        .invoke_handler(tauri::generate_handler![import_assets, load_workspace, save_workspace, delete_asset, save_batch, persist_batch_assets, discard_temp_assets, list_batches, load_batch, delete_batch, export_artwork, export_pdf, stage_pdf_page, clear_pdf_pages, export_staged_pdf, export_staged_pdf_bundle, load_product_configs, fetch_remote_image, load_finish_names, refresh_product_configs, custom_products::load_custom_product_config, custom_products::add_custom_product_name, custom_products::list_custom_products, custom_products::save_custom_product, custom_products::import_custom_product_image, coreldraw::open_with_coreldraw])
         .run(tauri::generate_context!()).expect("error while running tauri application");
 }
 

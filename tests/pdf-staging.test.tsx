@@ -13,10 +13,10 @@ test('PDF pages transfer sequentially and temporary pages are cleaned on success
   mocks.invoke.mockImplementation(async (command: string) => {
    if(command==='stage_pdf_page') { expect(mocks.render).toHaveBeenCalledTimes(++transferred); if(fail) throw new Error('write failed') }
   })
-  const job=exportPdf([{id:1,name:'one',items:[]},{id:2,name:'two',items:[]}],[],'test.pdf')
+  const job=exportPdf([{id:1,name:'one',items:[]},{id:2,name:'two',items:[]}],[],'test-dir','test.pdf')
   if(fail) await expect(job).rejects.toThrow('write failed'); else await job
   const commands=mocks.invoke.mock.calls.map(call=>call[0])
-  expect(commands).toEqual(fail ? ['stage_pdf_page','clear_pdf_pages'] : ['stage_pdf_page','stage_pdf_page','export_staged_pdf','clear_pdf_pages'])
+  expect(commands).toEqual(fail ? ['stage_pdf_page','clear_pdf_pages'] : ['stage_pdf_page','stage_pdf_page','export_staged_pdf_bundle','clear_pdf_pages'])
   expect(mocks.unlisten).toHaveBeenCalledOnce()
  }
 })

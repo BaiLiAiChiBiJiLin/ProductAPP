@@ -9,7 +9,7 @@ import type { ProductConfig } from '../services/productConfigService.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
 
 type Kind = 'ordinary' | 'holder' | 'standee' | 'chain'
-type Cell = { asset: Asset; x: number; y: number; width: number; height: number; caption?: string; back?: boolean; ruler?: boolean; base?: boolean }
+type Cell = { asset: Asset; x: number; y: number; width: number; height: number; caption?: string; note?: string; back?: boolean; ruler?: boolean; base?: boolean }
 type Unit = { assets: Asset[]; kind: Kind }
 const GAP = GROUP_GAP
 export function productLayoutKind(asset: Asset): Kind {
@@ -78,6 +78,7 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
     const cells: Cell[] = []
     let height = 120
     let chainReference: number | undefined
+    let holderPortraitRoles = false
     if (unit.kind === 'holder') {
       // Half an arrangement area includes the header, its gap and the
       // trailing group gap; the artwork itself uses only the remainder.
@@ -89,19 +90,32 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       const findRole = (name: string) => hasSavedOrder ? undefined
         : unit.assets.find(asset => new RegExp(`\\b${name}\\b`, 'i').test(asset.name))
       const example = findRole('example') ?? unit.assets[0]
-      cells.push({ asset: example, x: 0, y: 0, width: imageWidth, height: firstHeight, caption: 'Example' })
+      const roleAssets: Array<{ asset: Asset; caption: string }> = [{ asset: example, caption: 'Example' }]
       const used = new Set([example.id])
-      for (const [index, name] of ['Front', 'Inside', 'Back'].entries()) {
+      for (const name of ['Front', 'Inside', 'Back']) {
         const named = findRole(name)
         const asset = named && !used.has(named.id) ? named : unit.assets.find(asset => !used.has(asset.id))
         if (!asset || used.has(asset.id)) continue
         used.add(asset.id)
-        const roleRowWidth = groupWidth
-        cells.push({ asset, x: index * roleRowWidth / 3, y: firstHeight, width: roleRowWidth / 3, height: secondHeight, caption: name, ruler: false })
+        roleAssets.push({ asset, caption: name })
       }
       const rest = unit.assets.filter(asset => !used.has(asset.id))
-      const columns = Math.max(1, Math.min(5, rest.length)), rows = Math.ceil(rest.length / columns)
-      rest.forEach((asset, i) => cells.push({ asset, x: i % columns * imageWidth / columns, y: firstHeight + secondHeight + Math.floor(i / columns) * (height - firstHeight - secondHeight) / rows, width: imageWidth / columns, height: (height - firstHeight - secondHeight) / rows }))
+      const portraitRoles = roleAssets.length === 4 && roleAssets.every(({ asset }) => {
+        const physical = physicalSourceSize(asset)
+        return physical.height > physical.width
+      })
+      holderPortraitRoles = portraitRoles
+      if (portraitRoles) {
+        const roleHeight = height * 0.48
+        roleAssets.forEach(({ asset, caption }, index) => cells.push({ asset, x: index * groupWidth / 4, y: 0, width: groupWidth / 4, height: roleHeight, caption, note: asset.note?.trim() || undefined, ruler: caption === 'Example' }))
+        const columns = Math.max(1, Math.min(5, rest.length)), rows = Math.ceil(rest.length / columns)
+        rest.forEach((asset, i) => cells.push({ asset, x: i % columns * imageWidth / columns, y: roleHeight + Math.floor(i / columns) * (height - roleHeight) / rows, width: imageWidth / columns, height: (height - roleHeight) / rows, note: asset.note?.trim() || undefined }))
+      } else {
+        cells.push({ asset: example, x: 0, y: 0, width: imageWidth, height: firstHeight, caption: 'Example', note: example.note?.trim() || undefined })
+        roleAssets.slice(1).forEach(({ asset, caption }, index) => cells.push({ asset, x: index * groupWidth / 3, y: firstHeight, width: groupWidth / 3, height: secondHeight, caption, note: asset.note?.trim() || undefined, ruler: false }))
+        const columns = Math.max(1, Math.min(5, rest.length)), rows = Math.ceil(rest.length / columns)
+        rest.forEach((asset, i) => cells.push({ asset, x: i % columns * imageWidth / columns, y: firstHeight + secondHeight + Math.floor(i / columns) * (height - firstHeight - secondHeight) / rows, width: imageWidth / columns, height: (height - firstHeight - secondHeight) / rows, note: asset.note?.trim() || undefined }))
+      }
     } else {
       const base = unit.kind === 'standee' && unit.assets.length > 1 ? unit.assets.at(-1) : undefined
       const pictures = unit.assets.filter(asset => asset !== base)
@@ -216,7 +230,8 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       const right = cell.base ? 4 : fillSingleLandscape ? 0 : 5
       // Front and derived Back share the most restrictive bottom clearance.
       const pairedAtBottom = cells.some(other => other.asset.id === cell.asset.id && other.y + other.height >= height - 0.1)
-      const bottomPadding = cell.base ? (groupDetails.finish ? 16 : 5) : groupDetails.finish && pairedAtBottom ? 16 : verticallyCenterSingleImage ? top : 5
+      const notePadding = cell.note ? 13 : 0
+      const bottomPadding = cell.base ? (groupDetails.finish ? 16 : 5) : groupDetails.finish && pairedAtBottom ? 16 : verticallyCenterSingleImage ? top : 5 + notePadding
       const sourceLongest = Math.max(originalW, originalH)
       const sharedScale = chainReference && sourceLongest > 0
         ? Math.min(1, chainReference * 1.08 * PAPER_WIDTH / 210 / sourceLongest)
@@ -228,9 +243,9 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       const centerY = verticallyCenterSingleImage
         ? y + cell.y + (cell.height + top - bottomPadding) / 2
         : y + cell.y + top + h / 2
-      const item: Item = { id: cell.back ? `${sourceId}-back` : sourceId, assetId: cell.asset.id, x: x + cell.x + left + (cell.width - left - right) / 2, y: centerY, w, h, rotation: 0, caption: cell.caption, captionAlign: cell.base ? 'left' : undefined, captionFontSize: cell.base ? 7 : undefined, mirrorX: cell.back, backSvg: cell.back ? backLayerSvg(cell.asset.svg, unit.kind === 'standee') : undefined, derivedFrom: cell.back ? sourceId : undefined, suppressRuler: cell.ruler === false }
+      const item: Item = { id: cell.back ? `${sourceId}-back` : sourceId, assetId: cell.asset.id, x: x + cell.x + left + (cell.width - left - right) / 2, y: centerY, w, h, rotation: 0, caption: cell.caption, captionAlign: cell.base ? 'left' : undefined, captionFontSize: cell.base ? 7 : undefined, note: cell.note, mirrorX: cell.back, backSvg: cell.back ? backLayerSvg(cell.asset.svg, unit.kind === 'standee') : undefined, derivedFrom: cell.back ? sourceId : undefined, suppressRuler: cell.ruler === false }
       page!.items.push(item); group.itemIds.push(item.id)
-      if (unit.kind === 'holder' && cell.caption && cell.caption !== 'Example') item.x = x + cell.x + cell.width / 2
+      if (unit.kind === 'holder' && cell.caption && (holderPortraitRoles || cell.caption !== 'Example')) item.x = x + cell.x + cell.width / 2
       group.imageCells!.push({ itemId: item.id, x: x + cell.x, y: y + cell.y, width: cell.width, height: cell.height })
     })
     page!.imageGroups!.push(group)

@@ -71,6 +71,7 @@ const Artwork = memo(function Artwork({ item, asset, selected, interactive, boun
         node.position(next)
         onChange(next)
       }} />
+    {item.note && <Text listening={false} x={item.x - item.w / 2 - 8} y={item.y + item.h / 2 + 2} width={item.w + 16} text={item.note} align="center" fontSize={8} fill="#475569" wrap="none"/>}
     {selected && interactive && <Transformer ref={transformerRef} resizeEnabled={false} rotateEnabled={false} rotationSnaps={[0, 90, 180, 270]} borderStroke="#2563eb" />}
   </>
 })

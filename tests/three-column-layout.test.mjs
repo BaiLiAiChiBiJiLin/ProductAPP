@@ -43,6 +43,21 @@ test('photo holder roles share a longest edge and no member is enlarged', () => 
  }
 })
 
+test('portrait holder roles use four equal columns and keep each note under its image', () => {
+ const assets = ['Example','Front','Inside','Back'].map((id, index) => ({
+  ...asset(id, 'Shaker', {}, 'portrait-holder'), width: 60 + index, height: 120,
+  note: index === 1 ? 'front note' : undefined, productGroupPosition: index + 1,
+ }))
+ const [page] = paginateAssets(assets)
+ const group = page.imageGroups[0]
+ const roles = page.items.slice(0, 4)
+ assert.deepEqual(roles.map(item => item.caption), ['Example','Front','Inside','Back'])
+ assert.ok(roles.every((item, index) => Math.abs(item.x - (group.x + group.width * (index + .5) / 4)) < 1e-7))
+ assert.equal(roles[1].note, 'front note')
+ assert.ok(roles.every(item => item.y < group.y + group.height * .48))
+ assert.match(pageSvg(page, new Map(assets.map(item => [item.id, item]))), />front note</)
+})
+
 test('Front Side Epoxy does not consume the Front slot of a saved holder group', () => {
  const sources = Array.from({ length: 5 }, (_, i) => ({
   ...asset(`epoxy-${i}`, '照片夹', { 'Epoxy Style': 'Front Side Epoxy' }, 'epoxy-group'),
@@ -59,6 +74,15 @@ test('vertical different-design pair with Finish uses identical front and back d
  assert.equal(front.w,back.w);assert.equal(front.h,back.h)
  const group=page.imageGroups[0]
  assert.ok(back.y+back.h/2<=group.y+group.height-16+1e-7)
+})
+
+test('standee finish excludes numeric flags while preserving the real process from its members', () => {
+ const assets = [asset('front','Acrylic Standees',{'工艺':'1',Finish:'Front Side Epoxy'},'g'), asset('base','Acrylic Standees',{Finish:'1'},'g')]
+ const [page] = paginateAssets(assets)
+ assert.equal(page.imageGroups[0].details.finish, 'Front Side Epoxy')
+ const svg = pageSvg(page,new Map(assets.map(a=>[a.id,a])))
+ assert.ok(svg.includes('>Front Side Epoxy</text>'))
+ assert.ok(!svg.includes('>1 / Front Side Epoxy</text>'))
 })
 
 test('Finish overlays a single line without changing group height or pagination', () => {

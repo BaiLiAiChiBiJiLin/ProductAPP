@@ -23,9 +23,10 @@ export function setFinishLookup(next: FinishLookup) {
 function finishName(asset: Asset, configs: ProductConfig[]) {
   // Existing products may have a legacy duplicate Finish field. The canonical
   // persisted process is 工艺; prefer it whenever present.
-  const saved = attr(asset, ['工艺']) || (asset.productId.startsWith('custom:') ? attr(asset, ['Finish']) : '')
-  if (saved) return saved
-  const value = attr(asset, ['Finish', '表面', '工艺'])
+  // Legacy numeric flags/counts are not process names. Skip them before
+  // choosing a field so they cannot hide a real Finish on the same asset.
+  const value = ['工艺', 'Finish', '表面'].map(key => attr(asset, [key]))
+    .find(candidate => candidate && !/^[+-]?\d+(?:\.\d+)?$/.test(candidate))
   if (!value) return ''
   const cached = finishNameFromLookup(value, finishLookup)
   if (cached) return cached
