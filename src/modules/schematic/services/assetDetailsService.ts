@@ -6,6 +6,7 @@ import type { FinishLookup } from './finishService.ts'
 import { finishNameFromLookup } from './finishService.ts'
 
 const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+export const cleanFinishLabel = (value: string) => value.replace(/^\s*\d+\s*\/\s*/, '').trim()
 const attr = (asset: Asset, keys: string[]) => {
   const values = asset.attributes ?? {}
   const wanted = keys.map(normalize)
@@ -38,7 +39,7 @@ function finishName(asset: Asset, configs: ProductConfig[]) {
   // Older batches can be opened before the local finish cache finishes loading.
   // Keep the saved process visible in that case; the cache still takes
   // precedence whenever it contains a canonical name.
-  return match?.name ?? value
+  return cleanFinishLabel(match?.name ?? value)
 }
 
 function accessoryImage(asset: Asset) {

@@ -1,5 +1,5 @@
 import { defaultLayoutBounds, GROUP_GAP, HEADER_BLOCK_HEIGHT, normalizeLayoutBounds, PAPER_HEIGHT, PAPER_WIDTH, type Asset, type Item, type LayoutBounds, type Page } from '../../../model.ts'
-import { detailsForAsset } from '../services/assetDetailsService.ts'
+import { cleanFinishLabel, detailsForAsset } from '../services/assetDetailsService.ts'
 import { dimensionForItem, physicalSourceSize } from '../services/imageDimensionService.ts'
 import { backLayerSvg } from '../services/svgBackLayerService.ts'
 import { backfillPages } from './backfillPages.ts'
@@ -107,7 +107,7 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       holderPortraitRoles = portraitRoles
       if (portraitRoles) {
         const roleHeight = height * 0.48
-        roleAssets.forEach(({ asset, caption }, index) => cells.push({ asset, x: index * groupWidth / 4, y: 0, width: groupWidth / 4, height: roleHeight, caption, note: asset.note?.trim() || undefined, ruler: caption === 'Example' }))
+        roleAssets.forEach(({ asset, caption }, index) => cells.push({ asset, x: index * imageWidth / 4, y: 0, width: imageWidth / 4, height: roleHeight, caption, note: asset.note?.trim() || undefined, ruler: caption === 'Example' }))
         const columns = Math.max(1, Math.min(5, rest.length)), rows = Math.ceil(rest.length / columns)
         rest.forEach((asset, i) => cells.push({ asset, x: i % columns * imageWidth / columns, y: roleHeight + Math.floor(i / columns) * (height - roleHeight) / rows, width: imageWidth / columns, height: (height - roleHeight) / rows, note: asset.note?.trim() || undefined }))
       } else {
@@ -186,7 +186,7 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       height = Math.min(available, Math.max(nextY, textHeight + accessoryHeight + noteHeight))
     }
     const groupDetails = detailsForAsset(leader, configs)
-    groupDetails.finish = [...new Set(unit.assets.map(asset => detailsForAsset(asset, configs).finish).filter(Boolean))].join(' / ')
+    groupDetails.finish = [...new Set(unit.assets.map(asset => cleanFinishLabel(detailsForAsset(asset, configs).finish)).filter(value => value && !/^\d+(?:\.\d+)?$/.test(value)))].join(' / ')
     if (pages.length && headerKey !== sectionKey) {
       if (column) { y += rowHeight + GAP; column = 0; rowHeight = 0 }
       if (y + HEADER_BLOCK_HEIGHT + GAP + height <= bottom) {
@@ -203,19 +203,19 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
     group.details = groupDetails
     // The full-width role row starts below Example. Keep all property content
     // in the upper-right panel so accessories/notes cannot cover Back.
-    if (unit.kind === 'holder') group.detailsHeight = height * 0.32
+    if (unit.kind === 'holder') group.detailsHeight = holderPortraitRoles ? height : height * 0.32
     if (unit.kind === 'chain' && group.details) group.details.sizes = unit.assets.map(asset => ({ itemId: `item-${asset.id}`, label: dimensionForItem(asset, {}).label }))
     const verticallyCenterSingleImage = cells.length === 1 && !cells[0].back && !cells[0].caption && unit.kind !== 'chain'
     const photoHolder = unit.kind === 'holder' && !shaker
-    const roleCells = photoHolder ? cells.filter(cell => cell.caption).slice(0, 4) : []
+    const roleCells = photoHolder || holderPortraitRoles ? cells.filter(cell => cell.caption).slice(0, 4) : []
     // A common longest edge keeps role artwork visually consistent without
     // distorting aspect ratios or enlarging any source beyond its physical size.
     const roleLongest = Math.min(...roleCells.map(cell => {
       const physical = physicalSourceSize(cell.asset)
       const w = physical.width * PAPER_WIDTH / 210, h = physical.height * PAPER_WIDTH / 210
       const left = w >= h ? 4 : 13
-      const bottom = groupDetails.finish && cell.y + cell.height >= height - 0.1 ? 16 : 5
-      return Math.max(w, h) * Math.min(1, Math.max(1, cell.width - left - 5) / w, Math.max(1, cell.height - 23 - bottom) / h)
+      const bottom = (groupDetails.finish && cell.y + cell.height >= height - 0.1 ? 16 : 5) + (cell.note ? 13 : 0)
+      return Math.max(w, h) * Math.min(holderPortraitRoles ? Infinity : 1, Math.max(1, cell.width - left - 5) / w, Math.max(1, cell.height - 23 - bottom) / h)
     }))
     cells.forEach(cell => {
       const physical = physicalSourceSize(cell.asset)
@@ -235,7 +235,7 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       const sourceLongest = Math.max(originalW, originalH)
       const sharedScale = chainReference && sourceLongest > 0
         ? Math.min(1, chainReference * 1.08 * PAPER_WIDTH / 210 / sourceLongest)
-        : roleCells.includes(cell) ? Math.min(1, roleLongest / sourceLongest)
+        : roleCells.includes(cell) ? Math.min(holderPortraitRoles ? Infinity : 1, roleLongest / sourceLongest)
         : unit.kind === 'holder' ? 1 : Infinity
       const scale = Math.min(sharedScale, Math.max(1, cell.width - left - right) / originalW, Math.max(1, cell.height - top - bottomPadding) / originalH)
       const w = originalW * scale, h = originalH * scale
