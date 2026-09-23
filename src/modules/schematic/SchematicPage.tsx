@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import type { DragDropEvent } from '@tauri-apps/api/webview'
-import type { Event } from '@tauri-apps/api/event'
+import { listen, type Event } from '@tauri-apps/api/event'
 import { Button, Tag, message } from 'antd'
 import { save } from '@tauri-apps/plugin-dialog'
 import { constrainHeaderBlock, defaultLayoutBounds, normalizeLayoutBounds, type Asset, type HeaderBlock, type Item, type LayoutBounds, type Page } from '../../model'
@@ -16,6 +16,7 @@ import UploadImageList from './components/UploadImageList'
 import { ProductGroupingContext, useProductGrouping } from './grouping/useProductGrouping'
 import { applyGroupedAttributePatch, repairLegacyProductGroups } from './grouping/productGroupRestore'
 import ProductCategoryNav from './components/ProductCategoryNav'
+import { matchesProductCategory, UNASSIGNED_PRODUCT_CATEGORY } from './services/productCategoryService'
 import './components/upload-workspace.css'
 import { paginateAssets, autoArrangePages } from './services/paginationService'
 
@@ -34,6 +35,8 @@ import { combineImageGroupsAcrossPages } from './services/groupCombinationServic
 
 import { type ProductAttributePatch } from './services/productOptionRules'
 import { loadProductConfigs, PRODUCT_CONFIGS_UPDATED_EVENT, type ProductConfig } from './services/productConfigService'
+import { loadFinishNames } from './services/finishService'
+import { setFinishLookup } from './services/assetDetailsService'
 
 import { orderAssetsByProductGroup } from './services/productGroupOrdering'
 type SaveBatchResult = { assets: Asset[]; duplicate: boolean; batchId: string; metadata?: BatchMetadata }
@@ -49,7 +52,8 @@ const mergePersistedAssetMetadata = (current: Asset[], persisted: Asset[]) => {
 export default function SchematicPage() { const [toast, context] = message.useMessage(); const [assets, setAssets] = useState<Asset[]>([]); const [batchOpen, setBatchOpen] = useState(false); const [loadingBatchId, setLoadingBatchId] = useState<string | null>(null); const [busy, setBusy] = useState(false); const [dropActive, setDropActive] = useState(false); const [progress, setProgress] = useState<{ parse: ImportProgress; generate: ImportProgress }>({ parse: { phase: 'parse', completed: 0, total: 0 }, generate: { phase: 'generate', completed: 0, total: 0 } }); const [reviewOpen, setReviewOpen] = useState(false); const [confirmingReview, setConfirmingReview] = useState(false); const [screen, setScreen] = useState<'upload' | 'arrange'>('upload'); const [uploadFromArrange, setUploadFromArrange] = useState(false); const [pages, setPages] = useState<Page[]>([]); const [activePage, setActivePage] = useState(1); const [selectedItem, setSelectedItem] = useState<string | null>(null); const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([])
   const [arrangementSort, setArrangementSort] = useState<'default' | 'upload'>('default')
   const [defaultArrangementIds, setDefaultArrangementIds] = useState<string[]>([])
-  const [category, setCategory] = useState('')
+  const [category, setCategory] = useState(UNASSIGNED_PRODUCT_CATEGORY)
+  const [scrollToAssetId, setScrollToAssetId] = useState<string | null>(null)
   const saveLock = useRef(false)
   const [currentBatchId, setCurrentBatchId] = useState<string | null>(null)
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set())
@@ -76,6 +80,11 @@ export default function SchematicPage() { const [toast, context] = message.useMe
     window.addEventListener(PRODUCT_CONFIGS_UPDATED_EVENT, read)
     return () => { cancelled = true; window.removeEventListener(PRODUCT_CONFIGS_UPDATED_EVENT, read) }
   }, [])
+  useEffect(() => {
+    let cancelled = false
+    void loadFinishNames().then(lookup => { if (!cancelled) setFinishLookup(lookup) }).catch(() => {})
+    return () => { cancelled = true }
+  }, [])
   useEffect(() => { if (batchOpen) setAssets(current => repairLegacyProductGroups(current, productConfigs)) }, [batchOpen, productConfigs])
   const saveBatch = async (confirmedAssets?: Asset[]) => {
     if (saveLock.current) throw new Error('批次正在保存，请稍候')
@@ -91,8 +100,8 @@ export default function SchematicPage() { const [toast, context] = message.useMe
       const persisted = mergePersistedAssetMetadata(savingAssets, result.assets)
       setAssets(persisted)
       if (screen === 'arrange') setPages(current => autoArrangePages(current, activePage, persisted, layoutBounds, productConfigs))
-      if (category) setSelectedAssetIds(current => new Set([...current].filter(id => persisted.some(asset => asset.id === id && asset.productId === category))))
-      if (category && !persisted.some(asset => asset.productId === category)) setCategory('')
+      if (category) setSelectedAssetIds(current => new Set([...current].filter(id => persisted.some(asset => asset.id === id && matchesProductCategory(asset, category)))))
+      if (category && category !== UNASSIGNED_PRODUCT_CATEGORY && !persisted.some(asset => asset.productId === category)) setCategory('')
       setBatchMetadata(result.metadata ?? batchMetadata)
       setRecentBatches(current => [{ ...record, id: result.batchId, assets: persisted }, ...current.filter(item => item.id !== result.batchId)].slice(0, 20))
       toast.success({ key: 'batch-save', content: confirmedAssets ? '图片信息已保存到本地历史记录' : '批次已保存到本地历史记录' })
@@ -100,7 +109,7 @@ export default function SchematicPage() { const [toast, context] = message.useMe
     finally { saveLock.current = false; setSavingBatch(false) }
   }
   const grouping = useProductGrouping({ assets, products: productConfigs, save: saveBatch,
-    activate: (id, memberIds) => { setSelectedAssetIds(new Set(memberIds ?? (id ? [id] : []))); setUploadPanelTab('attributes') }, revealAll: () => setCategory('') })
+    activate: (id, memberIds) => { setSelectedAssetIds(new Set(memberIds ?? (id ? [id] : []))); setScrollToAssetId(id); setUploadPanelTab('attributes') }, revealAll: (nextCategory) => setCategory(nextCategory || '') })
   const guideActive = Boolean(grouping.session)
   const confirmAttributes = async (patch: ProductAttributePatch) => {
     if (!selectedAssetIds.size || busy) return
@@ -137,9 +146,17 @@ export default function SchematicPage() { const [toast, context] = message.useMe
       }
     }
   }
-  const visibleAssets = category ? assets.filter(asset => asset.productId === category) : assets
+  const visibleAssets = assets.filter(asset => matchesProductCategory(asset, category))
+  useEffect(() => {
+    if (!scrollToAssetId) return
+    const frame = window.requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(`[data-asset-id="${CSS.escape(scrollToAssetId)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      setScrollToAssetId(null)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [scrollToAssetId, category, visibleAssets.length])
   const changeCategory = (id: string) => { setCategory(id); setSelectedAssetIds(new Set()) }
-  const discardBatch = () => { grouping.reset(); setUploadPanelTab('upload'); const pendingAssets = assets; setCategory(''); setHistoryTransition('back'); setUploadFromArrange(false); setPages([]); setSelectedItem(null); setAssets([]); setSelectedAssetIds(new Set()); setCurrentBatchId(null); setBatchOpen(false); setBatchMetadata(defaultBatchMetadata); toast.success('已返回批次列表'); if (pendingAssets.length && isTauri()) void invoke('discard_temp_assets', { assets: pendingAssets }).catch(e => toast.error(`临时文件清理失败：${String(e)}`)) }
+  const discardBatch = () => { grouping.reset(); setUploadPanelTab('upload'); const pendingAssets = assets; setCategory(UNASSIGNED_PRODUCT_CATEGORY); setHistoryTransition('back'); setUploadFromArrange(false); setPages([]); setSelectedItem(null); setAssets([]); setSelectedAssetIds(new Set()); setCurrentBatchId(null); setBatchOpen(false); setBatchMetadata(defaultBatchMetadata); toast.success('已返回批次列表'); if (pendingAssets.length && isTauri()) void invoke('discard_temp_assets', { assets: pendingAssets }).catch(e => toast.error(`临时文件清理失败：${String(e)}`)) }
   const deleteBatch = async (id: string) => { setDeletingBatchId(id); try { if (isTauri()) { await invoke('delete_batch', { id }); const latest = await invoke<BatchRecord[]>('list_batches'); setRecentBatches(latest) } else { setRecentBatches(current => current.filter(record => record.id !== id)) } toast.success('历史批次已删除') } catch (e) { toast.error(`删除失败：${String(e)}`) } finally { setDeletingBatchId(current => current === id ? null : current) } }
   const deleteAssetFromBatch = async (asset: Asset) => {
     if (busy || savingBatch || saveLock.current || guideActive) return
@@ -161,7 +178,7 @@ export default function SchematicPage() { const [toast, context] = message.useMe
     grouping.reset(); setLoadingBatchId(record.id); setHistoryTransition('forward');
     try {
       const loaded = isTauri() ? await invoke<BatchRecord>('load_batch', { id: record.id }) : record
-      setUploadPanelTab('upload'); setCategory(''); setUploadFromArrange(false); setPages([]); setSelectedItem(null); setAssets(repairLegacyProductGroups(loaded.assets, productConfigs)); setSelectedAssetIds(new Set()); setCurrentBatchId(loaded.id); setBatchMetadata(loaded.metadata ?? defaultBatchMetadata); setBatchOpen(true); toast.success('已打开历史批次')
+      setUploadPanelTab('upload'); setCategory(UNASSIGNED_PRODUCT_CATEGORY); setUploadFromArrange(false); setPages([]); setSelectedItem(null); setAssets(repairLegacyProductGroups(loaded.assets, productConfigs)); setSelectedAssetIds(new Set()); setCurrentBatchId(loaded.id); setBatchMetadata(loaded.metadata ?? defaultBatchMetadata); setBatchOpen(true); toast.success('已打开历史批次')
     } catch (error) { toast.error(`历史批次加载失败：${String(error)}`) }
     finally { setLoadingBatchId(null) }
   }
@@ -173,6 +190,7 @@ export default function SchematicPage() { const [toast, context] = message.useMe
       setBatchMetadata(current => current.customerName.trim() ? current : { ...current, customerName })
     }; if (!wasOpen && !currentBatchId) setCurrentBatchId(crypto.randomUUID()); try { const imported = await importAssets(next => setProgress(current => ({ ...current, [next.phase]: next })), batch => { initializeBatchName(batch); batch.forEach(asset => streamedIds.add(asset.id)); setAssets(current => { const existing = new Set(current.map(asset => asset.id)); return [...current, ...batch.filter(asset => !existing.has(asset.id))] }); setBatchOpen(true) }, droppedPath); initializeBatchName(imported); if (imported.length && streamedIds.size === 0) { setAssets(current => [...current, ...imported]); setBatchOpen(true) } if (imported.length) toast.success(wasOpen ? schematicCopy.adding : schematicCopy.creating) } catch (e) { if (streamedIds.size) { setAssets(current => current.filter(asset => !streamedIds.has(asset.id))); setSelectedAssetIds(current => new Set([...current].filter(id => !streamedIds.has(id)))); if (!wasOpen) { setBatchOpen(false); setCurrentBatchId(null); setBatchMetadata(defaultBatchMetadata) } } toast.error(String(e)) } finally { setBusy(false) } }, [batchOpen, currentBatchId, toast])
   useEffect(() => { if (!isTauri()) return; let cancelled = false; let unlisten = () => {}; const onDrop = (event: Event<DragDropEvent>) => { if (screen !== 'upload' || busy || savingBatch || guideActive) return; if (event.payload.type === 'enter' || event.payload.type === 'over') setDropActive(true); else if (event.payload.type === 'leave') setDropActive(false); else if (event.payload.type === 'drop') { setDropActive(false); const path = event.payload.paths.find(item => /\.svg$/i.test(item)); if (path) void upload(path); else toast.error('仅支持 SVG 文件') } }; void Promise.resolve().then(() => getCurrentWebview()).then(webview => webview.onDragDropEvent(onDrop)).then(stop => { if (cancelled) stop(); else unlisten = stop }).catch(() => {}); return () => { cancelled = true; unlisten() } }, [screen, busy, savingBatch, guideActive, upload, toast])
+  useEffect(() => { if (!isTauri()) return; let cancelled = false; let unlisten = () => {}; void listen<{ path: string }>('external-svg-import', event => { if (!cancelled && screen === 'upload') void upload(event.payload.path) }).then(stop => { if (cancelled) stop(); else unlisten = stop }).catch(() => {}); return () => { cancelled = true; unlisten() } }, [screen, upload])
   const openReview = async () => { if (!assets.length || busy || confirmingReview || classifying) return; setClassifying(true); await new Promise<void>(resolve => window.setTimeout(resolve, 120)); const classified = classifyAssetsByProductAndPrint(assets); setClassifiedAssets(classified); setReviewSelectedIds(new Set(classified.map(asset => asset.id))); setClassifying(false); setReviewOpen(true) }
   const confirmReview = async () => { if (confirmingReview) return; const ordered = classifiedAssets ?? assets; const chosen = ordered.filter(asset => reviewSelectedIds.has(asset.id)); if (!chosen.length) return; if (!isTauri()) return; setConfirmingReview(true); try { const record = { id: currentBatchId ?? crypto.randomUUID(), savedAt: new Date().toISOString(), assets, metadata: batchMetadata }; const result = await invoke<SaveBatchResult>('save_batch', { ...record, assets: assets.map(assetForPersistence) }); const persisted = mergePersistedAssetMetadata(assets, result.assets); const persistedById = new Map(persisted.map(asset => [asset.id, asset])); const chosenPersisted = chosen.map(asset => persistedById.get(asset.id) ?? asset); const configs = productConfigs.length ? productConfigs : await loadProductConfigs().catch(() => []); setProductConfigs(configs); setCurrentBatchId(result.batchId); setAssets(persisted); setDefaultArrangementIds(chosenPersisted.map(asset => asset.id)); setArrangementSort('default'); setClassifiedAssets(null); setReviewSelectedIds(new Set()); setBatchMetadata(result.metadata ?? batchMetadata); if (!result.duplicate) setRecentBatches(current => [{ ...record, id: result.batchId, assets: persisted }, ...current.filter(item => item.id !== result.batchId)].slice(0, 20)); const nextPages = paginateAssets(chosenPersisted, 1000, layoutBounds, configs); setPages(nextPages); setSelectedItem(null); setSelectedGroupIds([]); setActivePage(1); setReviewOpen(false); setScreen('arrange'); toast.success(result.duplicate ? `已确认 ${chosenPersisted.length} 张图片进入生产（历史批次已存在，未重复保存）` : `已确认 ${chosenPersisted.length} 张图片进入生产`) } catch (e) { toast.error(`保存图片失败：${String(e)}`) } finally { setConfirmingReview(false) } }
   const updatePageItem = useCallback((next: Item) => setPages(current => current.map(page => {

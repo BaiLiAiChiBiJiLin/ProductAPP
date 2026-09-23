@@ -32,9 +32,12 @@ export function catalogConfirmationPatch(draft: AttributeDraft, product: Product
       if (attributes[option.name]) continue
       const selected = availableOptionValues(option, attributes).find(value => value.name === draft.attributes[option.name])
       if (!selected) continue
-      attributes[option.name] = selected.name
+      // Catalog configs may call the process option `Finish`, while the
+      // canvas uses the canonical `工艺` field. Keep one stored value.
+      const targetKey = option.name.trim().toLowerCase() === 'finish' ? '工艺' : option.name
+      attributes[targetKey] = selected.name
       const image = draft.images[option.name] || selected.image || option.image
-      if (image) attributeImages[option.name] = image
+      if (image) attributeImages[targetKey] = image
       changed = true
     }
   }

@@ -21,7 +21,9 @@ export function setFinishLookup(next: FinishLookup) {
 }
 
 function finishName(asset: Asset, configs: ProductConfig[]) {
-  const saved = attr(asset, ['Finish'])
+  // Existing products may have a legacy duplicate Finish field. The canonical
+  // persisted process is 工艺; prefer it whenever present.
+  const saved = attr(asset, ['工艺']) || (asset.productId.startsWith('custom:') ? attr(asset, ['Finish']) : '')
   if (saved) return saved
   const value = attr(asset, ['Finish', '表面', '工艺'])
   if (!value) return ''
@@ -32,7 +34,10 @@ function finishName(asset: Asset, configs: ProductConfig[]) {
   const product = configs.find(config => config.id === asset.productId)
   const option = product?.options.find(candidate => ['finish', '表面', '工艺'].includes(normalize(candidate.name)) || ['finish', '表面', '工艺'].includes(normalize(candidate.label)))
   const match = option?.values.find(candidate => normalize(candidate.name) === normalize(value) || normalize(candidate.label) === normalize(value))
-  return match?.name ?? ''
+  // Older batches can be opened before the local finish cache finishes loading.
+  // Keep the saved process visible in that case; the cache still takes
+  // precedence whenever it contains a canonical name.
+  return match?.name ?? value
 }
 
 function accessoryImage(asset: Asset) {

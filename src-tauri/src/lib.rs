@@ -6,6 +6,7 @@ mod geometry;
 mod compositor;
 mod finish_matching;
 mod product_config_cache;
+mod local_api;
 pub mod svg_measure;
 use assets::Asset;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -1003,7 +1004,7 @@ pub fn run() {
             Target::new(TargetKind::Stdout),
             Target::new(TargetKind::Folder { path: log_dir, file_name: Some("printflow.log".into()) }),
         ]).build())
-        .setup(|_app| Ok(()))
+        .setup(|app| { let status_path = project_data_dir().join("cache/local-api.json"); let port = local_api::start(app.handle().clone(), &status_path).map_err(|e| format!("本地 API 启动失败：{e}"))?; log::info!(target: "printflow::local-api", "本地 SVG API 已监听 127.0.0.1:{port}"); Ok(()) })
         .invoke_handler(tauri::generate_handler![import_assets, load_workspace, save_workspace, delete_asset, save_batch, persist_batch_assets, discard_temp_assets, list_batches, load_batch, delete_batch, export_artwork, export_pdf, stage_pdf_page, clear_pdf_pages, export_staged_pdf, load_product_configs, fetch_remote_image, load_finish_names, refresh_product_configs, custom_products::load_custom_product_config, custom_products::add_custom_product_name, custom_products::list_custom_products, custom_products::save_custom_product, custom_products::import_custom_product_image, coreldraw::open_with_coreldraw])
         .run(tauri::generate_context!()).expect("error while running tauri application");
 }

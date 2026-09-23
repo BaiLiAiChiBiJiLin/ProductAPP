@@ -9,7 +9,7 @@ import type { ProductConfig } from '../services/productConfigService.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
 
 type Kind = 'ordinary' | 'holder' | 'standee' | 'chain'
-type Cell = { asset: Asset; x: number; y: number; width: number; height: number; caption?: string; back?: boolean; ruler?: boolean }
+type Cell = { asset: Asset; x: number; y: number; width: number; height: number; caption?: string; back?: boolean; ruler?: boolean; base?: boolean }
 type Unit = { assets: Asset[]; kind: Kind }
 const GAP = GROUP_GAP
 export function productLayoutKind(asset: Asset): Kind {
@@ -141,7 +141,14 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
           cells.push({ asset, x, y: yy, width: w, height: rowH / 2, caption: 'Front' }, { asset, x, y: yy + rowH / 2, width: w, height: rowH / 2, caption: 'Back', back: true, ruler: false })
         } else cells.push({ asset, x, y: yy, width: w, height: rowH })
       })
-      if (base) cells.push({ asset: base, x: imageWidth, y: height * 0.62, width: detailWidth, height: height * 0.38 })
+      // A standee base belongs in the right-hand property area. Reserve the
+      // lower part of that panel for it so the size/QT fields stay readable,
+      // then let the normal proportional fitting make the base as large as
+      // the remaining panel allows.
+      if (base) {
+        const baseY = height * 0.48
+        cells.push({ asset: base, x: imageWidth, y: baseY, width: detailWidth, height: height - baseY, caption: 'base', base: true })
+      }
     }
     if (unit.kind === 'chain') {
       // Remove unused row space using the same fit limits as the renderer.
@@ -177,7 +184,8 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
     page!.headerBlocks!.at(-1)!.detailWidth = detailWidth
     if (height > available + 1e-7) throw new Error('排列区域太小，无法容纳产品组，请增大排列区域。')
     const x = area.left + column * (groupWidth + GAP)
-    const group: ImageGroup = { id: `group-${leader.id}`, productGroupId: leader.productGroupId, itemIds: [], x, y, width: groupWidth, height, detailsX: x + imageWidth, detailWidth, details: detailsForAsset(leader, configs), detailsHeight: unit.kind === 'standee' && unit.assets.length > 1 ? height * 0.6 : undefined, imageCells: [] }
+    const standeeHasBase = unit.kind === 'standee' && unit.assets.length > 1
+    const group: ImageGroup = { id: `group-${leader.id}`, productGroupId: leader.productGroupId, itemIds: [], x, y, width: groupWidth, height, detailsX: x + imageWidth, detailWidth, details: detailsForAsset(leader, configs), detailsHeight: standeeHasBase ? height * 0.48 : undefined, imageCells: [] }
     group.details = groupDetails
     // The full-width role row starts below Example. Keep all property content
     // in the upper-right panel so accessories/notes cannot cover Back.
@@ -198,17 +206,17 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
     cells.forEach(cell => {
       const physical = physicalSourceSize(cell.asset)
       const originalW = physical.width * PAPER_WIDTH / 210, originalH = physical.height * PAPER_WIDTH / 210
-      const top = cell.caption ? 23 : 14
+      const top = cell.base ? 23 : cell.caption ? 23 : 14
       // Horizontal artwork only needs side arrow clearance. The larger left
       // gutter is reserved for vertical measurement text, not every image.
-      const left = shaker ? 13 : originalW >= originalH ? 4 : 13
+      const left = cell.base ? 4 : shaker ? 13 : originalW >= originalH ? 4 : 13
       // A lone landscape artwork can use the full image column up to the
       // details boundary; the details renderer already provides text padding.
       const fillSingleLandscape = verticallyCenterSingleImage && originalW > originalH && !shaker && !chainReference
-      const right = fillSingleLandscape ? 0 : 5
+      const right = cell.base ? 4 : fillSingleLandscape ? 0 : 5
       // Front and derived Back share the most restrictive bottom clearance.
       const pairedAtBottom = cells.some(other => other.asset.id === cell.asset.id && other.y + other.height >= height - 0.1)
-      const bottomPadding = groupDetails.finish && pairedAtBottom ? 16 : verticallyCenterSingleImage ? top : 5
+      const bottomPadding = cell.base ? (groupDetails.finish ? 16 : 5) : groupDetails.finish && pairedAtBottom ? 16 : verticallyCenterSingleImage ? top : 5
       const sourceLongest = Math.max(originalW, originalH)
       const sharedScale = chainReference && sourceLongest > 0
         ? Math.min(1, chainReference * 1.08 * PAPER_WIDTH / 210 / sourceLongest)
@@ -220,7 +228,7 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       const centerY = verticallyCenterSingleImage
         ? y + cell.y + (cell.height + top - bottomPadding) / 2
         : y + cell.y + top + h / 2
-      const item: Item = { id: cell.back ? `${sourceId}-back` : sourceId, assetId: cell.asset.id, x: x + cell.x + left + (cell.width - left - right) / 2, y: centerY, w, h, rotation: 0, caption: cell.caption, mirrorX: cell.back, backSvg: cell.back ? backLayerSvg(cell.asset.svg, unit.kind === 'standee') : undefined, derivedFrom: cell.back ? sourceId : undefined, suppressRuler: cell.ruler === false }
+      const item: Item = { id: cell.back ? `${sourceId}-back` : sourceId, assetId: cell.asset.id, x: x + cell.x + left + (cell.width - left - right) / 2, y: centerY, w, h, rotation: 0, caption: cell.caption, captionAlign: cell.base ? 'left' : undefined, captionFontSize: cell.base ? 7 : undefined, mirrorX: cell.back, backSvg: cell.back ? backLayerSvg(cell.asset.svg, unit.kind === 'standee') : undefined, derivedFrom: cell.back ? sourceId : undefined, suppressRuler: cell.ruler === false }
       page!.items.push(item); group.itemIds.push(item.id)
       if (unit.kind === 'holder' && cell.caption && cell.caption !== 'Example') item.x = x + cell.x + cell.width / 2
       group.imageCells!.push({ itemId: item.id, x: x + cell.x, y: y + cell.y, width: cell.width, height: cell.height })

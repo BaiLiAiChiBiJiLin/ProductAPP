@@ -8,7 +8,7 @@ import { restoreProductGroup } from './productGroupRestore'
 import { canSelectGroupAsset, initialGroupAssets } from './productGroupSelection'
 import { applyProductGroup, copyEpoxy, groupSlotLabels, editorForGroupAsset, groupingTrigger, inheritGroupIdentity, newGroupColor, readGroupAssetEditor, updateGroupEditor, type GroupEditor, type ProductGroupSession } from './productGrouping'
 
-type Props = { assets: Asset[]; products: ProductConfig[]; save: (assets: Asset[]) => Promise<void>; activate: (id: string | null, memberIds?: string[]) => void; revealAll: () => void }
+type Props = { assets: Asset[]; products: ProductConfig[]; save: (assets: Asset[]) => Promise<void>; activate: (id: string | null, memberIds?: string[]) => void; revealAll: (category?: string) => void }
 export function useProductGrouping({ assets, products, save, activate, revealAll }: Props) {
   const [session, setSession] = useState<ProductGroupSession | null>(null)
   const current = useRef(session)

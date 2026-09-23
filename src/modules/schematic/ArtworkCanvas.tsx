@@ -59,7 +59,7 @@ const Artwork = memo(function Artwork({ item, asset, selected, interactive, boun
     if (selected && nodeRef.current) transformerRef.current?.nodes([nodeRef.current])
   }, [selected, image, interactive])
   if (!image) return <Text x={item.x - item.w / 2} y={item.y} width={item.w} text={failed ? '图片加载失败' : '加载图片…'} fontSize={12} fill="#64748b" />
-  return <>{item.caption && <Text listening={false} x={item.x - item.w / 2 - 8} y={item.y - item.h / 2 - 20} width={item.w + 16} text={item.caption} align="center" fontSize={10} fill="#e11d48"/>}
+  return <>{item.caption && <Text listening={false} x={item.captionAlign === 'left' ? item.x - item.w / 2 : item.x - item.w / 2 - 8} y={item.y - item.h / 2 - 20} width={item.captionAlign === 'left' ? item.w : item.w + 16} text={item.caption} align={item.captionAlign ?? 'center'} fontSize={item.captionFontSize ?? 10} fill="#e11d48"/>}
     <KonvaImage ref={nodeRef} image={image} x={item.x} y={item.y} width={item.w} height={item.h}
       scaleX={item.mirrorX ? -1 : 1} offsetX={item.w / 2} offsetY={item.h / 2} rotation={item.rotation} draggable={false}
       onClick={event => { if (!interactive) return; if (!event.evt.ctrlKey && !event.evt.metaKey) onSelect(item.id); if (groupId) onSelectGroup?.(groupId, Boolean(event.evt.ctrlKey || event.evt.metaKey)) }} onTap={event => { if (!interactive) return; if (!event.evt.ctrlKey && !event.evt.metaKey) onSelect(item.id); if (groupId) onSelectGroup?.(groupId, Boolean(event.evt.ctrlKey || event.evt.metaKey)) }} onDragStart={() => interactive && onSelect(item.id)}

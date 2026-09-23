@@ -3,6 +3,12 @@ import assert from 'node:assert/strict'
 import { emptyAttributeDraft, readSelectionDraft, catalogConfirmationPatch } from '../src/modules/schematic/services/attributeDraftService.ts'
 import { normalizeProductConfigs } from '../src/modules/schematic/services/productConfigService.ts'
 
+test('catalog Finish is stored once as the canonical process field', () => {
+  const product = { id: 'standees', title: 'Clear Acrylic Standees', options: [{ name: 'Finish', values: [{ name: 'Front Side Epoxy' }] }] }
+  const patch = catalogConfirmationPatch({ ...emptyAttributeDraft(), attributes: { Finish: 'Front Side Epoxy' } }, product)
+  assert.deepEqual(patch.attributes, { '工艺': 'Front Side Epoxy' })
+})
+
 test('blank images keep previous form while populated images hydrate their own values', () => {
   const previous = { ...emptyAttributeDraft(), productId: 'p', attributes: { Size: '10cm', QT: '3' }, note: '上一张备注' }
   assert.equal(readSelectionDraft(previous, [{ id: 'blank', productId: 'a' }]), previous)
