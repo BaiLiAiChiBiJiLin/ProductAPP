@@ -11,23 +11,36 @@ export function sizeLabelWidth(label: string, fontSize = DETAIL_LABEL_FONT_SIZE)
 export function wrapNote(note: string, width: number, fontSize: number) {
   const measure = (character: string) => fontSize * (/[^\u0000-\u00ff]/.test(character) ? 1 : 0.6)
   const lines: string[] = []
-  let line = ''
-  let used = 0
-  for (const character of note.replace(/\r\n/g, '\n')) {
-    const size = measure(character)
-    if (character === '\n' || (line && used + size > width)) {
-      lines.push(line)
-      line = ''
-      used = 0
+  const pushLine = (value: string) => { if (value.trim()) lines.push(value.trim()) }
+  for (const paragraph of note.replace(/\r\n/g, '\n').split('\n')) {
+    let line = ''
+    let used = 0
+    // Keep Latin words intact while allowing Chinese text to wrap by
+    // character. This avoids splitting product codes and finish names.
+    const tokens = paragraph.match(/[\u4e00-\u9fff]|[^\s\u4e00-\u9fff]+|\s+/g) ?? []
+    for (const token of tokens) {
+      if (/^\s+$/.test(token)) {
+        if (line) { line += ' '; used += measure(' ') }
+        continue
+      }
+      const size = [...token].reduce((sum, character) => sum + measure(character), 0)
+      if (line && used + size > width) { pushLine(line); line = ''; used = 0 }
+      // Keep a long word intact even when it is wider than the column.
+      line += token
+      used += size
     }
-    if (character !== '\n') { line += character; used += size }
+    pushLine(line)
   }
-  if (line) lines.push(line)
   return lines
+}
+export function quantityLabel(value?: string) {
+  const quantity = value?.trim() ?? ''
+  return quantity && Number(quantity) !== 0 ? `QT: ${quantity}` : 'QT:'
 }
 
 /** One geometry calculation for Konva and exported SVG, contained in the details half. */
-export function imageDetailsLayout(group: ImageGroup) {
+export function imageDetailsLayout(group: ImageGroup, visualScale = 1) {
+  const displayScale = Number.isFinite(visualScale) && visualScale > 0 ? visualScale : 1
   const details = group.details
   const fields: { key: string; text: string; fontSize?: number }[] = []
   if (details) {
@@ -35,7 +48,7 @@ export function imageDetailsLayout(group: ImageGroup) {
     const size = details.size?.trim()
     if (details.sizes?.length) details.sizes.forEach((value, index) => fields.push({ key: `size-${index}`, text: `Size: ${value.label}` }))
     else if (size) fields.push({ key: 'size', text: `Size: ${size}` })
-    fields.push({ key: 'qt', text: `QT: ${details.qt || '-'}` })
+    fields.push({ key: 'qt', text: quantityLabel(details.qt) })
     if (details.fields) fields.push(...details.fields)
   }
   // The details panel belongs to the group's right edge. Older/reflowed
@@ -60,29 +73,38 @@ export function imageDetailsLayout(group: ImageGroup) {
   const line = Math.max(1, Math.min(DETAIL_LINE_HEIGHT, (group.height - 8) / Math.max(6, fields.length + 2)))
   const fontSize = Math.max(1, Math.min(DETAIL_LABEL_FONT_SIZE, line - 1))
   const bodyY = y + fields.length * line
-  const bodyHeight = Math.max(0, group.height - 8 - fields.length * line)
+  // Finish/process is painted along the bottom edge of the group. Reserve a
+  // line for it so wrapped notes always remain above that label.
+  const hasFinish = Boolean(group.details?.finish?.trim()) || Boolean(group.detailGroups?.some(panel => panel.details.finish?.trim()))
+  const finishReserve = hasFinish ? 18 : 0
+  const contentHeight = Math.max(group.height, group.backgroundHeight ?? group.height)
+  const bodyHeight = Math.max(0, contentHeight - 8 - fields.length * line - finishReserve)
   const hasNote = !!details?.note?.trim() || !!details?.noteImage
   const accessoryExtra = details?.accessoryImage ? (details.accessoryCode ? 14 : 4) + accessoryTopGap(details.accessoryImage) : 0
-  const desiredAccessorySize = details?.accessoryImage ? Math.min(Math.max(1, width - 4), group.height * DETAIL_ACCESSORY_SIZE_RATIO) : 0
+  const desiredAccessorySize = details?.accessoryImage ? Math.min(Math.max(1, width - 4), group.height * DETAIL_ACCESSORY_SIZE_RATIO * displayScale) : 0
   const besideImageSize = Math.max(0, Math.min(desiredAccessorySize, bodyHeight - accessoryExtra))
   // Leave 4 units between the accessory's white backing and the note column.
   const besideWidth = width - besideImageSize - 6
   if (details?.accessoryImage && hasNote && besideWidth >= 24) {
     const noteX = x + besideImageSize + 6
-    const noteY = bodyY
     let noteFontSize = Math.min(8, fontSize)
     let noteLine = Math.min(noteFontSize + 2, line)
     let noteLines = details.note?.trim() ? wrapNote(details.note, besideWidth, noteFontSize) : []
     const noteImageGap = details.noteImage && noteLines.length ? 2 : 0
-    const desiredNoteImageSize = details.noteImage ? Math.min(besideWidth, group.height * DETAIL_NOTE_IMAGE_SIZE_RATIO, bodyHeight) : 0
+    const desiredNoteImageSize = details.noteImage ? Math.min(besideWidth, contentHeight * DETAIL_NOTE_IMAGE_SIZE_RATIO * displayScale, bodyHeight) : 0
     const textRoom = Math.max(1, bodyHeight - desiredNoteImageSize - noteImageGap)
     while (noteLines.length * noteLine > textRoom && noteFontSize > 0.5) {
       noteFontSize = Math.max(0.5, noteFontSize - 0.25)
       noteLine = noteFontSize * 1.25
       noteLines = wrapNote(details.note!, besideWidth, noteFontSize)
     }
+    const noteBlockHeight = noteLines.length * noteLine + noteImageGap + desiredNoteImageSize
+    // Keep the note immediately above the process/finish label. This also
+    // prevents a short note from floating at the top while the process sits
+    // at the bottom of the group.
+    const noteY = bodyY + Math.max(0, bodyHeight - noteBlockHeight)
     const noteImageY = noteY + noteLines.length * noteLine + noteImageGap
-    const noteImageSize = Math.max(0, Math.min(desiredNoteImageSize, group.y + group.height - 4 - noteImageY))
+    const noteImageSize = Math.max(0, Math.min(desiredNoteImageSize, group.y + contentHeight - 4 - noteImageY))
     return { x, y, width, line, fontSize, fields, bodyY, imageSize: besideImageSize, accessoryHeight: besideImageSize + accessoryExtra,
       noteX, noteWidth: besideWidth, noteY, noteLines, noteFontSize, noteLine, noteImageSize, noteImageY }
   }
@@ -98,7 +120,7 @@ export function imageDetailsLayout(group: ImageGroup) {
     noteLine = noteFontSize * 1.25
     noteLines = wrapNote(details!.note!, width, noteFontSize)
   }
-  const desiredNoteImageSize = details?.noteImage ? Math.min(width, group.height * DETAIL_NOTE_IMAGE_SIZE_RATIO) : 0
+  const desiredNoteImageSize = details?.noteImage ? Math.min(width, contentHeight * DETAIL_NOTE_IMAGE_SIZE_RATIO * displayScale) : 0
   const gap = hasNote ? 2 : 0
   const noteImageGap = details?.noteImage && noteLines.length ? 2 : 0
   const available = Math.max(0, bodyHeight - noteLines.length * noteLine - accessoryExtra - gap - noteImageGap)
@@ -106,7 +128,8 @@ export function imageDetailsLayout(group: ImageGroup) {
   const imageSize = desiredAccessorySize * scale
   const noteImageSize = desiredNoteImageSize * scale
   const accessoryHeight = imageSize + accessoryExtra
-  const noteY = bodyY + accessoryHeight + gap
+  const noteBlockHeight = noteLines.length * noteLine + noteImageGap + noteImageSize
+  const noteY = bodyY + Math.max(0, bodyHeight - noteBlockHeight)
   return { x, y, width, line, fontSize, fields, bodyY, imageSize, accessoryHeight, noteX: x, noteWidth: width, noteY, noteLines, noteFontSize, noteLine, noteImageSize, noteImageY: noteY + noteLines.length * noteLine + noteImageGap }
 }
 

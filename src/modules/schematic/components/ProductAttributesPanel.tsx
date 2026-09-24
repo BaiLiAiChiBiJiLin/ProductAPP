@@ -16,8 +16,8 @@ import ProductGroupGuide from '../grouping/ProductGroupGuide'
 import { restoreProductGroup } from '../grouping/productGroupRestore'
 import { orderAssetsByProductGroup } from '../services/productGroupOrdering'
 
-type Props = { assets: Asset[]; selectedAssetIds: Set<string>; onConfirmAttributes: (patch: ProductAttributePatch) => Promise<void>; disabled?: boolean; selectionHint?: string; allowGrouping?: boolean }
-export default function ProductAttributesPanel({ assets, selectedAssetIds, onConfirmAttributes, disabled = false, selectionHint, allowGrouping = true }: Props) {
+type Props = { assets: Asset[]; selectedAssetIds: Set<string>; onConfirmAttributes: (patch: ProductAttributePatch) => Promise<void>; disabled?: boolean; selectionHint?: string; allowGrouping?: boolean; showSelectionSummary?: boolean }
+export default function ProductAttributesPanel({ assets, selectedAssetIds, onConfirmAttributes, disabled = false, selectionHint, allowGrouping = true, showSelectionSummary = true }: Props) {
   const { products, loading, error: configError, refreshing, refresh } = useProductConfigs()
   const grouping = useProductGroup()
   const session = allowGrouping ? grouping?.session : undefined
@@ -55,7 +55,7 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
       setDraft(next)
       const isCustom = next.productId.startsWith('custom:')
       setMode(isCustom ? 'custom' : 'existing')
-      if (isCustom) setCustom({ id: Number(next.productId.slice(7)), name: selected[0]?.productName ?? '', size: next.attributes.Size ?? '', printOption: next.attributes['Print Option'] ?? '', finish: next.attributes.Finish ?? '', accessoryColor: next.attributes['Accessories Color'] ?? '', accessoryColorImage: next.images['Accessories Color'] ?? '', qt: Number(next.attributes.QT) || 1, attributes: { ...next.attributes }, attributeImages: { ...next.images } })
+      if (isCustom) setCustom({ id: Number(next.productId.slice(7)), name: selected[0]?.productName ?? '', size: next.attributes.Size ?? '', printOption: next.attributes['Print Option'] ?? '', finish: next.attributes.Finish ?? '', accessoryColor: next.attributes['Accessories Color'] ?? '', accessoryColorImage: next.images['Accessories Color'] ?? '', qt: next.attributes.QT?.trim() ? Number(next.attributes.QT) : null, attributes: { ...next.attributes }, attributeImages: { ...next.images } })
     } else if (!session && selected.length === 1 && (selected[0].note || selected[0].noteImage)) {
       // Notes remain independent when a product has been cleared from an image.
       setDraft({ ...draft, note: selected[0].note ?? '', noteImage: selected[0].noteImage ?? '' })
@@ -111,8 +111,7 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
   }
   return <div className="image-attributes-panel" role="tabpanel">
     {noticeContext}
-    <div className="upload-panel-hint"><p>{selectionHint ?? '选择左侧图片修改属性，可多选可单选'}</p><p>{selectionHint ? '修改后点击确认保存。' : '点击单选，Ctrl 多选，Shift 连选；填写后点击确认保存。'}</p></div>
-    <div className="product-config-selected-count">{selectionLabel}</div>
+    {showSelectionSummary && <><div className="upload-panel-hint"><p>{selectionHint ?? '选择左侧图片修改属性，可多选可单选'}</p><p>{selectionHint ? '修改后点击确认保存。' : '点击单选，Ctrl 多选，Shift 连选；填写后点击确认保存。'}</p></div><div className="product-config-selected-count">{selectionLabel}</div></>}
     {allowGrouping && savedGroup && <div className="product-group-edit-entry"><span>{savedGroup.trigger.kind === 'free' ? '已加入自由图片组，可单独修改这组中的任意图片。' : '已加入产品组，可单独修改此图属性。产品和立牌数量请在组内修改。'}</span><Button disabled={disabled || confirming || selected.length !== 1} onClick={() => grouping?.resumeGroup(selected[0].id)}>编辑组合</Button></div>}
     {allowGrouping && !savedGroup && !session && selected.length > 0 && <div className="product-group-edit-entry"><span>{groupGuideTrigger ? `当前${groupGuideTrigger.label}支持多图分组引导。` : '组合时先选完图片再选产品'}</span><Button disabled={disabled || confirming || grouping?.saving} onClick={() => grouping?.start(editor, selected.map(asset => asset.id), !groupGuideTrigger, selected.some(asset => asset.attributesConfirmed))}>图片组合</Button></div>}
     <fieldset className="attribute-edit-fields" disabled={disabled || confirming || grouping?.saving} inert={disabled || confirming || grouping?.saving}>
@@ -125,7 +124,7 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
         <div className="product-config-form">
           <label className="product-config-field"><span>产品</span><Select aria-label="产品" showSearch optionFilterProp="label" disabled={!selected.length || loading || locked} placeholder="请选择产品" value={product?.id} options={products.map(item => ({ value: item.id, label: item.title }))} onChange={id => changeEditor({ ...editor, draft: { ...draft, productId: id, attributes: {}, images: {} } }, true)}/></label>
           {product?.options.map(option => { const values = availableOptionValues(option, draft.attributes); return values.length ? <ProductOptionField key={`${product.id}:${option.name}`} option={option} values={values} value={draft.attributes[option.name]} imageOverride={draft.images[option.name]} disabled={!selected.length || (locked && lockedOptions.has(option.name))} onChange={(value, image) => changeOption(option.name, value, image)}/> : null })}
-          <label className="product-config-field"><span>QT（数量）</span><InputNumber aria-label="QT（数量）" disabled={!selected.length} min={1} max={2147483647} precision={0} value={draft.attributes.QT ? Number(draft.attributes.QT) : undefined} onChange={value => changeOption('QT', value == null ? '' : String(value))}/></label>
+          <label className="product-config-field"><span>QT（数量）</span><InputNumber aria-label="QT（数量）" disabled={!selected.length} min={0} max={2147483647} precision={0} value={draft.attributes.QT ? Number(draft.attributes.QT) : undefined} onChange={value => changeOption('QT', value == null ? '' : String(value))}/></label>
         </div>
       </div>
       <div hidden={mode !== 'custom'}><CustomProductForm draft={custom} onDraftChange={changeCustom} productLocked={locked}/></div>

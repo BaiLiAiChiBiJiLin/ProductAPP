@@ -31,7 +31,20 @@ function placementFor(target: Page, free: FreeRegion, candidate: Candidate): Pla
       && existing.detailWidth === header.detailWidth && Math.abs(columnWidth - group.width) < EPS
       && x >= free.x - EPS && x + group.width <= free.x + free.width + EPS
       && (source !== target || before(x, free.y, group))) return { x, y: free.y, reuse: existing }
+    // A free rectangle that is already owned by a header is not a place where
+    // another header may start.  Doing so creates a nested header in the
+    // remaining part of a section; the next free-region pass then treats that
+    // nested header as a new column and can move a third group underneath it.
+    // Leave incompatible groups for a later page/section instead.
+    return
   }
+  // Free-region packing may only start a new header on a new section row.
+  // Starting one beside an existing header is how a two-column section ended
+  // up with a third, unrelated header in the same row. Side-column packing
+  // handles the one intentional exception for wide standees separately.
+  if ((target.headerBlocks ?? []).some(other => other.auto
+    && (Math.abs(other.y - free.y) <= EPS
+      || Math.abs(other.y + HEADER_BLOCK_HEIGHT + GROUP_GAP - free.y) <= EPS))) return
   const y = free.y + HEADER_BLOCK_HEIGHT + GROUP_GAP
   if (y + group.height > free.y + free.height + EPS || (source === target && !before(free.x, y, group))) return
   const added: HeaderBlock = { ...header, id: `free-${target.id}-${group.id}`, x: free.x, y: free.y,

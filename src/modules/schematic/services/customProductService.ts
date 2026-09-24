@@ -10,7 +10,7 @@ export type CustomProduct = {
   finish: string
   accessoryColor: string
   accessoryColorImage: string
-  qt: number
+  qt: number | null
   attributes?: Record<string, string>
   attributeImages?: Record<string, string>
 }
@@ -42,7 +42,7 @@ export function customProductPatch(product: CustomProduct): ProductAttributePatc
   return {
     productId: `custom:${product.id}`, productName: product.name,
     clearAttributes: true,
-    attributes: { ...customAttributes(product), QT: String(product.qt) },
+    attributes: { ...customAttributes(product), QT: product.qt == null ? '' : String(product.qt) },
     attributeImages: customImages(product),
   }
 }

@@ -1,11 +1,20 @@
 import { Group, Line, Text } from 'react-konva'
+import { useMemo } from 'react'
 import type { Asset, Page } from '../../../model'
-import { imageDimensionMarkerLayout, dimensionGroups } from '../services/imageDimensionService'
+import { imageDimensionMarkerLayout, dimensionGroups, type DimensionDisplayPrecision } from '../services/imageDimensionService'
 
-export default function ImageDimensionMarkers({ page, assets }: { page: Page; assets: Map<string, Asset> }) {
+export default function ImageDimensionMarkers({ page, assets, selectedItemId, precision = 'default', visualScales }: { page: Page; assets: Map<string, Asset>; selectedItemId?: string; precision?: DimensionDisplayPrecision; visualScales?: ReadonlyMap<string, number> }) {
+  const displayPage = useMemo(() => {
+    if (!visualScales?.size) return page
+    return { ...page, items: page.items.map(item => {
+      const scale = visualScales.get(item.id) ?? 1
+      return scale === 1 ? item : { ...item, w: item.w * scale, h: item.h * scale }
+    }) }
+  }, [page, visualScales])
   return <Group listening={false} name="image-dimension-markers">
-    {dimensionGroups(page).map(group => {
-      const marker = imageDimensionMarkerLayout(group, page, assets)
+    {dimensionGroups(displayPage).map(group => {
+      const markerPrecision = selectedItemId && group.itemIds.includes(selectedItemId) ? precision : 'default'
+      const marker = imageDimensionMarkerLayout(group, displayPage, assets, markerPrecision)
       if (!marker) return null
       if (marker.horizontal) {
         return <Group key={group.id} name={`image-dimension-${group.itemIds[0]}`}>

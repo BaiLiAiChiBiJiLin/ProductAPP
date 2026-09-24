@@ -19,14 +19,14 @@ pub struct CustomProduct {
     #[serde(default)]
     pub accessory_color_image: String,
     #[serde(default = "default_quantity")]
-    pub qt: u32,
+    pub qt: Option<u32>,
     #[serde(default)]
     pub attributes: Option<std::collections::HashMap<String, String>>,
     #[serde(default)]
     pub attribute_images: Option<std::collections::HashMap<String, String>>,
 }
 
-fn default_quantity() -> u32 { 1 }
+fn default_quantity() -> Option<u32> { Some(1) }
 
 pub(super) fn connect(path: &Path) -> Result<Connection, String> {
     if let Some(parent) = path.parent() {
@@ -95,7 +95,7 @@ pub(super) fn write(conn: &mut Connection, mut product: CustomProduct) -> Result
 mod tests {
     use super::*;
     fn sample() -> CustomProduct {
-        CustomProduct { id: None, name: "自定义立牌".into(), size: "10cm".into(), print_option: "双面同图".into(), finish: "亮面".into(), accessory_color: "金色".into(), accessory_color_image: String::new(), qt: 5, attributes: None, attribute_images: None }
+        CustomProduct { id: None, name: "自定义立牌".into(), size: "10cm".into(), print_option: "双面同图".into(), finish: "亮面".into(), accessory_color: "金色".into(), accessory_color_image: String::new(), qt: Some(5), attributes: None, attribute_images: None }
     }
     #[test]
     fn bundled_presets_seed_once_and_keep_user_changes() {

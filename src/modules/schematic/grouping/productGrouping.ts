@@ -103,7 +103,7 @@ export function readGroupAssetEditor(asset: Asset): GroupEditor {
   return {
     mode: asset.productId.startsWith('custom:') ? 'custom' : 'existing',
     draft: { productId: asset.productId, attributes: { ...asset.attributes }, images: { ...asset.attributeImages }, note: asset.note ?? '', noteImage: asset.noteImage ?? '' },
-    custom: { id: Number(asset.productId.slice(7)) || null, name: asset.productName ?? '', size: asset.attributes?.Size ?? '', printOption: asset.attributes?.['Print Option'] ?? '', finish: asset.attributes?.Finish ?? '', accessoryColor: asset.attributes?.['Accessories Color'] ?? '', accessoryColorImage: asset.attributeImages?.['Accessories Color'] ?? '', qt: Number(asset.attributes?.QT) || 1, attributes: { ...asset.attributes }, attributeImages: { ...asset.attributeImages } },
+    custom: { id: Number(asset.productId.slice(7)) || null, name: asset.productName ?? '', size: asset.attributes?.Size ?? '', printOption: asset.attributes?.['Print Option'] ?? '', finish: asset.attributes?.Finish ?? '', accessoryColor: asset.attributes?.['Accessories Color'] ?? '', accessoryColorImage: asset.attributeImages?.['Accessories Color'] ?? '', qt: asset.attributes?.QT?.trim() ? Number(asset.attributes.QT) : null, attributes: { ...asset.attributes }, attributeImages: { ...asset.attributeImages } },
   }
 }
 

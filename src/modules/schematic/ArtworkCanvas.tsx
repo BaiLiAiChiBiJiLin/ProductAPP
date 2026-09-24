@@ -7,12 +7,25 @@ import { artworkBounds, constrain, defaultLayoutBounds, PAPER_HEIGHT, PAPER_WIDT
 import HeaderBlockCanvas from './components/HeaderBlockCanvas'
 import ImageGroupBackgrounds from './components/ImageGroupBackgrounds'
 import ImageDimensionMarkers from './components/ImageDimensionMarkers'
+import type { AccessoryVisual } from './components/ImageGroupDetails'
+import type { DimensionDisplayPrecision } from './services/imageDimensionService'
 
 const svgImageCache = new Map<string, HTMLImageElement>()
 function displayDate(value?: string) {
   if (!value) return '-'
   const match = value.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
   return match ? `${Number(match[2])}月${Number(match[3])}日` : value
+}
+
+function constrainInsideGroup(item: Item, group?: { x: number; y: number; width: number; height: number }) {
+  if (!group) return item
+  const angle = item.rotation * Math.PI / 180
+  const halfW = (Math.abs(Math.cos(angle)) * item.w + Math.abs(Math.sin(angle)) * item.h) / 2
+  const halfH = (Math.abs(Math.sin(angle)) * item.w + Math.abs(Math.cos(angle)) * item.h) / 2
+  return { ...item,
+    x: Math.max(group.x + halfW, Math.min(group.x + group.width - halfW, item.x)),
+    y: Math.max(group.y + halfH, Math.min(group.y + group.height - halfH, item.y)),
+  }
 }
 
 function PageHeaderCanvas({ pageNumber, totalPages, metadata }: { pageNumber: number; totalPages: number; metadata: PageHeader }) {
@@ -34,8 +47,8 @@ function PageHeaderCanvas({ pageNumber, totalPages, metadata }: { pageNumber: nu
   </Group>
 }
 
-const Artwork = memo(function Artwork({ item, asset, selected, interactive, bounds, onSelect, onSelectGroup, groupId, onChange }: {
-  item: Item; asset: Asset; selected: boolean; interactive: boolean; bounds: LayoutBounds; groupId?: string; onSelect: (id: string | null) => void; onSelectGroup?: (id: string, ctrlKey: boolean) => void; onChange: (item: Item) => void
+const Artwork = memo(function Artwork({ item, asset, visualScale = 1, selected, interactive, bounds, groupBounds, onSelect, onChange }: {
+  item: Item; asset: Asset; visualScale?: number; selected: boolean; interactive: boolean; bounds: LayoutBounds; groupBounds?: { x: number; y: number; width: number; height: number }; onSelect: (id: string | null) => void; onChange: (item: Item) => void
 }) {
   const [image, setImage] = useState<HTMLImageElement>()
   const [failed, setFailed] = useState(false)
@@ -55,34 +68,36 @@ const Artwork = memo(function Artwork({ item, asset, selected, interactive, boun
     img.src = svgObjectUrl(sourceSvg)
     return () => { cancelled = true; img.onload = null; img.onerror = null }
   }, [asset.svg, item.backSvg])
+  const displayItem = visualScale === 1 ? item : { ...item, w: item.w * visualScale, h: item.h * visualScale }
   useEffect(() => {
     if (selected && nodeRef.current) transformerRef.current?.nodes([nodeRef.current])
   }, [selected, image, interactive])
-  if (!image) return <Text x={item.x - item.w / 2} y={item.y} width={item.w} text={failed ? '图片加载失败' : '加载图片…'} fontSize={12} fill="#64748b" />
-  return <>{item.caption && <Text listening={false} x={item.captionAlign === 'left' ? item.x - item.w / 2 : item.x - item.w / 2 - 8} y={item.y - item.h / 2 - 20} width={item.captionAlign === 'left' ? item.w : item.w + 16} text={item.caption} align={item.captionAlign ?? 'center'} fontSize={item.captionFontSize ?? 10} fill="#e11d48"/>}
-    <KonvaImage ref={nodeRef} image={image} x={item.x} y={item.y} width={item.w} height={item.h}
-      scaleX={item.mirrorX ? -1 : 1} offsetX={item.w / 2} offsetY={item.h / 2} rotation={item.rotation} draggable={false}
-      onClick={event => { if (!interactive) return; if (!event.evt.ctrlKey && !event.evt.metaKey) onSelect(item.id); if (groupId) onSelectGroup?.(groupId, Boolean(event.evt.ctrlKey || event.evt.metaKey)) }} onTap={event => { if (!interactive) return; if (!event.evt.ctrlKey && !event.evt.metaKey) onSelect(item.id); if (groupId) onSelectGroup?.(groupId, Boolean(event.evt.ctrlKey || event.evt.metaKey)) }} onDragStart={() => interactive && onSelect(item.id)}
-      onDragMove={event => { event.target.position(constrain({ ...item, ...event.target.position() }, bounds)) }}
-      onDragEnd={event => { const next = constrain({ ...item, ...event.target.position() }, bounds); event.target.position(next); onChange(next) }}
+  if (!image) return <Text x={displayItem.x - displayItem.w / 2} y={displayItem.y} width={displayItem.w} text={failed ? '图片加载失败' : '加载图片…'} fontSize={12} fill="#64748b" />
+  return <>{displayItem.caption && <Text listening={false} x={displayItem.captionAlign === 'left' ? displayItem.x - displayItem.w / 2 : displayItem.x - displayItem.w / 2 - 8} y={displayItem.y - displayItem.h / 2 - 20} width={displayItem.captionAlign === 'left' ? displayItem.w : displayItem.w + 16} text={displayItem.caption} align={displayItem.captionAlign ?? 'center'} fontSize={displayItem.captionFontSize ?? 10} fill="#e11d48"/>}
+    <KonvaImage ref={nodeRef} image={image} x={displayItem.x} y={displayItem.y} width={displayItem.w} height={displayItem.h}
+      scaleX={displayItem.mirrorX ? -1 : 1} offsetX={displayItem.w / 2} offsetY={displayItem.h / 2} rotation={displayItem.rotation} draggable={interactive}
+      onClick={event => { if (!interactive) return; event.cancelBubble = true; onSelect(item.id) }} onTap={event => { if (!interactive) return; event.cancelBubble = true; onSelect(item.id) }} onDragStart={() => interactive && onSelect(item.id)}
+      onDragMove={event => { const next = constrainInsideGroup(constrain({ ...item, ...event.target.position() }, bounds), groupBounds); event.target.position(next) }}
+      onDragEnd={event => { const next = constrainInsideGroup(constrain({ ...item, ...event.target.position() }, bounds), groupBounds); event.target.position(next); onChange(next) }}
       onTransformEnd={() => {
         const node = nodeRef.current!
         const next = constrain({ ...item, x: node.x(), y: node.y(), rotation: node.rotation() }, bounds)
         node.position(next)
         onChange(next)
       }} />
-    {item.note && <Text listening={false} x={item.x - item.w / 2 - 8} y={item.y + item.h / 2 + 2} width={item.w + 16} text={item.note} align="center" fontSize={8} fill="#475569" wrap="none"/>}
+    {displayItem.note && <Text listening={false} x={displayItem.x - displayItem.w / 2 - 8} y={displayItem.y + displayItem.h / 2 + 2} width={displayItem.w + 16} text={displayItem.note} align="center" fontSize={8} fill="#475569" wrap="none"/>}
     {selected && interactive && <Transformer ref={transformerRef} resizeEnabled={false} rotateEnabled={false} rotationSnaps={[0, 90, 180, 270]} borderStroke="#2563eb" />}
   </>
 })
 
-export default function ArtworkCanvas({ page, assets, selected, selectedIds = [], onBoxSelect, selectedGroupIds = [], onSelect, onSelectGroup, onChange, onDropAsset, metadata, totalPages, mode = 'select', zoom = 1, onZoomChange, layoutBounds = defaultLayoutBounds, onHeaderBlockChange }: {
+export default function ArtworkCanvas({ page, assets, selected, selectedIds = [], onBoxSelect, selectedGroupIds = [], onSelect, onSelectGroup, onSelectAccessory, selectedAccessoryKey, accessoryVisuals, onChangeAccessory, onChange, onDropAsset, metadata, totalPages, mode = 'select', zoom = 1, onZoomChange, layoutBounds = defaultLayoutBounds, onHeaderBlockChange, dimensionPrecision = 'default', dimensionItemId, visualScales }: {
   page: Page; assets: Map<string, Asset>; selected: string | null; onSelect: (id: string | null) => void
   selectedIds?: string[]; onBoxSelect?: (ids: string[]) => void
   selectedGroupIds?: string[]; onSelectGroup?: (id: string, ctrlKey: boolean) => void
   onChange: (item: Item) => void; onDropAsset: (assetId: string, x: number, y: number) => void; metadata?: PageHeader; totalPages?: number
   mode?: 'select' | 'pan'; zoom?: number; onZoomChange?: (zoom: number) => void
   layoutBounds?: LayoutBounds; onHeaderBlockChange: (block: HeaderBlock) => void
+  dimensionPrecision?: DimensionDisplayPrecision; dimensionItemId?: string; visualScales?: ReadonlyMap<string, number>; selectedAccessoryKey?: string; accessoryVisuals?: ReadonlyMap<string, AccessoryVisual>; onSelectAccessory?: (key: string) => void; onChangeAccessory?: (key: string, patch: Partial<AccessoryVisual>) => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
@@ -142,10 +157,8 @@ export default function ArtworkCanvas({ page, assets, selected, selectedIds = []
     return { x: (clientX - bounds.left - x) / scale, y: (clientY - bounds.top - y) / scale }
   }
   return <div ref={ref} className={`stage-wrap ${panMode ? 'is-pan-mode' : 'is-select-mode'}`} aria-label="A4 排版画布"
-    onPointerDownCapture={event => {
+    onPointerDownCapture={() => {
       suppressClick.current = false
-      if (panMode || event.button !== 0 || event.ctrlKey || event.metaKey || !onBoxSelect) return
-      boxStart.current = { pointerId: event.pointerId, start: pointerToPaper(event.clientX, event.clientY), screenX: event.clientX, screenY: event.clientY, dragging: false }
     }}
     onPointerMoveCapture={event => {
       const start = boxStart.current
@@ -161,7 +174,19 @@ export default function ArtworkCanvas({ page, assets, selected, selectedIds = []
       if (!start || start.pointerId !== event.pointerId) return
       boxStart.current = undefined
       if (start.dragging) {
-        onBoxSelect?.(itemsInSelection(page.items, start.start, pointerToPaper(event.clientX, event.clientY)))
+        const end = pointerToPaper(event.clientX, event.clientY)
+        const box = selectionBounds(start.start, end)
+        const ids = new Set(itemsInSelection(page.items, start.start, end))
+        // Notes and note images are rendered as part of a group rather than
+        // as standalone Items. Include the complete group when the marquee
+        // touches its background/details area, so it can be scaled together.
+        for (const group of page.imageGroups ?? []) {
+          const height = Math.max(group.height, group.backgroundHeight ?? 0)
+          const overlaps = group.x < box.x + box.width && group.x + group.width > box.x
+            && group.y < box.y + box.height && group.y + height > box.y
+          if (overlaps) group.itemIds.forEach(id => ids.add(id))
+        }
+        onBoxSelect?.([...ids])
         setMarquee(null)
         if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
       }
@@ -179,15 +204,34 @@ export default function ArtworkCanvas({ page, assets, selected, selectedIds = []
       const py = (event.clientY - bounds.top - y) / scale
       if (id && px >= 0 && py >= 0 && px <= PAPER_WIDTH && py <= PAPER_HEIGHT) onDropAsset(id, px, py)
     }}>
-    {size.width > 0 && size.height > 0 && <Stage width={size.width} height={size.height} onClick={event => { if (!panMode && event.target === event.target.getStage()) select(null) }}>
+    {size.width > 0 && size.height > 0 && <Stage width={size.width} height={size.height}
+      onPointerDown={event => {
+        const nativeEvent = event.evt as PointerEvent
+        // Marquee selection starts only on the empty stage. Konva artwork and
+        // accessory groups handle their own drag interaction independently.
+        if (panMode || nativeEvent.button !== 0 || nativeEvent.ctrlKey || nativeEvent.metaKey || !onBoxSelect) return
+        const targetName = event.target.name()
+        const isEmptyCanvas = event.target === event.target.getStage()
+          || targetName === 'canvas-background'
+          || targetName === 'image-group-background'
+        if (!isEmptyCanvas) return
+        boxStart.current = {
+          pointerId: nativeEvent.pointerId,
+          start: pointerToPaper(nativeEvent.clientX, nativeEvent.clientY),
+          screenX: nativeEvent.clientX,
+          screenY: nativeEvent.clientY,
+          dragging: false,
+        }
+      }}
+      onClick={event => { if (!panMode && event.target === event.target.getStage()) select(null) }}>
       <Layer><Group x={x} y={y} scaleX={scale} scaleY={scale}>
-        <Rect width={PAPER_WIDTH} height={PAPER_HEIGHT} fill="white" cornerRadius={4} shadowBlur={22} shadowColor="#0f172a" shadowOpacity={0.18} shadowOffsetY={5} onClick={() => { if (!panMode) select(null) }} />
+        <Rect name="canvas-background" width={PAPER_WIDTH} height={PAPER_HEIGHT} fill="white" cornerRadius={4} shadowBlur={22} shadowColor="#0f172a" shadowOpacity={0.18} shadowOffsetY={5} onClick={() => { if (!panMode) select(null) }} />
         {/* Fixed page information stays behind artwork and cannot intercept selection. */}
         <PageHeaderCanvas pageNumber={page.id} totalPages={totalPages ?? 1} metadata={metadata ?? {}} />
         <Group clipX={0} clipY={0} clipWidth={PAPER_WIDTH} clipHeight={PAPER_HEIGHT}>
-          <ImageGroupBackgrounds page={page} selectedGroupIds={selectedGroupIds} onSelectGroup={panMode ? undefined : selectGroup}/>
-          {page.items.map(item => { const asset = assets.get(item.assetId); const groupId = page.imageGroups?.find(group => group.itemIds.includes(item.id))?.id; return asset && <Artwork key={item.id} item={item} asset={asset} selected={selected === item.id || selectedIds.includes(item.id)} interactive={!panMode} bounds={imageBounds} groupId={groupId} onSelect={select} onSelectGroup={panMode ? undefined : selectGroup} onChange={onChange} /> })}
-          <ImageDimensionMarkers page={page} assets={assets}/>
+          <ImageGroupBackgrounds page={page} assets={assets} selectedItemId={dimensionItemId} precision={dimensionPrecision} selectedAccessoryKey={selectedAccessoryKey} accessoryVisuals={accessoryVisuals} onSelectAccessory={panMode ? undefined : onSelectAccessory} onChangeAccessory={panMode ? undefined : onChangeAccessory} selectedGroupIds={selectedGroupIds} onSelectGroup={panMode ? undefined : selectGroup}/>
+          {page.items.map(item => { const asset = assets.get(item.assetId); const group = page.imageGroups?.find(candidate => candidate.itemIds.includes(item.id)); return asset && <Artwork key={item.id} item={item} asset={asset} visualScale={visualScales?.get(item.id) ?? 1} selected={selected === item.id || selectedIds.includes(item.id)} interactive={!panMode} bounds={imageBounds} groupBounds={group ? { x: group.x, y: group.y, width: group.width, height: group.height } : undefined} onSelect={select} onChange={onChange} /> })}
+          <ImageDimensionMarkers page={page} assets={assets} selectedItemId={dimensionItemId} precision={dimensionPrecision} visualScales={visualScales}/>
           {page.headerBlocks?.map(block => <HeaderBlockCanvas key={block.id} block={block} bounds={layoutBounds} selected={selected === block.id} interactive={!panMode} onSelect={select} onChange={onHeaderBlockChange}/>)}
         </Group>
         <Group listening={false}>

@@ -1,7 +1,7 @@
 import { GROUP_GAP, type Item } from '../../../model.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
 import { imageCenterWithDimensionGutter } from '../services/imageDimensionService.ts'
-import { wrapNote } from '../services/imageDetailsLayoutService.ts'
+import { quantityLabel, wrapNote } from '../services/imageDetailsLayoutService.ts'
 
 export const PRODUCT_GROUP_ROW_HEIGHT = 110
 // The ruler is drawn close to the artwork. Keep only a small clearance in the
@@ -41,7 +41,7 @@ export function productGroupFootprint(items: Item[], maxHeight: number, group?: 
     const detailColumns = Math.min(columns, Math.max(1, panels.length))
     const detailPanelWidth = Math.max(1, detailWidth / detailColumns - 8)
     const detailHeight = Math.max(0, ...panels.map(({ details }) => {
-      const lines = [details.heading ?? '', `Size: ${details.size}`, `QT: ${details.qt}`, 'Accessory:', ...(details.fields ?? []).map(field => field.text)]
+      const lines = [details.heading ?? '', `Size: ${details.size}`, quantityLabel(details.qt), 'Accessory:', ...(details.fields ?? []).map(field => field.text)]
         .reduce((total, text) => total + wrapNote(text, detailPanelWidth, 10).length, 0)
       const noteLines = details.note ? wrapNote(details.note, detailPanelWidth, 8).length : 0
       return 8 + lines * 11 + noteLines * 10 + (details.accessoryImage ? 48 : 0) + (details.noteImage ? 32 : 0)
@@ -58,7 +58,7 @@ function textWidth(text: string, fontSize = 10) {
 
 function detailWidthForPanels(panels: NonNullable<ImageGroup['detailGroups']>) {
   const widest = Math.max(0, ...panels.flatMap(({ details }) => [
-    details.heading ?? '', details.size ? `Size: ${details.size}` : '', `QT: ${details.qt || '-'}`,
+    details.heading ?? '', details.size ? `Size: ${details.size}` : '', quantityLabel(details.qt),
     details.finish ? `Finish: ${details.finish}` : '', 'Accessory:', ...(details.fields ?? []).map(field => field.text), details.note ?? '',
   ].map(text => textWidth(text))))
   return Math.min(PRODUCT_GROUP_DETAIL_MAX_WIDTH, Math.max(PRODUCT_GROUP_DETAIL_MIN_WIDTH, widest + 12))

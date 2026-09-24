@@ -2,6 +2,15 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { customProductPatch } from '../src/modules/schematic/services/customProductService.ts'
 import { applyProductAttributePatch } from '../src/modules/schematic/services/productOptionRules.ts'
+import { readGroupAssetEditor } from '../src/modules/schematic/grouping/productGrouping.ts'
+
+test('custom QT zero and blank survive confirmation and editor hydration', () => {
+  for (const qt of [0, null]) {
+    const updated = applyProductAttributePatch({ id: 'a', attributes: { QT: '9' } }, customProductPatch({ id: 7, name: 'test', attributes: {}, qt }))
+    assert.equal(updated.attributes.QT, qt === null ? undefined : '0')
+    assert.equal(readGroupAssetEditor(updated).custom.qt, qt)
+  }
+})
 
 test('custom product replaces catalog-specific attributes using shared persistence keys', () => {
   const original = { id: 'image', productId: 'catalog', attributes: { 'Accessories Color': 'gold', QT: '99' }, attributeImages: { 'Accessories Color': 'old.png' } }

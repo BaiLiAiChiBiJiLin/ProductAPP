@@ -44,8 +44,8 @@ export default function CustomProductForm({ draft, onDraftChange: setDraft, prod
     const patch = { attribute: { key: name, value }, attributeImage: { key: name, url: image ?? '' }, clearAttributeKeys: dependentOptionNames(catalog?.options ?? [], name) }
     setDraft(current => ({ ...current, attributes: applyAttributeValues(customAttributes(current), patch), attributeImages: applyAttributeImages(customImages(current), patch) }))
   }
-  const quantityField = <label className="product-config-field"><span>QT（数量）</span><InputNumber aria-label="自定义QT（数量）" min={1} max={2147483647} precision={0} value={draft.qt} disabled={saving}
-          onChange={value => setDraft(current => ({ ...current, qt: value ?? 1 }))}/></label>
+  const quantityField = <label className="product-config-field"><span>QT（数量）</span><InputNumber aria-label="自定义QT（数量）" min={0} max={2147483647} precision={0} value={draft.qt} disabled={saving}
+          onChange={value => setDraft(current => ({ ...current, qt: value }))}/></label>
   const accessoryIndex = catalog?.options.findIndex(option => option.name === 'Accessories Style') ?? -1
   return <div className="custom-product-editor" aria-label="自定义产品设置">
     {loading ? <Loading size="small" text="正在加载自定义产品…"/> : <>

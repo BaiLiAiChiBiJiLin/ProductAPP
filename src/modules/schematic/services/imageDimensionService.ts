@@ -19,6 +19,9 @@ export type ImageDimension = {
   horizontal: boolean
 }
 
+/** Formatting used only for the currently selected canvas dimension label. */
+export type DimensionDisplayPrecision = 'default' | 'round' | 'truncate'
+
 export type ImageDimensionMarkerLayout = ImageDimension & {
   x1: number
   y1: number
@@ -42,6 +45,12 @@ function sourceSize(asset: Asset) {
 
 function number(value: number) {
   return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(1)))
+}
+
+export function formatDimensionNumber(value: number, precision: DimensionDisplayPrecision = 'default') {
+  if (precision === 'round') return String(Math.round(value))
+  if (precision === 'truncate') return String(Math.trunc(value))
+  return number(value)
 }
 
 export function physicalSourceSize(asset: Asset) {
@@ -76,12 +85,12 @@ function sizeMillimetres(raw: string, originalLongest: number) {
 }
 
 /** Dimension text always comes from the persisted source size, never item.w/item.h. */
-export function imageDimensionForAsset(asset: Asset): ImageDimension {
+export function imageDimensionForAsset(asset: Asset, precision: DimensionDisplayPrecision = 'default'): ImageDimension {
   const source = sourceAssetSize(asset)
   const physical = physicalSourceSize(asset)
   const horizontal = source.width >= source.height
   const originalLongest = Math.max(physical.width, physical.height)
-  return { label: `${number(sizeMillimetres(sourceSize(asset), originalLongest))} mm`, horizontal }
+  return { label: `${formatDimensionNumber(sizeMillimetres(sourceSize(asset), originalLongest), precision)} mm`, horizontal }
 }
 
 export function imageDimensionForGroup(group: ImageGroup, page: Page, assets: Map<string, Asset>) {
@@ -136,13 +145,13 @@ function clamp(value: number, minimum: number, maximum: number) {
 }
 
 /** Place the measurement outside the source artwork while retaining its source-size label. */
-export function imageDimensionMarkerLayout(group: ImageGroup, page: Page, assets: Map<string, Asset>): ImageDimensionMarkerLayout | undefined {
+export function imageDimensionMarkerLayout(group: ImageGroup, page: Page, assets: Map<string, Asset>, precision: DimensionDisplayPrecision = 'default'): ImageDimensionMarkerLayout | undefined {
   let dimension = imageDimensionForGroup(group, page, assets)
   const item = page.items.find(candidate => group.itemIds.includes(candidate.id))
   if (!dimension || !item || item.suppressRuler) return undefined
   const asset = assets.get(item.assetId)!
   const axis = group.id.endsWith('-width') ? 'width' : group.id.endsWith('-height') ? 'height' : undefined
-  dimension = dimensionForItem(asset, item, axis)
+  dimension = dimensionForItem(asset, item, axis, precision)
   const imageLeft = item.x - Math.abs(item.w) / 2
   const imageRight = item.x + Math.abs(item.w) / 2
   const imageTop = item.y - Math.abs(item.h) / 2
@@ -183,13 +192,13 @@ export function imageDimensionMarkersSvg(page: Page, assets: Map<string, Asset>)
 }
 
 /** Source size determines both axes; Size sets the longest edge in physical units. */
-export function dimensionForItem(asset: Asset, item: Pick<Page['items'][number], 'rulerUnit'>, axis?: 'width' | 'height'): ImageDimension {
+export function dimensionForItem(asset: Asset, item: Pick<Page['items'][number], 'rulerUnit'>, axis?: 'width' | 'height', precision: DimensionDisplayPrecision = 'default'): ImageDimension {
   const physical = physicalSourceSize(asset)
   const longestMm = sizeMillimetres(sourceSize(asset), Math.max(physical.width, physical.height))
   const horizontal = axis ? axis === 'width' : asset.width >= asset.height
   const edgeMm = axis ? longestMm * (horizontal ? asset.width : asset.height) / Math.max(asset.width, asset.height) : longestMm
   const unit = item.rulerUnit ?? 'mm'
-  return { horizontal, label: `${number(edgeMm / (unit === 'cm' ? 10 : unit === 'in' ? 25.4 : 1))} ${unit}` }
+  return { horizontal, label: `${formatDimensionNumber(edgeMm / (unit === 'cm' ? 10 : unit === 'in' ? 25.4 : 1), precision)} ${unit}` }
 }
 
 export function dimensionGroups(page: Page): ImageGroup[] {

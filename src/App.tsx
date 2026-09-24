@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button, Dropdown, Input, message } from 'antd'
 import { isTauri } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { orderModule, imageEditModule, schematicModule, impositionModule, progressModule } from './modules'
 import SchematicPage from './modules/schematic/SchematicPage'
 import { Check, ChevronDown, UserRound } from 'lucide-react'
@@ -54,6 +55,15 @@ export default function App() {
     setLeaving(active)
     setActive(id)
   }
+  useEffect(() => {
+    if (!isTauri()) return
+    let cancelled = false
+    let unlisten = () => {}
+    void listen<{ path: string }>('external-svg-import', () => {
+      if (!cancelled && active !== 'schematic') switchModule('schematic')
+    }).then(stop => { if (cancelled) stop(); else unlisten = stop }).catch(() => {})
+    return () => { cancelled = true; unlisten() }
+  }, [active])
   return <>{noticeContext}<div className="app-shell"><header className="topbar"><div className="brand"><div className="brand-mark"><img src={printflowIcon} alt="PrintFlow" /></div><span>PrintFlow</span></div><nav className="workflow">{modules.map(module => <button key={module.id} className={active === module.id ? 'active' : ''} onClick={() => switchModule(module.id)}>{module.label}</button>)}</nav><div className="topbar-actions"><UpdateButton autoCheck showButton={false} /><Dropdown trigger={['click']} dropdownRender={() => userMenu}><button className="user-menu"><span className="avatar">{accountName.slice(0, 1)}</span><span>{accountName}</span><ChevronDown size={14}/></button></Dropdown></div></header><main className={`module-stage direction-${transitionDirection}`}>{modules.map(module => visitedModules.has(module.id) && <section key={module.id} className={`module-view ${active === module.id ? (leaving ? 'is-active is-entering' : 'is-active') : leaving === module.id ? 'is-leaving' : 'is-hidden'}`} inert={active !== module.id} aria-hidden={active !== module.id}>{module.id === 'schematic' ? <SchematicPage /> : <div className="module-placeholder"><h1>{module.label}</h1><p>模块正在建设中</p></div>}</section>)}</main></div></>
 }
 
