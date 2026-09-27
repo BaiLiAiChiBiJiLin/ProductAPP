@@ -52,4 +52,5 @@ mod tests {
         let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><g id="scene"><g id="item"><rect width="10" height="10"/></g><image width="10" height="10" href="data:image/png;base64,AA=="/></g></svg>"#;
         assert_eq!(classify(svg).unwrap(), SvgKind::SceneTree);
     }
+
 }

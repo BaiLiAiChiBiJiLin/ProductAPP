@@ -229,6 +229,7 @@ fn scene_source(prefix: &str, opening: &str, shared: &str, container_opening: Op
 }
 
 pub(crate) fn find_atomic_layer_group<'a>(root: roxmltree::Node<'a, 'a>) -> Option<roxmltree::Node<'a, 'a>> {
+    let total_images = root.descendants().filter(|node| node.is_element() && node.tag_name().name() == "image").count();
     root.descendants()
         .filter(|node| node.is_element() && node.tag_name().name() == "g")
         .filter(|node| {
@@ -236,6 +237,11 @@ pub(crate) fn find_atomic_layer_group<'a>(root: roxmltree::Node<'a, 'a>) -> Opti
             let name = node.attribute("data-name").unwrap_or_default();
             id.contains("图层") || name.contains("图层") || id.to_ascii_lowercase().contains("layer") || name.to_ascii_lowercase().contains("layer")
         })
+        // A layer wrapper is atomic only when it owns the complete artwork.
+        // CorelDRAW files can contain a small 图层 wrapper beside a larger
+        // RUST_OUTLINE container; selecting the small wrapper would silently
+        // drop every sibling product during import.
+        .filter(|node| node.descendants().filter(|child| child.is_element() && child.tag_name().name() == "image").count() == total_images)
         .filter(|node| node.children().any(|child| child.is_element() && child.tag_name().name() == "g"))
         .max_by_key(|node| node.children().filter(|child| child.is_element() && child.tag_name().name() == "g").count())
 }

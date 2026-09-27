@@ -71,7 +71,7 @@ pub(super) fn seed(conn: &mut Connection, json: &str) -> Result<(), String> {
 pub(super) fn write(conn: &mut Connection, mut product: CustomProduct) -> Result<CustomProduct, String> {
     product.name = product.name.trim().to_string();
     if product.name.is_empty() { return Err("请填写产品名称".into()); }
-    if product.qt == 0 || product.qt > 2_147_483_647 { return Err("QT 必须是 1 至 2147483647 的整数".into()); }
+    if product.qt.is_some_and(|qt| qt > 2_147_483_647) { return Err("QT 不能超过 2147483647".into()); }
     for field in [&mut product.size, &mut product.print_option, &mut product.finish, &mut product.accessory_color] {
         *field = field.trim().to_string();
     }
@@ -105,7 +105,7 @@ mod tests {
         let json = serde_json::to_string(&vec![product.clone()]).unwrap();
         seed(&mut conn, &json).unwrap();
         assert_eq!(read(&conn).unwrap(), vec![product.clone()]);
-        product.qt = 99;
+        product.qt = Some(99);
         write(&mut conn, product.clone()).unwrap();
         seed(&mut conn, &json).unwrap();
         assert_eq!(read(&conn).unwrap(), vec![product]);
@@ -119,7 +119,7 @@ mod tests {
         {
             let mut conn = connect(&path).unwrap();
             assert_eq!(read(&conn).unwrap(), vec![saved.clone()]);
-            let mut updated = saved.clone(); updated.qt = 9;
+            let mut updated = saved.clone(); updated.qt = Some(9);
             assert_eq!(write(&mut conn, updated.clone()).unwrap().id, saved.id);
             assert_eq!(read(&conn).unwrap(), vec![updated]);
         }
@@ -129,7 +129,7 @@ mod tests {
     fn invalid_presets_are_rejected_without_partial_rows() {
         let mut conn = Connection::open_in_memory().unwrap();
         conn.execute_batch("CREATE TABLE custom_products(id INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)").unwrap();
-        let mut invalid = sample(); invalid.qt = 0;
+        let mut invalid = sample(); invalid.qt = Some(2_147_483_648);
         assert!(write(&mut conn, invalid).is_err());
         let mut invalid = sample(); invalid.name = "  ".into();
         assert!(write(&mut conn, invalid).is_err());

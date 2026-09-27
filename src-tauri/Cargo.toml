@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.1.13"
+version = "0.1.15"
 description = "PrintFlow production layout desktop app"
 authors = ["PrintFlow"]
 edition = "2021"

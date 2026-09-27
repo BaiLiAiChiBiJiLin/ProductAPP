@@ -517,14 +517,17 @@ pub fn import_with_stage(
             };
             let (svg, width, height) = if split {
                 let viewport = original.map(|measurement| measurement.viewport_bounds).or_else(|| source_group_viewport_bounds(&source, &tree)).ok_or("图形没有有效的实际边界")?;
+                let viewport = crate::svg_measure::display_bounds(&tree, viewport);
                 let width = (viewport[2] - viewport[0]) as f32;
                 let height = (viewport[3] - viewport[1]) as f32;
-                // The generated file owns the original group's measured size,
-                // not the entire source sheet's dimensions. Keep child geometry.
-                let svg = if source_group_bounds[2] > 0.0 && source_group_bounds[3] > 0.0 {
-                    replace_root_view_box(&source, source_group_bounds)?
-                } else { source.clone() };
-                let svg = crate::svg_measure::set_physical_size(&svg, source_group_width_mm, source_group_height_mm)?;
+                // Display extents and precision measurement have different jobs.
+                // Preserve physical metadata above, and keep the root viewport
+                // large enough for authored filled outlines without rescaling them.
+                let root = root_geometry(&source).ok_or("SVG 原始坐标系无效")?;
+                let svg = replace_root_view_box(&source, viewport_to_source_bounds(root, viewport))?;
+                let svg = crate::svg_measure::set_physical_size(&svg,
+                    (viewport[2] - viewport[0]) * root.width_mm / tree.size().width() as f64,
+                    (viewport[3] - viewport[1]) * root.height_mm / tree.size().height() as f64)?;
                 (svg, width, height)
             } else {
                 let width = tree.size().width();

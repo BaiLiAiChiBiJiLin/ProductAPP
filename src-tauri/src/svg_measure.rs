@@ -1,9 +1,9 @@
 //! Vector outline measurement for imported SVG groups.
 //!
 //! This module intentionally stays separate from upload and splitting. It
-//! measures authored, unfilled stroke paths after all parent transforms have
-//! been applied by usvg. The result is in the same CSS-pixel viewport used by
-//! usvg and is converted to millimetres exactly once by the root physical size.
+//! measures authored vector geometry after all parent transforms have been
+//! applied by usvg. The result is in the same CSS-pixel viewport used by usvg
+//! and is converted to millimetres exactly once by the root physical size.
 
 use usvg::{Node, Tree};
 use std::collections::HashMap;
@@ -30,14 +30,18 @@ pub fn measure_groups(source: &str, ranges: &[std::ops::Range<usize>], options: 
     for (offset, text) in edits { annotated.insert_str(offset, &text); }
     let tree = Tree::from_str(&annotated, options).map_err(|e| e.to_string())?;
     let measurements = ids.into_iter().filter_map(|id| {
-        let bounds = outline_bounds(tree.node_by_id(&id)?)?;
+        let node = tree.node_by_id(&id)?;
+        // The physical size is the authored geometry.  In particular, a
+        // CorelDRAW outline's stroke is a visual property and is not included
+        // in the dimensions shown by CorelDRAW.  Keep the stroke for
+        // rendering, but measure the path data itself.
+        let bounds = physical_node_bounds(node)?;
         let width_mm = (bounds[2] - bounds[0]) * 25.4 / 96.0;
         let height_mm = (bounds[3] - bounds[1]) * 25.4 / 96.0;
         (width_mm > 0.0 && height_mm > 0.0).then_some((id, Measurement { viewport_bounds: bounds, width_mm, height_mm }))
     }).collect();
     Ok((annotated, measurements))
 }
-
 pub type Bounds = [f64; 4];
 
 /// Give the generated standalone resource its measured physical size. Only
@@ -70,6 +74,74 @@ fn union(a: Bounds, b: Bounds) -> Bounds {
     [a[0].min(b[0]), a[1].min(b[1]), a[2].max(b[2]), a[3].max(b[3])]
 }
 
+fn transformed_path_bounds(path: &usvg::Path) -> Option<Bounds> {
+    let transformed = path.data().clone().transform(path.abs_transform())?;
+    let bounds = transformed.compute_tight_bounds()?;
+    Some([bounds.left() as f64, bounds.top() as f64, bounds.right() as f64, bounds.bottom() as f64])
+}
+
+/// Return the geometry of a filled path that also has an authored stroke.
+/// These paths are commonly the outer product border in CorelDRAW exports.
+/// Their stroke is intentionally excluded from the physical dimensions.
+fn filled_stroke_bounds(node: &Node) -> Option<Bounds> {
+    match node {
+        Node::Group(group) => {
+            if group.clip_path().is_some() || group.mask().is_some() || !group.filters().is_empty() { return None; }
+            group.children().iter().filter_map(filled_stroke_bounds).reduce(union)
+        }
+        Node::Path(path) if path.fill().is_some() && path.stroke().is_some() && path.is_visible() => transformed_path_bounds(path),
+        _ => None,
+    }
+}
+
+fn physical_node_bounds(node: &Node) -> Option<Bounds> {
+    [outline_bounds(node), filled_stroke_bounds(node)].into_iter().flatten().reduce(union)
+}
+
+#[allow(dead_code)]
+pub fn node_display_bounds(node: &Node, measured: Bounds) -> Bounds {
+    filled_stroke_bounds(node).map(|bounds| union(measured, bounds)).unwrap_or(measured)
+}
+
+/// Physical measurement excludes filled artwork. Its box must not clip an
+/// authored filled outline when it is reused as the standalone SVG viewport.
+/// Clipped/masked/filter geometry remains excluded from this expansion.
+pub fn display_bounds(tree: &Tree, measured: Bounds) -> Bounds {
+    fn filled_outline(node: &Node) -> Option<Bounds> {
+        match node {
+            Node::Group(group) => {
+                if group.clip_path().is_some() || group.mask().is_some() || !group.filters().is_empty() { return None; }
+                group.children().iter().filter_map(filled_outline).reduce(union)
+            }
+            Node::Path(path) if path.fill().is_some() && path.stroke().is_some() && path.is_visible() => {
+                let bounds = path.abs_stroke_bounding_box();
+                Some([bounds.left() as f64, bounds.top() as f64, bounds.right() as f64, bounds.bottom() as f64])
+            }
+            _ => None,
+        }
+    }
+    let outlined = tree.root().children().iter().filter_map(filled_outline).fold(measured, union);
+    // Some CorelDRAW files represent a filled border as a CSS class on a
+    // rect, which usvg can keep as a visible shape without exposing it through
+    // the path fill/stroke accessors. The rendered alpha bounds are the safe
+    // fallback for that case and still respect clipPath/mask visibility.
+    let Some((width, height)) = Some((tree.size().width(), tree.size().height())) else { return outlined };
+    if width <= 0.0 || height <= 0.0 { return outlined; }
+    let scale = (2048.0 / width.max(height)).min(1.0);
+    let Some(mut pixmap) = tiny_skia::Pixmap::new((width * scale).ceil().max(1.0) as u32, (height * scale).ceil().max(1.0) as u32) else { return outlined };
+    resvg::render(tree, tiny_skia::Transform::from_scale(scale, scale), &mut pixmap.as_mut());
+    let mut bounds: Option<Bounds> = None;
+    for (index, pixel) in pixmap.data().chunks_exact(4).enumerate() {
+        if pixel[3] <= 2 { continue; }
+        let x = index as u32 % pixmap.width();
+        let y = index as u32 / pixmap.width();
+        let value = [x as f64 / scale as f64, y as f64 / scale as f64,
+            (x + 1) as f64 / scale as f64, (y + 1) as f64 / scale as f64];
+        bounds = Some(bounds.map(|known| union(known, value)).unwrap_or(value));
+    }
+    bounds.map(|value| union(outlined, value)).unwrap_or(outlined)
+}
+
 /// Measure only authored outline geometry. Filled artwork, embedded image
 /// rectangles, clip paths, masks and filters are excluded so their external
 /// geometry cannot inflate the product size.
@@ -94,7 +166,10 @@ pub fn outline_bounds(node: &Node) -> Option<Bounds> {
 /// viewBox ratio conversion.
 pub fn measure_tree(tree: &Tree, width_mm: f64, height_mm: f64) -> Option<Measurement> {
     if !width_mm.is_finite() || !height_mm.is_finite() || width_mm <= 0.0 || height_mm <= 0.0 { return None; }
-    let bounds = tree.root().children().iter().filter_map(outline_bounds).reduce(union)?;
+    // Use only authored vector geometry for physical dimensions.  A stroke is
+    // retained in the SVG and in the display crop, but its visual expansion
+    // must not inflate the width/height reported to the user.
+    let bounds = tree.root().children().iter().filter_map(physical_node_bounds).reduce(union)?;
     let viewport_width = tree.size().width() as f64;
     let viewport_height = tree.size().height() as f64;
     if viewport_width <= 0.0 || viewport_height <= 0.0 { return None; }
@@ -108,6 +183,24 @@ pub fn measure_tree(tree: &Tree, width_mm: f64, height_mm: f64) -> Option<Measur
 mod tests {
     use super::measure_tree;
     use usvg::{Options, Tree};
+
+    #[test]
+    fn display_crop_keeps_filled_border_without_changing_geometry_measurement() {
+        let source = r#"<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="200mm" viewBox="0 0 100 200"><g transform="translate(5 5)"><rect width="80" height="180" rx="10" fill="white" stroke="red" stroke-width="2"/><path d="M20 20h30v80H20z" fill="none" stroke="red"/></g></svg>"#;
+        let tree = Tree::from_str(source, &Options::default()).unwrap();
+        let measured = measure_tree(&tree, 100.0, 200.0).unwrap();
+        let display = super::display_bounds(&tree, measured.viewport_bounds);
+        let mm = display.map(|v| v * 25.4 / 96.0);
+        assert!(mm[2] - mm[0] > 70.0);
+        assert!(mm[3] - mm[1] > 170.0);
+        // The display crop includes the red stroke so the artwork remains
+        // visible at the edge.  Physical dimensions follow the authored
+        // rectangle geometry, matching CorelDRAW's object dimensions.
+        assert!((measured.width_mm - 80.0).abs() < 0.001);
+        assert!((measured.height_mm - 180.0).abs() < 0.001);
+        assert!(mm[2] - mm[0] > measured.width_mm);
+        assert!(mm[3] - mm[1] > measured.height_mm);
+    }
 
     #[test]
     fn standalone_dimensions_use_measured_mm_without_changing_artwork() {
