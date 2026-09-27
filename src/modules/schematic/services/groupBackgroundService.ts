@@ -60,6 +60,7 @@ export function groupBackgroundsSvg(page: Page): string {
     return details ? multipleDetails ? `<g data-printflow-details="true">${text}</g>` : text : ''
     }).join('')
     const background = groupBackgroundRects(group).map(rect => `<rect data-group-background="${escape(group.id)}" x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" fill="${GROUP_BACKGROUND}"/>`).join('')
-    return `${background}${panels}${footer}`
+    const emptySlots = (group.imageCells ?? []).filter(cell => cell.label && !group.itemIds.includes(cell.itemId)).map(cell => `<text x="${cell.x + cell.width / 2}" y="${cell.y + 12}" text-anchor="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="10" fill="#e11d48">${escape(cell.label!)}</text>`).join('')
+    return `${background}${emptySlots}${panels}${footer}`
   }).join('')}</g>`
 }

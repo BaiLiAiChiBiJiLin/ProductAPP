@@ -53,6 +53,17 @@ test('dragged fixed slots are persisted on the corresponding image assets', () =
   assert.deepEqual(saved.map(item => item.productGroupPosition), [2, 1, 3, 4])
 })
 
+test('holder and shaker groups can reserve an empty Example slot and restore it', () => {
+  const assets = [asset('1'), asset('2'), asset('3')]
+  const session = { ...sessionFor(assets), trigger: { kind: 'shaker', label: '摇摇乐' }, emptyFirstSlot: true }
+  const saved = applyProductGroup(assets, session, products)
+  assert.deepEqual(saved.map(item => item.productGroupPosition), [2, 3, 4])
+  const reopened = restoreProductGroup(saved, '2', products)
+  assert.equal(reopened.emptyFirstSlot, true)
+  const filled = applyProductGroup(assets, { ...session, emptyFirstSlot: false }, products)
+  assert.deepEqual(filled.map(item => item.productGroupPosition), [1, 2, 3])
+})
+
 test('follower locks only product and quantity while technique, size, QT and notes remain independent', () => {
   const assets = [asset('1'), asset('2', { QT: '9' })]
   let session = { ...sessionFor(assets), activeId: '2' }

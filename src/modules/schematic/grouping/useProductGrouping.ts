@@ -58,6 +58,12 @@ export function useProductGrouping({ assets, products, save, activate, revealAll
     memberIds.splice(to, 0, moved)
     commit({ ...group, memberIds, orderDirty: true })
   }
+  const setEmptyFirstSlot = (empty: boolean) => {
+    const group = current.current
+    if (!group || savingRef.current || !groupSlotLabels(group, products)) return
+    if (Boolean(group.emptyFirstSlot) === empty) return
+    commit({ ...group, emptyFirstSlot: empty, orderDirty: true })
+  }
   const resumeGroup = (id: string) => {
     if (current.current || savingRef.current) return false
     const restored = restoreProductGroup(assets, id, products, drafts.current)
@@ -133,7 +139,7 @@ export function useProductGrouping({ assets, products, save, activate, revealAll
   }
   const isPending = (id: string) => Boolean(drafts.current[id]) || Boolean(current.current && dirty.current.has(id))
   const clearDrafts = (ids: string[]) => ids.forEach(id => { delete drafts.current[id]; delete clearedEditors.current[id] })
-  return { session, slotLabels: session ? groupSlotLabels(session, products) : null, saving, removingId, error, start, resumeGroup, selectMember, reorderMembers, removeMember, updateEditor, persist, cancelGuide, reset, readDraft, rememberDraft, isPending, clearDrafts }
+  return { session, slotLabels: session ? groupSlotLabels(session, products) : null, saving, removingId, error, start, resumeGroup, selectMember, reorderMembers, setEmptyFirstSlot, removeMember, updateEditor, persist, cancelGuide, reset, readDraft, rememberDraft, isPending, clearDrafts }
 }
 
 export type ProductGroupingController = ReturnType<typeof useProductGrouping>

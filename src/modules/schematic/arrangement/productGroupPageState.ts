@@ -10,6 +10,7 @@ export function removeArrangedAsset(page: Page, assetId: string, assets: Asset[]
   return { ...page, items, imageGroups: page.imageGroups?.map(group => {
     const itemIds = group.itemIds.filter(id => byItem.has(id))
     const detailGroups = group.productGroupId ? buildProductGroupDetails(itemIds.map(id => byItem.get(id)!), byAsset, configs) : group.detailGroups
-    return { ...group, itemIds, detailGroups, imageCells: group.imageCells?.filter(cell => byItem.has(cell.itemId)).map((cell, index) => ({ ...cell, label: `图 ${index + 1}` })) }
+    let imageIndex = 0
+    return { ...group, itemIds, detailGroups, imageCells: group.imageCells?.filter(cell => byItem.has(cell.itemId) || cell.itemId.endsWith('::empty-example')).map(cell => cell.itemId.endsWith('::empty-example') ? cell : ({ ...cell, label: `图 ${++imageIndex}` })) }
   }).filter(group => group.itemIds.length) }
 }

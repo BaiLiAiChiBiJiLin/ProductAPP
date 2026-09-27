@@ -59,6 +59,30 @@ test('portrait holder roles use four equal columns and keep each note under its 
  assert.match(pageSvg(page, new Map(assets.map(item => [item.id, item]))), />front note</)
 })
 
+test('an empty Example slot merges Front/Inside/Back into the Example area', () => {
+ const assets = ['front', 'inside', 'back'].map((id, index) => ({
+  ...asset(id, 'Shaker', {}, 'empty-example'), width: 60 + index, height: 120,
+  productGroupPosition: index + 2,
+ }))
+ const [page] = paginateAssets(assets)
+ const group = page.imageGroups[0]
+ assert.equal(group.emptyExample, true)
+ assert.equal(group.emptyExampleMerged, true)
+ assert.deepEqual(page.items.map(item => item.caption), ['Front', 'Inside', 'Back'])
+ assert.equal(group.imageCells.some(cell => cell.label === 'Example'), false)
+ const imageWidth = group.detailsX - group.x
+ assert.ok(page.items.every((item, index) => Math.abs(item.x - (group.x + imageWidth * (index + .5) / 3)) < 1e-7))
+ assert.ok(page.items.every(item => item.h >= group.imageCells[0].height - 20))
+ assert.equal(page.items[0].suppressRuler, false)
+ assert.equal(page.items[1].suppressRuler, true)
+ assert.equal(page.items[2].suppressRuler, true)
+ assert.doesNotMatch(pageSvg(page, new Map(assets.map(item => [item.id, item]))), />Example</)
+ const rearranged = autoArrangePages([page], 1, assets, defaultLayoutBounds)[0]
+ assert.equal(rearranged.imageGroups[0].emptyExample, true)
+ assert.equal(rearranged.imageGroups[0].emptyExampleMerged, true)
+ assert.equal(rearranged.imageGroups[0].imageCells.some(cell => cell.label === 'Example'), false)
+})
+
 test('Front Side Epoxy does not consume the Front slot of a saved holder group', () => {
  const sources = Array.from({ length: 5 }, (_, i) => ({
   ...asset(`epoxy-${i}`, '照片夹', { 'Epoxy Style': 'Front Side Epoxy' }, 'epoxy-group'),

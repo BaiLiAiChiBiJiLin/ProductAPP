@@ -23,13 +23,15 @@ export function restoreProductGroup(assets: Asset[], activeId: string, products:
     ? { kind: 'free' as const, label: '自由图片组' }
     : groupingTrigger(editor, products) ?? { kind: 'product' as const, label: '产品组' }
   const free = trigger.kind === 'free'
+  const savedPositions = members.map(asset => asset.productGroupPosition ?? 0).filter(position => position > 0)
+  const emptyFirstSlot = savedPositions.length > 0 && !savedPositions.includes(1) && savedPositions.some(position => position >= 2)
   return {
     id: active.productGroupId, color: active.productGroupColor || leader.productGroupColor || newGroupColor(assets),
     leaderId: leader.id, activeId, memberIds: members.some(asset => (asset.productGroupPosition ?? 0) > 0)
       ? members.map(asset => asset.id)
       : [leader.id, ...members.filter(asset => asset.id !== leader.id).map(asset => asset.id)],
     editors: Object.fromEntries(members.map(asset => [asset.id, copyEpoxy(asset.id === leader.id ? editor : free ? readEditor(asset) : inheritGroupIdentity(readEditor(asset), editor, products), editor)])),
-    trigger,
+    trigger, emptyFirstSlot,
   }
 }
 

@@ -79,19 +79,23 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
     let height = 120
     let chainReference: number | undefined
     let holderPortraitRoles = false
+    let emptyExampleMerged = false
     if (unit.kind === 'holder') {
       // Half an arrangement area includes the header, its gap and the
       // trailing group gap; the artwork itself uses only the remainder.
       height = (bottom - area.top) / 2 - HEADER_BLOCK_HEIGHT - 2 * GAP
       const firstHeight = height * 0.32, secondHeight = height * 0.38
       const hasSavedOrder = unit.assets.some(asset => (asset.productGroupPosition ?? 0) > 0)
+      const emptyExample = hasSavedOrder
+        && !unit.assets.some(asset => (asset.productGroupPosition ?? 0) === 1)
+        && unit.assets.some(asset => (asset.productGroupPosition ?? 0) >= 2)
       // Saved combination order owns the fixed slots. Legacy names may identify
       // a role, but product attributes such as "Front Side Epoxy" never do.
       const findRole = (name: string) => hasSavedOrder ? undefined
         : unit.assets.find(asset => new RegExp(`\\b${name}\\b`, 'i').test(asset.name))
-      const example = findRole('example') ?? unit.assets[0]
-      const roleAssets: Array<{ asset: Asset; caption: string }> = [{ asset: example, caption: 'Example' }]
-      const used = new Set([example.id])
+      const example = emptyExample ? undefined : findRole('example') ?? unit.assets[0]
+      const roleAssets: Array<{ asset: Asset; caption: string }> = example ? [{ asset: example, caption: 'Example' }] : []
+      const used = new Set(example ? [example.id] : [])
       for (const name of ['Front', 'Inside', 'Back']) {
         const named = findRole(name)
         const asset = named && !used.has(named.id) ? named : unit.assets.find(asset => !used.has(asset.id))
@@ -100,18 +104,30 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
         roleAssets.push({ asset, caption: name })
       }
       const rest = unit.assets.filter(asset => !used.has(asset.id))
-      const portraitRoles = roleAssets.length === 4 && roleAssets.every(({ asset }) => {
+      const portraitRoles = !emptyExample && roleAssets.length === 4 && roleAssets.every(({ asset }) => {
         const physical = physicalSourceSize(asset)
         return physical.height > physical.width
       })
       holderPortraitRoles = portraitRoles
-      if (portraitRoles) {
+      if (emptyExample) {
+        // When Example is intentionally empty, use that top area for the
+        // actual Front/Inside/Back artwork. The three roles share only the
+        // image area; the details column remains reserved on the right.
+        emptyExampleMerged = true
+        const roleHeight = height * 0.48
+        roleAssets.forEach(({ asset, caption }, index) => cells.push({
+          asset, x: index * imageWidth / 3, y: 0, width: imageWidth / 3, height: roleHeight,
+          caption, note: asset.note?.trim() || undefined, ruler: caption === 'Front',
+        }))
+        const columns = Math.max(1, Math.min(5, rest.length)), rows = Math.ceil(rest.length / columns)
+        rest.forEach((asset, i) => cells.push({ asset, x: i % columns * imageWidth / columns, y: roleHeight + Math.floor(i / columns) * (height - roleHeight) / rows, width: imageWidth / columns, height: (height - roleHeight) / rows, note: asset.note?.trim() || undefined }))
+      } else if (portraitRoles) {
         const roleHeight = height * 0.48
         roleAssets.forEach(({ asset, caption }, index) => cells.push({ asset, x: index * imageWidth / 4, y: 0, width: imageWidth / 4, height: roleHeight, caption, note: asset.note?.trim() || undefined, ruler: caption === 'Example' }))
         const columns = Math.max(1, Math.min(5, rest.length)), rows = Math.ceil(rest.length / columns)
         rest.forEach((asset, i) => cells.push({ asset, x: i % columns * imageWidth / columns, y: roleHeight + Math.floor(i / columns) * (height - roleHeight) / rows, width: imageWidth / columns, height: (height - roleHeight) / rows, note: asset.note?.trim() || undefined }))
       } else {
-        cells.push({ asset: example, x: 0, y: 0, width: imageWidth, height: firstHeight, caption: 'Example', note: example.note?.trim() || undefined })
+        if (example) cells.push({ asset: example, x: 0, y: 0, width: imageWidth, height: firstHeight, caption: 'Example', note: example.note?.trim() || undefined })
         roleAssets.slice(1).forEach(({ asset, caption }, index) => cells.push({ asset, x: index * groupWidth / 3, y: firstHeight, width: groupWidth / 3, height: secondHeight, caption, note: asset.note?.trim() || undefined, ruler: false }))
         const columns = Math.max(1, Math.min(5, rest.length)), rows = Math.ceil(rest.length / columns)
         rest.forEach((asset, i) => cells.push({ asset, x: i % columns * imageWidth / columns, y: firstHeight + secondHeight + Math.floor(i / columns) * (height - firstHeight - secondHeight) / rows, width: imageWidth / columns, height: (height - firstHeight - secondHeight) / rows, note: asset.note?.trim() || undefined }))
@@ -199,7 +215,7 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
     if (height > available + 1e-7) throw new Error('排列区域太小，无法容纳产品组，请增大排列区域。')
     const x = area.left + column * (groupWidth + GAP)
     const standeeHasBase = unit.kind === 'standee' && unit.assets.length > 1
-    const group: ImageGroup = { id: `group-${leader.id}`, productGroupId: leader.productGroupId, itemIds: [], x, y, width: groupWidth, height, detailsX: x + imageWidth, detailWidth, details: detailsForAsset(leader, configs), detailsHeight: standeeHasBase ? height * 0.48 : undefined, imageCells: [] }
+    const group: ImageGroup = { id: `group-${leader.id}`, productGroupId: leader.productGroupId, itemIds: [], x, y, width: groupWidth, height, detailsX: x + imageWidth, detailWidth, details: detailsForAsset(leader, configs), detailsHeight: standeeHasBase ? height * 0.48 : undefined, imageCells: [], emptyExample: emptyExampleMerged, emptyExampleMerged }
     group.details = groupDetails
     // The full-width role row starts below Example. Keep all property content
     // in the upper-right panel so accessories/notes cannot cover Back.
@@ -207,7 +223,9 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
     if (unit.kind === 'chain' && group.details) group.details.sizes = unit.assets.map(asset => ({ itemId: `item-${asset.id}`, label: dimensionForItem(asset, {}).label }))
     const verticallyCenterSingleImage = cells.length === 1 && !cells[0].back && !cells[0].caption && unit.kind !== 'chain'
     const photoHolder = unit.kind === 'holder' && !shaker
-    const roleCells = photoHolder || holderPortraitRoles ? cells.filter(cell => cell.caption).slice(0, 4) : []
+    const roleCells = emptyExampleMerged
+      ? cells.filter(cell => cell.caption && ['Front', 'Inside', 'Back'].includes(cell.caption)).slice(0, 3)
+      : photoHolder || holderPortraitRoles ? cells.filter(cell => cell.caption).slice(0, 4) : []
     // A common longest edge keeps role artwork visually consistent without
     // distorting aspect ratios or enlarging any source beyond its physical size.
     const roleLongest = Math.min(...roleCells.map(cell => {
@@ -215,11 +233,13 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       const w = physical.width * PAPER_WIDTH / 210, h = physical.height * PAPER_WIDTH / 210
       const left = w >= h ? 4 : 13
       const bottom = (groupDetails.finish && cell.y + cell.height >= height - 0.1 ? 16 : 5) + (cell.note ? 13 : 0)
-      return Math.max(w, h) * Math.min(holderPortraitRoles ? Infinity : 1, Math.max(1, cell.width - left - 5) / w, Math.max(1, cell.height - 23 - bottom) / h)
+      return Math.max(w, h) * Math.min(emptyExampleMerged || holderPortraitRoles ? Infinity : 1, Math.max(1, cell.width - left - 5) / w, Math.max(1, cell.height - 23 - bottom) / h)
     }))
     cells.forEach(cell => {
       const physical = physicalSourceSize(cell.asset)
       const originalW = physical.width * PAPER_WIDTH / 210, originalH = physical.height * PAPER_WIDTH / 210
+      // Keep role captions safely inside the group; the artwork still uses
+      // the enlarged upper-half row and is fitted independently below it.
       const top = cell.base ? 23 : cell.caption ? 23 : 14
       // Horizontal artwork only needs side arrow clearance. The larger left
       // gutter is reserved for vertical measurement text, not every image.
@@ -235,7 +255,7 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       const sourceLongest = Math.max(originalW, originalH)
       const sharedScale = chainReference && sourceLongest > 0
         ? Math.min(1, chainReference * 1.08 * PAPER_WIDTH / 210 / sourceLongest)
-        : roleCells.includes(cell) ? Math.min(holderPortraitRoles ? Infinity : 1, roleLongest / sourceLongest)
+        : roleCells.includes(cell) ? emptyExampleMerged ? Infinity : Math.min(holderPortraitRoles ? Infinity : 1, roleLongest / sourceLongest)
         : unit.kind === 'holder' ? 1 : Infinity
       const scale = Math.min(sharedScale, Math.max(1, cell.width - left - right) / originalW, Math.max(1, cell.height - top - bottomPadding) / originalH)
       const w = originalW * scale, h = originalH * scale

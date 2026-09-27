@@ -10,7 +10,7 @@ export type GroupEditor = { mode: 'existing' | 'custom'; draft: AttributeDraft; 
 export type GroupTrigger = { kind: 'standees' | 'shaker' | 'photo-holder' | 'product' | 'free'; label: string; count?: number; quantityName?: string }
 export type ProductGroupSession = {
   id: string; color: string; leaderId: string; activeId: string; memberIds: string[]
-  editors: Record<string, GroupEditor>; trigger: GroupTrigger; orderDirty?: boolean
+  editors: Record<string, GroupEditor>; trigger: GroupTrigger; orderDirty?: boolean; emptyFirstSlot?: boolean
 }
 
 export const quantityOptionName = (name: string, label: string) => `${name} ${label}`.includes('立牌数量')
@@ -198,7 +198,11 @@ export function applyProductGroup(assets: Asset[], session: ProductGroupSession,
 
 /** Membership-only writes also support removing members before custom product confirmation. */
 export function applyGroupMembership(assets: Asset[], session: ProductGroupSession): Asset[] {
-  const positions = new Map(session.memberIds.map((id, index) => [id, index + 1]))
+  // A blank Example is represented by leaving position 1 unused.  Keeping
+  // this in the existing per-asset position field makes the choice survive
+  // batch persistence and keeps older records backwards compatible.
+  const positionOffset = session.emptyFirstSlot ? 1 : 0
+  const positions = new Map(session.memberIds.map((id, index) => [id, index + 1 + positionOffset]))
   const next = assets.map(asset => session.memberIds.includes(asset.id) ? {
     ...asset, productGroupId: session.memberIds.length > 1 ? session.id : '',
     productGroupColor: session.memberIds.length > 1 ? session.color : '',

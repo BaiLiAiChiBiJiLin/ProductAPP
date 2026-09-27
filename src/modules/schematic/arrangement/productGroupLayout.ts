@@ -21,6 +21,8 @@ function footprint(item: Item) {
 /** Add the widest feasible image grid instead of reserving one tall row per member. */
 export function productGroupFootprint(items: Item[], maxHeight: number, group?: ImageGroup, maxWidth = Number.POSITIVE_INFINITY, preferredColumns?: number) {
   const boxes = items.map(footprint)
+  const emptyExample = Boolean(group?.emptyExample && !group.emptyExampleMerged)
+  const slotCount = items.length + (emptyExample ? 1 : 0)
   const cellWidth = Math.max(...boxes.map((box, index) => box.width
     + (items[index].w < items[index].h ? PRODUCT_GROUP_MARKER_SPACE : 0)
     + GROUP_GAP))
@@ -28,8 +30,8 @@ export function productGroupFootprint(items: Item[], maxHeight: number, group?: 
   // Keep the product image matrix readable. Three image columns already use
   // the available horizontal space once the compact details panel is removed;
   // additional columns make the individual ruler and artwork too small.
-  const widestFirst = Array.from({ length: Math.min(items.length, 3) }, (_, index) => Math.min(items.length, 3) - index)
-  const preferred = Number.isInteger(preferredColumns) && preferredColumns! >= 1 && preferredColumns! <= items.length ? [preferredColumns!] : []
+  const widestFirst = Array.from({ length: Math.min(slotCount, 3) }, (_, index) => Math.min(slotCount, 3) - index)
+  const preferred = Number.isInteger(preferredColumns) && preferredColumns! >= 1 && preferredColumns! <= slotCount ? [preferredColumns!] : []
   const candidates = [...preferred, ...widestFirst.filter(columns => !preferred.includes(columns))]
   const detailWidth = detailWidthForPanels(group?.detailGroups ?? [])
   for (const columns of candidates) {
@@ -46,7 +48,7 @@ export function productGroupFootprint(items: Item[], maxHeight: number, group?: 
       const noteLines = details.note ? wrapNote(details.note, detailPanelWidth, 8).length : 0
       return 8 + lines * 11 + noteLines * 10 + (details.accessoryImage ? 48 : 0) + (details.noteImage ? 32 : 0)
     }))
-    const height = Math.max(cellHeight * Math.ceil(items.length / columns), Math.ceil(panels.length / detailColumns) * detailHeight)
+    const height = Math.max(cellHeight * Math.ceil(slotCount / columns), Math.ceil(panels.length / detailColumns) * detailHeight)
     if (height <= maxHeight + 1e-7) return { imageWidth, height, columns, cellHeight, detailWidth }
   }
   throw new Error('产品组的图片或产品信息超出整页排列区域，请扩大排列区域或减少组内图片。')
@@ -69,12 +71,19 @@ export function placeProductGroup(items: Item[], group: ImageGroup, x: number, y
   const compactDetailWidth = Math.min(Math.max(1, width - 1), detailWidth)
   const imageAreaWidth = width - compactDetailWidth
   const cellWidth = imageAreaWidth / columns
-  const rows = Math.ceil(items.length / columns)
+  const emptyExample = Boolean(group.emptyExample && !group.emptyExampleMerged)
+  const slotCount = items.length + (emptyExample ? 1 : 0)
+  const rows = Math.ceil(slotCount / columns)
   const cellHeight = height / rows
-  const imageCells = items.map((item, index) => ({ itemId: item.id, label: `图 ${index + 1}`,
-    x: x + (index % columns) * cellWidth, y: y + Math.floor(index / columns) * cellHeight, width: cellWidth, height: cellHeight }))
+  const imageCells = [
+    ...(emptyExample ? [{ itemId: `${group.id}::empty-example`, label: 'Example', x, y, width: cellWidth, height: cellHeight }] : []),
+    ...items.map((item, index) => {
+      const slotIndex = index + (emptyExample ? 1 : 0)
+      return { itemId: item.id, label: `图 ${index + 1}`, x: x + (slotIndex % columns) * cellWidth, y: y + Math.floor(slotIndex / columns) * cellHeight, width: cellWidth, height: cellHeight }
+    }),
+  ]
   const placed = items.map((item, index) => {
-    const cell = imageCells[index]
+    const cell = imageCells[index + (emptyExample ? 1 : 0)]
     const box = footprint(item)
     const vertical = item.w < item.h
     // Horizontal rulers sit above the artwork and need no lateral reserve;

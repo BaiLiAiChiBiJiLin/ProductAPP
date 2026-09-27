@@ -11,6 +11,10 @@ export type ImageGroup = {
   productGroupId?: string
   imageColumns?: number
   imageCells?: Array<{ itemId: string; x: number; y: number; width: number; height: number; label?: string }>
+  /** The fixed Example slot can be intentionally left empty for holder/shaker groups. */
+  emptyExample?: boolean
+  /** Empty Example is merged into the Front/Inside/Back row instead of reserving a slot. */
+  emptyExampleMerged?: boolean
   detailGroups?: Array<{ itemIds: string[]; details: ImageDetails }>
   /** Product groups may reserve a compact details panel instead of a 50/50 split. */
   detailWidth?: number

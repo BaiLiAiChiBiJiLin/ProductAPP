@@ -38,7 +38,8 @@ function paginateGroupedAssets(assets: Asset[], bounds: LayoutBounds, configs: P
     const items = ordered.map(asset => referenceItems.get(asset.id)!)
     const detailGroups = buildProductGroupDetails(items, byAsset, configs)
     const group: ImageGroup = { id: `product-group-${id}`, productGroupId: id, itemIds: items.map(item => item.id),
-      x: 0, y: 0, width: 0, height: 0, detailGroups, details: detailGroups[0]?.details }
+      x: 0, y: 0, width: 0, height: 0, detailGroups, details: detailGroups[0]?.details,
+      emptyExample: members.some(asset => (asset.productGroupPosition ?? 0) >= 2) && !members.some(asset => (asset.productGroupPosition ?? 0) === 1) }
     const header = reference.flatMap(page => page.headerBlocks ?? []).find(block => block.assetIds?.includes(leader.id))!
     const unit = { group, items, header: { ...header, columns: header.columns.map(column => ({ ...column, imageMode: headerModeForAsset(leader) })) } }
     members.forEach(asset => units.set(asset.id, unit))
