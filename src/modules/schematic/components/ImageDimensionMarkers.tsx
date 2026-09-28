@@ -1,9 +1,9 @@
 import { Group, Line, Text } from 'react-konva'
 import { useMemo } from 'react'
 import type { Asset, Page } from '../../../model'
-import { imageDimensionMarkerLayout, dimensionGroups, type DimensionDisplayPrecision } from '../services/imageDimensionService'
+import { imageDimensionMarkerLayout, dimensionGroups, type DimensionDisplayOverride, type DimensionDisplayPrecision } from '../services/imageDimensionService'
 
-export default function ImageDimensionMarkers({ page, assets, selectedItemId, precision = 'default', visualScales }: { page: Page; assets: Map<string, Asset>; selectedItemId?: string; precision?: DimensionDisplayPrecision; visualScales?: ReadonlyMap<string, number> }) {
+export default function ImageDimensionMarkers({ page, assets, selectedItemIds = [], precision = 'default', decimalPlaces = 1, displayOverrides, visualScales }: { page: Page; assets: Map<string, Asset>; selectedItemIds?: string[]; precision?: DimensionDisplayPrecision; decimalPlaces?: number; displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>; visualScales?: ReadonlyMap<string, number> }) {
   const displayPage = useMemo(() => {
     if (!visualScales?.size) return page
     return { ...page, items: page.items.map(item => {
@@ -13,8 +13,11 @@ export default function ImageDimensionMarkers({ page, assets, selectedItemId, pr
   }, [page, visualScales])
   return <Group listening={false} name="image-dimension-markers">
     {dimensionGroups(displayPage).map(group => {
-      const markerPrecision = selectedItemId && group.itemIds.includes(selectedItemId) ? precision : 'default'
-      const marker = imageDimensionMarkerLayout(group, displayPage, assets, markerPrecision)
+      const override = group.itemIds.map(id => displayOverrides?.get(id)).find(Boolean)
+      const isSelected = selectedItemIds.some(id => group.itemIds.includes(id))
+      const markerPrecision = override?.precision ?? (isSelected ? precision : 'default')
+      const markerDecimals = override?.decimalPlaces ?? (isSelected ? decimalPlaces : 1)
+      const marker = imageDimensionMarkerLayout(group, displayPage, assets, markerPrecision, markerDecimals)
       if (!marker) return null
       if (marker.horizontal) {
         return <Group key={group.id} name={`image-dimension-${group.itemIds[0]}`}>

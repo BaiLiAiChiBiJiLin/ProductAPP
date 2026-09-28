@@ -14,6 +14,15 @@ type ClassificationUnit = {
   print: string
 }
 
+function hasAssignedProduct(productId: string) {
+  const normalized = productId.trim()
+  return Boolean(normalized && normalized !== 'a')
+}
+
+function isStickerUnit(unit: ClassificationUnit) {
+  return unit.assets.some(asset => /stickers?|贴纸/i.test(`${asset.productName ?? ''} ${asset.productId ?? ''}`))
+}
+
 /**
  * Collapse saved product groups before sorting.
  *
@@ -63,7 +72,15 @@ export function classifyAssetsByProductAndPrint(assets: Asset[]): Asset[] {
     products.set(unit.productId, product)
   }
   return [...products.values()]
-    .sort((left, right) => right.count - left.count || left.firstIndex - right.firstIndex)
+    .sort((left, right) => {
+      const leftSticker = left.units.some(isStickerUnit)
+      const rightSticker = right.units.some(isStickerUnit)
+      if (leftSticker !== rightSticker) return leftSticker ? -1 : 1
+      const leftAssigned = hasAssignedProduct(left.units[0]?.productId ?? '')
+      const rightAssigned = hasAssignedProduct(right.units[0]?.productId ?? '')
+      if (leftAssigned !== rightAssigned) return leftAssigned ? -1 : 1
+      return right.count - left.count || left.firstIndex - right.firstIndex
+    })
     .flatMap(product => {
       const printGroups = new Map<string, { firstIndex: number; units: ClassificationUnit[]; count: number }>()
       for (const unit of product.units) {

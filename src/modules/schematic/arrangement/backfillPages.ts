@@ -58,10 +58,12 @@ export function backfillPages(pages: Page[], bounds: LayoutBounds): Page[] {
   const bottom = PAPER_HEIGHT - bounds.bottom
   for (let sourceIndex = 1; sourceIndex < pages.length; sourceIndex++) {
     const source = pages[sourceIndex]
+    if (source.imageGroups?.some(group => group.protectPageFill)) continue
     for (const group of [...source.imageGroups ?? []]) {
       const sourceHeader = headerFor(source, group)
-      if (!sourceHeader) continue
+      if (!sourceHeader || group.protectPageFill) continue
       for (const target of pages.slice(0, sourceIndex)) {
+        if (target.imageGroups?.some(candidate => candidate.protectPageFill)) continue
         const groups = target.imageGroups ?? []
         const headers = target.headerBlocks ?? []
         let placement: { x: number; y: number; header?: HeaderBlock } | undefined
@@ -71,10 +73,17 @@ export function backfillPages(pages: Page[], bounds: LayoutBounds): Page[] {
           const limit = headers[index + 1]?.y ?? bottom
           const ys = new Set([header.y + HEADER_BLOCK_HEIGHT + GROUP_GAP, ...groups.filter(g => headerFor(target, g) === header).map(g => g.y)])
           const columnWidth = (header.width - GROUP_GAP * (header.columns.length - 1)) / header.columns.length
-          for (const y of ys) for (let col = 0; col < header.columns.length; col++) {
-            const x = header.x + col * (columnWidth + GROUP_GAP)
-            if (group.width > columnWidth + EPS || y + group.height > limit - (headers[index + 1] ? GROUP_GAP : 0) + EPS) continue
-            if (!groups.some(other => overlaps(x, y, group, other))) { placement = { x, y }; break }
+          for (const y of ys) {
+            // A partially occupied row at a product boundary is deliberate;
+            // keep its empty columns instead of mixing the next product in.
+            const rowGroups = groups.filter(g => headerFor(target, g) === header && Math.abs(g.y - y) < EPS)
+            if (rowGroups.some(g => g.preventRowFill
+              || (g.productKey && group.productKey && g.productKey !== group.productKey))) continue
+            for (let col = 0; col < header.columns.length; col++) {
+              const x = header.x + col * (columnWidth + GROUP_GAP)
+              if (group.width > columnWidth + EPS || y + group.height > limit - (headers[index + 1] ? GROUP_GAP : 0) + EPS) continue
+              if (!groups.some(other => overlaps(x, y, group, other))) { placement = { x, y }; break }
+            }
           }
           if (placement) break
         }

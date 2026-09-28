@@ -8,7 +8,7 @@ import HeaderBlockCanvas from './components/HeaderBlockCanvas'
 import ImageGroupBackgrounds from './components/ImageGroupBackgrounds'
 import ImageDimensionMarkers from './components/ImageDimensionMarkers'
 import type { AccessoryVisual } from './components/ImageGroupDetails'
-import type { DimensionDisplayPrecision } from './services/imageDimensionService'
+import type { DimensionDisplayOverride, DimensionDisplayPrecision } from './services/imageDimensionService'
 
 const svgImageCache = new Map<string, HTMLImageElement>()
 function displayDate(value?: string) {
@@ -90,14 +90,14 @@ const Artwork = memo(function Artwork({ item, asset, visualScale = 1, selected, 
   </>
 })
 
-export default function ArtworkCanvas({ page, assets, selected, selectedIds = [], onBoxSelect, selectedGroupIds = [], onSelect, onSelectGroup, onSelectAccessory, selectedAccessoryKey, accessoryVisuals, onChangeAccessory, onChange, onDropAsset, metadata, totalPages, mode = 'select', zoom = 1, onZoomChange, layoutBounds = defaultLayoutBounds, onHeaderBlockChange, dimensionPrecision = 'default', dimensionItemId, visualScales }: {
+export default function ArtworkCanvas({ page, assets, selected, selectedIds = [], onBoxSelect, selectedGroupIds = [], onSelect, onSelectGroup, onSelectAccessory, selectedAccessoryKey, accessoryVisuals, onChangeAccessory, onChange, onDropAsset, metadata, totalPages, mode = 'select', zoom = 1, onZoomChange, layoutBounds = defaultLayoutBounds, onHeaderBlockChange, dimensionPrecision = 'default', dimensionDecimalPlaces = 1, dimensionItemIds = [], dimensionDisplayOverrides, visualScales }: {
   page: Page; assets: Map<string, Asset>; selected: string | null; onSelect: (id: string | null) => void
   selectedIds?: string[]; onBoxSelect?: (ids: string[]) => void
   selectedGroupIds?: string[]; onSelectGroup?: (id: string, ctrlKey: boolean) => void
   onChange: (item: Item) => void; onDropAsset: (assetId: string, x: number, y: number) => void; metadata?: PageHeader; totalPages?: number
   mode?: 'select' | 'pan'; zoom?: number; onZoomChange?: (zoom: number) => void
   layoutBounds?: LayoutBounds; onHeaderBlockChange: (block: HeaderBlock) => void
-  dimensionPrecision?: DimensionDisplayPrecision; dimensionItemId?: string; visualScales?: ReadonlyMap<string, number>; selectedAccessoryKey?: string; accessoryVisuals?: ReadonlyMap<string, AccessoryVisual>; onSelectAccessory?: (key: string) => void; onChangeAccessory?: (key: string, patch: Partial<AccessoryVisual>) => void
+  dimensionPrecision?: DimensionDisplayPrecision; dimensionDecimalPlaces?: number; dimensionItemIds?: string[]; dimensionDisplayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>; visualScales?: ReadonlyMap<string, number>; selectedAccessoryKey?: string; accessoryVisuals?: ReadonlyMap<string, AccessoryVisual>; onSelectAccessory?: (key: string) => void; onChangeAccessory?: (key: string, patch: Partial<AccessoryVisual>) => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
@@ -229,9 +229,9 @@ export default function ArtworkCanvas({ page, assets, selected, selectedIds = []
         {/* Fixed page information stays behind artwork and cannot intercept selection. */}
         <PageHeaderCanvas pageNumber={page.id} totalPages={totalPages ?? 1} metadata={metadata ?? {}} />
         <Group clipX={0} clipY={0} clipWidth={PAPER_WIDTH} clipHeight={PAPER_HEIGHT}>
-          <ImageGroupBackgrounds page={page} assets={assets} selectedItemId={dimensionItemId} precision={dimensionPrecision} selectedAccessoryKey={selectedAccessoryKey} accessoryVisuals={accessoryVisuals} onSelectAccessory={panMode ? undefined : onSelectAccessory} onChangeAccessory={panMode ? undefined : onChangeAccessory} selectedGroupIds={selectedGroupIds} onSelectGroup={panMode ? undefined : selectGroup}/>
+          <ImageGroupBackgrounds page={page} assets={assets} selectedItemIds={dimensionItemIds} precision={dimensionPrecision} decimalPlaces={dimensionDecimalPlaces} displayOverrides={dimensionDisplayOverrides} selectedAccessoryKey={selectedAccessoryKey} accessoryVisuals={accessoryVisuals} onSelectAccessory={panMode ? undefined : onSelectAccessory} onChangeAccessory={panMode ? undefined : onChangeAccessory} selectedGroupIds={selectedGroupIds} onSelectGroup={panMode ? undefined : selectGroup}/>
           {page.items.map(item => { const asset = assets.get(item.assetId); const group = page.imageGroups?.find(candidate => candidate.itemIds.includes(item.id)); return asset && <Artwork key={item.id} item={item} asset={asset} visualScale={visualScales?.get(item.id) ?? 1} selected={selected === item.id || selectedIds.includes(item.id)} interactive={!panMode} bounds={imageBounds} groupBounds={group ? { x: group.x, y: group.y, width: group.width, height: group.height } : undefined} onSelect={select} onChange={onChange} /> })}
-          <ImageDimensionMarkers page={page} assets={assets} selectedItemId={dimensionItemId} precision={dimensionPrecision} visualScales={visualScales}/>
+          <ImageDimensionMarkers page={page} assets={assets} selectedItemIds={dimensionItemIds} precision={dimensionPrecision} decimalPlaces={dimensionDecimalPlaces} displayOverrides={dimensionDisplayOverrides} visualScales={visualScales}/>
           {page.headerBlocks?.map(block => <HeaderBlockCanvas key={block.id} block={block} bounds={layoutBounds} selected={selected === block.id} interactive={!panMode} onSelect={select} onChange={onHeaderBlockChange}/>)}
         </Group>
         <Group listening={false}>

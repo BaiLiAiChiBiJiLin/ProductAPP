@@ -19,8 +19,9 @@ export type ImageDimension = {
   horizontal: boolean
 }
 
-/** Formatting used only for the currently selected canvas dimension label. */
+/** Formatting used for canvas dimension labels; overrides affect display text only. */
 export type DimensionDisplayPrecision = 'default' | 'round' | 'truncate'
+export type DimensionDisplayOverride = { precision: DimensionDisplayPrecision; decimalPlaces: number }
 
 export type ImageDimensionMarkerLayout = ImageDimension & {
   x1: number
@@ -43,14 +44,19 @@ function sourceSize(asset: Asset) {
   return key ? String(attributes[key] ?? '').trim() : ''
 }
 
-function number(value: number) {
-  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(1)))
+function number(value: number, decimalPlaces = 1) {
+  return String(Number(value.toFixed(decimalPlaces)))
 }
 
-export function formatDimensionNumber(value: number, precision: DimensionDisplayPrecision = 'default') {
-  if (precision === 'round') return String(Math.round(value))
-  if (precision === 'truncate') return String(Math.trunc(value))
-  return number(value)
+export function formatDimensionNumber(value: number, precision: DimensionDisplayPrecision = 'default', decimalPlaces = 1) {
+  const places = Math.max(0, Math.min(6, Math.trunc(decimalPlaces)))
+  const factor = 10 ** places
+  const adjusted = precision === 'truncate'
+    ? Math.trunc(value * factor) / factor
+    : precision === 'round'
+      ? Math.round(value * factor) / factor
+      : Number(value.toFixed(places))
+  return precision === 'default' ? number(adjusted, places) : adjusted.toFixed(places)
 }
 
 export function physicalSourceSize(asset: Asset) {
@@ -85,12 +91,12 @@ function sizeMillimetres(raw: string, originalLongest: number) {
 }
 
 /** Dimension text always comes from the persisted source size, never item.w/item.h. */
-export function imageDimensionForAsset(asset: Asset, precision: DimensionDisplayPrecision = 'default'): ImageDimension {
+export function imageDimensionForAsset(asset: Asset, precision: DimensionDisplayPrecision = 'default', decimalPlaces = 1): ImageDimension {
   const source = sourceAssetSize(asset)
   const physical = physicalSourceSize(asset)
   const horizontal = source.width >= source.height
   const originalLongest = Math.max(physical.width, physical.height)
-  return { label: `${formatDimensionNumber(sizeMillimetres(sourceSize(asset), originalLongest), precision)} mm`, horizontal }
+  return { label: `${formatDimensionNumber(sizeMillimetres(sourceSize(asset), originalLongest), precision, decimalPlaces)} mm`, horizontal }
 }
 
 export function imageDimensionForGroup(group: ImageGroup, page: Page, assets: Map<string, Asset>) {
@@ -145,13 +151,13 @@ function clamp(value: number, minimum: number, maximum: number) {
 }
 
 /** Place the measurement outside the source artwork while retaining its source-size label. */
-export function imageDimensionMarkerLayout(group: ImageGroup, page: Page, assets: Map<string, Asset>, precision: DimensionDisplayPrecision = 'default'): ImageDimensionMarkerLayout | undefined {
+export function imageDimensionMarkerLayout(group: ImageGroup, page: Page, assets: Map<string, Asset>, precision: DimensionDisplayPrecision = 'default', decimalPlaces = 1): ImageDimensionMarkerLayout | undefined {
   let dimension = imageDimensionForGroup(group, page, assets)
   const item = page.items.find(candidate => group.itemIds.includes(candidate.id))
   if (!dimension || !item || item.suppressRuler) return undefined
   const asset = assets.get(item.assetId)!
   const axis = group.id.endsWith('-width') ? 'width' : group.id.endsWith('-height') ? 'height' : undefined
-  dimension = dimensionForItem(asset, item, axis, precision)
+  dimension = dimensionForItem(asset, item, axis, precision, decimalPlaces)
   const imageLeft = item.x - Math.abs(item.w) / 2
   const imageRight = item.x + Math.abs(item.w) / 2
   const imageTop = item.y - Math.abs(item.h) / 2
@@ -192,13 +198,13 @@ export function imageDimensionMarkersSvg(page: Page, assets: Map<string, Asset>)
 }
 
 /** Source size determines both axes; Size sets the longest edge in physical units. */
-export function dimensionForItem(asset: Asset, item: Pick<Page['items'][number], 'rulerUnit'>, axis?: 'width' | 'height', precision: DimensionDisplayPrecision = 'default'): ImageDimension {
+export function dimensionForItem(asset: Asset, item: Pick<Page['items'][number], 'rulerUnit'>, axis?: 'width' | 'height', precision: DimensionDisplayPrecision = 'default', decimalPlaces = 1): ImageDimension {
   const physical = physicalSourceSize(asset)
   const longestMm = sizeMillimetres(sourceSize(asset), Math.max(physical.width, physical.height))
   const horizontal = axis ? axis === 'width' : asset.width >= asset.height
   const edgeMm = axis ? longestMm * (horizontal ? asset.width : asset.height) / Math.max(asset.width, asset.height) : longestMm
   const unit = item.rulerUnit ?? 'mm'
-  return { horizontal, label: `${formatDimensionNumber(edgeMm / (unit === 'cm' ? 10 : unit === 'in' ? 25.4 : 1), precision)} ${unit}` }
+  return { horizontal, label: `${formatDimensionNumber(edgeMm / (unit === 'cm' ? 10 : unit === 'in' ? 25.4 : 1), precision, decimalPlaces)} ${unit}` }
 }
 
 export function dimensionGroups(page: Page): ImageGroup[] {

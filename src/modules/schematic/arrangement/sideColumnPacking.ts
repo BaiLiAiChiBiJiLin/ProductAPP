@@ -11,6 +11,7 @@ export function fillSideColumns(pages: Page[], bounds: LayoutBounds) {
     if (header) owners.set(group, header)
   }
   for (const [pageIndex, target] of pages.entries()) {
+    if (target.imageGroups?.some(group => group.protectPageFill)) continue
     // Snapshot original headers so newly added side headers do not redefine the region.
     const headers = [...target.headerBlocks ?? []].sort((a, b) => a.y - b.y)
     for (const wideHeader of headers) {
@@ -25,7 +26,7 @@ export function fillSideColumns(pages: Page[], bounds: LayoutBounds) {
       for (const source of pages.slice(pageIndex)) {
         for (const group of [...source.imageGroups ?? []]) {
           const owner = owners.get(group)
-          if (!owner || Math.abs(group.width - baseWidth) > EPS || (source === target && group.y < limit - EPS)) continue
+          if (!owner || source.imageGroups?.some(candidate => candidate.protectPageFill) || group.preventRowFill || group.protectPageFill || Math.abs(group.width - baseWidth) > EPS || (source === target && group.y < limit - EPS)) continue
           const sourceColumnWidth = (owner.width - GROUP_GAP * (owner.columns.length - 1)) / owner.columns.length
           const columnIndex = Math.round((group.x - owner.x) / (sourceColumnWidth + GROUP_GAP))
           const column = owner.columns[columnIndex]
@@ -34,6 +35,9 @@ export function fillSideColumns(pages: Page[], bounds: LayoutBounds) {
             || sideHeader.columns[0].detailLabel !== column.detailLabel || sideHeader.detailWidth !== owner.detailWidth
           const groupY = y + (needsHeader ? HEADER_BLOCK_HEIGHT + GROUP_GAP : 0)
           if (groupY + group.height > limit + EPS) continue
+          const anchor = target.imageGroups?.find(candidate => owners.get(candidate) === wideHeader && Math.abs(candidate.y - groupY) <= EPS)
+          if (anchor?.preventRowFill) continue
+          if (anchor?.productKey && group.productKey && anchor.productKey !== group.productKey) continue
           if (needsHeader) {
             sideHeader = { ...owner, id: `side-${target.id}-${group.id}`, x, y, width: baseWidth,
               columns: [{ ...column, id: `side-column-${group.id}` }], assetIds: [] }

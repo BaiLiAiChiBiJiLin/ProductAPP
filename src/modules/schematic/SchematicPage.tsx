@@ -100,7 +100,7 @@ export default function SchematicPage() { const [toast, context] = message.useMe
       setCurrentBatchId(result.batchId)
       const persisted = mergePersistedAssetMetadata(savingAssets, result.assets)
       setAssets(persisted)
-      if (screen === 'arrange') setPages(current => autoArrangePages(current, activePage, persisted, layoutBounds, productConfigs))
+      if (screen === 'arrange') setPages(current => autoArrangePages(current, activePage, assetsForArrangement(current, arrangementSort, persisted), layoutBounds, productConfigs))
       if (category) setSelectedAssetIds(current => new Set([...current].filter(id => persisted.some(asset => asset.id === id && matchesProductCategory(asset, category)))))
       if (category && category !== UNASSIGNED_PRODUCT_CATEGORY && !persisted.some(asset => asset.productId === category)) setCategory('')
       setBatchMetadata(result.metadata ?? batchMetadata)
@@ -128,7 +128,7 @@ export default function SchematicPage() { const [toast, context] = message.useMe
     const after = next.find(asset => asset.id === assetId)
     await saveBatch(next)
     if (!after) return
-    const nextPages = autoArrangePages(pages, activePage, next, layoutBounds, productConfigs)
+    const nextPages = autoArrangePages(pages, activePage, assetsForArrangement(pages, arrangementSort, next), layoutBounds, productConfigs)
     setPages(nextPages)
     setActivePage(current => Math.min(current, Math.max(1, nextPages.length)))
     setSelectedItem(null)
@@ -204,7 +204,7 @@ export default function SchematicPage() { const [toast, context] = message.useMe
   const changeLayoutBounds = (value: LayoutBounds) => {
     const next = normalizeLayoutBounds(value)
     try {
-      const nextPages = autoArrangePages(pages, activePage, assets, next, productConfigs)
+      const nextPages = autoArrangePages(pages, activePage, assetsForArrangement(pages, arrangementSort), next, productConfigs)
       setLayoutBounds(next)
       setPages(nextPages)
     } catch (error) { toast.error(String(error)) }
@@ -253,12 +253,13 @@ export default function SchematicPage() { const [toast, context] = message.useMe
       toast.success('已组合两组图片，图片保持原比例上下排列')
     } catch (error) { toast.error(String(error)) }
   }
-  const assetsForArrangement = (sourcePages: Page[], mode: 'default' | 'upload') => {
-    if (mode === 'upload') return assets
+  const assetsForArrangement = (sourcePages: Page[], mode: 'default' | 'upload', sourceAssets: Asset[] = assets) => {
+    if (mode === 'upload') return sourceAssets
     const order = new Map<string, number>(defaultArrangementIds.map((id, index) => [id, index]))
     let index = 0
     for (const page of sourcePages) for (const item of page.items) if (!item.derivedFrom && !order.has(item.assetId)) order.set(item.assetId, defaultArrangementIds.length + index++)
-    return [...assets].sort((a, b) => (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.id) ?? Number.MAX_SAFE_INTEGER))
+    if (!defaultArrangementIds.length) return classifyAssetsByProductAndPrint(sourceAssets)
+    return [...sourceAssets].sort((a, b) => (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.id) ?? Number.MAX_SAFE_INTEGER))
   }
   const autoArrange = (requestedMode: 'default' | 'upload' = arrangementSort) => {
     try {

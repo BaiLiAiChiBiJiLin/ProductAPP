@@ -9,6 +9,12 @@ export type ImageGroup = {
   backgroundHeight?: number
   details?: ImageDetails
   productGroupId?: string
+  /** Normalized product identity used to keep adjacent rows together. */
+  productKey?: string
+  /** A product boundary ended this row; later backfill must leave its empty slots open. */
+  preventRowFill?: boolean
+  /** Pages containing this group must keep their free regions out of cross-product packing. */
+  protectPageFill?: boolean
   imageColumns?: number
   imageCells?: Array<{ itemId: string; x: number; y: number; width: number; height: number; label?: string }>
   /** The fixed Example slot can be intentionally left empty for holder/shaker groups. */

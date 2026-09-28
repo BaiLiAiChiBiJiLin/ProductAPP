@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Group, Image as KonvaImage, Rect, Text } from 'react-konva'
-import type { Asset, Item, Page } from '../../../model'
+import type { Asset, Page } from '../../../model'
 import type { ImageGroup } from '../layoutTypes'
 import { imageDetailsLayout } from '../services/imageDetailsLayoutService'
 import { detailPanelsForGroup } from '../arrangement/productGroupDetails'
 import { finishLabel } from '../services/finishLabelService'
 import { accessoryFrame, rememberAccessoryImage } from '../services/accessoryFrameService'
 import { resolveRemoteImage } from '../services/remoteImageService'
-import { dimensionForItem, type DimensionDisplayPrecision } from '../services/imageDimensionService'
+import { dimensionForItem, type DimensionDisplayOverride, type DimensionDisplayPrecision } from '../services/imageDimensionService'
 import type { Node as KonvaNode } from 'konva/lib/Node'
 
 const imageCache = new Map<string, HTMLImageElement>()
@@ -99,28 +99,39 @@ function AccessoryImage({ src, x, y, width, height, code, framed = false, select
   </Group>
 }
 
-function detailsForDisplay(details: NonNullable<ImageGroup['details']>, item: Item, asset: Asset, precision: DimensionDisplayPrecision) {
-  const label = dimensionForItem(asset, item, undefined, precision).label
+function detailsForDisplay(details: NonNullable<ImageGroup['details']>, page: Page, assets: Map<string, Asset>, itemIds: string[], selected: Set<string>, precision: DimensionDisplayPrecision, decimalPlaces: number, displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>) {
+  const labels = new Map<string, string>()
+  for (const item of page.items) {
+    if (!itemIds.includes(item.id) || (!selected.has(item.id) && !displayOverrides?.has(item.id))) continue
+    const asset = assets.get(item.assetId)
+    if (asset) {
+      const override = displayOverrides?.get(item.id)
+      labels.set(item.id, dimensionForItem(asset, item, undefined, override?.precision ?? precision, override?.decimalPlaces ?? decimalPlaces).label)
+    }
+  }
+  if (!labels.size) return details
+  const firstLabel = labels.values().next().value as string | undefined
   return { ...details,
-    size: details.sizes?.length ? details.size : label,
-    sizes: details.sizes?.map(value => value.itemId === item.id ? { ...value, label } : value),
+    size: details.sizes?.length ? details.size : firstLabel ?? details.size,
+    sizes: details.sizes?.map(value => labels.has(value.itemId) ? { ...value, label: labels.get(value.itemId)! } : value),
   }
 }
 
-function groupForDisplay(group: ImageGroup, page: Page | undefined, assets: Map<string, Asset> | undefined, selectedItemId: string | undefined, precision: DimensionDisplayPrecision) {
-  if (!page || !assets || !selectedItemId || precision === 'default') return group
-  const item = page.items.find(candidate => candidate.id === selectedItemId)
-  const asset = item ? assets.get(item.assetId) : undefined
-  if (!item || !asset) return group
-  const details = group.details && group.itemIds.includes(selectedItemId) ? detailsForDisplay(group.details, item, asset, precision) : group.details
-  const detailGroups = group.detailGroups?.map(panel => panel.itemIds.includes(selectedItemId)
-    ? { ...panel, details: detailsForDisplay(panel.details, item, asset, precision) }
+function groupForDisplay(group: ImageGroup, page: Page | undefined, assets: Map<string, Asset> | undefined, selectedItemIds: string[], precision: DimensionDisplayPrecision, decimalPlaces: number, displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>) {
+  if (!page || !assets || (!selectedItemIds.length && !displayOverrides?.size)) return group
+  const selected = new Set(selectedItemIds)
+  const isDisplayed = (id: string) => selected.has(id) || Boolean(displayOverrides?.has(id))
+  const details = group.details && group.itemIds.some(isDisplayed)
+    ? detailsForDisplay(group.details, page, assets, group.itemIds, selected, precision, decimalPlaces, displayOverrides)
+    : group.details
+  const detailGroups = group.detailGroups?.map(panel => panel.itemIds.some(isDisplayed)
+    ? { ...panel, details: detailsForDisplay(panel.details, page, assets, panel.itemIds, selected, precision, decimalPlaces, displayOverrides) }
     : panel)
   return details === group.details && detailGroups === group.detailGroups ? group : { ...group, details, detailGroups }
 }
 
-export default function ImageGroupDetails({ group, page, assets, selectedItemId, precision = 'default', selectedAccessoryKey, accessoryVisuals, onSelectAccessory, onChangeAccessory }: { group: ImageGroup; page?: Page; assets?: Map<string, Asset>; selectedItemId?: string; precision?: DimensionDisplayPrecision; selectedAccessoryKey?: string; accessoryVisuals?: ReadonlyMap<string, AccessoryVisual>; onSelectAccessory?: (key: string) => void; onChangeAccessory?: (key: string, patch: Partial<AccessoryVisual>) => void }) {
-  const displayGroup = groupForDisplay(group, page, assets, selectedItemId, precision)
+export default function ImageGroupDetails({ group, page, assets, selectedItemIds = [], precision = 'default', decimalPlaces = 1, displayOverrides, selectedAccessoryKey, accessoryVisuals, onSelectAccessory, onChangeAccessory }: { group: ImageGroup; page?: Page; assets?: Map<string, Asset>; selectedItemIds?: string[]; precision?: DimensionDisplayPrecision; decimalPlaces?: number; displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>; selectedAccessoryKey?: string; accessoryVisuals?: ReadonlyMap<string, AccessoryVisual>; onSelectAccessory?: (key: string) => void; onChangeAccessory?: (key: string, patch: Partial<AccessoryVisual>) => void }) {
+  const displayGroup = groupForDisplay(group, page, assets, selectedItemIds, precision, decimalPlaces, displayOverrides)
   const label = finishLabel(displayGroup)
   return <Group listening={Boolean(onSelectAccessory)}>{detailPanelsForGroup(displayGroup).map(panel => <DetailsPanel key={panel.id} group={panel} selectedAccessoryKey={selectedAccessoryKey} accessoryVisuals={accessoryVisuals} onSelectAccessory={onSelectAccessory} onChangeAccessory={onChangeAccessory}/>)}{label.text && <Text x={label.x + label.width} y={label.y} text={label.text} fontSize={10} fill="#ff4d4f" wrap="none" ref={node => { if (node) node.offsetX(node.width()) }} listening={false}/>}</Group>
 }

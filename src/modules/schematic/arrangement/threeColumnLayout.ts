@@ -12,6 +12,28 @@ type Kind = 'ordinary' | 'holder' | 'standee' | 'chain'
 type Cell = { asset: Asset; x: number; y: number; width: number; height: number; caption?: string; note?: string; back?: boolean; ruler?: boolean; base?: boolean }
 type Unit = { assets: Asset[]; kind: Kind }
 const GAP = GROUP_GAP
+
+/**
+ * Chain assets can have a source viewport whose aspect ratio includes extra
+ * transparent space.  Keep that SVG aspect ratio for rendering, but use the
+ * measured source longest edge as the physical scale.  Falling back to the
+ * raw CSS-pixel size in this case is what makes two similarly-sized chain
+ * charms render at visibly different scales.
+ */
+function chainSourceSize(asset: Asset) {
+  const sourceWidth = Number(asset.sourceGroupWidthMm)
+  const sourceHeight = Number(asset.sourceGroupHeightMm)
+  const rawWidth = Number(asset.width) * 25.4 / 96
+  const rawHeight = Number(asset.height) * 25.4 / 96
+  const rawLongest = Math.max(rawWidth, rawHeight)
+  const sourceLongest = Math.max(sourceWidth, sourceHeight)
+  if (sourceWidth > 0 && sourceHeight > 0 && rawLongest > 0 && Number.isFinite(sourceLongest)) {
+    const factor = sourceLongest / rawLongest
+    return { width: rawWidth * factor, height: rawHeight * factor }
+  }
+  return physicalSourceSize(asset)
+}
+
 export function productLayoutKind(asset: Asset): Kind {
   const name = `${asset.productName ?? ''} ${asset.productId}`.toLowerCase()
   if (/photocard holders|照片夹|shaker|摇摇乐/.test(name)) return 'holder'
@@ -44,6 +66,20 @@ function unitsFor(assets: Asset[]): Unit[] {
   return result
 }
 
+function productKey(asset: Asset) {
+  const name = String(asset.productName ?? '').trim().toLowerCase()
+  const id = String(asset.productId ?? '').trim().toLowerCase()
+  return name || id || 'unassigned'
+}
+
+export function isStickerProduct(asset: Asset) {
+  return /stickers?|贴纸/i.test(`${asset.productName ?? ''} ${asset.productId ?? ''}`)
+}
+
+export function isProtectedProductKey(key?: string) {
+  return Boolean(key && /stickers?|贴纸/i.test(key))
+}
+
 /** Ordinary/same-design chain groups use three columns; different-design chains two; holders one. */
 export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = defaultLayoutBounds, configs: ProductConfig[] = []): Page[] {
   const area = normalizeLayoutBounds(bounds)
@@ -55,6 +91,7 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
   const available = bottom - contentTop
   const pages: Page[] = []
   let page: Page, y = bottom, column = 0, rowHeight = 0
+  let rowProductKey: string | undefined
   let headerKey = ''
   const newPage = (columns: number, sectionWidth: number, imageMode: 'photo' | 'front-back', key: string) => {
     page = { id: pages.length + 1, name: `页面 ${pages.length + 1}`, items: [], imageGroups: [], headerBlocks: [{ id: `header-${pages.length + 1}`, x: area.left, y: area.top, width: sectionWidth, auto: true, columns: Array.from({ length: columns }, (_, i) => ({ id: `column-${i}`, imageMode, detailLabel: 'Size/QT/Finish/Accessory' })) }] }
@@ -63,6 +100,7 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
   for (const unit of unitsFor(assets)) {
     const leader = unit.assets[0]
     const shaker = unit.assets.some(asset => /shaker|摇摇乐/i.test(`${asset.productName ?? ''} ${asset.productId}`))
+    const stickerUnit = unit.assets.some(isStickerProduct)
     // The final member of a multi-member standee is a base, not a front/back pair.
     const standeePictures = unit.assets.length > 1 ? unit.assets.slice(0, -1) : unit.assets
     const wideStandee = unit.kind === 'standee' && standeePictures.some(isDifferentDesign)
@@ -71,13 +109,43 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
     const sectionWidth = wideStandee ? 2 * (width - 2 * GAP) / 3 + GAP : width
     const imageMode = unit.kind === 'standee' ? 'front-back' : 'photo'
     const sectionKey = `${columns}:${sectionWidth}:${imageMode}`
+    const currentProductKey = productKey(leader)
+    // A sticker page intentionally keeps its unused cells open.  The old
+    // protection only ran during backfill, so the first pass could append the
+    // next product into the remaining rows of that same page.  Start a new
+    // page whenever the sticker/non-sticker boundary changes in either
+    // direction; sticker units can still share their own page.
+    const currentPage = pages.at(-1)
+    const pageHasSticker = Boolean(currentPage?.imageGroups?.some(group => group.protectPageFill))
+    const pageHasNonSticker = Boolean(currentPage?.imageGroups?.some(group => !group.protectPageFill))
+    if (pages.length && ((stickerUnit && pageHasNonSticker) || (!stickerUnit && pageHasSticker))) {
+      y = bottom
+      column = 0
+      rowHeight = 0
+      rowProductKey = undefined
+      headerKey = ''
+    }
+    if (column > 0 && headerKey === sectionKey && rowProductKey && rowProductKey !== currentProductKey) {
+      // A product row is intentionally allowed to end with unused columns.
+      // Mark its existing groups so later free-space passes cannot pull a
+      // different product into the remaining cells.
+      pages.at(-1)?.imageGroups?.forEach(group => {
+        if (Math.abs(group.y - y) <= 1e-7) group.preventRowFill = true
+      })
+      y += rowHeight + GAP
+      column = 0
+      rowHeight = 0
+      rowProductKey = undefined
+    }
     const groupWidth = (sectionWidth - GAP * (columns - 1)) / columns
     const detailWidth = Math.max(minimumDetailsWidth, unit.kind === 'holder' ? Math.min(100, width * 0.24) : 0)
     if (groupWidth - detailWidth < 36) throw new Error('排列区域过窄，无法同时容纳图片和完整 Size，请增大排列区域宽度。')
     const imageWidth = groupWidth - detailWidth
     const cells: Cell[] = []
     let height = 120
-    let chainReference: number | undefined
+    let chainTargetLongest: number | undefined
+    let chainScaleCap = 1
+    let chainNearEqual = false
     let holderPortraitRoles = false
     let emptyExampleMerged = false
     if (unit.kind === 'holder') {
@@ -144,16 +212,29 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       const chainHasBackColumn = unit.kind === 'chain' && pictures.some(isDifferentDesign)
       // Chain charms often contain source SVGs with very different physical
       // bounds. Use a shared visual scale reference so a front/back pair is
-      // always identical, while retaining a small, visible size difference
-      // between genuinely different charms. Never enlarge an original asset.
+      // always identical. Near-equal members use one common longest edge;
+      // genuinely different charms retain a small, visible size difference.
       if (unit.kind === 'chain') {
         const lengths = pictures.map(asset => {
-          const physical = physicalSourceSize(asset)
+          const physical = chainSourceSize(asset)
           return Math.max(physical.width, physical.height)
         }).sort((a, b) => a - b)
-        // Also cap against the smallest member: wider vertical cells must not
-        // let a large charm dominate once horizontal packing no longer limits it.
-        chainReference = Math.min(lengths[Math.floor(lengths.length / 2)], lengths[0] * 1.8 / 1.08)
+        if (lengths.length) {
+          const smallest = lengths[0]
+          const largest = lengths[lengths.length - 1]
+          // Members that are already close in real size should share one
+          // visual longest edge.  Previously every member stayed at 100% when
+          // it was below the median target, which made near-identical charms
+          // look different simply because their source boxes were a few pixels
+          // apart.  Limit the enlargement to this near-equal case only.
+          chainNearEqual = smallest > 0 && largest / smallest <= 1.12
+          chainTargetLongest = chainNearEqual
+            ? largest * PAPER_WIDTH / 210
+            // For genuinely different sizes, keep the existing conservative
+            // normalization and never enlarge a source artwork.
+            : Math.min(lengths[Math.floor(lengths.length / 2)], smallest * 1.8 / 1.08) * 1.08 * PAPER_WIDTH / 210
+          chainScaleCap = chainNearEqual ? largest / smallest : 1
+        }
       }
       pictures.forEach((asset, index) => {
         const x = index % perRow * imageWidth / perRow, yy = Math.floor(index / perRow) * rowH
@@ -171,6 +252,25 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
           cells.push({ asset, x, y: yy, width: w, height: rowH / 2, caption: 'Front' }, { asset, x, y: yy + rowH / 2, width: w, height: rowH / 2, caption: 'Back', back: true, ruler: false })
         } else cells.push({ asset, x, y: yy, width: w, height: rowH })
       })
+      if (unit.kind === 'chain' && chainNearEqual && chainTargetLongest) {
+        // The available face width can be more restrictive for a square
+        // charm than for a tall one. Use the smallest per-member drawable
+        // longest edge as the common target so aspect ratio does not turn
+        // into a visible size difference after fitting.
+        const fitLongest = Math.min(...cells.filter(cell => !cell.back).map(cell => {
+          const physical = chainSourceSize(cell.asset)
+          const w = physical.width * PAPER_WIDTH / 210
+          const h = physical.height * PAPER_WIDTH / 210
+          const fit = Math.min(Math.max(1, cell.width - 18) / w, Math.max(1, cell.height - 19) / h)
+          return Math.max(w, h) * Math.max(0, fit)
+        }))
+        chainTargetLongest = Math.min(chainTargetLongest, fitLongest)
+        const smallestLongest = Math.min(...pictures.map(asset => {
+          const physical = chainSourceSize(asset)
+          return Math.max(physical.width, physical.height) * PAPER_WIDTH / 210
+        }))
+        chainScaleCap = Math.min(chainScaleCap, chainTargetLongest / smallestLongest)
+      }
       // A standee base belongs in the right-hand property area. Reserve the
       // lower part of that panel for it so the size/QT fields stay readable,
       // then let the normal proportional fitting make the base as large as
@@ -186,9 +286,9 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       for (const rowY of [...new Set(cells.map(cell => cell.y))]) {
         const row = cells.filter(cell => cell.y === rowY)
         const compactHeight = Math.max(...row.map(cell => {
-          const physical = physicalSourceSize(cell.asset)
+          const physical = chainSourceSize(cell.asset)
           const w = physical.width * PAPER_WIDTH / 210, h = physical.height * PAPER_WIDTH / 210
-          const scale = Math.min(1, chainReference! * 1.08 * PAPER_WIDTH / 210 / Math.max(w, h), Math.max(1, cell.width - 18) / w, Math.max(1, cell.height - 19) / h)
+          const scale = Math.min(chainScaleCap, chainTargetLongest! / Math.max(w, h), Math.max(1, cell.width - 18) / w, Math.max(1, cell.height - 19) / h)
           return h * scale + 19
         }))
         for (const cell of row) { cell.y = nextY; cell.height = compactHeight }
@@ -204,28 +304,31 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
     const groupDetails = detailsForAsset(leader, configs)
     groupDetails.finish = [...new Set(unit.assets.map(asset => cleanFinishLabel(detailsForAsset(asset, configs).finish)).filter(value => value && !/^\d+(?:\.\d+)?$/.test(value)))].join(' / ')
     if (pages.length && headerKey !== sectionKey) {
-      if (column) { y += rowHeight + GAP; column = 0; rowHeight = 0 }
+      if (column) { y += rowHeight + GAP; column = 0; rowHeight = 0; rowProductKey = undefined }
       if (y + HEADER_BLOCK_HEIGHT + GAP + height <= bottom) {
         page!.headerBlocks!.push({ id: `header-${pages.length}-${y}`, x: area.left, y, width: sectionWidth, auto: true, detailWidth, columns: Array.from({ length: columns }, (_,i) => ({ id: `column-${y}-${i}`, imageMode, detailLabel: 'Size/QT/Finish/Accessory' })) })
         y += HEADER_BLOCK_HEIGHT + GAP; headerKey = sectionKey
       } else y = bottom
     }
-    if (!pages.length || y + height > bottom + 1e-7) newPage(columns, sectionWidth, imageMode, sectionKey)
+    if (!pages.length || y + height > bottom + 1e-7) {
+      newPage(columns, sectionWidth, imageMode, sectionKey)
+      rowProductKey = undefined
+    }
     page!.headerBlocks!.at(-1)!.detailWidth = detailWidth
     if (height > available + 1e-7) throw new Error('排列区域太小，无法容纳产品组，请增大排列区域。')
     const x = area.left + column * (groupWidth + GAP)
     const standeeHasBase = unit.kind === 'standee' && unit.assets.length > 1
-    const group: ImageGroup = { id: `group-${leader.id}`, productGroupId: leader.productGroupId, itemIds: [], x, y, width: groupWidth, height, detailsX: x + imageWidth, detailWidth, details: detailsForAsset(leader, configs), detailsHeight: standeeHasBase ? height * 0.48 : undefined, imageCells: [], emptyExample: emptyExampleMerged, emptyExampleMerged }
+    const protectPageFill = unit.assets.some(isStickerProduct)
+    const group: ImageGroup = { id: `group-${leader.id}`, productGroupId: leader.productGroupId, productKey: currentProductKey, itemIds: [], x, y, width: groupWidth, height, detailsX: x + imageWidth, detailWidth, details: detailsForAsset(leader, configs), detailsHeight: standeeHasBase ? height * 0.48 : undefined, imageCells: [], emptyExample: emptyExampleMerged, emptyExampleMerged, preventRowFill: protectPageFill, protectPageFill }
     group.details = groupDetails
     // The full-width role row starts below Example. Keep all property content
     // in the upper-right panel so accessories/notes cannot cover Back.
     if (unit.kind === 'holder') group.detailsHeight = holderPortraitRoles ? height : height * 0.32
     if (unit.kind === 'chain' && group.details) group.details.sizes = unit.assets.map(asset => ({ itemId: `item-${asset.id}`, label: dimensionForItem(asset, {}).label }))
     const verticallyCenterSingleImage = cells.length === 1 && !cells[0].back && !cells[0].caption && unit.kind !== 'chain'
-    const photoHolder = unit.kind === 'holder' && !shaker
     const roleCells = emptyExampleMerged
       ? cells.filter(cell => cell.caption && ['Front', 'Inside', 'Back'].includes(cell.caption)).slice(0, 3)
-      : photoHolder || holderPortraitRoles ? cells.filter(cell => cell.caption).slice(0, 4) : []
+      : unit.kind === 'holder' ? cells.filter(cell => cell.caption).slice(0, 4) : []
     // A common longest edge keeps role artwork visually consistent without
     // distorting aspect ratios or enlarging any source beyond its physical size.
     const roleLongest = Math.min(...roleCells.map(cell => {
@@ -235,8 +338,18 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       const bottom = (groupDetails.finish && cell.y + cell.height >= height - 0.1 ? 16 : 5) + (cell.note ? 13 : 0)
       return Math.max(w, h) * Math.min(emptyExampleMerged || holderPortraitRoles ? Infinity : 1, Math.max(1, cell.width - left - 5) / w, Math.max(1, cell.height - 23 - bottom) / h)
     }))
-    cells.forEach(cell => {
+    // The first four holder/shaker images establish the group's visual scale.
+    // Later images may exceed it only when their real source artwork is larger.
+    const roleSourceLongest = roleCells.length ? Math.max(...roleCells.map(cell => {
       const physical = physicalSourceSize(cell.asset)
+      return Math.max(physical.width, physical.height) * PAPER_WIDTH / 210
+    })) : 0
+    const roleVisualLongest = roleCells.length ? Math.max(...roleCells.map(cell => {
+      const physical = physicalSourceSize(cell.asset)
+      return Math.min(Math.max(physical.width, physical.height) * PAPER_WIDTH / 210, roleLongest)
+    })) : 0
+    cells.forEach(cell => {
+      const physical = unit.kind === 'chain' ? chainSourceSize(cell.asset) : physicalSourceSize(cell.asset)
       const originalW = physical.width * PAPER_WIDTH / 210, originalH = physical.height * PAPER_WIDTH / 210
       // Keep role captions safely inside the group; the artwork still uses
       // the enlarged upper-half row and is fitted independently below it.
@@ -246,17 +359,21 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       const left = cell.base ? 4 : shaker ? 13 : originalW >= originalH ? 4 : 13
       // A lone landscape artwork can use the full image column up to the
       // details boundary; the details renderer already provides text padding.
-      const fillSingleLandscape = verticallyCenterSingleImage && originalW > originalH && !shaker && !chainReference
+      const fillSingleLandscape = verticallyCenterSingleImage && originalW > originalH && !shaker && !chainTargetLongest
       const right = cell.base ? 4 : fillSingleLandscape ? 0 : 5
       // Front and derived Back share the most restrictive bottom clearance.
       const pairedAtBottom = cells.some(other => other.asset.id === cell.asset.id && other.y + other.height >= height - 0.1)
       const notePadding = cell.note ? 13 : 0
       const bottomPadding = cell.base ? (groupDetails.finish ? 16 : 5) : groupDetails.finish && pairedAtBottom ? 16 : verticallyCenterSingleImage ? top : 5 + notePadding
       const sourceLongest = Math.max(originalW, originalH)
-      const sharedScale = chainReference && sourceLongest > 0
-        ? Math.min(1, chainReference * 1.08 * PAPER_WIDTH / 210 / sourceLongest)
+      const holderExtraCap = unit.kind === 'holder' && roleCells.length && !roleCells.includes(cell)
+        && sourceLongest <= roleSourceLongest + 1e-7 && roleVisualLongest > 0
+        ? roleVisualLongest / sourceLongest
+        : Infinity
+      const sharedScale = chainTargetLongest && sourceLongest > 0
+        ? Math.min(chainScaleCap, chainTargetLongest / sourceLongest)
         : roleCells.includes(cell) ? emptyExampleMerged ? Infinity : Math.min(holderPortraitRoles ? Infinity : 1, roleLongest / sourceLongest)
-        : unit.kind === 'holder' ? 1 : Infinity
+        : unit.kind === 'holder' ? Math.min(1, holderExtraCap) : Infinity
       const scale = Math.min(sharedScale, Math.max(1, cell.width - left - right) / originalW, Math.max(1, cell.height - top - bottomPadding) / originalH)
       const w = originalW * scale, h = originalH * scale
       const sourceId = `item-${cell.asset.id}`
@@ -270,8 +387,9 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
     })
     page!.imageGroups!.push(group)
     rowHeight = Math.max(rowHeight, height)
+    rowProductKey = currentProductKey
     column += 1
-    if (column >= columns) { y += rowHeight + GAP; column = 0; rowHeight = 0 }
+    if (column >= columns) { y += rowHeight + GAP; column = 0; rowHeight = 0; rowProductKey = undefined }
   }
   return fillFreeRegions(backfillPages(pages, area), area)
 }

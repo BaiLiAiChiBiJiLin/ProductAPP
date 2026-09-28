@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { findFreeRegions, intersects } from '../src/modules/schematic/arrangement/freeRegions.ts'
 import { fillFreeRegions } from '../src/modules/schematic/arrangement/freeRegionPacking.ts'
+import { backfillPages } from '../src/modules/schematic/arrangement/backfillPages.ts'
 import { GROUP_GAP, HEADER_BLOCK_HEIGHT, PAPER_HEIGHT, PAPER_WIDTH, defaultLayoutBounds } from '../src/model.ts'
 
 const bounds={...defaultLayoutBounds,top:100}
@@ -36,6 +37,20 @@ test('generic fill uses non-standee side gaps, skips oversized candidates, moves
  assert.deepEqual(result.flatMap(p=>p.items).map(i=>[i.id,i.w,i.h]).sort(),dimensions.sort())
  const snapshot=JSON.stringify(result)
  assert.equal(JSON.stringify(fillFreeRegions(result,bounds)),snapshot,'a completed fill must be stable')
+})
+
+test('backfill keeps a product row together when a later page starts with another product',()=>{
+ const columns=Array.from({length:3},(_,i)=>({...column,id:`c${i}`}))
+ const width=(480-GROUP_GAP*2)/3
+ const makeHeader=id=>({...header(id,10,100,480),columns})
+ const makeGroup=(id,x,y,productKey)=>({...group(id,x,y,width,100),productKey})
+ const rowY=100+HEADER_BLOCK_HEIGHT+GROUP_GAP
+ const target=page(1,[makeHeader('target')],[makeGroup('a1',10,rowY,'product-a')])
+ const source=page(2,[makeHeader('source')],[makeGroup('b1',10,rowY,'product-b'),makeGroup('a2',10,rowY,'product-a')])
+ const result=backfillPages([target,source],bounds)
+ const row=result[0].imageGroups.filter(g=>Math.abs(g.y-rowY)<1e-7)
+ assert.deepEqual(row.map(g=>g.productKey),['product-a','product-a'])
+ assert.ok(result[0].imageGroups.some(g=>g.productKey==='product-b' && g.y>rowY))
 })
 
 test('a matching header is reused for a middle gap and a sole group retains its header when shifted upward',()=>{

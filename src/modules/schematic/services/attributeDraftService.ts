@@ -25,13 +25,21 @@ export function readSelectionDraft(previous: AttributeDraft, selected: Asset[]):
 export function catalogConfirmationPatch(draft: AttributeDraft, product: ProductConfig): ProductAttributePatch {
   const attributes: Record<string, string> = {}
   const attributeImages: Record<string, string> = {}
+  // Keep the catalog option names separate from the persisted attribute keys.
+  // In particular, `Finish` is stored as the canonical `工艺` field. Using
+  // the output map as the processed marker makes `attributes.Finish` stay
+  // empty and causes the dependency pass below to loop forever.
+  const resolvedOptions = new Set<string>()
+  const selections: Record<string, string> = {}
   let changed = true
   while (changed) {
     changed = false
     for (const option of product.options) {
-      if (attributes[option.name]) continue
-      const selected = availableOptionValues(option, attributes).find(value => value.name === draft.attributes[option.name])
+      if (resolvedOptions.has(option.name)) continue
+      const selected = availableOptionValues(option, selections).find(value => value.name === draft.attributes[option.name])
       if (!selected) continue
+      resolvedOptions.add(option.name)
+      selections[option.name] = selected.name
       // Catalog configs may call the process option `Finish`, while the
       // canvas uses the canonical `工艺` field. Keep one stored value.
       const targetKey = option.name.trim().toLowerCase() === 'finish' ? '工艺' : option.name

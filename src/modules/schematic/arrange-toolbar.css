@@ -11,4 +11,6 @@
 .toolbar > * { flex-shrink: 0; }
 .toolbar .toolbar-divider { width: 1px; height: 20px; background: #d4d4d4; margin: 0 7px; }
 .toolbar label { display: inline-flex; align-items: center; gap: 3px; }
+.toolbar .toolbar-decimal-places { gap: 5px; color: #64748b; font-size: 12px; }
+.toolbar-decimal-places .ant-input-number { width: 56px; }
 .stage-wrap.is-select-mode { touch-action: none; }

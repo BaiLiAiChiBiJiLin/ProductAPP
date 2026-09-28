@@ -35,3 +35,20 @@ test('saved product groups stay adjacent while print sorting still applies to ot
     'group-front', 'group-back', 'other-front', 'other-back',
   ])
 })
+
+test('unassigned images are placed after assigned products in the default order', () => {
+  const input = [
+    asset('unassigned-1', '', 'Front'),
+    asset('product-b', 'B', 'Front'),
+    asset('unassigned-2', 'a', 'Back'),
+    asset('product-a', 'A', 'Front'),
+  ]
+  assert.deepEqual(classifyAssetsByProductAndPrint(input).map(item => item.id), [
+    'product-b', 'product-a', 'unassigned-1', 'unassigned-2',
+  ])
+})
+
+test('Stickers products are first in the default product order', () => {
+  const input = [asset('keychain', 'Keychains', 'Front'), asset('sticker', 'Stickers', 'Front'), asset('贴纸-2', '贴纸', 'Back')]
+  assert.deepEqual(classifyAssetsByProductAndPrint(input).map(item => item.id), ['sticker', '贴纸-2', 'keychain'])
+})

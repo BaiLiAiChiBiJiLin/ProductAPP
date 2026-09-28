@@ -8,6 +8,7 @@ type Placement = { x: number; y: number; header?: HeaderBlock; reuse?: HeaderBlo
 function candidates(pages: Page[], start: number): Candidate[] {
   return pages.slice(start).flatMap(source => [...source.imageGroups ?? []]
     .sort((a, b) => a.y - b.y || a.x - b.x).flatMap(group => {
+      if (group.preventRowFill || group.protectPageFill || source.imageGroups?.some(candidate => candidate.protectPageFill)) return []
       const header = headerFor(source, group)
       if (!header) return []
       const width = (header.width - GROUP_GAP * (header.columns.length - 1)) / header.columns.length
@@ -21,6 +22,13 @@ function before(x: number, y: number, group: ImageGroup) {
 function placementFor(target: Page, free: FreeRegion, candidate: Candidate): Placement | undefined {
   const { source, group, header, column } = candidate
   if (free.width < group.width - EPS || free.height < group.height - EPS) return
+  // Rows that ended at a product boundary intentionally keep their unused
+  // columns. Do not pull a later group into that vacancy. For a new header,
+  // the artwork row starts below the header block rather than at free.y.
+  const rowYs = [free.y, free.y + HEADER_BLOCK_HEIGHT + GROUP_GAP]
+  if (rowYs.some(rowY => (target.imageGroups ?? []).some(other => other !== group
+    && Math.abs(other.y - rowY) <= EPS
+    && (other.preventRowFill || (other.productKey && group.productKey && other.productKey !== group.productKey))))) return
   const existing = headerFor(target, { ...group, x: free.x, y: free.y })
   if (existing) {
     const columnWidth = (existing.width - GROUP_GAP * (existing.columns.length - 1)) / existing.columns.length
@@ -42,7 +50,7 @@ function placementFor(target: Page, free: FreeRegion, candidate: Candidate): Pla
   // Starting one beside an existing header is how a two-column section ended
   // up with a third, unrelated header in the same row. Side-column packing
   // handles the one intentional exception for wide standees separately.
-  if ((target.headerBlocks ?? []).some(other => other.auto
+  if (group.productKey && (target.headerBlocks ?? []).some(other => other.auto
     && (Math.abs(other.y - free.y) <= EPS
       || Math.abs(other.y + HEADER_BLOCK_HEIGHT + GROUP_GAP - free.y) <= EPS))) return
   const y = free.y + HEADER_BLOCK_HEIGHT + GROUP_GAP
@@ -59,6 +67,7 @@ function placementFor(target: Page, free: FreeRegion, candidate: Candidate): Pla
 export function fillFreeRegions(pages: Page[], bounds: LayoutBounds): Page[] {
   for (let targetIndex = 0; targetIndex < pages.length; targetIndex++) {
     const target = pages[targetIndex]
+    if (target.imageGroups?.some(group => group.protectPageFill)) continue
     for (;;) {
       const pending = candidates(pages, targetIndex)
       let match: { candidate: Candidate; placement: Placement } | undefined

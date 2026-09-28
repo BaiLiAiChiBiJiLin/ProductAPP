@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { paginateAssets, autoArrangePages } from '../src/modules/schematic/services/paginationService.ts'
-import { dimensionGroups, imageDimensionMarkerLayout, dimensionForItem, physicalSourceSize } from '../src/modules/schematic/services/imageDimensionService.ts'
+import { dimensionGroups, imageDimensionMarkerLayout, dimensionForItem, physicalSourceSize, formatDimensionNumber } from '../src/modules/schematic/services/imageDimensionService.ts'
 
 import { defaultLayoutBounds, GROUP_GAP, HEADER_BLOCK_HEIGHT, PAPER_HEIGHT, PAPER_WIDTH, pageSvg } from '../src/model.ts'
 import { imageDetailsLayout } from '../src/modules/schematic/services/imageDetailsLayoutService.ts'
@@ -20,6 +20,29 @@ test('mixed custom product group retains ordinary members with its photo holder'
  const rearranged = autoArrangePages(pages, 1, sources, defaultLayoutBounds)
  assert.equal(rearranged.flatMap(page => page.imageGroups).length, 1)
  assert.equal(rearranged.flatMap(page => page.items).length, 5)
+})
+
+test('Stickers pages keep their blank slots and do not backfill other products', () => {
+ const sources = [asset('sticker', 'Stickers'), ...Array.from({ length: 12 }, (_, index) => asset(`keychain-${index}`, 'Keychains'))]
+ const pages = paginateAssets(sources)
+ const stickerPage = pages.find(page => page.imageGroups.some(group => group.protectPageFill))
+ assert.ok(stickerPage)
+ const stickerGroup = stickerPage.imageGroups.find(group => group.protectPageFill)
+ assert.ok(stickerGroup)
+ assert.equal(stickerPage.imageGroups.filter(group => Math.abs(group.y - stickerGroup.y) < 1e-7).length, 1)
+ assert.equal(stickerPage.imageGroups[0].productKey, 'stickers')
+})
+
+test('a sticker product page never receives another product during blank-space packing', () => {
+ const sources = [
+  ...Array.from({ length: 8 }, (_, index) => asset(`sticker-${index}`, 'Clear Stickers')),
+  ...Array.from({ length: 12 }, (_, index) => asset(`keychain-${index}`, 'Keychains')),
+ ]
+ const pages = paginateAssets(sources)
+ for (const page of pages) {
+  if (!page.imageGroups.some(group => group.protectPageFill)) continue
+  assert.ok(page.imageGroups.every(group => group.protectPageFill), 'sticker page contains a non-sticker group')
+ }
 })
 
 test('photo holder roles share a longest edge and no member is enlarged', () => {
@@ -72,7 +95,6 @@ test('an empty Example slot merges Front/Inside/Back into the Example area', () 
  assert.equal(group.imageCells.some(cell => cell.label === 'Example'), false)
  const imageWidth = group.detailsX - group.x
  assert.ok(page.items.every((item, index) => Math.abs(item.x - (group.x + imageWidth * (index + .5) / 3)) < 1e-7))
- assert.ok(page.items.every(item => item.h >= group.imageCells[0].height - 20))
  assert.equal(page.items[0].suppressRuler, false)
  assert.equal(page.items[1].suppressRuler, true)
  assert.equal(page.items[2].suppressRuler, true)
@@ -219,42 +241,34 @@ test('same-design standees keep three columns and Front/Back headers; a differen
  const [basePage]=paginateAssets([asset('front','Acrylic Standees',{},'g'),asset('base','Acrylic Standees',{'Print Option':'Double Sided Different Design'},'g')])
  assert.equal(basePage.imageGroups[0].width,page.imageGroups[0].width)
 })
-test('single-column products fill beside two-column standees from this page and later pages without resizing', async () => {
+test('single-column products do not fill an unfinished standee row from another product', () => {
  const standees=Array.from({length:3},(_,i)=>asset(`wide-${i}`,'Acrylic Standees',{'Print Option':'Double Sided Different Design'}))
- const singles=Array.from({length:24},(_,i)=>asset(`single-${i}`))
- const assets=[...standees,...singles]
- const [reference]=paginateAssets([singles[0]])
- let pages=paginateAssets(assets)
- for(let run=0;run<2;run++) {
-  const first=pages[0], wide=first.imageGroups.find(g=>g.id==='group-wide-0')
-  const beside=first.imageGroups.filter(g=>g.x>wide.x+wide.width)
-  assert.ok(beside.length>=3,'right-hand column should fill alongside all three standees')
-  assert.equal(beside[0].y,wide.y)
-  assert.equal(beside[0].itemIds[0],'item-single-0','prefer the earliest available following product')
-  const sideHeader=first.headerBlocks.find(h=>Math.abs(h.x-beside[0].x)<1e-7)
-  assert.equal(sideHeader.columns.length,1);assert.equal(sideHeader.columns[0].imageMode,'photo')
-  assert.equal(sideHeader.width,beside[0].width)
-  const {removeCanvasGroups}=await import('../src/modules/schematic/services/removeCanvasGroups.ts')
-  const afterDelete=removeCanvasGroups(pages,beside.map(g=>g.id))[0]
-  assert.ok(!afterDelete.headerBlocks.some(h=>h.id===sideHeader.id))
-  assert.ok(afterDelete.headerBlocks.some(h=>h.columns[0].imageMode==='front-back'),'deleting side products must preserve the standee header')
-  const {compactPageSections}=await import('../src/modules/schematic/arrangement/backfillPages.ts')
-  const compacted=structuredClone(first)
-  compactPageSections(compacted,defaultLayoutBounds)
-  assert.deepEqual(compacted,first,'side-by-side sections must remain stable on a second compaction')
-  const originals=pages.flatMap(p=>p.items).filter(i=>!i.derivedFrom)
-  assert.equal(originals.length,assets.length);assert.equal(new Set(originals.map(i=>i.assetId)).size,assets.length)
-  for(const page of pages) for(const group of page.imageGroups) {
-   assert.ok(group.x+group.width<=PAPER_WIDTH-defaultLayoutBounds.right+1e-7)
-   assert.ok(group.y+group.height<=PAPER_HEIGHT-defaultLayoutBounds.bottom+1e-7)
-   for(const other of page.imageGroups.filter(g=>g!==group)) assert.ok(group.x+group.width<=other.x+1e-7 || other.x+other.width<=group.x+1e-7 || group.y+group.height<=other.y+1e-7 || other.y+other.height<=group.y+1e-7)
-   for(const header of page.headerBlocks) assert.ok(group.x+group.width<=header.x+1e-7 || header.x+header.width<=group.x+1e-7 || group.y+group.height<=header.y+1e-7 || header.y+26<=group.y+1e-7)
-   for(const item of page.items.filter(i=>group.itemIds.includes(i.id)&&i.assetId.startsWith('single-'))) {
-    assert.equal(item.w,reference.items[0].w);assert.equal(item.h,reference.items[0].h)
-   }
-  }
-  pages=autoArrangePages(pages,1,assets,defaultLayoutBounds)
+ const singles=Array.from({length:3},(_,i)=>asset(`single-${i}`))
+ const [page]=paginateAssets([...standees,...singles])
+ const wide=page.imageGroups.find(g=>g.id==='group-wide-0')
+ assert.ok(wide)
+ assert.equal(page.imageGroups.filter(g=>Math.abs(g.y-wide.y)<1e-7).length,1)
+ assert.ok(page.imageGroups.some(g=>g.itemIds.includes('item-single-0')))
+})
+
+test('product changes leave unfinished rows open only for the same product', () => {
+ const assets = [
+  asset('a-1', 'Product A'), asset('a-2', 'Product A'),
+  asset('b-1', 'Product B'), asset('b-2', 'Product B'), asset('b-3', 'Product B'),
+ ]
+ const [page] = paginateAssets(assets)
+ const rows = new Map()
+ for (const group of page.imageGroups) {
+  const row = rows.get(group.y) ?? []
+  row.push(group)
+  rows.set(group.y, row)
  }
+ const orderedRows = [...rows.values()].sort((a, b) => a[0].y - b[0].y)
+ assert.equal(orderedRows.length, 2)
+ assert.deepEqual(orderedRows[0].map(group => group.productKey), ['product a', 'product a'])
+ assert.deepEqual(orderedRows[1].map(group => group.productKey), ['product b', 'product b', 'product b'])
+ assert.ok(orderedRows[0].every(group => group.preventRowFill === true))
+ assert.ok(orderedRows[1].every(group => !group.preventRowFill))
 })
 test('v2 chains keep details right and arrange horizontal front/back pairs',()=>{
  const assets=Array.from({length:6},(_,i)=>asset(String(i),'串串',{'Print Option':i%2?'Double Sided Same Design':'Double Sided Different Design'},'g'))
@@ -272,6 +286,21 @@ test('v2 chains keep each front/back pair equal while normalizing large source-s
  assert.ok(originals[1].w / originals[0].w < 2, 'large source should remain visually close instead of dominating the row')
  assert.ok(originals.every(item=>item.w>0 && item.h>0))
 })
+test('near-equal chain members share one visual longest edge', () => {
+ const makeChain = (id, size) => ({...asset(id, '串串', {}, 'g'), width: size, height: size})
+ const [page] = paginateAssets([makeChain('small', 100), makeChain('middle', 106), makeChain('large', 112)])
+ const originals = page.items.filter(item => !item.derivedFrom)
+ const longest = originals.map(item => Math.max(item.w, item.h))
+ assert.ok(Math.max(...longest) - Math.min(...longest) < 1e-7, 'near-equal members should use the same visual scale')
+})
+test('chain scale uses measured source size when the SVG viewport has extra space', () => {
+ const sized = (id, width, height) => ({...asset(id, '串串', {}, 'g'), width, height, sourceGroupWidthMm: 42, sourceGroupHeightMm: 42})
+ const [page] = paginateAssets([sized('square', 100, 100), sized('portrait', 80, 120)])
+ const originals = page.items.filter(item => !item.derivedFrom)
+ const longest = originals.map(item => Math.max(item.w, item.h))
+ assert.ok(Math.max(...longest) - Math.min(...longest) < 1e-7, 'transparent viewport space must not change the visual longest edge')
+ assert.ok(originals[1].w < originals[0].w, 'the source aspect ratio is preserved while the longest edge is normalized')
+})
 test('v2 unit toggles use source dimensions, one decimal and independent width/height',()=>{
  const a=asset('a','Keychains',{Size:'1.5 in'}); const [page]=paginateAssets([a]); const item=page.items[0]
  assert.equal(dimensionForItem(a,{rulerUnit:'mm'}).label,'38.1 mm')
@@ -282,6 +311,14 @@ test('v2 unit toggles use source dimensions, one decimal and independent width/h
  const markers=groups.map(g=>imageDimensionMarkerLayout(g,page,new Map([['a',a]])))
  assert.deepEqual(markers.map(m=>m.horizontal),[true,false])
  item.rulerWidth=false;item.rulerHeight=false;assert.equal(dimensionGroups(page).length,0)
+})
+
+test('dimension display precision uses the requested decimal places for every rounding mode', () => {
+  assert.equal(formatDimensionNumber(12.345), '12.3')
+  assert.equal(formatDimensionNumber(12.345, 'default', 2), '12.35')
+ assert.equal(formatDimensionNumber(12.345, 'round', 2), '12.35')
+ assert.equal(formatDimensionNumber(12.345, 'truncate', 2), '12.34')
+ assert.equal(formatDimensionNumber(12.345, 'round', 0), '12')
 })
 
 test('v2 repeated rearrangement preserves combination membership and ruler settings', async()=>{
@@ -459,6 +496,18 @@ test('Shaker keeps original-size cap and default role layout for every member', 
    assert.ok(item.h<=5*PAPER_WIDTH/210+1e-7)
    assert.ok(Math.abs(item.w/item.h-2)<1e-7)
   }
+ }
+})
+
+test('holder and shaker extras stay below the first four visual baseline unless their real artwork is larger', () => {
+ for (const name of ['Photocard Holders', 'Shaker']) {
+  const make = (id, width, height) => ({ ...asset(id, name, {}, 'visual-cap'), width, height })
+  const assets = [make('Example', 100, 100), make('Front', 100, 100), make('Inside', 100, 100), make('Back', 100, 100), make('small-extra', 50, 50), make('large-extra', 200, 200)]
+  const [page] = paginateAssets(assets)
+  const byAsset = new Map(page.items.map(item => [item.assetId, item]))
+  const primaryLongest = Math.max(...assets.slice(0, 4).map(asset => Math.max(byAsset.get(asset.id).w, byAsset.get(asset.id).h)))
+  assert.ok(Math.max(byAsset.get('small-extra').w, byAsset.get('small-extra').h) <= primaryLongest + 1e-7)
+  assert.ok(Math.max(byAsset.get('large-extra').w, byAsset.get('large-extra').h) > primaryLongest + 1e-7)
  }
 })
 

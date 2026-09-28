@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Button } from 'antd'
+import { Button, InputNumber } from 'antd'
 import { Download, Hand, MousePointer2, Plus, WandSparkles, ZoomIn, ZoomOut, ArrowLeft, Combine } from 'lucide-react'
 import type { Asset, HeaderBlock, Item, LayoutBounds, Page, PageHeader } from '../../model'
 import { rulerAxes, type RulerPatch } from './services/canvasSelectionService'
-import type { DimensionDisplayPrecision } from './services/imageDimensionService'
+import type { DimensionDisplayOverride, DimensionDisplayPrecision } from './services/imageDimensionService'
 import { CANVAS_DISPLAY_SCALE_STEP, clampCanvasDisplayScale } from './services/canvasDisplayScaleService'
 import './arrange-toolbar.css'
 import ArtworkCanvas from './ArtworkCanvas'
@@ -52,7 +52,7 @@ export default function ArrangePage({ context, assets, pages, activePage, select
   const [canvasMode, setCanvasMode] = useState<'select' | 'pan'>('select')
   const [sidePanel, setSidePanel] = useState<'pool' | 'attributes'>('pool')
   const [zoom, setZoom] = useState(1)
-  const [dimensionPrecision, setDimensionPrecision] = useState<DimensionDisplayPrecision>('default')
+  const [dimensionDisplayOverrides, setDimensionDisplayOverrides] = useState<Map<string, DimensionDisplayOverride>>(new Map())
   const [boxSelection, setBoxSelection] = useState<string[]>([])
   const [visualScales, setVisualScales] = useState<Map<string, number>>(new Map())
   const [accessoryVisuals, setAccessoryVisuals] = useState<Map<string, { scale: number; x: number; y: number }>>(new Map())
@@ -98,14 +98,16 @@ export default function ArrangePage({ context, assets, pages, activePage, select
   const hasVisualSelection = selectedVisualItemIds.length > 0 || selectedAccessoryKey !== null
   const singleAssetSelection = Boolean(selectedAssetId && selectedVisualItemIds.length === 1 && !selectedGroupIds.length && !boxSelection.length)
   const rulerItems = page?.items.filter(item => (boxSelection.length ? boxSelection.includes(item.id) : item.id === selectedItem) && !item.suppressRuler && assetMap.has(item.assetId)) ?? []
-  const dimensionItemId = rulerItems.length === 1 ? rulerItems[0].id : undefined
+  const dimensionItemIds = rulerItems.map(item => item.id)
+  const dimensionOverride = dimensionItemIds.map(id => dimensionDisplayOverrides.get(id)).find(Boolean)
+  const dimensionPrecision = dimensionOverride?.precision ?? 'default'
+  const dimensionDecimalPlaces = dimensionOverride?.decimalPlaces ?? 1
   const units = new Set(rulerItems.map(item => item.rulerUnit ?? 'mm'))
   const axes = rulerItems.map(item => rulerAxes(item, assetMap.get(item.assetId)!))
   const widthChecked = axes.length > 0 && axes.every(axis => axis.rulerWidth)
   const heightChecked = axes.length > 0 && axes.every(axis => axis.rulerHeight)
   const setRuler = (patch: RulerPatch) => onChangeRulers(rulerItems.map(item => item.id), patch)
   const selectedAssetIds = useMemo(() => selectedAssetId ? new Set([selectedAssetId]) : new Set<string>(), [selectedAssetId])
-  useEffect(() => { setDimensionPrecision('default') }, [dimensionItemId])
   useEffect(() => { setSidePanel(hasVisualSelection ? 'attributes' : 'pool') }, [hasVisualSelection, selectedAssetId, visualSelectionKey])
   useEffect(() => { setVisualScaleInput(String(Math.round(selectedVisualScale * 100))) }, [selectedVisualScale, visualSelectionKey])
   useEffect(() => {
@@ -156,6 +158,24 @@ export default function ArrangePage({ context, assets, pages, activePage, select
     }
     updateVisualScale(value / 100)
   }
+  const updateDimensionOverride = (patch: Partial<DimensionDisplayOverride>) => {
+    if (!rulerItems.length) return
+    setDimensionDisplayOverrides(previous => {
+      const next = new Map(previous)
+      for (const id of dimensionItemIds) {
+        const current = next.get(id) ?? { precision: 'default' as const, decimalPlaces: 1 }
+        next.set(id, { ...current, ...patch })
+      }
+      return next
+    })
+  }
+  const changeDimensionPrecision = (value: DimensionDisplayPrecision) => {
+    updateDimensionOverride({ precision: value })
+  }
+  const changeDimensionDecimalPlaces = (value: number) => {
+    const decimalPlaces = Math.max(0, Math.min(6, Math.trunc(value)))
+    updateDimensionOverride({ decimalPlaces })
+  }
   const progressPercent = exportProgress.total > 0 ? Math.min(100, Math.round(exportProgress.completed / exportProgress.total * 100)) : 0
   return <main className="workspace arrange-page-enter">{context}{exporting && <div className="pdf-export-overlay" role="status" aria-live="polite"><div className="pdf-export-dialog"><Loading size="large"/><strong>正在导出 PDF</strong><div className="pdf-export-progress-track"><div className={`pdf-export-progress-value ${progressPercent === 0 ? 'is-preparing' : ''}`} style={{ width: `${progressPercent}%` }}/></div><span>{pdfProgressText(exportProgress)} {progressPercent}%</span><small>请稍候，导出期间不能重复操作</small></div></div>}
     <aside className="pages-panel">
@@ -169,16 +189,17 @@ export default function ArrangePage({ context, assets, pages, activePage, select
         <Button type="text" className={canvasMode === 'select' ? 'toolbar-mode-active' : ''} icon={<MousePointer2 size={15}/>} onClick={() => setCanvasMode('select')}>选择</Button>
         <Button type="text" className={canvasMode === 'pan' ? 'toolbar-mode-active' : ''} icon={<Hand size={15}/>} onClick={() => setCanvasMode('pan')}>平移</Button>
         <span className="toolbar-divider" role="separator" aria-orientation="vertical"/>
-        <Button type="text" icon={<WandSparkles size={15}/>} title={`点击后按${sortMode === 'default' ? '上传顺序' : '产品排序'}重新排列当前画布`} onClick={() => { setSelectedAccessoryKey(null); setBoxSelection([]); onAutoArrange(sortMode === 'default' ? 'upload' : 'default') }}>自动排列 · 切换为{sortMode === 'default' ? '上传顺序' : '产品排序'}</Button>
+        <Button type="text" icon={<WandSparkles size={15}/>} title={`点击后按${sortMode === 'default' ? '上传顺序' : '产品排序'}重新排列当前画布`} onClick={() => { setSelectedAccessoryKey(null); setBoxSelection([]); onAutoArrange(sortMode === 'default' ? 'upload' : 'default') }}>切换为{sortMode === 'default' ? '上传顺序' : '产品排序'}</Button>
         <span className="toolbar-divider" role="separator" aria-orientation="vertical"/>
         <Button type="text" icon={<Combine size={15}/>} disabled={selectedGroupIds.length !== 2} onClick={() => { setBoxSelection([]); onCombine() }}>组合</Button>
         {selectedGroupIds.length > 0 && <span className="muted">已选 {selectedGroupIds.length}/2 组（按住 Ctrl 选择）</span>}
         <span className="toolbar-divider" role="separator" aria-orientation="vertical"/>
         {boxSelection.length > 0 && <span className="muted">框选 {boxSelection.length} 张</span>}
+        <label className="toolbar-decimal-places"><span>小数位数</span><InputNumber aria-label="小数位数" min={0} max={6} precision={0} size="small" disabled={!rulerItems.length} value={dimensionDecimalPlaces} onChange={value => changeDimensionDecimalPlaces(value == null ? 1 : value)}/></label>
         <select aria-label="标尺单位" disabled={!rulerItems.length} value={units.size > 1 ? '' : rulerItems[0]?.rulerUnit ?? 'mm'} onChange={event => setRuler({ rulerUnit: event.target.value as 'mm' | 'cm' | 'in' })}>
           {units.size > 1 && <option value="" disabled>混合单位</option>}<option value="mm">mm</option><option value="cm">cm</option><option value="in">in</option>
         </select>
-        <select aria-label="尺寸显示精度" title="仅改变当前单个图片的尺寸显示，不修改原始尺寸" disabled={!dimensionItemId} value={dimensionItemId ? dimensionPrecision : 'default'} onChange={event => setDimensionPrecision(event.target.value as DimensionDisplayPrecision)}>
+        <select aria-label="尺寸显示精度" title="仅改变当前选中图片的尺寸显示，不修改原始尺寸" disabled={!rulerItems.length} value={rulerItems.length ? dimensionPrecision : 'default'} onChange={event => changeDimensionPrecision(event.target.value as DimensionDisplayPrecision)}>
           <option value="default">默认值</option><option value="round">四舍五入</option><option value="truncate">舍弃小数</option>
         </select>
         <span className="toolbar-divider" role="separator" aria-orientation="vertical"/>
@@ -187,7 +208,7 @@ export default function ArrangePage({ context, assets, pages, activePage, select
         <span className="toolbar-divider" role="separator" aria-orientation="vertical"/><span className="toolbar-spacer"/>
         <button className="zoom-btn" title="缩小画布" onClick={() => setZoom(value => Math.max(0.5, Number((value - 0.1).toFixed(2))))}><ZoomOut size={16}/></button><span className="zoom-value">{Math.round(zoom * 100)}%</span><button className="zoom-btn" title="放大画布" onClick={() => setZoom(value => Math.min(2.5, Number((value + 0.1).toFixed(2))))}><ZoomIn size={16}/></button>
       </div>
-      {page && <ArtworkCanvas page={page} assets={assetMap} selected={selectedItem} selectedIds={boxSelection} onBoxSelect={ids => { setSelectedAccessoryKey(null); onSelectItem(null); setBoxSelection(ids) }} selectedGroupIds={selectedGroupIds} onSelect={selectOne} onSelectGroup={selectGroup} onSelectAccessory={selectAccessory} selectedAccessoryKey={selectedAccessoryKey ?? undefined} accessoryVisuals={accessoryVisuals} onChangeAccessory={changeAccessory} onChange={onChangeItem} onDropAsset={onDropAsset} metadata={metadata} totalPages={pages.length} mode={canvasMode} zoom={zoom} onZoomChange={setZoom} layoutBounds={layoutBounds} onHeaderBlockChange={onChangeHeaderBlock} dimensionItemId={dimensionItemId} dimensionPrecision={dimensionPrecision} visualScales={visualScales}/>}<div className="canvas-footer"><span>画布尺寸：A4 · 210 × 297 mm</span><span>当前页面 {page?.items.filter(item => !item.derivedFrom).length ?? 0} 张 · 全部页面 {pages.reduce((total, item) => total + item.items.filter(image => !image.derivedFrom).length, 0)} 张</span><span className="saved"><i/>已自动保存</span></div>
+      {page && <ArtworkCanvas page={page} assets={assetMap} selected={selectedItem} selectedIds={boxSelection} onBoxSelect={ids => { setSelectedAccessoryKey(null); onSelectItem(null); setBoxSelection(ids) }} selectedGroupIds={selectedGroupIds} onSelect={selectOne} onSelectGroup={selectGroup} onSelectAccessory={selectAccessory} selectedAccessoryKey={selectedAccessoryKey ?? undefined} accessoryVisuals={accessoryVisuals} onChangeAccessory={changeAccessory} onChange={onChangeItem} onDropAsset={onDropAsset} metadata={metadata} totalPages={pages.length} mode={canvasMode} zoom={zoom} onZoomChange={setZoom} layoutBounds={layoutBounds} onHeaderBlockChange={onChangeHeaderBlock} dimensionItemIds={dimensionItemIds} dimensionPrecision={dimensionPrecision} dimensionDecimalPlaces={dimensionDecimalPlaces} dimensionDisplayOverrides={dimensionDisplayOverrides} visualScales={visualScales}/>}<div className="canvas-footer"><span>画布尺寸：A4 · 210 × 297 mm</span><span>当前页面 {page?.items.filter(item => !item.derivedFrom).length ?? 0} 张 · 全部页面 {pages.reduce((total, item) => total + item.items.filter(image => !image.derivedFrom).length, 0)} 张</span><span className="saved"><i/>已自动保存</span></div>
     </section>
     <aside className="assets-panel"><PageConfigPanel metadata={metadata} onMetadataChange={onMetadataChange} bounds={layoutBounds} onBoundsChange={onBoundsChange} pageId={page?.id ?? activePage} headerBlocks={page?.headerBlocks ?? []} selectedHeaderBlock={selectedItem} onSelectHeaderBlock={selectOne} onAddHeaderBlock={onAddHeaderBlock} onChangeHeaderBlock={onChangeHeaderBlock} onRemoveHeaderBlock={onRemoveHeaderBlock}/><div className="asset-section arrange-pool-section"><div className="arrange-pool-shell"><div className="arrange-side-tabs" role="tablist" aria-label="排列页图片面板"><button type="button" role="tab" aria-selected={sidePanel === 'pool'} className={sidePanel === 'pool' ? 'active' : ''} onClick={() => setSidePanel('pool')}>图片池</button><button type="button" role="tab" aria-selected={sidePanel === 'attributes'} className={sidePanel === 'attributes' ? 'active' : ''} disabled={!hasVisualSelection} title={hasVisualSelection ? '调整选中图片的画布显示大小' : '请先在画布中选择图片或图片组'} onClick={() => hasVisualSelection && setSidePanel('attributes')}>图片属性</button></div>{sidePanel === 'attributes' && hasVisualSelection ? <div className="arrange-attributes-content"><div className="visual-scale-controls" aria-label="图片视觉缩放"><span>图片显示</span><button type="button" className="zoom-btn" title="缩小图片" disabled={exporting} onClick={() => updateVisualScale(selectedVisualScale - CANVAS_DISPLAY_SCALE_STEP)}><ZoomOut size={15}/></button><input aria-label="图片显示百分比" type="number" min={25} max={300} step={1} value={visualScaleInput} disabled={exporting} onChange={event => setVisualScaleInput(event.target.value)} onBlur={commitVisualScale} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); commitVisualScale() } }}/><span>%</span><button type="button" className="zoom-btn" title="放大图片" disabled={exporting} onClick={() => updateVisualScale(selectedVisualScale + CANVAS_DISPLAY_SCALE_STEP)}><ZoomIn size={15}/></button><small>仅改变画布显示，不修改真实尺寸；标尺随显示大小调整</small></div>{singleAssetSelection && selectedAssetId ? <ProductAttributesPanel allowGrouping={false} assets={assets} selectedAssetIds={selectedAssetIds} onConfirmAttributes={patch => onConfirmAssetAttributes(selectedAssetId, patch)} showSelectionSummary={false} disabled={exporting}/> : null}</div> : <div className="arrange-pool-content"><AssetPool assets={assets} pages={pages} mode="arrange" onAddAsset={onDropAsset}/></div>}</div></div></aside>
   </main>
