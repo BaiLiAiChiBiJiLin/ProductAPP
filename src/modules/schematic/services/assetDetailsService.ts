@@ -57,10 +57,13 @@ function accessoryCode(asset: Asset) {
 }
 
 export function detailsForAsset(asset: Asset, configs: ProductConfig[] = []): ImageDetails {
+  const finish = finishName(asset, configs)
+  const material = /stickers?|贴纸/i.test(asset.productName ?? '')
+    ? attr(asset, ['Material', '材质']) : ''
   const details: ImageDetails = {
     size: dimensionForItem(asset, {}).label,
     qt: attr(asset, ['QT', '数量', 'Quantity']),
-    finish: finishName(asset, configs),
+    finish: [material, finish].filter(Boolean).join(' '),
     accessoryImage: accessoryImage(asset),
   }
   const code = accessoryCode(asset)
