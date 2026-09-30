@@ -7,7 +7,7 @@ import { detailPanelsForGroup } from '../arrangement/productGroupDetails'
 import { finishLabel } from '../services/finishLabelService'
 import { accessoryFrame, rememberAccessoryImage } from '../services/accessoryFrameService'
 import { resolveRemoteImage } from '../services/remoteImageService'
-import { dimensionForItem, type DimensionDisplayOverride, type DimensionDisplayPrecision } from '../services/imageDimensionService'
+import { rulerDimensionLabel, type DimensionDisplayOverride, type DimensionDisplayPrecision } from '../services/imageDimensionService'
 import type { Node as KonvaNode } from 'konva/lib/Node'
 
 const imageCache = new Map<string, HTMLImageElement>()
@@ -106,7 +106,8 @@ function detailsForDisplay(details: NonNullable<ImageGroup['details']>, page: Pa
     const asset = assets.get(item.assetId)
     if (asset) {
       const override = displayOverrides?.get(item.id)
-      labels.set(item.id, dimensionForItem(asset, item, undefined, override?.precision ?? precision, override?.decimalPlaces ?? decimalPlaces).label)
+      const label = rulerDimensionLabel(asset, item, override?.precision ?? precision, override?.decimalPlaces ?? decimalPlaces)
+      if (label) labels.set(item.id, label)
     }
   }
   if (!labels.size) return details

@@ -13,4 +13,5 @@
 .toolbar label { display: inline-flex; align-items: center; gap: 3px; }
 .toolbar .toolbar-decimal-places { gap: 5px; color: #64748b; font-size: 12px; }
 .toolbar-decimal-places .ant-input-number { width: 56px; }
+.toolbar .ruler-size-warning { color: #b45309; font-size: 12px; white-space: nowrap; }
 .stage-wrap.is-select-mode { touch-action: none; }

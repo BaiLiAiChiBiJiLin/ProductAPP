@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { itemsInSelection, selectionBounds, rulerAxes, updateSelectedRulers } from '../src/modules/schematic/services/canvasSelectionService.ts'
+import { rulerDimensionLabel } from '../src/modules/schematic/services/imageDimensionService.ts'
 import { paginateAssets } from '../src/modules/schematic/services/paginationService.ts'
 import { dimensionGroups } from '../src/modules/schematic/services/imageDimensionService.ts'
 
@@ -39,4 +40,17 @@ test('batch units update each selected member Size without overwriting unselecte
  assert.equal(next.imageGroups[0].details.size,'1 in')
  assert.deepEqual(page.imageGroups[0].details.sizes.map(s=>s.label),['25.4 mm','25.4 mm','25.4 mm'])
  assert.deepEqual(updateSelectedRulers(page,[],{rulerUnit:'cm'},map),page)
+})
+
+test('group Size follows the selected ruler axis and prompts when both axes are selected', () => {
+ const wide = asset('wide-axis',100,50)
+ const map = new Map([[wide.id, wide]])
+ assert.equal(rulerDimensionLabel(wide,{rulerWidth:true,rulerHeight:false,rulerUnit:'mm'}),'25.4 mm')
+ assert.equal(rulerDimensionLabel(wide,{rulerWidth:false,rulerHeight:true,rulerUnit:'mm'}),'12.7 mm')
+ assert.equal(rulerDimensionLabel(wide,{rulerWidth:true,rulerHeight:true,rulerUnit:'mm'}),'请选择宽或高')
+ const [page] = paginateAssets([wide])
+ const height = updateSelectedRulers(page,['item-wide-axis'],{rulerWidth:false,rulerHeight:true},map)
+ assert.equal(height.imageGroups[0].details.size,'12.7 mm')
+ const both = updateSelectedRulers(page,['item-wide-axis'],{rulerWidth:true,rulerHeight:true},map)
+ assert.equal(both.imageGroups[0].details.size,'请选择宽或高')
 })

@@ -205,6 +205,7 @@ export default function ArrangePage({ context, assets, pages, activePage, select
         <span className="toolbar-divider" role="separator" aria-orientation="vertical"/>
         <label><input type="checkbox" disabled={!rulerItems.length} checked={widthChecked} ref={node => { if (node) node.indeterminate = !widthChecked && axes.some(axis => axis.rulerWidth) }} onChange={event => setRuler({ rulerWidth: event.target.checked })}/>宽标尺</label>
         <label><input type="checkbox" disabled={!rulerItems.length} checked={heightChecked} ref={node => { if (node) node.indeterminate = !heightChecked && axes.some(axis => axis.rulerHeight) }} onChange={event => setRuler({ rulerHeight: event.target.checked })}/>高标尺</label>
+        {axes.some(axis => axis.rulerWidth && axis.rulerHeight) && <span className="ruler-size-warning" role="status">Size 请只保留宽或高标尺</span>}
         <span className="toolbar-divider" role="separator" aria-orientation="vertical"/><span className="toolbar-spacer"/>
         <button className="zoom-btn" title="缩小画布" onClick={() => setZoom(value => Math.max(0.5, Number((value - 0.1).toFixed(2))))}><ZoomOut size={16}/></button><span className="zoom-value">{Math.round(zoom * 100)}%</span><button className="zoom-btn" title="放大画布" onClick={() => setZoom(value => Math.min(2.5, Number((value + 0.1).toFixed(2))))}><ZoomIn size={16}/></button>
       </div>

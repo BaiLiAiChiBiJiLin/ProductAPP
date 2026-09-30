@@ -1,7 +1,7 @@
 import { defaultLayoutBounds, type Asset, type LayoutBounds, type Page } from '../../../model.ts'
 import type { ProductConfig } from './productConfigService.ts'
 import { paginateThreeColumns } from '../arrangement/threeColumnLayout.ts'
-import { dimensionForItem } from './imageDimensionService.ts'
+import { rulerDimensionLabel } from './imageDimensionService.ts'
 export function paginateAssets(assets: Asset[], _pageSize = 12, bounds: LayoutBounds = defaultLayoutBounds, configs: ProductConfig[] = []): Page[] {
   return paginateThreeColumns(assets, bounds, configs)
 }
@@ -27,9 +27,11 @@ export function autoArrangePages(pages: Page[], _activePage: number, assets: Ass
       if (group.details?.sizes) group.details.sizes = group.details.sizes.map(value => {
         const member = page.items.find(item => item.id === value.itemId)
         const source = chosen.find(asset => asset.id === member?.assetId)
-        return member && source ? { ...value, label: dimensionForItem(source, member).label } : value
+        const label = member && source ? rulerDimensionLabel(source, member) : undefined
+        return label ? { ...value, label } : value
       })
-      if (item && asset && group.details) group.details.size = dimensionForItem(asset, item).label
+      const label = item && asset ? rulerDimensionLabel(asset, item) : undefined
+      if (label && group.details) group.details.size = label
     }
   }
   return result

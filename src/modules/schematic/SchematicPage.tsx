@@ -1,7 +1,7 @@
 import { exportFileName } from './services/exportFileName'
 import { removeCanvasGroups } from './services/removeCanvasGroups'
 import { updateSelectedRulers } from './services/canvasSelectionService'
-import { dimensionForItem } from './services/imageDimensionService'
+import { rulerDimensionLabel } from './services/imageDimensionService'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
@@ -198,8 +198,8 @@ export default function SchematicPage() { const [toast, context] = message.useMe
   const updatePageItem = useCallback((next: Item) => setPages(current => current.map(page => {
     if (page.id !== activePage) return page
     const asset = assets.find(asset => asset.id === next.assetId)
-    const size = asset ? dimensionForItem(asset, next).label : ''
-    return { ...page, items: page.items.map(item => item.id === next.id ? { ...item, ...next } : item), imageGroups: page.imageGroups?.map(group => group.itemIds.includes(next.id) && group.details ? { ...group, details: { ...group.details, size, sizes: group.details.sizes?.map(value => value.itemId === next.id ? { ...value, label: size } : value) } } : group) }
+    const size = asset ? rulerDimensionLabel(asset, next) : undefined
+    return { ...page, items: page.items.map(item => item.id === next.id ? { ...item, ...next } : item), imageGroups: page.imageGroups?.map(group => group.itemIds.includes(next.id) && group.details && size ? { ...group, details: { ...group.details, size, sizes: group.details.sizes?.map(value => value.itemId === next.id ? { ...value, label: size } : value) } } : group) }
   })), [activePage, assets])
   const changeLayoutBounds = (value: LayoutBounds) => {
     const next = normalizeLayoutBounds(value)

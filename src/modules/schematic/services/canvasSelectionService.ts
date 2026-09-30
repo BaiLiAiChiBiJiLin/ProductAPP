@@ -1,5 +1,5 @@
 import type { Asset, Item, Page } from '../../../model.ts'
-import { dimensionForItem } from './imageDimensionService.ts'
+import { dimensionForItem, rulerDimensionLabel } from './imageDimensionService.ts'
 
 export type RulerPatch = Partial<Pick<Item, 'rulerUnit' | 'rulerWidth' | 'rulerHeight'>>
 export type CanvasPoint = { x: number; y: number }
@@ -30,12 +30,20 @@ export function updateSelectedRulers(page: Page, ids: string[], patch: RulerPatc
   const byId = new Map(items.map(item => [item.id, item]))
   const label = (id: string) => {
     const item = byId.get(id), asset = item && assets.get(item.assetId)
-    return item && asset ? dimensionForItem(asset, item).label : undefined
+    return item && asset ? rulerDimensionLabel(asset, item) : undefined
+  }
+  const updateDetails = (details: NonNullable<Page['imageGroups']>[number]['details'] | undefined, itemIds: string[]) => {
+    if (!details || !itemIds.some(id => selected.has(id))) return details
+    const first = itemIds.find(id => !byId.get(id)?.derivedFrom)
+    return { ...details, size: first ? label(first) ?? details.size : details.size,
+      sizes: details.sizes?.map(value => ({ ...value, label: label(value.itemId) ?? value.label })) }
   }
   return { ...page, items, imageGroups: page.imageGroups?.map(group => {
-    if (!group.details || !group.itemIds.some(id => selected.has(id))) return group
-    const first = group.itemIds.find(id => !byId.get(id)?.derivedFrom)
-    return { ...group, details: { ...group.details, size: first ? label(first) ?? group.details.size : group.details.size,
-      sizes: group.details.sizes?.map(value => ({ ...value, label: label(value.itemId) ?? value.label })) } }
+    const details = updateDetails(group.details, group.itemIds)
+    const detailGroups = group.detailGroups?.map(panel => {
+      const panelDetails = updateDetails(panel.details, panel.itemIds)
+      return panelDetails ? { ...panel, details: panelDetails } : panel
+    })
+    return details === group.details && detailGroups === group.detailGroups ? group : { ...group, details, detailGroups }
   }) }
 }

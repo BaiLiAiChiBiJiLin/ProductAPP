@@ -19,6 +19,9 @@ export type ImageDimension = {
   horizontal: boolean
 }
 
+export type RulerDimensionAxis = 'width' | 'height' | 'both' | 'none'
+export const AMBIGUOUS_DIMENSION_LABEL = '请选择宽或高'
+
 /** Formatting used for canvas dimension labels; overrides affect display text only. */
 export type DimensionDisplayPrecision = 'default' | 'round' | 'truncate'
 export type DimensionDisplayOverride = { precision: DimensionDisplayPrecision; decimalPlaces: number }
@@ -197,14 +200,33 @@ export function imageDimensionMarkersSvg(page: Page, assets: Map<string, Asset>)
   }).join('')
 }
 
-/** Source size determines both axes; Size sets the longest edge in physical units. */
-export function dimensionForItem(asset: Asset, item: Pick<Page['items'][number], 'rulerUnit'>, axis?: 'width' | 'height', precision: DimensionDisplayPrecision = 'default', decimalPlaces = 1): ImageDimension {
+/** Source size determines the physical scale; an optional axis selects width or height. */
+export function dimensionForItem(asset: Asset, item: Pick<Page['items'][number], 'rulerUnit' | 'rulerWidth' | 'rulerHeight'>, axis?: 'width' | 'height', precision: DimensionDisplayPrecision = 'default', decimalPlaces = 1): ImageDimension {
   const physical = physicalSourceSize(asset)
   const longestMm = sizeMillimetres(sourceSize(asset), Math.max(physical.width, physical.height))
   const horizontal = axis ? axis === 'width' : asset.width >= asset.height
   const edgeMm = axis ? longestMm * (horizontal ? asset.width : asset.height) / Math.max(asset.width, asset.height) : longestMm
   const unit = item.rulerUnit ?? 'mm'
   return { horizontal, label: `${formatDimensionNumber(edgeMm / (unit === 'cm' ? 10 : unit === 'in' ? 25.4 : 1), precision, decimalPlaces)} ${unit}` }
+}
+
+/** Resolve the axis represented by the currently visible ruler selection. */
+export function rulerDimensionAxis(asset: Asset, item: Pick<Page['items'][number], 'rulerWidth' | 'rulerHeight'>): RulerDimensionAxis {
+  const horizontal = dimensionForItem(asset, item).horizontal
+  const width = item.rulerWidth ?? horizontal
+  const height = item.rulerHeight ?? !horizontal
+  if (width && height) return 'both'
+  if (width) return 'width'
+  if (height) return 'height'
+  return 'none'
+}
+
+/** Return the Size text for the selected ruler axis without changing source dimensions. */
+export function rulerDimensionLabel(asset: Asset, item: Pick<Page['items'][number], 'rulerUnit' | 'rulerWidth' | 'rulerHeight'>, precision: DimensionDisplayPrecision = 'default', decimalPlaces = 1) {
+  const axis = rulerDimensionAxis(asset, item)
+  if (axis === 'both') return AMBIGUOUS_DIMENSION_LABEL
+  if (axis === 'none') return undefined
+  return dimensionForItem(asset, item, axis, precision, decimalPlaces).label
 }
 
 export function dimensionGroups(page: Page): ImageGroup[] {
