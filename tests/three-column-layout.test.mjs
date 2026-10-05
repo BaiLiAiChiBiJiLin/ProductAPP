@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { paginateAssets, autoArrangePages } from '../src/modules/schematic/services/paginationService.ts'
-import { dimensionGroups, imageDimensionMarkerLayout, dimensionForItem, physicalSourceSize, formatDimensionNumber } from '../src/modules/schematic/services/imageDimensionService.ts'
+import { dimensionGroups, imageDimensionMarkerLayout, dimensionForItem, rulerDimensionLabel, physicalSourceSize, formatDimensionNumber } from '../src/modules/schematic/services/imageDimensionService.ts'
 
 import { defaultLayoutBounds, GROUP_GAP, HEADER_BLOCK_HEIGHT, PAPER_HEIGHT, PAPER_WIDTH, pageSvg } from '../src/model.ts'
 import { imageDetailsLayout } from '../src/modules/schematic/services/imageDetailsLayoutService.ts'
@@ -183,7 +183,7 @@ test('wide artwork fills available width while ruler and physical label stay ins
  assert.equal(item.w / item.h, 2)
  assert.ok(item.w > 5 * PAPER_WIDTH / 210)
  const marker = imageDimensionMarkerLayout(dimensionGroups(page)[0], page, new Map([[source.id, source]]))
- assert.equal(marker.label, '5 mm')
+ assert.equal(marker.label, '5.0 mm')
  assert.ok(marker.x1 >= cell.x && marker.x2 <= cell.x + cell.width)
  assert.equal(marker.x1,item.x-item.w/2)
  assert.equal(marker.x2,item.x+item.w/2)
@@ -315,8 +315,9 @@ test('v2 unit toggles use source dimensions, one decimal and independent width/h
 
 test('dimension display precision uses the requested decimal places for every rounding mode', () => {
   assert.equal(formatDimensionNumber(12.345), '12.3')
-  assert.equal(formatDimensionNumber(12.345, 'default', 2), '12.35')
- assert.equal(formatDimensionNumber(12.345, 'round', 2), '12.35')
+  assert.equal(formatDimensionNumber(12.345, 'default', 2), '12.34')
+  assert.equal(formatDimensionNumber(12.3, 'default', 2), '12.30')
+  assert.equal(formatDimensionNumber(12.345, 'round', 2), '12.35')
  assert.equal(formatDimensionNumber(12.345, 'truncate', 2), '12.34')
  assert.equal(formatDimensionNumber(12.345, 'round', 0), '12')
 })
@@ -332,7 +333,7 @@ test('v2 repeated rearrangement preserves combination membership and ruler setti
   pages=autoArrangePages(pages,1,assets,defaultLayoutBounds)
   const group=pages.flatMap(p=>p.imageGroups).find(g=>g.itemIds.length===2)
   assert.ok(group);const item=pages.flatMap(p=>p.items).find(i=>i.assetId==='a')
-  assert.equal(item.rulerUnit,'in');assert.equal(item.rulerWidth,true);assert.equal(group.details.size,dimensionForItem(assets[0],item).label)
+  assert.equal(item.rulerUnit,'in');assert.equal(item.rulerWidth,true);assert.equal(group.details.size,rulerDimensionLabel(assets[0],item))
  }
 })
 test('v2 mixed pagination preserves every original exactly once, keeps groups inside page and separated',()=>{
@@ -355,10 +356,10 @@ test('chain members stack vertically and retain every size through rearrangement
  const front = pages[0].items.filter(item=>!item.derivedFrom)
  assert.equal(new Set(front.map(item=>item.y)).size,3)
  assert.ok(front.every((item,i)=>i===0 || item.y>front[i-1].y))
- assert.deepEqual(pages[0].imageGroups[0].details.sizes.map(value=>value.label),['29.5 mm','25 mm','25 mm'])
+ assert.deepEqual(pages[0].imageGroups[0].details.sizes.map(value=>value.label),['29.5 mm','25.0 mm','25.0 mm'])
  pages[0].items.find(item=>item.assetId==='b').rulerUnit='cm'
  pages=autoArrangePages(pages,1,assets,defaultLayoutBounds)
- assert.deepEqual(pages[0].imageGroups[0].details.sizes.map(value=>value.label),['29.5 mm','2.5 cm','25 mm'])
+ assert.deepEqual(pages[0].imageGroups[0].details.sizes.map(value=>value.label),['29.5 mm','2.5 cm','25.0 mm'])
 })
 test('size values keep units on one line and accessory title is omitted', async () => {
  const { imageDetailsLayout, sizeLabelWidth } = await import('../src/modules/schematic/services/imageDetailsLayoutService.ts')
@@ -473,7 +474,7 @@ test('Size and QT export at the same font size with unbroken values in every uni
   assert.ok(sizeLabelWidth(group.details.size,layout.fontSize)<=layout.width)
   const svg=pageSvg(page,new Map([[a.id,a]]))
   const sizeFont=svg.match(/font-size="([^"]+)"[^>]*>Size: [^<]+<\/text>/)?.[1]
-  const qtFont=svg.match(/font-size="([^"]+)"[^>]*>QT: [^<]+<\/text>/)?.[1]
+  const qtFont=svg.match(/font-size="([^"]+)"[^>]*>QT:\s*[^<]*<\/text>/)?.[1]
   assert.ok(sizeFont); assert.equal(sizeFont,qtFont)
  }
 })

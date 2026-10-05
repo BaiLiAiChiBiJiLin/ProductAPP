@@ -60,6 +60,19 @@ test('legacy horizontal Front/Back groups give each image half its own dimension
   assert.equal((imageDimensionMarkersSvg(page, assets).match(/data-printflow-dimension/g) ?? []).length, 2)
 })
 
+test('custom ruler ranges stay attached to the image geometry', () => {
+ const source = { ...assets.get('landscape'), id: 'custom' }
+ const custom = item('custom-item', 'custom', 100, 80, 80, 40)
+ custom.rulerWidth = true
+ custom.rulerHeight = false
+ custom.rulerWidthRange = [0.25, 0.75]
+ const page = { items: [custom], imageGroups: [{ id: 'custom-group', itemIds: [custom.id], x: 20, y: 20, width: 180, height: 100 }] }
+ const marker = imageDimensionMarkerLayout(imageGroupsForDimension(page)[0], page, new Map([['custom', source]]))
+ assert.deepEqual(marker.range, [0.25, 0.75])
+ assert.equal(marker.x1, custom.x - custom.w / 2 + custom.w * 0.25)
+ assert.equal(marker.x2, custom.x - custom.w / 2 + custom.w * 0.75)
+})
+
 test('stale group members do not suppress standalone images or duplicate markers', () => {
   const page = { items: [item('one', 'portrait', 50, 60, 24, 48), item('free', 'landscape', 150, 60, 60, 30)], imageGroups: [{ id: 'stale', itemIds: ['missing', 'one'], x: 0, y: 0, width: 200, height: 120 }, { id: 'duplicate', itemIds: ['one'], x: 0, y: 0, width: 200, height: 120 }] }
   const regions = imageGroupsForDimension(page)

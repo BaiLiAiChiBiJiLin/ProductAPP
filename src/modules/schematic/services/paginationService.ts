@@ -18,7 +18,7 @@ export function autoArrangePages(pages: Page[], _activePage: number, assets: Ass
   for (const page of result) {
     page.items = page.items.map(item => {
       const previous = originals.find(candidate => candidate.assetId === item.assetId)
-      return previous ? { ...item, rulerUnit: previous.rulerUnit, rulerWidth: previous.rulerWidth, rulerHeight: previous.rulerHeight } : item
+      return previous ? { ...item, rulerUnit: previous.rulerUnit, rulerWidth: previous.rulerWidth, rulerHeight: previous.rulerHeight, rulerWidthRange: previous.rulerWidthRange, rulerHeightRange: previous.rulerHeightRange } : item
     })
     for (const group of page.imageGroups ?? []) {
       if (groupByAsset.has(page.items.find(item => group.itemIds.includes(item.id))?.assetId ?? '')) group.stacked = 'vertical'

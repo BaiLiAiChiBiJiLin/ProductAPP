@@ -1,4 +1,4 @@
-import { sourceAssetSize, type Asset } from '../../../model.ts'
+import { sourceAssetSize, type Asset, type RulerRange } from '../../../model.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
 import type { Page } from '../../../model.ts'
 
@@ -27,6 +27,11 @@ export type DimensionDisplayPrecision = 'default' | 'round' | 'truncate'
 export type DimensionDisplayOverride = { precision: DimensionDisplayPrecision; decimalPlaces: number }
 
 export type ImageDimensionMarkerLayout = ImageDimension & {
+  itemId: string
+  axis: 'width' | 'height'
+  imageStart: number
+  imageEnd: number
+  range: RulerRange
   x1: number
   y1: number
   x2: number
@@ -39,6 +44,23 @@ export type ImageDimensionMarkerLayout = ImageDimension & {
   gap: number
 }
 
+export const RULER_MIN_RANGE = 0.08
+
+function truncateDecimal(value: number, factor: number) {
+  // Avoid binary floating-point values such as 1.4999999999999998 turning
+  // an exact displayed value of 1.5 into 1.4 when truncating.
+  const epsilon = Number.EPSILON * Math.max(1, Math.abs(value))
+  return Math.trunc((value + (value < 0 ? -epsilon : epsilon)) * factor) / factor
+}
+
+function normalizedRange(value: RulerRange | undefined): RulerRange {
+  const start = Math.max(0, Math.min(1, Number(value?.[0] ?? 0)))
+  const end = Math.max(0, Math.min(1, Number(value?.[1] ?? 1)))
+  if (end - start >= RULER_MIN_RANGE) return start <= end ? [start, end] : [end, start]
+  const midpoint = Math.max(RULER_MIN_RANGE / 2, Math.min(1 - RULER_MIN_RANGE / 2, (start + end) / 2))
+  return [midpoint - RULER_MIN_RANGE / 2, midpoint + RULER_MIN_RANGE / 2]
+}
+
 const normalize = (value: string) => value.trim().toLowerCase().replace(/[\s_-]+/g, '')
 
 function sourceSize(asset: Asset) {
@@ -47,19 +69,19 @@ function sourceSize(asset: Asset) {
   return key ? String(attributes[key] ?? '').trim() : ''
 }
 
-function number(value: number, decimalPlaces = 1) {
-  return String(Number(value.toFixed(decimalPlaces)))
-}
-
 export function formatDimensionNumber(value: number, precision: DimensionDisplayPrecision = 'default', decimalPlaces = 1) {
   const places = Math.max(0, Math.min(6, Math.trunc(decimalPlaces)))
   const factor = 10 ** places
   const adjusted = precision === 'truncate'
-    ? Math.trunc(value * factor) / factor
+    ? truncateDecimal(value, factor)
     : precision === 'round'
       ? Math.round(value * factor) / factor
-      : Number(value.toFixed(places))
-  return precision === 'default' ? number(adjusted, places) : adjusted.toFixed(places)
+      // The default display preserves the source value to the requested
+      // number of places without applying four-five rounding.
+      : truncateDecimal(value, factor)
+  // The decimal-place control is an explicit display choice. Preserve its
+  // trailing zeroes for every mode.
+  return adjusted.toFixed(places)
 }
 
 export function physicalSourceSize(asset: Asset) {
@@ -165,23 +187,29 @@ export function imageDimensionMarkerLayout(group: ImageGroup, page: Page, assets
   const imageRight = item.x + Math.abs(item.w) / 2
   const imageTop = item.y - Math.abs(item.h) / 2
   const imageBottom = item.y + Math.abs(item.h) / 2
+  const markerAxis = axis ?? (dimension.horizontal ? 'width' : 'height')
+  const range = normalizedRange(markerAxis === 'width' ? item.rulerWidthRange : item.rulerHeightRange)
+  const imageStart = markerAxis === 'width' ? imageLeft : imageTop
+  const imageEnd = markerAxis === 'width' ? imageRight : imageBottom
+  const rulerStart = imageStart + (imageEnd - imageStart) * range[0]
+  const rulerEnd = imageStart + (imageEnd - imageStart) * range[1]
   const labelWidth = Math.max(16, dimension.label.length * 4 + 4)
   const gap = labelWidth / 2 + 3
   if (dimension.horizontal) {
     // Placement already constrains the artwork to its cell. A ruler measures
     // those actual edges, including when artwork fills the details boundary.
-    const x1 = imageLeft
-    const x2 = imageRight
+    const x1 = rulerStart
+    const x2 = rulerEnd
     // Keep the label just above the measurement line inside the green image
     // cell. The short extension lines then reach the actual artwork edge.
     const y = Math.max(group.y + 3, imageTop - 2)
-    return { ...dimension, x1, y1: y, x2, y2: y, extension: [[x1, y, x1, item.y], [x2, y, x2, item.y]], textX: (x1 + x2) / 2, textY: y - 3, textWidth: labelWidth, textRotation: 0, gap }
+    return { ...dimension, itemId: item.id, axis: markerAxis, imageStart, imageEnd, range, x1, y1: y, x2, y2: y, extension: [[x1, y, x1, item.y], [x2, y, x2, item.y]], textX: (x1 + x2) / 2, textY: y - 3, textWidth: labelWidth, textRotation: 0, gap }
   }
-  const y1 = clamp(imageTop, group.y + 4, group.y + group.height - 20)
-  const y2 = clamp(imageBottom, y1 + 16, group.y + group.height - 4)
+  const y1 = clamp(rulerStart, group.y + 4, group.y + group.height - 20)
+  const y2 = clamp(rulerEnd, y1 + 16, group.y + group.height - 4)
   // Reserve room for the rotated label to the left of the ruler, inside the group.
   const x = Math.max(group.x + VERTICAL_MARKER_INSET, imageLeft - VERTICAL_MARKER_GAP)
-  return { ...dimension, x1: x, y1, x2: x, y2, extension: [[x, y1, item.x, y1], [x, y2, item.x, y2]], textX: x, textY: (y1 + y2) / 2, textWidth: labelWidth, textRotation: -90, gap }
+  return { ...dimension, itemId: item.id, axis: markerAxis, imageStart, imageEnd, range, x1: x, y1, x2: x, y2, extension: [[x, y1, item.x, y1], [x, y2, item.x, y2]], textX: x, textY: (y1 + y2) / 2, textWidth: labelWidth, textRotation: -90, gap }
 }
 
 function escape(value: string) {

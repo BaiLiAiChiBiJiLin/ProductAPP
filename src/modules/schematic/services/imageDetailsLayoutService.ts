@@ -72,6 +72,15 @@ export function imageDetailsLayout(group: ImageGroup, visualScale = 1) {
   }
   const line = Math.max(1, Math.min(DETAIL_LINE_HEIGHT, (group.height - 8) / Math.max(6, fields.length + 2)))
   const fontSize = Math.max(1, Math.min(DETAIL_LABEL_FONT_SIZE, line - 1))
+  // Size values must remain a complete single line when extra decimal places
+  // make the label wider than the details column. Fit only these labels so
+  // product fields keep their existing typography and wrapping behavior.
+  fields.forEach(field => {
+    if (!field.key.startsWith('size')) return
+    const label = field.text.replace(/^Size:\s*/, '')
+    const measured = sizeLabelWidth(label, fontSize)
+    if (measured > width) field.fontSize = Math.max(1, fontSize * width / measured)
+  })
   const bodyY = y + fields.length * line
   // Finish/process is painted along the bottom edge of the group. Reserve a
   // line for it so wrapped notes always remain above that label.
