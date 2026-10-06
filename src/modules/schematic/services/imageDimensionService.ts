@@ -216,9 +216,10 @@ function escape(value: string) {
   return value.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[character] ?? character))
 }
 
-export function imageDimensionMarkersSvg(page: Page, assets: Map<string, Asset>) {
+export function imageDimensionMarkersSvg(page: Page, assets: Map<string, Asset>, displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>) {
   return dimensionGroups(page).flatMap(group => {
-    const marker = imageDimensionMarkerLayout(group, page, assets)
+    const override = group.itemIds.map(id => displayOverrides?.get(id)).find(Boolean)
+    const marker = imageDimensionMarkerLayout(group, page, assets, override?.precision ?? 'default', override?.decimalPlaces ?? 1)
     if (!marker) return []
     const line = marker.horizontal
       ? `<line x1="${marker.x1}" y1="${marker.y1}" x2="${marker.textX - marker.gap}" y2="${marker.y1}"/><line x1="${marker.textX + marker.gap}" y1="${marker.y1}" x2="${marker.x2}" y2="${marker.y1}"/><path d="M${marker.x1} ${marker.y1}l5 -2v4Z" fill="#2f6fa3"/><path d="M${marker.x2} ${marker.y1}l-5 -2v4Z" fill="#2f6fa3"/>`

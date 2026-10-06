@@ -7,7 +7,8 @@ import { detailPanelsForGroup } from '../arrangement/productGroupDetails'
 import { finishLabel } from '../services/finishLabelService'
 import { accessoryFrame, rememberAccessoryImage } from '../services/accessoryFrameService'
 import { resolveRemoteImage } from '../services/remoteImageService'
-import { rulerDimensionLabel, type DimensionDisplayOverride, type DimensionDisplayPrecision } from '../services/imageDimensionService'
+import type { DimensionDisplayOverride, DimensionDisplayPrecision } from '../services/imageDimensionService'
+import { groupForDimensionDisplay } from '../services/dimensionDisplayService'
 import type { Node as KonvaNode } from 'konva/lib/Node'
 
 const imageCache = new Map<string, HTMLImageElement>()
@@ -101,40 +102,8 @@ function AccessoryImage({ src, x, y, width, height, code, framed = false, select
   </Group>
 }
 
-function detailsForDisplay(details: NonNullable<ImageGroup['details']>, page: Page, assets: Map<string, Asset>, itemIds: string[], selected: Set<string>, precision: DimensionDisplayPrecision, decimalPlaces: number, displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>) {
-  const labels = new Map<string, string>()
-  for (const item of page.items) {
-    if (!itemIds.includes(item.id) || (!selected.has(item.id) && !displayOverrides?.has(item.id))) continue
-    const asset = assets.get(item.assetId)
-    if (asset) {
-      const override = displayOverrides?.get(item.id)
-      const label = rulerDimensionLabel(asset, item, override?.precision ?? precision, override?.decimalPlaces ?? decimalPlaces)
-      if (label) labels.set(item.id, label)
-    }
-  }
-  if (!labels.size) return details
-  const firstLabel = labels.values().next().value as string | undefined
-  return { ...details,
-    size: details.sizes?.length ? details.size : firstLabel ?? details.size,
-    sizes: details.sizes?.map(value => labels.has(value.itemId) ? { ...value, label: labels.get(value.itemId)! } : value),
-  }
-}
-
-function groupForDisplay(group: ImageGroup, page: Page | undefined, assets: Map<string, Asset> | undefined, selectedItemIds: string[], precision: DimensionDisplayPrecision, decimalPlaces: number, displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>) {
-  if (!page || !assets || (!selectedItemIds.length && !displayOverrides?.size)) return group
-  const selected = new Set(selectedItemIds)
-  const isDisplayed = (id: string) => selected.has(id) || Boolean(displayOverrides?.has(id))
-  const details = group.details && group.itemIds.some(isDisplayed)
-    ? detailsForDisplay(group.details, page, assets, group.itemIds, selected, precision, decimalPlaces, displayOverrides)
-    : group.details
-  const detailGroups = group.detailGroups?.map(panel => panel.itemIds.some(isDisplayed)
-    ? { ...panel, details: detailsForDisplay(panel.details, page, assets, panel.itemIds, selected, precision, decimalPlaces, displayOverrides) }
-    : panel)
-  return details === group.details && detailGroups === group.detailGroups ? group : { ...group, details, detailGroups }
-}
-
 export default function ImageGroupDetails({ group, page, assets, selectedItemIds = [], precision = 'default', decimalPlaces = 1, displayOverrides, selectedAccessoryKey, accessoryVisuals, onSelectAccessory, onChangeAccessory, onEditText }: { group: ImageGroup; page?: Page; assets?: Map<string, Asset>; selectedItemIds?: string[]; precision?: DimensionDisplayPrecision; decimalPlaces?: number; displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>; selectedAccessoryKey?: string; accessoryVisuals?: ReadonlyMap<string, AccessoryVisual>; onSelectAccessory?: (key: string) => void; onChangeAccessory?: (key: string, patch: Partial<AccessoryVisual>) => void; onEditText?: EditImageGroupText }) {
-  const displayGroup = groupForDisplay(group, page, assets, selectedItemIds, precision, decimalPlaces, displayOverrides)
+  const displayGroup = groupForDimensionDisplay(group, page, assets, selectedItemIds, precision, decimalPlaces, displayOverrides)
   const label = finishLabel(displayGroup)
   return <Group listening={Boolean(onSelectAccessory || onEditText)}>{detailPanelsForGroup(displayGroup).map(panel => <DetailsPanel key={panel.id} group={panel} selectedAccessoryKey={selectedAccessoryKey} accessoryVisuals={accessoryVisuals} onSelectAccessory={onSelectAccessory} onChangeAccessory={onChangeAccessory} onEditText={onEditText}/>)}{label.text && <Text x={label.x + label.width} y={label.y} text={label.text} fontSize={10} fill="#ff4d4f" wrap="none" ref={node => { if (node) node.offsetX(node.width()) }} listening={Boolean(onEditText)} onDblClick={event => { event.cancelBubble = true; const next = window.prompt('编辑文字', label.text); if (next !== null && next !== label.text) onEditText?.(displayGroup.itemIds, 'finish', next) }} onDblTap={event => { event.cancelBubble = true; const next = window.prompt('编辑文字', label.text); if (next !== null && next !== label.text) onEditText?.(displayGroup.itemIds, 'finish', next) }}/>}</Group>
 }

@@ -1,6 +1,7 @@
 import type { ImageGroup } from './modules/schematic/layoutTypes.ts'
 import { groupBackgroundsSvg } from './modules/schematic/services/groupBackgroundService.ts'
-import { imageDimensionMarkersSvg } from './modules/schematic/services/imageDimensionService.ts'
+import { imageDimensionMarkersSvg, type DimensionDisplayOverride } from './modules/schematic/services/imageDimensionService.ts'
+import { pageForDimensionDisplay } from './modules/schematic/services/dimensionDisplayService.ts'
 
 export type Asset = { id: string; name: string; sourceFileName?: string; productId: string; productName?: string; width: number; height: number; sourceGroupWidthMm?: number; sourceGroupHeightMm?: number; sourceGroupBounds?: [number, number, number, number]; svg: string; previewUrl: string; thumbnailUrl: string; storagePath?: string; modeUsed?: 'whole' | 'groups'; mergeStatus?: 'merged' | 'kept-separate' | 'whole'; sourceGroupId?: string; attributes?: Record<string, string>; attributeImages?: Record<string, string>; note?: string; noteImage?: string; attributesConfirmed?: boolean; productGroupId?: string; productGroupColor?: string; productGroupLeaderId?: string; productGroupMode?: '' | 'guided' | 'free'; /** 1-based order inside a product group; absent/zero means legacy order. */ productGroupPosition?: number }
 export type RulerRange = [number, number]
@@ -147,17 +148,19 @@ function columnHeadersSvg(blocks: HeaderBlock[]) {
   }).join('')}</g>`).join('')}</g>`
 }
 
-export function pageSvg(page: Page, assets: Map<string, Asset>, metadata: PageHeader = {}, totalPages = 1) {
+export function pageSvg(page: Page, assets: Map<string, Asset>, metadata: PageHeader = {}, totalPages = 1, displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>) {
+  const displayPage = pageForDimensionDisplay(page, assets, displayOverrides)
   const images = page.items.map(item => {
     const asset = assets.get(item.assetId)
     if (!asset) throw new Error('页面中有丢失的图片资源，无法导出')
     return `${item.caption ? `<text x="${item.captionAlign === 'left' ? item.x - item.w / 2 : item.x}" y="${item.y - item.h / 2 - 10}" text-anchor="${item.captionAlign === 'left' ? 'start' : 'middle'}" font-size="${item.captionFontSize ?? 10}" fill="#e11d48">${xmlText(item.caption)}</text>` : ''}<image x="${-item.w / 2}" y="${-item.h / 2}" width="${item.w}" height="${item.h}" transform="translate(${item.x} ${item.y}) rotate(${item.rotation}) scale(${item.mirrorX ? -1 : 1} 1)" href="${svgDataUrl(item.backSvg ?? asset.svg)}"/>${item.note ? `<text x="${item.x}" y="${item.y + item.h / 2 + 9}" text-anchor="middle" font-size="8" fill="#475569">${xmlText(item.note)}</text>` : ''}`
   }).join('')
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="210mm" height="297mm" viewBox="0 0 ${PAPER_WIDTH} ${PAPER_HEIGHT}"><rect width="100%" height="100%" fill="white"/>${pageHeaderSvg(page.id, totalPages, metadata)}${groupBackgroundsSvg(page)}${images}${imageDimensionMarkersSvg(page, assets)}${columnHeadersSvg(page.headerBlocks ?? [])}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="210mm" height="297mm" viewBox="0 0 ${PAPER_WIDTH} ${PAPER_HEIGHT}"><rect width="100%" height="100%" fill="white"/>${pageHeaderSvg(page.id, totalPages, metadata)}${groupBackgroundsSvg(displayPage)}${images}${imageDimensionMarkersSvg(page, assets, displayOverrides)}${columnHeadersSvg(page.headerBlocks ?? [])}</svg>`
 }
 
 /** Export-friendly SVG that keeps each asset's original root dimensions and viewBox. */
-export function pageRasterSvg(page: Page, assets: Map<string, Asset>, metadata: PageHeader = {}, totalPages = 1) {
+export function pageRasterSvg(page: Page, assets: Map<string, Asset>, metadata: PageHeader = {}, totalPages = 1, displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>) {
+  const displayPage = pageForDimensionDisplay(page, assets, displayOverrides)
   const images = page.items.map(item => {
     const asset = assets.get(item.assetId)
     if (!asset) throw new Error('页面中有丢失的图片资源，无法导出')
@@ -166,7 +169,7 @@ export function pageRasterSvg(page: Page, assets: Map<string, Asset>, metadata: 
     // inner XML would discard that viewport and reintroduce size errors.
     return `${item.caption ? `<text x="${item.captionAlign === 'left' ? item.x - item.w / 2 : item.x}" y="${item.y - item.h / 2 - 10}" text-anchor="${item.captionAlign === 'left' ? 'start' : 'middle'}" font-size="${item.captionFontSize ?? 10}" fill="#e11d48">${xmlText(item.caption)}</text>` : ''}<image x="${-item.w / 2}" y="${-item.h / 2}" width="${item.w}" height="${item.h}" transform="translate(${item.x} ${item.y}) rotate(${item.rotation}) scale(${item.mirrorX ? -1 : 1} 1)" href="${svgDataUrl(item.backSvg ?? asset.svg)}"/>${item.note ? `<text x="${item.x}" y="${item.y + item.h / 2 + 9}" text-anchor="middle" font-size="8" fill="#475569">${xmlText(item.note)}</text>` : ''}`
   }).join('')
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="210mm" height="297mm" viewBox="0 0 ${PAPER_WIDTH} ${PAPER_HEIGHT}"><rect width="100%" height="100%" fill="white"/>${pageHeaderSvg(page.id, totalPages, metadata)}${groupBackgroundsSvg(page)}${images}${imageDimensionMarkersSvg(page, assets)}${columnHeadersSvg(page.headerBlocks ?? [])}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="210mm" height="297mm" viewBox="0 0 ${PAPER_WIDTH} ${PAPER_HEIGHT}"><rect width="100%" height="100%" fill="white"/>${pageHeaderSvg(page.id, totalPages, metadata)}${groupBackgroundsSvg(displayPage)}${images}${imageDimensionMarkersSvg(page, assets, displayOverrides)}${columnHeadersSvg(page.headerBlocks ?? [])}</svg>`
 }
 
 
