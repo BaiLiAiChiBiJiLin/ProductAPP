@@ -41,8 +41,9 @@ export default function CustomProductForm({ draft, onDraftChange: setDraft, prod
   const attributes = customAttributes(draft)
   const images = customImages(draft)
   const changeOption = (name: string, value: string, image?: string) => {
-    const patch = { attribute: { key: name, value }, attributeImage: { key: name, url: image ?? '' }, clearAttributeKeys: dependentOptionNames(catalog?.options ?? [], name) }
-    setDraft(current => ({ ...current, attributes: applyAttributeValues(customAttributes(current), patch), attributeImages: applyAttributeImages(customImages(current), patch) }))
+    const finishKey = /^(finish|工艺|表面)$/i.test(name.trim())
+    const patch = { attribute: { key: name, value }, attributeImage: { key: name, url: image ?? '' }, clearAttributeKeys: [...dependentOptionNames(catalog?.options ?? [], name), ...(finishKey ? ['Finish', '工艺', '表面'] : [])] }
+    setDraft(current => ({ ...current, attributes: applyAttributeValues(customAttributes(current), patch), attributeImages: applyAttributeImages(customImages(current), patch), ...(finishKey ? { finishMatchDisabled: !value } : {}) }))
   }
   const quantityField = <label className="product-config-field"><span>QT（数量）</span><InputNumber aria-label="自定义QT（数量）" min={0} max={2147483647} precision={0} value={draft.qt} disabled={saving}
           onChange={value => setDraft(current => ({ ...current, qt: value }))}/></label>

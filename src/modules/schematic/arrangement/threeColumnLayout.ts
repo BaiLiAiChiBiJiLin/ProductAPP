@@ -4,6 +4,7 @@ import { dimensionForItem, physicalSourceSize } from '../services/imageDimension
 import { backLayerSvg } from '../services/svgBackLayerService.ts'
 import { backfillPages } from './backfillPages.ts'
 import { fillFreeRegions } from './freeRegionPacking.ts'
+import { applyPhysicalImageScale } from './physicalImageSizing.ts'
 import { imageDetailsLayout, sizeLabelWidth } from '../services/imageDetailsLayoutService.ts'
 import type { ProductConfig } from '../services/productConfigService.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
@@ -72,6 +73,35 @@ function productKey(asset: Asset) {
   return name || id || 'unassigned'
 }
 
+function standeeSpan(unit: Unit) {
+  const pictures = unit.assets.length > 1 ? unit.assets.slice(0, -1) : unit.assets
+  return pictures.some(isDifferentDesign) ? 2 : 1
+}
+
+/** Plan complete standee rows so mixed column widths share a header and a page. */
+function planStandeeRows(units: Unit[], height: number) {
+  const plans = new Map<Unit, { spans: number[]; height: number }>()
+  let row: Unit[] = []
+  const finish = () => {
+    if (!row.length) return
+    const spans = row.map(standeeSpan)
+    // Homogeneous single-column sections retain their existing three-column header.
+    if (spans.every(span => span === 1)) while (spans.length < 3) spans.push(1)
+    const plan = { spans, height }
+    row.forEach(unit => plans.set(unit, plan))
+    row = []
+  }
+  for (const unit of units) {
+    if (unit.kind !== 'standee') { finish(); continue }
+    if (row.length && (productKey(row[0].assets[0]) !== productKey(unit.assets[0])
+      || row[0].assets.some(isStickerProduct) !== unit.assets.some(isStickerProduct)
+      || row.reduce((sum, member) => sum + standeeSpan(member), 0) + standeeSpan(unit) > 3)) finish()
+    row.push(unit)
+  }
+  finish()
+  return plans
+}
+
 export function isStickerProduct(asset: Asset) {
   return /stickers?|贴纸/i.test(`${asset.productName ?? ''} ${asset.productId ?? ''}`)
 }
@@ -93,22 +123,25 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
   let page: Page, y = bottom, column = 0, rowHeight = 0
   let rowProductKey: string | undefined
   let headerKey = ''
-  const newPage = (columns: number, sectionWidth: number, imageMode: 'photo' | 'front-back', key: string) => {
-    page = { id: pages.length + 1, name: `页面 ${pages.length + 1}`, items: [], imageGroups: [], headerBlocks: [{ id: `header-${pages.length + 1}`, x: area.left, y: area.top, width: sectionWidth, auto: true, columns: Array.from({ length: columns }, (_, i) => ({ id: `column-${i}`, imageMode, detailLabel: 'Size/QT/Finish/Accessory' })) }] }
+  const newPage = (spans: number[], sectionWidth: number, imageMode: 'photo' | 'front-back', key: string) => {
+    page = { id: pages.length + 1, name: `页面 ${pages.length + 1}`, items: [], imageGroups: [], headerBlocks: [{ id: `header-${pages.length + 1}`, x: area.left, y: area.top, width: sectionWidth, auto: true, columns: spans.map((span, i) => ({ id: `column-${i}`, span, imageMode, detailLabel: 'Size/QT/Finish/Accessory' })) }] }
     pages.push(page); headerKey = key; y = contentTop; column = 0; rowHeight = 0
   }
-  for (const unit of unitsFor(assets)) {
+  const units = unitsFor(assets)
+  const standeeRows = planStandeeRows(units, (bottom - area.top) / 3)
+  for (const unit of units) {
     const leader = unit.assets[0]
     const shaker = unit.assets.some(asset => /shaker|摇摇乐/i.test(`${asset.productName ?? ''} ${asset.productId}`))
     const stickerUnit = unit.assets.some(isStickerProduct)
-    // The final member of a multi-member standee is a base, not a front/back pair.
-    const standeePictures = unit.assets.length > 1 ? unit.assets.slice(0, -1) : unit.assets
-    const wideStandee = unit.kind === 'standee' && standeePictures.some(isDifferentDesign)
-    const columns = wideStandee || unit.kind === 'holder' ? 1 : unit.kind === 'chain' && unit.assets.some(isDifferentDesign) ? 2 : 3
-    // Merge exactly two base slots (including their intervening gap), not half a page.
-    const sectionWidth = wideStandee ? 2 * (width - 2 * GAP) / 3 + GAP : width
+    const standeeRow = standeeRows.get(unit)
+    const spans = standeeRow?.spans ?? Array<number>(unit.kind === 'holder' ? 1 : unit.kind === 'chain' && unit.assets.some(isDifferentDesign) ? 2 : 3).fill(1)
+    const columns = spans.length
+    const totalSpan = spans.reduce((sum, span) => sum + span, 0)
+    // One- and two-slot standees can share the same three-slot row.
+    const sectionWidth = standeeRow ? totalSpan * (width - 2 * GAP) / 3 + (totalSpan - 1) * GAP : width
+    const slotWidth = (sectionWidth - GAP * (totalSpan - 1)) / totalSpan
     const imageMode = unit.kind === 'standee' ? 'front-back' : 'photo'
-    const sectionKey = `${columns}:${sectionWidth}:${imageMode}`
+    const sectionKey = `${spans.join(',')}:${sectionWidth}:${imageMode}`
     const currentProductKey = productKey(leader)
     // A sticker page intentionally keeps its unused cells open.  The old
     // protection only ran during backfill, so the first pass could append the
@@ -137,7 +170,8 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       rowHeight = 0
       rowProductKey = undefined
     }
-    const groupWidth = (sectionWidth - GAP * (columns - 1)) / columns
+    const span = standeeRow ? standeeSpan(unit) : 1
+    const groupWidth = slotWidth * span + GAP * (span - 1)
     const detailWidth = Math.max(minimumDetailsWidth, unit.kind === 'holder' ? Math.min(100, width * 0.24) : 0)
     if (groupWidth - detailWidth < 36) throw new Error('排列区域过窄，无法同时容纳图片和完整 Size，请增大排列区域宽度。')
     const imageWidth = groupWidth - detailWidth
@@ -207,7 +241,9 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       const rows = Math.ceil(pictures.length / perRow)
       const verticalBack = unit.kind === 'ordinary' && pictures.some(isDifferentDesign)
       const cellHeight = verticalBack ? 190 : 120
-      height = Math.min(available, Math.max(120, rows * cellHeight))
+      // Standee content rows occupy exactly one third of the arrangement
+      // frame. Extra page space must not stretch their cells afterward.
+      height = standeeRow?.height ?? Math.min(available, Math.max(120, rows * cellHeight))
       const rowH = height / rows
       const chainHasBackColumn = unit.kind === 'chain' && pictures.some(isDifferentDesign)
       // Chain charms often contain source SVGs with very different physical
@@ -303,20 +339,21 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
     }
     const groupDetails = detailsForAsset(leader, configs)
     groupDetails.finish = [...new Set(unit.assets.map(asset => cleanFinishLabel(detailsForAsset(asset, configs).finish)).filter(value => value && !/^\d+(?:\.\d+)?$/.test(value)))].join(' / ')
+    const requiredHeight = standeeRow?.height ?? height
     if (pages.length && headerKey !== sectionKey) {
       if (column) { y += rowHeight + GAP; column = 0; rowHeight = 0; rowProductKey = undefined }
-      if (y + HEADER_BLOCK_HEIGHT + GAP + height <= bottom) {
-        page!.headerBlocks!.push({ id: `header-${pages.length}-${y}`, x: area.left, y, width: sectionWidth, auto: true, detailWidth, columns: Array.from({ length: columns }, (_,i) => ({ id: `column-${y}-${i}`, imageMode, detailLabel: 'Size/QT/Finish/Accessory' })) })
+      if (y + HEADER_BLOCK_HEIGHT + GAP + requiredHeight <= bottom) {
+        page!.headerBlocks!.push({ id: `header-${pages.length}-${y}`, x: area.left, y, width: sectionWidth, auto: true, detailWidth, columns: spans.map((span,i) => ({ id: `column-${y}-${i}`, span, imageMode, detailLabel: 'Size/QT/Finish/Accessory' })) })
         y += HEADER_BLOCK_HEIGHT + GAP; headerKey = sectionKey
       } else y = bottom
     }
-    if (!pages.length || y + height > bottom + 1e-7) {
-      newPage(columns, sectionWidth, imageMode, sectionKey)
+    if (!pages.length || y + requiredHeight > bottom + 1e-7) {
+      newPage(spans, sectionWidth, imageMode, sectionKey)
       rowProductKey = undefined
     }
     page!.headerBlocks!.at(-1)!.detailWidth = detailWidth
     if (height > available + 1e-7) throw new Error('排列区域太小，无法容纳产品组，请增大排列区域。')
-    const x = area.left + column * (groupWidth + GAP)
+    const x = area.left + spans.slice(0, column).reduce((sum, span) => sum + span, 0) * (slotWidth + GAP)
     const standeeHasBase = unit.kind === 'standee' && unit.assets.length > 1
     const protectPageFill = unit.assets.some(isStickerProduct)
     const group: ImageGroup = { id: `group-${leader.id}`, productGroupId: leader.productGroupId, productKey: currentProductKey, itemIds: [], x, y, width: groupWidth, height, detailsX: x + imageWidth, detailWidth, details: detailsForAsset(leader, configs), detailsHeight: standeeHasBase ? height * 0.48 : undefined, imageCells: [], emptyExample: emptyExampleMerged, emptyExampleMerged, preventRowFill: protectPageFill, protectPageFill }
@@ -391,7 +428,10 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
     column += 1
     if (column >= columns) { y += rowHeight + GAP; column = 0; rowHeight = 0; rowProductKey = undefined }
   }
-  return fillFreeRegions(backfillPages(pages, area), area)
+  const arranged = fillFreeRegions(backfillPages(pages, area), area)
+  const physicalSizes = new Map(units.flatMap(unit => unit.assets.map(asset => [asset.id,
+    unit.kind === 'chain' ? chainSourceSize(asset) : physicalSourceSize(asset)] as const)))
+  return applyPhysicalImageScale(arranged, physicalSizes)
 }
 
 

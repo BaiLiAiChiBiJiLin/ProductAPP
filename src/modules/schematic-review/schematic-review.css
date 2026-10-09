@@ -1,0 +1,17 @@
+.schematic-review-date-filter { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.schematic-review-date-filter label { color: #475569; font-size: 13px; white-space: nowrap; }
+.schematic-review-date-filter .ant-picker { width: 200px; max-width: 100%; }
+.schematic-review-table .ant-table-tbody > tr:nth-child(even) > td { background: #fafcff; }
+.schematic-review-table .ant-table-tbody > tr.review-payment-paid > td { background: var(--review-paid-bg); }
+.schematic-review-table .ant-table-tbody > tr.review-payment-unpaid > td { background: var(--review-unpaid-bg); }
+.schematic-review-table .ant-table-tbody > tr.review-imposition-unpaid > td { background: var(--review-pending-bg); }
+.schematic-review-table .ant-table-tbody > tr.review-payment-paid:hover > td,
+.schematic-review-table .ant-table-tbody > tr.review-payment-paid > td.ant-table-cell-row-hover { background: var(--review-paid-hover-bg); }
+.schematic-review-table .ant-table-tbody > tr.review-payment-unpaid:hover > td,
+.schematic-review-table .ant-table-tbody > tr.review-payment-unpaid > td.ant-table-cell-row-hover { background: var(--review-unpaid-hover-bg); }
+.schematic-review-table .ant-table-tbody > tr.review-imposition-unpaid:hover > td,
+.schematic-review-table .ant-table-tbody > tr.review-imposition-unpaid > td.ant-table-cell-row-hover { background: var(--review-pending-hover-bg); }
+.schematic-review-actions { display: flex; align-items: center; white-space: nowrap; }
+.schematic-review-actions .ant-btn { padding-inline: 8px; }
+.schematic-review-delete-description { overflow-wrap: anywhere; }
+.schematic-review-delete-description p { margin: 8px 0 0; }

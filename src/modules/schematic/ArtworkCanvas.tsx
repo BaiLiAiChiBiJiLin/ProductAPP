@@ -3,7 +3,7 @@ import { itemsInSelection, selectionBounds, type CanvasPoint } from './services/
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { Stage, Layer, Rect, Group, Image as KonvaImage, Transformer, Text, Line } from 'react-konva'
 import type Konva from 'konva'
-import { artworkBounds, constrain, defaultLayoutBounds, PAPER_HEIGHT, PAPER_WIDTH, svgObjectUrl, type Asset, type HeaderBlock, type Item, type LayoutBounds, type Page, type PageHeader } from '../../model'
+import { ARRANGEMENT_FRAME_SHADOW, ARRANGEMENT_FRAME_STYLE, arrangementFrameRect, artworkBounds, constrain, defaultLayoutBounds, PAPER_HEIGHT, PAPER_WIDTH, svgObjectUrl, type Asset, type HeaderBlock, type Item, type LayoutBounds, type Page, type PageHeader } from '../../model'
 import HeaderBlockCanvas from './components/HeaderBlockCanvas'
 import ImageGroupBackgrounds from './components/ImageGroupBackgrounds'
 import ImageDimensionMarkers from './components/ImageDimensionMarkers'
@@ -229,6 +229,8 @@ export default function ArtworkCanvas({ page, assets, selected, selectedIds = []
         <Rect name="canvas-background" width={PAPER_WIDTH} height={PAPER_HEIGHT} fill="white" cornerRadius={4} shadowBlur={22} shadowColor="#0f172a" shadowOpacity={0.18} shadowOffsetY={5} onClick={() => { if (!panMode) select(null) }} />
         {/* Fixed page information stays behind artwork and cannot intercept selection. */}
         <PageHeaderCanvas pageNumber={page.id} totalPages={totalPages ?? 1} metadata={metadata ?? {}} />
+        <Rect {...arrangementFrameRect(layoutBounds)} cornerRadius={ARRANGEMENT_FRAME_STYLE.cornerRadius} fill="white" listening={false}
+          {...ARRANGEMENT_FRAME_SHADOW}/>
         <Group clipX={0} clipY={0} clipWidth={PAPER_WIDTH} clipHeight={PAPER_HEIGHT}>
           <ImageGroupBackgrounds page={page} assets={assets} selectedItemIds={dimensionItemIds} precision={dimensionPrecision} decimalPlaces={dimensionDecimalPlaces} displayOverrides={dimensionDisplayOverrides} selectedAccessoryKey={selectedAccessoryKey} accessoryVisuals={accessoryVisuals} onSelectAccessory={panMode ? undefined : onSelectAccessory} onChangeAccessory={panMode ? undefined : onChangeAccessory} selectedGroupIds={selectedGroupIds} onSelectGroup={panMode ? undefined : selectGroup} onEditText={panMode ? undefined : onEditText}/>
           {page.items.map(item => { const asset = assets.get(item.assetId); const group = page.imageGroups?.find(candidate => candidate.itemIds.includes(item.id)); return asset && <Artwork key={item.id} item={item} asset={asset} visualScale={visualScales?.get(item.id) ?? 1} selected={selected === item.id || selectedIds.includes(item.id)} interactive={!panMode} bounds={imageBounds} groupBounds={group ? { x: group.x, y: group.y, width: group.width, height: group.height } : undefined} onSelect={select} onChange={onChange} /> })}
@@ -236,7 +238,7 @@ export default function ArtworkCanvas({ page, assets, selected, selectedIds = []
           {page.headerBlocks?.map(block => <HeaderBlockCanvas key={block.id} block={block} bounds={layoutBounds} selected={selected === block.id} interactive={!panMode} onSelect={select} onChange={onHeaderBlockChange}/>)}
         </Group>
         <Group listening={false}>
-          <Rect x={layoutBounds.left} y={layoutBounds.top} width={PAPER_WIDTH - layoutBounds.left - layoutBounds.right} height={PAPER_HEIGHT - layoutBounds.top - layoutBounds.bottom} stroke="#D4D4D4" strokeWidth={1.2} cornerRadius={6} shadowColor="#2563eb" shadowBlur={8} shadowOpacity={0.18} shadowOffsetY={2}/>
+          <Rect {...arrangementFrameRect(layoutBounds)} {...ARRANGEMENT_FRAME_STYLE}/>
         </Group>
         {marquee && <Rect {...marquee} fill="rgba(37,99,235,0.12)" stroke="#2563eb" strokeWidth={1 / scale} dash={[4 / scale, 3 / scale]} listening={false}/>}
       </Group></Layer>

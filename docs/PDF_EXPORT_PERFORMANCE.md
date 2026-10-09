@@ -1,5 +1,28 @@
 # PDF 导出性能验证
 
+## 大批次导出导致 WebView2 崩溃（2026-10-07）
+
+`ds` 的 84 张 SVG 共约 126.38 MiB，生成 8 页。两次故障都只暂存到第 5 页（该页 SVG 约 43 MB），尚未进入原生 PDF 转换；Windows 同时报告提交内存不足，WebView2 显示错误代码 39。即使按页传输，前端为整页生成 base64 并进行大型 JSON IPC，仍产生大量中间副本；导出前的审核快照 `structuredClone` 及导出后的整份快照传输又放大了峰值。
+
+现在的流程：
+
+- `stagedArtworkService.ts` 以最多 64 Ki 个 UTF-16 字符顺序传输原始 SVG，每块收到确认后再继续，避免切断 Unicode 代理对；相同内容只暂存一次。
+- 页面 SVG 仅包含排版和临时资源引用；Rust 从暂存资源读取原图，保留既有 SVG 展开、viewBox、镜像与旋转逻辑，逐页写入合并 PDF。成功和异常路径均清理临时资源。
+- 审核快照复制可编辑的数据容器，复用不可变的原图字符串；保存时大内容分块上传，由 Rust 在同一 SQLite 事务中写入 `schematic_review_resources`，页面及属性清单存入 `schematic_reviews`。恢复返回清单，再逐个读取 UTF-8 二进制资源。旧的内嵌快照在读取时迁移，原图和排版内容保留。
+
+实测实际桌面程序：打开 `ds` → 生成 8 页 → 导出合并 PDF → 保存审核记录 → 列表点击编辑恢复，完整流程通过。PDF 为 56,817,649 字节，8 页 A4，原生转换约 35.3 秒（不含前端准备和审核保存）。Poppler 渲染了全部页面；审核恢复后的 84 张原图与导出前字符串逐一一致，排版数值按 `1e-9` 容差比较一致（JSON 数值读写可能相差末位浮点精度）。审核清单约 180 KB，大资源独立存储约 126.38 MiB。此结果不表示系统内存耗尽时所有批次都能成功。
+
+回归测试覆盖大图请求大小、Unicode 分块、失败清理、审核顺序读取、独立快照、原子回滚、旧记录迁移，以及临时引用和内嵌 SVG 的展开结果一致。运行：
+
+```powershell
+npx vitest run tests/pdf-memory.test.ts tests/pdf-staging.test.tsx tests/schematic-review.test.tsx tests/dimension-export.test.ts
+cd src-tauri
+cargo test --lib schematic_review::tests
+cargo test --lib export_tests::staged_artwork
+```
+
+本机 Windows 的独立 Rust 测试程序需要 Common Controls v6 manifest；没有 manifest 时启动失败属于测试宿主问题，需为测试程序附加该清单后执行。
+
 ## 问题与修复
 
 2026-09-16 使用本机历史批次的只读快照复现了导出数分钟的问题。84 张资源生成 6 页 SVG，数据总量约 109 MB；虽然文件扩展名是 SVG，其中仍内嵌了 88 个 PNG，共 216,279,632 像素。因此“矢量 PDF”转换也需要解码 PNG、分离颜色及透明度、无损压缩并写入图片对象。

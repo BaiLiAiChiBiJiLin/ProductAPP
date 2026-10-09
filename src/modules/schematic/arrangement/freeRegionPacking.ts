@@ -1,18 +1,19 @@
-import { GROUP_GAP, HEADER_BLOCK_HEIGHT, type HeaderBlock, type HeaderColumn, type LayoutBounds, type Page } from '../../../model.ts'
+import { GROUP_GAP, headerColumnBounds, HEADER_BLOCK_HEIGHT, type HeaderBlock, type HeaderColumn, type LayoutBounds, type Page } from '../../../model.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
 import { findFreeRegions, type FreeRegion } from './freeRegions.ts'
-import { headerFor, SECTION_EPS as EPS } from './pageSections.ts'
+import { headerFor, sharesMixedWidthRow, SECTION_EPS as EPS } from './pageSections.ts'
 
 type Candidate = { source: Page; group: ImageGroup; header: HeaderBlock; column: HeaderColumn }
 type Placement = { x: number; y: number; header?: HeaderBlock; reuse?: HeaderBlock }
 function candidates(pages: Page[], start: number): Candidate[] {
   return pages.slice(start).flatMap(source => [...source.imageGroups ?? []]
     .sort((a, b) => a.y - b.y || a.x - b.x).flatMap(group => {
-      if (group.preventRowFill || group.protectPageFill || source.imageGroups?.some(candidate => candidate.protectPageFill)) return []
+      if (group.preventRowFill || group.protectPageFill || source.imageGroups?.some(candidate => candidate.protectPageFill)
+        || sharesMixedWidthRow(source, group)) return []
       const header = headerFor(source, group)
       if (!header) return []
-      const width = (header.width - GROUP_GAP * (header.columns.length - 1)) / header.columns.length
-      const column = header.columns[Math.round((group.x - header.x) / (width + GROUP_GAP))]
+      const column = headerColumnBounds(header).find(slot => Math.abs(header.x + slot.x - group.x) < EPS
+        && Math.abs(slot.width - group.width) < EPS)?.column
       return column ? [{ source, group, header, column }] : []
     }))
 }
@@ -31,14 +32,13 @@ function placementFor(target: Page, free: FreeRegion, candidate: Candidate): Pla
     && (other.preventRowFill || (other.productKey && group.productKey && other.productKey !== group.productKey))))) return
   const existing = headerFor(target, { ...group, x: free.x, y: free.y })
   if (existing) {
-    const columnWidth = (existing.width - GROUP_GAP * (existing.columns.length - 1)) / existing.columns.length
-    const index = Math.ceil((free.x - existing.x - EPS) / (columnWidth + GROUP_GAP))
-    const x = existing.x + index * (columnWidth + GROUP_GAP)
-    const destination = existing.columns[index]
-    if (destination?.imageMode === column.imageMode && destination.detailLabel === column.detailLabel
-      && existing.detailWidth === header.detailWidth && Math.abs(columnWidth - group.width) < EPS
-      && x >= free.x - EPS && x + group.width <= free.x + free.width + EPS
-      && (source !== target || before(x, free.y, group))) return { x, y: free.y, reuse: existing }
+    for (const { column: destination, x: offset, width } of headerColumnBounds(existing)) {
+      const x = existing.x + offset
+      if (destination.imageMode === column.imageMode && destination.detailLabel === column.detailLabel
+        && existing.detailWidth === header.detailWidth && Math.abs(width - group.width) < EPS
+        && x >= free.x - EPS && x + group.width <= free.x + free.width + EPS
+        && (source !== target || before(x, free.y, group))) return { x, y: free.y, reuse: existing }
+    }
     // A free rectangle that is already owned by a header is not a place where
     // another header may start.  Doing so creates a nested header in the
     // remaining part of a section; the next free-region pass then treats that

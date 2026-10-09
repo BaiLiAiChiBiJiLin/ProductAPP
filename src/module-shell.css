@@ -8,8 +8,6 @@
 .module-view.is-leaving{z-index:1;animation-name:module-exit-forward}
 .module-stage.direction-backward .module-view.is-entering{animation-name:module-enter-backward}
 .module-stage.direction-backward .module-view.is-leaving{animation-name:module-exit-backward}
-.module-placeholder{height:100%;display:grid;place-content:center;text-align:center;color:#64748b}
-.module-placeholder h1{margin:0 0 8px;color:#1e3a5f}.module-placeholder p{margin:0}
 .workflow button{transition:color .24s ease,transform .24s ease,text-shadow .24s ease}
 .workflow button.active{transform:translateY(-1px) scale(1.04);text-shadow:0 3px 12px rgba(37,99,235,.18)}
 .workflow button.active:after{animation:workflow-indicator-in .3s cubic-bezier(.22,.8,.28,1)}

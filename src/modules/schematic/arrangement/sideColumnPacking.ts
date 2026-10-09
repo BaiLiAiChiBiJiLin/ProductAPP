@@ -1,6 +1,6 @@
-import { GROUP_GAP, HEADER_BLOCK_HEIGHT, PAPER_HEIGHT, PAPER_WIDTH, type HeaderBlock, type LayoutBounds, type Page } from '../../../model.ts'
+import { GROUP_GAP, headerColumnBounds, HEADER_BLOCK_HEIGHT, PAPER_HEIGHT, PAPER_WIDTH, type HeaderBlock, type LayoutBounds, type Page } from '../../../model.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
-import { headerFor, SECTION_EPS as EPS } from './pageSections.ts'
+import { headerFor, sharesMixedWidthRow, SECTION_EPS as EPS } from './pageSections.ts'
 
 /** Fill the third base column beside wide standees using whole, already-sized groups. */
 export function fillSideColumns(pages: Page[], bounds: LayoutBounds) {
@@ -26,10 +26,10 @@ export function fillSideColumns(pages: Page[], bounds: LayoutBounds) {
       for (const source of pages.slice(pageIndex)) {
         for (const group of [...source.imageGroups ?? []]) {
           const owner = owners.get(group)
-          if (!owner || source.imageGroups?.some(candidate => candidate.protectPageFill) || group.preventRowFill || group.protectPageFill || Math.abs(group.width - baseWidth) > EPS || (source === target && group.y < limit - EPS)) continue
-          const sourceColumnWidth = (owner.width - GROUP_GAP * (owner.columns.length - 1)) / owner.columns.length
-          const columnIndex = Math.round((group.x - owner.x) / (sourceColumnWidth + GROUP_GAP))
-          const column = owner.columns[columnIndex]
+          if (!owner || source.imageGroups?.some(candidate => candidate.protectPageFill) || group.preventRowFill || group.protectPageFill
+            || sharesMixedWidthRow(source, group) || Math.abs(group.width - baseWidth) > EPS || (source === target && group.y < limit - EPS)) continue
+          const column = headerColumnBounds(owner).find(slot => Math.abs(owner.x + slot.x - group.x) < EPS
+            && Math.abs(slot.width - group.width) < EPS)?.column
           if (!column) continue
           const needsHeader = !sideHeader || sideHeader.columns[0].imageMode !== column.imageMode
             || sideHeader.columns[0].detailLabel !== column.detailLabel || sideHeader.detailWidth !== owner.detailWidth

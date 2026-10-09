@@ -1,0 +1,10 @@
+.storage-settings{display:flex;flex-direction:column;gap:12px;padding:16px 0}
+.storage-settings>label{font-weight:600;color:#1f2937}
+.storage-settings-path{display:flex;gap:8px}
+.storage-settings-path .ant-input{min-width:0}
+.storage-settings-path>.ant-btn{flex-shrink:0}
+.storage-settings-default{display:flex;align-items:flex-start;gap:8px;color:#64748b;font-size:12px}
+.storage-settings-default>span{flex:1;overflow-wrap:anywhere}
+.storage-settings-default>.ant-btn{flex-shrink:0}
+.storage-settings>p{margin:0;color:#64748b;font-size:13px;line-height:1.7}
+.account-popover>.account-settings-button{grid-column:1 / -1;width:100%;justify-content:center}

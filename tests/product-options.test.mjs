@@ -136,3 +136,11 @@ test('selected option image is persisted per asset and cleared with the option',
   const cleared = applyProductAttributePatch(selected, { attribute: { key: 'Accessories Color', value: '' }, attributeImage: { key: 'Accessories Color', url: '' } })
   assert.deepEqual(cleared.attributeImages, {})
 })
+
+test('clearing an attribute removes the previously saved value and suppression metadata', () => {
+  const asset = { id: '1', productId: 'p', attributes: { Finish: 'old', Size: '10cm' }, attributeImages: { Finish: 'old.png' }, finishMatchDisabled: false }
+  const cleared = applyProductAttributePatch(asset, { attributes: { Size: '20cm' }, attributeImages: {}, clearAttributes: true, suppressFinishMatch: true })
+  assert.deepEqual(cleared.attributes, { Size: '20cm' })
+  assert.deepEqual(cleared.attributeImages, {})
+  assert.equal(cleared.finishMatchDisabled, true)
+})

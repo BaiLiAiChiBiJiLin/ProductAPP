@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.1.23"
+version = "0.1.24"
 description = "PrintFlow production layout desktop app"
 authors = ["PrintFlow"]
 edition = "2021"
@@ -17,6 +17,7 @@ tauri-build = { version = "2.6.3", features = [] }
 serde_json = { version = "1.0", features = ["raw_value"] }
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
+chrono = "0.4.45"
 tauri = { version = "2.11.3", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"

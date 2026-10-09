@@ -167,7 +167,7 @@ button:disabled{cursor:not-allowed;opacity:.45}
 .zoom-value{min-width:42px;text-align:center;color:#64748b;font-size:13px}
 .canvas-actions .ant-btn{display:inline-flex;align-items:center}
 .canvas-actions .ant-btn-primary{box-shadow:none}
-.canvas-head{position:relative}.canvas-title-center{position:absolute;left:50%;transform:translateX(-50%);text-align:center}.canvas-title-center h1{margin:0 0 3px}.export-format{height:30px;border:1px solid #cbd5e1;border-radius:5px;padding:0 8px;color:#334155;background:#fff;font-size:12px}
+.canvas-head{position:relative;height:auto;min-height:70px;flex:0 0 auto;flex-wrap:wrap;gap:12px;padding-block:10px}.canvas-back-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}.canvas-title-center{flex:1;min-width:160px;text-align:center}.canvas-actions{flex-shrink:0}.canvas-title-center h1{margin:0 0 3px}.export-format{height:30px;border:1px solid #cbd5e1;border-radius:5px;padding:0 8px;color:#334155;background:#fff;font-size:12px}
 
 /* 批次信息：位于图片上传区域下方，填写后随批次保存 */
 .batch-metadata{margin-top:18px;padding-top:16px;border-top:1px solid #e2e8f0;display:grid;grid-template-columns:1fr 1fr;gap:12px 14px}

@@ -31,3 +31,16 @@ test('confirmation strips hidden fields and hidden or invalid dependent values',
     assert.equal(patch.note, '备注')
   }
 })
+
+test('an explicitly cleared Finish remains suppressed from save-time matching', () => {
+  const product = { id: 'standees', title: 'Clear Acrylic Standees', options: [{ name: 'Finish', values: [{ name: 'Front Side Epoxy' }] }] }
+  const patch = catalogConfirmationPatch({ ...emptyAttributeDraft(), attributes: {}, finishMatchDisabled: true }, product)
+  assert.deepEqual(patch.attributes, {})
+  assert.equal(patch.suppressFinishMatch, true)
+})
+
+test('legacy canonical 工艺 is read as Finish and remains canonical on confirmation', () => {
+  const product = { id: 'standees', title: 'Clear Acrylic Standees', options: [{ name: 'Finish', values: [{ name: 'Front Side Epoxy' }] }] }
+  const patch = catalogConfirmationPatch({ ...emptyAttributeDraft(), attributes: { '工艺': 'Front Side Epoxy' } }, product)
+  assert.deepEqual(patch.attributes, { '工艺': 'Front Side Epoxy' })
+})

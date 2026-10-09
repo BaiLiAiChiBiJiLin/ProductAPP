@@ -12,6 +12,8 @@ export type ProductAttributePatch = {
   attributeImage?: { key: string; url: string }
   note?: string
   noteImage?: string
+  /** Prevent the save-time Finish matcher from restoring an explicitly cleared value. */
+  suppressFinishMatch?: boolean
 }
 
 export type CommonSelectionValues = { productId?: string; attributes: Record<string, string>; attributeImages: Record<string, string> }
@@ -107,5 +109,6 @@ export function applyProductAttributePatch(asset: Asset, patch: ProductAttribute
     attributeImages: applyAttributeImages(asset.attributeImages, patch),
     ...(patch.note !== undefined ? { note: patch.note } : {}),
     ...(patch.noteImage !== undefined ? { noteImage: patch.noteImage } : {}),
+    ...(patch.suppressFinishMatch !== undefined ? { finishMatchDisabled: patch.suppressFinishMatch } : {}),
   }
 }

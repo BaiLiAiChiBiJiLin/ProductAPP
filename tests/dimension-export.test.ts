@@ -2,6 +2,7 @@ import { beforeEach, expect, test, vi } from 'vitest'
 import type { Asset, Page } from '../src/model'
 import { exportPdf, exportPage } from '../src/modules/schematic/services/exportService'
 import type { DimensionDisplayOverride } from '../src/modules/schematic/services/imageDimensionService'
+import { paginateAssets } from '../src/modules/schematic/services/paginationService'
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), unlisten: vi.fn() }))
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true, invoke: mocks.invoke }))
@@ -69,4 +70,27 @@ test('PDF display settings are applied after unit conversion and width selection
     { sizes: ['Size: 5 cm'], rulers: ['5 cm'] },
     { sizes: ['Size: 1.175 in'], rulers: ['1.175 in'] },
   ])
+})
+
+test.each([undefined, 0, 2])('standee PDF uses the adjusted main height and unadjusted base with %s decimals', async decimals => {
+  const entries: Asset[] = ['main', 'base'].map((id, index) => ({ ...asset, id, productName: 'Clear Acrylic Standees',
+    productGroupId: 'standee', productGroupPosition: index + 1, attributes: { Size: '40 mm' } }))
+  const pages = paginateAssets(entries)
+  const before = JSON.stringify({ entries, pages })
+  const overrides = decimals === undefined ? undefined : new Map<string, DimensionDisplayOverride>([
+    ['item-main', { decimalPlaces: decimals, precision: 'default' }],
+  ])
+  await exportPdf(pages, entries, 'standee.pdf', {}, undefined, overrides)
+  const [, payload] = mocks.invoke.mock.calls.find(([command]) => command === 'stage_pdf_page')!
+  const expected = decimals === 0 ? '36 mm' : decimals === 2 ? '36.60 mm' : '36.6 mm'
+  expect(exportedLabels(payload.svg)).toEqual({ sizes: [`Size: ${expected}`], rulers: [expected, '40.0 mm'] })
+  const document = new DOMParser().parseFromString(payload.svg, 'image/svg+xml')
+  for (const item of pages[0].items) {
+    const marker = document.querySelector(`[data-item-id="${item.id}"]`)!
+    const lines = marker.querySelectorAll('line')
+    const ratio = item.assetId === 'main' ? 36.6 / 40 : 1
+    expect(Number(lines[0].getAttribute('y1'))).toBeCloseTo(item.y - item.h / 2)
+    expect(Number(lines[1].getAttribute('y1'))).toBeCloseTo(item.y - item.h / 2 + item.h * ratio)
+  }
+  expect(JSON.stringify({ entries, pages })).toBe(before)
 })

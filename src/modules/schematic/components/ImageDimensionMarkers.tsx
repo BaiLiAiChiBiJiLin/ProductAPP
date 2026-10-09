@@ -26,7 +26,7 @@ function pointerInParent(node: KonvaNode) {
 
 function rangeAfterEndpoint(marker: ImageDimensionMarkerLayout, endpoint: 'start' | 'end', coordinate: number): RulerRange {
   const length = Math.max(1, marker.imageEnd - marker.imageStart)
-  const ratio = clamp((coordinate - marker.imageStart) / length, 0, 1)
+  const ratio = clamp((coordinate - marker.imageStart) / length, 0, marker.rangeMax)
   return endpoint === 'start'
     ? [Math.min(ratio, marker.range[1] - RULER_MIN_RANGE), marker.range[1]]
     : [marker.range[0], Math.max(ratio, marker.range[0] + RULER_MIN_RANGE)]
@@ -34,7 +34,7 @@ function rangeAfterEndpoint(marker: ImageDimensionMarkerLayout, endpoint: 'start
 
 function rangeAfterShift(marker: ImageDimensionMarkerLayout, delta: number): RulerRange {
   const length = Math.max(1, marker.imageEnd - marker.imageStart)
-  const shift = clamp(delta / length, -marker.range[0], 1 - marker.range[1])
+  const shift = clamp(delta / length, -marker.range[0], marker.rangeMax - marker.range[1])
   return [marker.range[0] + shift, marker.range[1] + shift]
 }
 
@@ -70,6 +70,7 @@ function RulerArrow({ marker, endpoint, onPreview, onCommit }: RulerHandleProps)
   const coordinate = endpoint === 'start' ? (horizontal ? marker.x1 : marker.y1) : (horizontal ? marker.x2 : marker.y2)
   const fixed = horizontal ? marker.y1 : marker.x1
   const minSpan = Math.max(1, Math.abs(marker.imageEnd - marker.imageStart) * RULER_MIN_RANGE)
+  const limitEnd = marker.imageStart + (marker.imageEnd - marker.imageStart) * marker.rangeMax
   const origin = useRef({ x: horizontal ? coordinate : fixed, y: horizontal ? fixed : coordinate })
   const baseMarker = useRef(marker)
   const pendingRange = useRef<RulerRange>(marker.range)
@@ -87,11 +88,11 @@ function RulerArrow({ marker, endpoint, onPreview, onCommit }: RulerHandleProps)
     return boundInParent(this, next, local => {
       if (horizontal) {
         const minimum = endpoint === 'start' ? marker.imageStart : marker.x1 + minSpan
-        const maximum = endpoint === 'start' ? marker.x2 - minSpan : marker.imageEnd
+        const maximum = endpoint === 'start' ? marker.x2 - minSpan : limitEnd
         return { x: clamp(local.x, minimum, maximum), y: fixed }
       }
       const minimum = endpoint === 'start' ? marker.imageStart : marker.y1 + minSpan
-      const maximum = endpoint === 'start' ? marker.y2 - minSpan : marker.imageEnd
+      const maximum = endpoint === 'start' ? marker.y2 - minSpan : limitEnd
       return { x: fixed, y: clamp(local.y, minimum, maximum) }
     })
   }} onDragMove={event => {
@@ -149,7 +150,8 @@ function Marker({ marker, onChangeRuler }: { marker: ImageDimensionMarkerLayout;
     if (onChangeRuler) applyRange(marker, range, onChangeRuler)
   }
   const horizontal = displayMarker.axis === 'width'
-  const labelMovable = displayMarker.range[0] > 0.0001 || displayMarker.range[1] < 0.9999
+  const defaultRange = displayMarker.range[0] < 0.0001 && Math.abs(displayMarker.range[1] - 1) < 0.0001
+  const labelMovable = !defaultRange && displayMarker.range[1] - displayMarker.range[0] < displayMarker.rangeMax - 0.0001
   return <Group key={marker.itemId} name={`image-dimension-${marker.itemId}`} listening={Boolean(onChangeRuler)}>
     {displayMarker.extension.map(([x1, y1, x2, y2], index) => <Line key={`extension-${index}`} points={[x1, y1, x2, y2]} stroke="#2f6fa3" strokeWidth={0.8} listening={false}/>) }
     {horizontal

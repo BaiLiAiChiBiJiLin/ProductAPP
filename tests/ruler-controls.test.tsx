@@ -8,13 +8,15 @@ vi.mock('../src/modules/schematic/components/ProductAttributesPanel',()=>({defau
 vi.mock('../src/modules/schematic/components/AssetPool',()=>({default:()=>null}))
 vi.mock('../src/modules/schematic/components/PageThumbnail',()=>({default:()=>null}))
 import ArrangePage from '../src/modules/schematic/ArrangePage'
+import { emptyArrangementDisplayState } from '../src/modules/schematic/services/arrangementDisplayState'
 afterEach(cleanup)
 const asset={id:'a',name:'a',productId:'a',width:100,height:200,svg:'<svg/>',previewUrl:'',thumbnailUrl:''}
 const noop=()=>{}
 function Harness({ onExport = noop }: { onExport?: React.ComponentProps<typeof ArrangePage>['onExport'] }){
+ const [displayState,setDisplayState]=useState(emptyArrangementDisplayState)
  const [pages,setPages]=useState(()=>paginateAssets([asset])); const [selected,setSelected]=useState<string|null>(pages[0].items[0].id)
  const update=(next:Item)=>setPages([{...pages[0],items:[next]}])
- return <><button onClick={()=>setSelected(null)}>取消图片选择</button><output>{JSON.stringify(pages[0].items[0])}</output><ArrangePage context={null} assets={[asset]} pages={pages} activePage={1} selectedItem={selected} selectedGroupIds={[]} sortMode="default" onSelectPage={noop} onSelectItem={setSelected} onChangeItem={update} onDropAsset={noop} onDeleteGroups={noop} onConfirmAssetAttributes={async()=>{}} onAddPage={noop} onAutoArrange={noop} onCombine={noop} onSelectGroup={noop} onBack={noop} onExport={onExport} onMetadataChange={noop} layoutBounds={defaultLayoutBounds} onBoundsChange={noop} onAddHeaderBlock={noop} onChangeHeaderBlock={noop} onRemoveHeaderBlock={noop}/></>
+ return <><button onClick={()=>setSelected(null)}>取消图片选择</button><output>{JSON.stringify(pages[0].items[0])}</output><ArrangePage displayState={displayState} onDisplayStateChange={setDisplayState} context={null} assets={[asset]} pages={pages} activePage={1} selectedItem={selected} selectedGroupIds={[]} sortMode="default" onSelectPage={noop} onSelectItem={setSelected} onChangeItem={update} onDropAsset={noop} onDeleteGroups={noop} onConfirmAssetAttributes={async()=>{}} onAddPage={noop} onAutoArrange={noop} onCombine={noop} onSelectGroup={noop} onBack={noop} onBackToHistory={noop} onExport={onExport} onMetadataChange={noop} layoutBounds={defaultLayoutBounds} onBoundsChange={noop} onAddHeaderBlock={noop} onChangeHeaderBlock={noop} onRemoveHeaderBlock={noop}/></>
 }
 it('selected image unit and independent dimension controls update the item; deselection disables editing',()=>{
  render(<Harness/>);

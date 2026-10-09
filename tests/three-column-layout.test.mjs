@@ -45,7 +45,7 @@ test('a sticker product page never receives another product during blank-space p
  }
 })
 
-test('photo holder roles share a longest edge and no member is enlarged', () => {
+test('photo holder roles retain compressed size differences and their original aspect ratios', () => {
  for (const name of ['Photocard Holders','照片夹']) {
   const sources=['Example','Front','Inside','Back','extra'].map((id,i)=>({...asset(id,name,{},'holder'),width:300-i*30,height:60,sourceGroupWidthMm:75-i*7.5,sourceGroupHeightMm:15}))
   const [page]=paginateAssets(sources)
@@ -57,10 +57,11 @@ test('photo holder roles share a longest edge and no member is enlarged', () => 
    assert.ok(Math.abs(item.x-(group.x+(index+0.5)*group.width/3))<1e-7)
    assert.ok(group.y+group.detailsHeight<=cell.y+1e-7)
   }
-  for(const item of roles) assert.ok(Math.abs(Math.max(item.w,item.h)-Math.max(roles[0].w,roles[0].h))<1e-7)
+  for(const item of roles) assert.ok(Math.abs(item.w / roles[0].w - Math.sqrt(sources.find(source=>source.id===item.assetId).sourceGroupWidthMm / sources[0].sourceGroupWidthMm))<1e-7)
   for(const item of page.items) {
    const source=sources.find(s=>s.id===item.assetId)
-   assert.ok(item.w<=source.sourceGroupWidthMm*PAPER_WIDTH/210+1e-7)
+   const cell=group.imageCells.find(cell=>cell.itemId===item.id)
+   assert.ok(item.w<=cell.width && item.h<=cell.height)
    assert.ok(Math.abs(item.w/item.h-source.width/source.height)<1e-7)
   }
  }
@@ -174,14 +175,14 @@ test('v2 ordinary arrangement uses three columns and fits proportionally within 
  assert.equal(pages.flatMap(p=>p.items).length,20)
 })
 
-test('wide artwork fills available width while ruler and physical label stay inside the group', () => {
+test('small wide artwork fills its cell while ruler and physical label stay inside the group', () => {
  const source = { ...asset('wide'), width: 20, height: 10, sourceGroupWidthMm: 5, sourceGroupHeightMm: 2.5 }
  const [page] = paginateAssets([source])
  const item = page.items[0], cell = page.imageGroups[0].imageCells[0]
- assert.ok(Math.abs(item.w - (cell.width - 4)) < 1e-7)
- assert.ok(Math.abs(item.x + item.w / 2 - page.imageGroups[0].detailsX) < 1e-7)
+ assert.ok(item.w <= cell.width - 4)
+ assert.ok(item.x + item.w / 2 <= page.imageGroups[0].detailsX)
  assert.equal(item.w / item.h, 2)
- assert.ok(item.w > 5 * PAPER_WIDTH / 210)
+ assert.ok(Math.abs(item.w - (cell.width - 4)) < 1e-7)
  const marker = imageDimensionMarkerLayout(dimensionGroups(page)[0], page, new Map([[source.id, source]]))
  assert.equal(marker.label, '5.0 mm')
  assert.ok(marker.x1 >= cell.x && marker.x2 <= cell.x + cell.width)
@@ -277,21 +278,22 @@ test('v2 chains keep details right and arrange horizontal front/back pairs',()=>
  for(const item of page.items) assert.ok(item.x+item.w/2<=g.detailsX)
  assert.equal(page.items.filter(i=>i.derivedFrom).length,3)
 })
-test('v2 chains keep each front/back pair equal while normalizing large source-size differences',()=>{
+test('chains keep each front/back pair equal while preserving large source-size differences',()=>{
  const makeChain=(id,width,height,option)=>({...asset(id,'串串',{'Print Option':option},'g'),width,height})
  const assets=[makeChain('small',80,80,'Double Sided Different Design'),makeChain('large',300,300,'Double Sided Different Design'),makeChain('medium',150,110,'Double Sided Same Design')]
  const [page]=paginateAssets(assets); const pairs=page.items.filter(item=>item.derivedFrom)
  for(const back of pairs){const front=page.items.find(item=>item.id===back.derivedFrom);assert.ok(front);assert.equal(back.w,front.w);assert.equal(back.h,front.h)}
  const originals=page.items.filter(item=>!item.derivedFrom)
- assert.ok(originals[1].w / originals[0].w < 2, 'large source should remain visually close instead of dominating the row')
+ assert.ok(Math.abs(originals[0].w / originals[1].w - 0.7) < 1e-7, 'real differences remain visible without making the small member unreadable')
  assert.ok(originals.every(item=>item.w>0 && item.h>0))
 })
-test('near-equal chain members share one visual longest edge', () => {
+test('near-equal chain members retain gentle differences in their visual longest edges', () => {
  const makeChain = (id, size) => ({...asset(id, '串串', {}, 'g'), width: size, height: size})
  const [page] = paginateAssets([makeChain('small', 100), makeChain('middle', 106), makeChain('large', 112)])
  const originals = page.items.filter(item => !item.derivedFrom)
  const longest = originals.map(item => Math.max(item.w, item.h))
- assert.ok(Math.max(...longest) - Math.min(...longest) < 1e-7, 'near-equal members should use the same visual scale')
+ assert.ok(Math.abs(longest[1]/longest[0]-Math.sqrt(106/100)) < 1e-7)
+ assert.ok(Math.abs(longest[2]/longest[0]-Math.sqrt(112/100)) < 1e-7)
 })
 test('chain scale uses measured source size when the SVG viewport has extra space', () => {
  const sized = (id, width, height) => ({...asset(id, '串串', {}, 'g'), width, height, sourceGroupWidthMm: 42, sourceGroupHeightMm: 42})
@@ -427,7 +429,7 @@ test('backfill reuses an empty ordinary column before adding page-tail sections'
   for(const other of page.imageGroups) if(group!==other) assert.ok(group.x+group.width<=other.x+1e-7 || other.x+other.width<=group.x+1e-7 || group.y+group.height<=other.y+1e-7 || other.y+other.height<=group.y+1e-7)
  }
 })
-test('later fitting groups backfill earlier pages without shrinking or losing headers', () => {
+test('later fitting groups backfill earlier pages while retaining headers and fitting their own image cells', () => {
  const ordinary=Array.from({length:5},(_,i)=>asset('o'+i,'Keychains',{'Print Option':'Double Sided Different Design'}))
  const holder=['Example','Front','Inside','Back'].map(id=>asset(id,'Shaker',{},'h'))
  const chain=[{...asset('small','串串',{},'c'),width:80,height:80,sourceGroupWidthMm:20,sourceGroupHeightMm:20}]
@@ -436,7 +438,8 @@ test('later fitting groups backfill earlier pages without shrinking or losing he
  const g=pages[0].imageGroups.find(g=>g.itemIds.includes('item-small'))
  assert.ok(pages[0].headerBlocks.some(h=>h.y<g.y && h.columns.length===3))
  assert.equal(pages.flatMap(p=>p.items).filter(i=>i.assetId==='small').length,1)
- assert.equal(pages[0].items.find(i=>i.assetId==='small').h,20*PAPER_WIDTH/210)
+ const item = pages[0].items.find(i=>i.assetId==='small'), cell=g.imageCells.find(cell=>cell.itemId===item.id)
+ assert.ok(Math.abs(item.h-Math.min(cell.width-9,cell.height-28))<1e-7)
 })
 
 test('same-design chains use three group columns; different-design chains use two', () => {
@@ -479,7 +482,7 @@ test('Size and QT export at the same font size with unbroken values in every uni
  }
 })
 
-test('Shaker keeps original-size cap and default role layout for every member', () => {
+test('Shaker enlarges small artwork to fit while retaining its default role layout', () => {
  for (const name of ['Shaker','摇摇乐']) {
   const assets=['Example','Front','Inside','Back','extra'].map(id=>({...asset(id,name,{},'shaker'),width:40,height:20,sourceGroupWidthMm:10,sourceGroupHeightMm:5}))
   const [page]=paginateAssets(assets)
@@ -493,8 +496,9 @@ test('Shaker keeps original-size cap and default role layout for every member', 
    assert.ok(group.y+group.detailsHeight<=cell.y+1e-7)
   }
   for(const item of page.items) {
-   assert.ok(item.w<=10*PAPER_WIDTH/210+1e-7)
-   assert.ok(item.h<=5*PAPER_WIDTH/210+1e-7)
+   const cell=group.imageCells.find(cell=>cell.itemId===item.id)
+   assert.ok(item.w>10*PAPER_WIDTH/210)
+   assert.ok(item.w<=cell.width && item.h<=cell.height)
    assert.ok(Math.abs(item.w/item.h-2)<1e-7)
   }
  }

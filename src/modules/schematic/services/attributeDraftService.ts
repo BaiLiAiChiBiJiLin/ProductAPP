@@ -2,8 +2,8 @@ import type { Asset } from '../../../model'
 import type { ProductConfig } from './productConfigService'
 import { availableOptionValues, type ProductAttributePatch } from './productOptionRules.ts'
 
-export type AttributeDraft = { productId: string; attributes: Record<string, string>; images: Record<string, string>; note: string; noteImage: string }
-export const emptyAttributeDraft = (): AttributeDraft => ({ productId: '', attributes: {}, images: {}, note: '', noteImage: '' })
+export type AttributeDraft = { productId: string; attributes: Record<string, string>; images: Record<string, string>; note: string; noteImage: string; finishMatchDisabled?: boolean }
+export const emptyAttributeDraft = (): AttributeDraft => ({ productId: '', attributes: {}, images: {}, note: '', noteImage: '', finishMatchDisabled: false })
 
 /** A blank asset inherits the previous form without changing any asset. */
 export function readSelectionDraft(previous: AttributeDraft, selected: Asset[]): AttributeDraft {
@@ -18,7 +18,8 @@ export function readSelectionDraft(previous: AttributeDraft, selected: Asset[]):
   for (const key of imageKeys) if (selected.every(asset => (asset.attributeImages?.[key] ?? '') === (first.attributeImages?.[key] ?? ''))) images[key] = first.attributeImages?.[key] ?? ''
   return { productId: first.productId, attributes: selected.length === 1 ? { ...first.attributes } : attributes, images: selected.length === 1 ? { ...first.attributeImages } : images,
     note: selected.every(asset => (asset.note ?? '') === (first.note ?? '')) ? first.note ?? '' : previous.note,
-    noteImage: selected.every(asset => (asset.noteImage ?? '') === (first.noteImage ?? '')) ? first.noteImage ?? '' : previous.noteImage }
+    noteImage: selected.every(asset => (asset.noteImage ?? '') === (first.noteImage ?? '')) ? first.noteImage ?? '' : previous.noteImage,
+    finishMatchDisabled: selected.length === 1 ? Boolean(first.finishMatchDisabled) : previous.finishMatchDisabled }
 }
 
 /** Hidden or invalid dependent values cannot be confirmed from a stale draft. */
@@ -36,7 +37,8 @@ export function catalogConfirmationPatch(draft: AttributeDraft, product: Product
     changed = false
     for (const option of product.options) {
       if (resolvedOptions.has(option.name)) continue
-      const selected = availableOptionValues(option, selections).find(value => value.name === draft.attributes[option.name])
+      const draftValue = draft.attributes[option.name] ?? (option.name.trim().toLowerCase() === 'finish' ? draft.attributes['工艺'] : undefined)
+      const selected = availableOptionValues(option, selections).find(value => value.name === draftValue)
       if (!selected) continue
       resolvedOptions.add(option.name)
       selections[option.name] = selected.name
@@ -44,11 +46,11 @@ export function catalogConfirmationPatch(draft: AttributeDraft, product: Product
       // canvas uses the canonical `工艺` field. Keep one stored value.
       const targetKey = option.name.trim().toLowerCase() === 'finish' ? '工艺' : option.name
       attributes[targetKey] = selected.name
-      const image = draft.images[option.name] || selected.image || option.image
+      const image = draft.images[option.name] || (option.name.trim().toLowerCase() === 'finish' ? draft.images['工艺'] : '') || selected.image || option.image
       if (image) attributeImages[targetKey] = image
       changed = true
     }
   }
   if (draft.attributes.QT) attributes.QT = draft.attributes.QT
-  return { productId: product.id, productName: product.title, attributes, attributeImages, clearAttributes: true, note: draft.note, noteImage: draft.noteImage }
+  return { productId: product.id, productName: product.title, attributes, attributeImages, clearAttributes: true, note: draft.note, noteImage: draft.noteImage, suppressFinishMatch: Boolean(draft.finishMatchDisabled) }
 }

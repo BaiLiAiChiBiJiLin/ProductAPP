@@ -55,7 +55,7 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
       setDraft(next)
       const isCustom = next.productId.startsWith('custom:')
       setMode(isCustom ? 'custom' : 'existing')
-      if (isCustom) setCustom({ id: Number(next.productId.slice(7)), name: selected[0]?.productName ?? '', size: next.attributes.Size ?? '', printOption: next.attributes['Print Option'] ?? '', finish: next.attributes.Finish ?? '', accessoryColor: next.attributes['Accessories Color'] ?? '', accessoryColorImage: next.images['Accessories Color'] ?? '', qt: next.attributes.QT?.trim() ? Number(next.attributes.QT) : null, attributes: { ...next.attributes }, attributeImages: { ...next.images } })
+      if (isCustom) setCustom({ id: Number(next.productId.slice(7)), name: selected[0]?.productName ?? '', size: next.attributes.Size ?? '', printOption: next.attributes['Print Option'] ?? '', finish: next.attributes.Finish ?? '', accessoryColor: next.attributes['Accessories Color'] ?? '', accessoryColorImage: next.images['Accessories Color'] ?? '', qt: next.attributes.QT?.trim() ? Number(next.attributes.QT) : null, attributes: { ...next.attributes }, attributeImages: { ...next.images }, finishMatchDisabled: Boolean(next.finishMatchDisabled) })
     } else if (!session && selected.length === 1 && (selected[0].note || selected[0].noteImage)) {
       // Notes remain independent when a product has been cleared from an image.
       setDraft({ ...draft, note: selected[0].note ?? '', noteImage: selected[0].noteImage ?? '' })
@@ -86,8 +86,10 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
   const contiguous = indexes.every((value, i) => i === 0 || value === indexes[i - 1] + 1)
   const selectionLabel = indexes.length === 0 ? '未选择图片' : indexes.length === 1 ? `选中了第 ${indexes[0]} 张图` : contiguous ? `选中了第 ${indexes[0]} 张图到第 ${indexes.at(-1)} 张图` : `选中了 ${indexes.map(i => `第 ${i} 张图`).join('，')}`
   const changeOption = (name: string, value: string, image?: string) => {
-    const patch: ProductAttributePatch = { attribute: { key: name, value }, ...(name === 'QT' ? {} : { attributeImage: { key: name, url: image ?? '' }, clearAttributeKeys: dependentOptionNames(product?.options ?? [], name) }) }
-    const next = { ...editor, draft: { ...draft, attributes: applyAttributeValues(draft.attributes, patch), images: applyAttributeImages(draft.images, patch) } }
+    const finishKey = /^(finish|工艺|表面)$/i.test(name.trim())
+    const clearKeys = name === 'QT' ? [] : [...dependentOptionNames(product?.options ?? [], name), ...(finishKey ? ['Finish', '工艺', '表面'] : [])]
+    const patch: ProductAttributePatch = { attribute: { key: name, value }, ...(name === 'QT' ? {} : { attributeImage: { key: name, url: image ?? '' }, clearAttributeKeys: clearKeys }) }
+    const next = { ...editor, draft: { ...draft, attributes: applyAttributeValues(draft.attributes, patch), images: applyAttributeImages(draft.images, patch), ...(finishKey ? { finishMatchDisabled: !value } : {}) } }
     changeEditor(next, name !== 'QT')
     const content = standeeQuantityNotice(product, name, value, draft.attributes)
     if (content && !groupingTrigger(next, products)) void notice.info({ key: 'standee-quantity', content, duration: 5 })
@@ -122,8 +124,8 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
           message={products.length ? '产品配置更新失败，当前使用本地缓存' : '产品配置不可用'}
           description={<><div>{configError || '本地没有可用的产品配置，请刷新从接口重新获取。'}</div><Button style={{ marginTop: 8 }} disabled={refreshing || loading} icon={refreshing ? <Loading size="small" inline/> : undefined} onClick={() => void refresh()}>{refreshing ? '正在刷新…' : '刷新产品配置'}</Button></>}/>} 
         <div className="product-config-form">
-          <label className="product-config-field"><span>产品</span><Select aria-label="产品" showSearch optionFilterProp="label" disabled={!selected.length || loading || locked} placeholder="请选择产品" value={product?.id} options={products.map(item => ({ value: item.id, label: item.title }))} onChange={id => changeEditor({ ...editor, draft: { ...draft, productId: id, attributes: {}, images: {} } }, true)}/></label>
-          {product?.options.map(option => { const values = availableOptionValues(option, draft.attributes); return values.length ? <ProductOptionField key={`${product.id}:${option.name}`} option={option} values={values} value={draft.attributes[option.name]} imageOverride={draft.images[option.name]} disabled={!selected.length || (locked && lockedOptions.has(option.name))} onChange={(value, image) => changeOption(option.name, value, image)}/> : null })}
+          <label className="product-config-field"><span>产品</span><Select aria-label="产品" showSearch optionFilterProp="label" disabled={!selected.length || loading || locked} placeholder="请选择产品" value={product?.id} options={products.map(item => ({ value: item.id, label: item.title }))} onChange={id => changeEditor({ ...editor, draft: { ...draft, productId: id, attributes: {}, images: {}, finishMatchDisabled: false } }, true)}/></label>
+          {product?.options.map(option => { const values = availableOptionValues(option, draft.attributes); const value = draft.attributes[option.name] ?? (option.name.trim().toLowerCase() === 'finish' ? draft.attributes['工艺'] : undefined); const image = draft.images[option.name] ?? (option.name.trim().toLowerCase() === 'finish' ? draft.images['工艺'] : undefined); return values.length ? <ProductOptionField key={`${product.id}:${option.name}`} option={option} values={values} value={value} imageOverride={image} disabled={!selected.length || (locked && lockedOptions.has(option.name))} onChange={(nextValue, nextImage) => changeOption(option.name, nextValue, nextImage)}/> : null })}
           <label className="product-config-field"><span>QT（数量）</span><InputNumber aria-label="QT（数量）" disabled={!selected.length} min={0} max={2147483647} precision={0} value={draft.attributes.QT ? Number(draft.attributes.QT) : undefined} onChange={value => changeOption('QT', value == null ? '' : String(value))}/></label>
         </div>
       </div>

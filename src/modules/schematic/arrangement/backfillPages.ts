@@ -1,13 +1,14 @@
-import { GROUP_GAP, HEADER_BLOCK_HEIGHT, PAPER_HEIGHT, type LayoutBounds, type Page, type HeaderBlock } from '../../../model.ts'
+import { GROUP_GAP, headerColumnBounds, HEADER_BLOCK_HEIGHT, PAPER_HEIGHT, type LayoutBounds, type Page, type HeaderBlock } from '../../../model.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
-import { headerFor, horizontallyOverlaps } from './pageSections.ts'
+import { headerFor, horizontallyOverlaps, sharesMixedWidthRow } from './pageSections.ts'
 import { fillSideColumns } from './sideColumnPacking.ts'
 
 const EPS = 1e-7
 function compatible(header: HeaderBlock, source: HeaderBlock) {
   return header.columns.length === source.columns.length
     && Math.abs(header.width - source.width) < EPS
-    && header.columns.every((column, index) => column.imageMode === source.columns[index].imageMode && column.detailLabel === source.columns[index].detailLabel)
+    && header.columns.every((column, index) => column.imageMode === source.columns[index].imageMode && column.detailLabel === source.columns[index].detailLabel
+      && (column.span ?? 1) === (source.columns[index].span ?? 1))
     && Math.abs((header.detailWidth ?? 0) - (source.detailWidth ?? 0)) < EPS
 }
 function overlaps(x: number, y: number, group: ImageGroup, other: ImageGroup) {
@@ -33,11 +34,15 @@ export function compactPageSections(page: Page, bounds: LayoutBounds) {
       if (row && Math.abs(row[0].y - group.y) < EPS) row.push(group)
       else rows.push([group])
     }
-    const columnWidth = (header.width - GROUP_GAP * (header.columns.length - 1)) / header.columns.length
+    const columns = headerColumnBounds(header)
     for (const row of rows) {
       const height = Math.max(...row.map(group => group.height))
-      row.forEach((group, index) => {
-        const x = header.x + index * (columnWidth + GROUP_GAP)
+      let nextX = 0
+      row.forEach(group => {
+        // A wide group cannot be compacted into the narrow slot of a mixed header.
+        const slot = columns.find(column => column.x >= nextX - EPS && Math.abs(column.width - group.width) < EPS)
+        const x = slot ? header.x + slot.x : group.x
+        nextX = x - header.x + group.width + GROUP_GAP
         const dx = x - group.x, dy = nextY - group.y
         const ids = new Set(group.itemIds)
         for (const item of page.items) if (ids.has(item.id)) { item.x += dx; item.y += dy }
@@ -61,7 +66,7 @@ export function backfillPages(pages: Page[], bounds: LayoutBounds): Page[] {
     if (source.imageGroups?.some(group => group.protectPageFill)) continue
     for (const group of [...source.imageGroups ?? []]) {
       const sourceHeader = headerFor(source, group)
-      if (!sourceHeader || group.protectPageFill) continue
+      if (!sourceHeader || group.protectPageFill || sharesMixedWidthRow(source, group)) continue
       for (const target of pages.slice(0, sourceIndex)) {
         if (target.imageGroups?.some(candidate => candidate.protectPageFill)) continue
         const groups = target.imageGroups ?? []
@@ -72,16 +77,16 @@ export function backfillPages(pages: Page[], bounds: LayoutBounds): Page[] {
           if (!compatible(header, sourceHeader)) continue
           const limit = headers[index + 1]?.y ?? bottom
           const ys = new Set([header.y + HEADER_BLOCK_HEIGHT + GROUP_GAP, ...groups.filter(g => headerFor(target, g) === header).map(g => g.y)])
-          const columnWidth = (header.width - GROUP_GAP * (header.columns.length - 1)) / header.columns.length
+          const columns = headerColumnBounds(header)
           for (const y of ys) {
             // A partially occupied row at a product boundary is deliberate;
             // keep its empty columns instead of mixing the next product in.
             const rowGroups = groups.filter(g => headerFor(target, g) === header && Math.abs(g.y - y) < EPS)
             if (rowGroups.some(g => g.preventRowFill
               || (g.productKey && group.productKey && g.productKey !== group.productKey))) continue
-            for (let col = 0; col < header.columns.length; col++) {
-              const x = header.x + col * (columnWidth + GROUP_GAP)
-              if (group.width > columnWidth + EPS || y + group.height > limit - (headers[index + 1] ? GROUP_GAP : 0) + EPS) continue
+            for (const column of columns) {
+              const x = header.x + column.x
+              if (Math.abs(group.width - column.width) > EPS || y + group.height > limit - (headers[index + 1] ? GROUP_GAP : 0) + EPS) continue
               if (!groups.some(other => overlaps(x, y, group, other))) { placement = { x, y }; break }
             }
           }
@@ -92,8 +97,10 @@ export function backfillPages(pages: Page[], bounds: LayoutBounds): Page[] {
           const tail = Math.max(bounds.top, ...groups.map(g => g.y + g.height), ...headers.map(h => h.y + HEADER_BLOCK_HEIGHT)) + GROUP_GAP
           const needsHeader = !lastHeader || !compatible(lastHeader, sourceHeader)
           const y = tail + (needsHeader ? HEADER_BLOCK_HEIGHT + GROUP_GAP : 0)
-          if (y + group.height <= bottom + EPS) placement = { x: bounds.left, y,
-            header: needsHeader ? { ...sourceHeader, id: `backfill-${target.id}-${group.id}`, x: bounds.left, y: tail } : undefined }
+          const header = needsHeader ? { ...sourceHeader, id: `backfill-${target.id}-${group.id}`, x: bounds.left, y: tail } : lastHeader!
+          const column = headerColumnBounds(header).find(column => Math.abs(column.width - group.width) < EPS)
+          if (column && y + group.height <= bottom + EPS) placement = { x: header.x + column.x, y,
+            header: needsHeader ? header : undefined }
         }
         if (!placement) continue
         const dx = placement.x - group.x, dy = placement.y - group.y

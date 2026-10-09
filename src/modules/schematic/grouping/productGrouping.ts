@@ -42,7 +42,7 @@ export function groupingTrigger(editor: GroupEditor, products: ProductConfig[]):
 export const fixedGroupSlotLabels = (kind: GroupTrigger['kind']): string[] | null =>
   kind === 'shaker' || kind === 'photo-holder' ? ['Example', 'Front', 'inside', 'Back'] : null
 
-/** Sorting follows the current product, even if the guide began as a free group. */
+/** Fixed captions follow the current product; ordinary groups can reorder without them. */
 export function groupSlotLabels(session: ProductGroupSession, products: ProductConfig[]): string[] | null {
   if (session.trigger.kind !== 'free') return fixedGroupSlotLabels(session.trigger.kind)
   for (const id of session.memberIds) {
@@ -102,8 +102,8 @@ export function inheritGroupIdentity(editor: GroupEditor, leader: GroupEditor, p
 export function readGroupAssetEditor(asset: Asset): GroupEditor {
   return {
     mode: asset.productId.startsWith('custom:') ? 'custom' : 'existing',
-    draft: { productId: asset.productId, attributes: { ...asset.attributes }, images: { ...asset.attributeImages }, note: asset.note ?? '', noteImage: asset.noteImage ?? '' },
-    custom: { id: Number(asset.productId.slice(7)) || null, name: asset.productName ?? '', size: asset.attributes?.Size ?? '', printOption: asset.attributes?.['Print Option'] ?? '', finish: asset.attributes?.Finish ?? '', accessoryColor: asset.attributes?.['Accessories Color'] ?? '', accessoryColorImage: asset.attributeImages?.['Accessories Color'] ?? '', qt: asset.attributes?.QT?.trim() ? Number(asset.attributes.QT) : null, attributes: { ...asset.attributes }, attributeImages: { ...asset.attributeImages } },
+    draft: { productId: asset.productId, attributes: { ...asset.attributes }, images: { ...asset.attributeImages }, note: asset.note ?? '', noteImage: asset.noteImage ?? '', finishMatchDisabled: Boolean(asset.finishMatchDisabled) },
+    custom: { id: Number(asset.productId.slice(7)) || null, name: asset.productName ?? '', size: asset.attributes?.Size ?? '', printOption: asset.attributes?.['Print Option'] ?? '', finish: asset.attributes?.Finish ?? '', accessoryColor: asset.attributes?.['Accessories Color'] ?? '', accessoryColorImage: asset.attributeImages?.['Accessories Color'] ?? '', qt: asset.attributes?.QT?.trim() ? Number(asset.attributes.QT) : null, attributes: { ...asset.attributes }, attributeImages: { ...asset.attributeImages }, finishMatchDisabled: Boolean(asset.finishMatchDisabled) },
   }
 }
 

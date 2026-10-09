@@ -12,6 +12,7 @@ const session = { id: 'group', color: '#d9f7be', leaderId: '1', activeId: '2', m
     mode: 'custom', draft: { productId: asset.productId, attributes: { ...asset.attributes }, images: { ...asset.attributeImages }, note: asset.note, noteImage: asset.noteImage },
     custom: { ...emptyCustomProduct(), id: 4, name: '摇摇乐', size: asset.attributes.Size, qt: Number(asset.id) },
   }])) }
+const withoutGroupPosition = ({ productGroupPosition, ...asset }) => asset
 
 test('removal clears only the removed image product data and keeps the artwork and independent notes', () => {
   const next = removeProductGroupMember(assets, session, '2', [])
@@ -26,8 +27,8 @@ test('removal clears only the removed image product data and keeps the artwork a
   assert.equal(removed.productGroupColor, '')
   assert.equal(removed.productGroupLeaderId, '')
   for (const key of ['svg', 'width', 'height', 'storagePath', 'note', 'noteImage']) assert.equal(removed[key], assets[1][key])
-  assert.deepEqual(next.assets[0], assets[0])
-  assert.deepEqual(next.assets[2], assets[2])
+  assert.deepEqual(withoutGroupPosition(next.assets[0]), withoutGroupPosition(assets[0]))
+  assert.deepEqual(withoutGroupPosition(next.assets[2]), withoutGroupPosition(assets[2]))
   assert.deepEqual(next.session.memberIds, ['1', '3'])
   assert.equal(next.session.activeId, '3')
   assert.equal(next.session.editors['2'], undefined)

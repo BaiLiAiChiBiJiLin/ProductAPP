@@ -38,7 +38,9 @@ test('legacy color-only members recover product, independent notes and confirmat
   const reloaded = JSON.parse(JSON.stringify(repaired))
   const session = restoreProductGroup(reloaded, '1', products)
   assert.equal(session.leaderId, '3')
-  assert.deepEqual(applyProductGroup(reloaded, session, products), reloaded)
+  const reapplied = applyProductGroup(reloaded, session, products)
+  assert.deepEqual(reapplied.map(({ productGroupPosition, finishMatchDisabled, ...asset }) => asset), reloaded.map(({ finishMatchDisabled, ...asset }) => asset))
+  assert.deepEqual(Object.fromEntries(reapplied.map(asset => [asset.id, asset.productGroupPosition])), { '1': 2, '2': 3, '3': 1 })
 })
 
 test('legacy repair preserves already configured members independent properties and status', () => {

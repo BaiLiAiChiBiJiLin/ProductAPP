@@ -13,6 +13,7 @@ export type CustomProduct = {
   qt: number | null
   attributes?: Record<string, string>
   attributeImages?: Record<string, string>
+  finishMatchDisabled?: boolean
 }
 
 export const emptyCustomProduct = (): CustomProduct => ({ id: null, name: '', size: '', printOption: '', finish: '', accessoryColor: '', accessoryColorImage: '', qt: 1, attributes: {} })
@@ -44,5 +45,6 @@ export function customProductPatch(product: CustomProduct): ProductAttributePatc
     clearAttributes: true,
     attributes: { ...customAttributes(product), QT: product.qt == null ? '' : String(product.qt) },
     attributeImages: customImages(product),
+    suppressFinishMatch: Boolean(product.finishMatchDisabled),
   }
 }

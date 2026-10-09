@@ -1,5 +1,6 @@
 export { orderModule } from './order'
 export { imageEditModule } from './image-edit'
 export { schematicModule } from './schematic'
-export { impositionModule } from './imposition'
+export { schematicReviewModule, SchematicReviewPage } from './schematic-review'
+export { impositionModule, ImpositionPage } from './imposition'
 export { progressModule } from './progress'

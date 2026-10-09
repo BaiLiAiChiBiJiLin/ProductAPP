@@ -4,6 +4,9 @@ use std::{collections::BTreeMap, fs, path::Path};
 use crate::geometry::ancestor_transform;
 #[path = "svg_modes/mod.rs"]
 mod svg_modes;
+#[path = "asset_images.rs"]
+mod asset_images;
+pub use asset_images::SourceImage;
 
 const MAX_SVG_BYTES: usize = 500 * 1024 * 1024;
 
@@ -29,6 +32,9 @@ pub struct Asset {
     /// Original source-space bounds as [x, y, width, height].
     #[serde(default)]
     pub source_group_bounds: [f64; 4],
+    /// None for legacy records; an empty list means no raster image was found.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_images: Option<Vec<SourceImage>>,
     pub svg: String,
     /// Kept for backwards-compatible workspace records. The canonical asset
     /// is `svg`; duplicating the full SVG in preview and thumbnail fields can
@@ -55,6 +61,8 @@ pub struct Asset {
     pub note_image: String,
     #[serde(default)]
     pub attributes_confirmed: bool,
+    #[serde(default)]
+    pub finish_match_disabled: bool,
     #[serde(default)]
     pub product_group_id: String,
     #[serde(default)]
@@ -546,11 +554,12 @@ pub fn import_with_stage(
                 name: if part_name.is_empty() { name.to_string() } else { format!("{name} · {part_name}") },
                 product_id: product_id.into(), product_name: String::new(), width, height,
                 source_group_width_mm, source_group_height_mm, source_group_bounds,
+                source_images: Some(asset_images::collect(&tree, &source_doc)),
                 // SVG is the single source of truth. Preview URLs are kept
                 // empty so one large embedded SVG is not stored three times
                 // in memory/SQLite; the UI derives a data URL lazily when it
                 // needs to display an asset.
-                preview_url: String::new(), thumbnail_url: String::new(), storage_path: String::new(), svg, mode_used: mode_used.clone(), merge_status: if split { "kept-separate".into() } else { "whole".into() }, source_group_id: format!("{request_id}-{index}"), attributes: BTreeMap::new(), attribute_images: BTreeMap::new(), note: String::new(), note_image: String::new(), attributes_confirmed: false, product_group_id: String::new(), product_group_color: String::new(), product_group_leader_id: String::new(), product_group_mode: String::new(), product_group_position: 0,
+                preview_url: String::new(), thumbnail_url: String::new(), storage_path: String::new(), svg, mode_used: mode_used.clone(), merge_status: if split { "kept-separate".into() } else { "whole".into() }, source_group_id: format!("{request_id}-{index}"), attributes: BTreeMap::new(), attribute_images: BTreeMap::new(), note: String::new(), note_image: String::new(), attributes_confirmed: false, finish_match_disabled: false, product_group_id: String::new(), product_group_color: String::new(), product_group_leader_id: String::new(), product_group_mode: String::new(), product_group_position: 0,
             };
             on_asset(&asset);
             assets.push(asset);

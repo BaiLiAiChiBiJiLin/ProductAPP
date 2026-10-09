@@ -7,6 +7,13 @@ mod compositor;
 mod finish_matching;
 mod product_config_cache;
 mod local_api;
+mod schematic_review;
+mod production_imposition;
+mod batch_history;
+mod batch_thumbnails;
+mod asset_storage;
+mod settings;
+mod staged_artwork;
 pub mod svg_measure;
 use assets::Asset;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -37,18 +44,28 @@ fn database(app: &tauri::AppHandle) -> Result<Connection, String> {
     Ok(conn)
 }
 
-fn flatten_embedded_svg_images(mut svg: String) -> Result<String, String> {
+fn flatten_embedded_svg_images(svg: String) -> Result<String, String> {
+    flatten_svg_resources(svg, false)
+}
+
+fn flatten_svg_resources(mut svg: String, staged: bool) -> Result<String, String> {
     let marker = "data:image/svg+xml;base64,";
     let mut instance = 0;
     loop {
-        let Some(marker_pos_global) = svg.find(marker) else { break };
+        let candidate = svg.find(marker).map(|pos| (pos, marker));
+        let staged_candidate = if staged { svg.find(staged_artwork::PREFIX).map(|pos| (pos, staged_artwork::PREFIX)) } else { None };
+        let Some((marker_pos_global, marker)) = candidate.into_iter().chain(staged_candidate).min_by_key(|(pos, _)| *pos) else { break };
         let image_start = svg[..marker_pos_global].rfind("<image").ok_or("SVG 图片资源缺少 image 标签")?;
         let image_end = svg[image_start..].find('>').map(|i| image_start + i + 1).ok_or("SVG 图片标签不完整")?;
         let tag = &svg[image_start..image_end];
         let marker_pos = tag.find(marker).ok_or("SVG 图片资源位置无效")?;
         let encoded_start = marker_pos + marker.len();
         let encoded_end = tag[encoded_start..].find(['"', '\'', ')', ' ']).map(|i| encoded_start + i).unwrap_or(tag.len());
-        let inner_svg = String::from_utf8(base64::engine::general_purpose::STANDARD.decode(&tag[encoded_start..encoded_end]).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+        let inner_svg = if marker == staged_artwork::PREFIX {
+            staged_artwork::read(&tag[marker_pos..encoded_end])?
+        } else {
+            String::from_utf8(base64::engine::general_purpose::STANDARD.decode(&tag[encoded_start..encoded_end]).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?
+        };
         let inner_svg = flatten_embedded_svg_images(inner_svg)?;
         // Each embedded image is an isolated SVG document. Resolve its CSS,
         // root transforms and resource references before combining documents;
@@ -200,6 +217,20 @@ mod export_tests {
     use base64::Engine;
 
     #[test]
+    fn staged_artwork_preserves_the_same_vector_geometry_as_embedded_artwork() {
+        let id = format!("{:x}-{:x}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
+        let path = super::staged_artwork::path(&id).unwrap();
+        let inner = r#"<svg xmlns="http://www.w3.org/2000/svg" width="120" height="240" viewBox="10 20 30 60"><path d="M10 20h30v60H10Z" fill="red"/></svg>"#;
+        std::fs::write(&path, inner).unwrap();
+        let page = |href: &str| format!(r#"<svg xmlns="http://www.w3.org/2000/svg" width="500" height="700"><image x="-20" y="-40" width="40" height="80" transform="translate(100 200) rotate(10) scale(-1 1)" href="{href}"/></svg>"#);
+        let staged = super::flatten_svg_resources(page(&format!("{}{id}", super::staged_artwork::PREFIX)), true).unwrap();
+        let embedded = flatten_embedded_svg_images(page(&format!("data:image/svg+xml;base64,{}", base64::engine::general_purpose::STANDARD.encode(inner)))).unwrap();
+        assert_eq!(staged, embedded);
+        std::fs::remove_file(path).unwrap();
+        assert!(super::flatten_svg_resources(page(&format!("{}{id}", super::staged_artwork::PREFIX)), true).is_err());
+    }
+
+    #[test]
     fn flatten_accepts_xml_prolog_doctype_and_preserves_namespaces() {
         let inner = r##"<?xml version="1.0" encoding="UTF-8"?>
 <!-- exported source -->
@@ -238,8 +269,8 @@ mod export_tests {
         let assets = (0..80).map(|index| Asset {
             source_file_name: String::new(),
             id: format!("asset-{index}"), name: format!("图 {index}"), product_id: "a".into(), product_name: String::new(),
-            width: 100.0, height: 100.0, source_group_width_mm: 0.0, source_group_height_mm: 0.0, source_group_bounds: [0.0; 4], svg: format!("<svg>{}</svg>", "x".repeat(1024 * 1024)), preview_url: String::new(), thumbnail_url: String::new(),
-            storage_path: String::new(), mode_used: "groups".into(), merge_status: "kept-separate".into(), source_group_id: String::new(), attributes: Default::default(), attribute_images: Default::default(), note: String::new(), note_image: String::new(), attributes_confirmed: false, product_group_id: String::new(), product_group_color: String::new(), product_group_leader_id: String::new(), product_group_mode: String::new(), product_group_position: 0,
+            width: 100.0, height: 100.0, source_group_width_mm: 0.0, source_group_height_mm: 0.0, source_group_bounds: [0.0; 4], source_images: None, svg: format!("<svg>{}</svg>", "x".repeat(1024 * 1024)), preview_url: String::new(), thumbnail_url: String::new(),
+            storage_path: String::new(), mode_used: "groups".into(), merge_status: "kept-separate".into(), source_group_id: String::new(), attributes: Default::default(), attribute_images: Default::default(), note: String::new(), note_image: String::new(), attributes_confirmed: false, finish_match_disabled: false, product_group_id: String::new(), product_group_color: String::new(), product_group_leader_id: String::new(), product_group_mode: String::new(), product_group_position: 0,
         }).collect::<Vec<_>>();
         let signature = batch_signature(&assets, &BatchMetadata::default()).unwrap();
         assert!(signature.len() < 100_000, "signature unexpectedly contains full SVG payload");
@@ -327,6 +358,12 @@ struct PdfExportProgress { phase: String, completed: usize, total: usize }
 struct ImportAssetBatch { request_id: String, assets: Vec<Asset> }
 
 fn project_data_dir() -> PathBuf {
+    // Installed builds must not depend on a shortcut's working directory.
+    if !cfg!(debug_assertions) {
+        if let Ok(executable) = std::env::current_exe() {
+            if let Some(directory) = executable.parent() { return directory.join("printflow-data"); }
+        }
+    }
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     // `cargo run` and the Tauri dev runner may use `src-tauri` as the
     // working directory. Keep mutable import data beside the project instead
@@ -463,31 +500,6 @@ fn hydrate_asset(mut asset: Asset) -> Asset {
     asset
 }
 
-fn persist_assets(app_assets: Vec<Asset>) -> Result<Vec<Asset>, String> {
-    let root = project_data_dir();
-    let temp_dir = root.join("temp-assets");
-    let asset_dir = root.join("assets");
-    fs::create_dir_all(&asset_dir).map_err(|e| e.to_string())?;
-    let mut persisted = Vec::with_capacity(app_assets.len());
-    for asset in app_assets {
-        let file_name = format!("{}.svg", safe_asset_file_name(&asset.id));
-        let destination = asset_dir.join(file_name);
-        let svg = if asset.svg.is_empty() && !asset.storage_path.is_empty() { fs::read_to_string(&asset.storage_path).map_err(|e| e.to_string())? } else { asset.svg.clone() };
-        fs::write(&destination, svg.as_bytes()).map_err(|e| e.to_string())?;
-        let mut saved = asset;
-        saved.svg = svg;
-        saved.storage_path = destination.to_string_lossy().to_string();
-        persisted.push(saved);
-    }
-    // Temporary files are safe to remove only after every durable write has
-    // succeeded. They are best-effort cleanup so a locked file cannot break a
-    // successful save.
-    if let Ok(entries) = fs::read_dir(&temp_dir) {
-        for entry in entries.flatten() { let _ = fs::remove_file(entry.path()); }
-    }
-    Ok(persisted)
-}
-
 #[tauri::command]
 async fn import_assets(app: tauri::AppHandle, path: String, product_id: String, mode: String, request_id: String) -> Result<Vec<Asset>, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -594,7 +606,7 @@ async fn delete_asset(app: tauri::AppHandle, id: String, batch_id: Option<String
             }
         }
         drop(stmt);
-        if !referenced_elsewhere {
+        if !referenced_elsewhere && !production_imposition::asset_referenced(&tx, &id)? {
             tx.execute("DELETE FROM assets WHERE id=?1", [&id]).map_err(|e| e.to_string())?;
         }
         tx.commit().map_err(|e| e.to_string())?;
@@ -691,9 +703,11 @@ fn batch_signature(assets: &[Asset], metadata: &BatchMetadata) -> Result<String,
             "sourceGroupWidthMm": asset.source_group_width_mm,
             "sourceGroupHeightMm": asset.source_group_height_mm,
             "sourceGroupBounds": asset.source_group_bounds,
+            "sourceImages": asset.source_images,
             "svgHash": format!("{svg_hash:016x}"),
             "svgBytes": svg_bytes,
             "attributes": asset.attributes,
+            "finishMatchDisabled": asset.finish_match_disabled,
             "note": asset.note,
             "noteImage": asset.note_image,
             "attributesConfirmed": asset.attributes_confirmed,
@@ -711,11 +725,8 @@ fn batch_signature(assets: &[Asset], metadata: &BatchMetadata) -> Result<String,
 }
 
 fn remove_temp_asset_files(assets: &[Asset]) {
-    for asset in assets {
-        if asset.storage_path.contains("printflow-data\\temp-assets") || asset.storage_path.contains("printflow-data/temp-assets") {
-            let _ = fs::remove_file(&asset.storage_path);
-        }
-    }
+    let paths: Vec<_> = assets.iter().map(|asset| asset.storage_path.clone()).collect();
+    asset_storage::remove_temporary_files(&paths, &project_data_dir().join("temp-assets"));
 }
 
 #[tauri::command]
@@ -756,67 +767,52 @@ async fn save_batch(app: tauri::AppHandle, id: String, saved_at: String, assets:
             }
         }
         let persist_started = Instant::now();
-        let persisted = persist_assets(assets)?;
+        let temporary_paths: Vec<_> = assets.iter().map(|asset| asset.storage_path.clone()).collect();
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        let directory = asset_storage::batch_directory(&tx, &project_data_dir().join("assets"), &id, &metadata.customer_name)?;
+        let persisted = asset_storage::persist(assets, &directory)?;
         log::info!("save_batch phase=persist assets={} elapsed_ms={}", persisted.len(), persist_started.elapsed().as_millis());
         let compact: Vec<_> = persisted.iter().map(compact_asset).collect();
         let payload = serde_json::to_string(&compact).map_err(|e| e.to_string())?;
-        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         for asset in &compact {
             tx.execute("INSERT INTO assets(id,payload) VALUES(?1,?2) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload", params![asset.id, serde_json::to_string(asset).map_err(|e| e.to_string())?]).map_err(|e| e.to_string())?;
         }
         tx.execute("INSERT INTO batches(id,saved_at,payload,metadata) VALUES(?1,?2,?3,?4) ON CONFLICT(id) DO UPDATE SET saved_at=excluded.saved_at,payload=excluded.payload,metadata=excluded.metadata", params![id, saved_at, payload, serde_json::to_string(&metadata).map_err(|e| e.to_string())?]).map_err(|e| e.to_string())?;
         tx.commit().map_err(|e| e.to_string())?;
+        asset_storage::remove_temporary_files(&temporary_paths, &project_data_dir().join("temp-assets"));
         let compact_result: Vec<_> = persisted.iter().map(compact_asset).collect();
         Ok(SaveBatchResult { assets: compact_result, duplicate: false, batch_id: id, metadata })
     }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-async fn persist_batch_assets(app: tauri::AppHandle, assets: Vec<Asset>) -> Result<Vec<Asset>, String> {
-    tauri::async_runtime::spawn_blocking(move || { let persisted = persist_assets(assets)?; let compact: Vec<_> = persisted.iter().map(compact_asset).collect(); let conn = database(&app)?; let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?; for asset in &compact { tx.execute("INSERT INTO assets(id,payload) VALUES(?1,?2) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload", params![asset.id, serde_json::to_string(asset).map_err(|e| e.to_string())?]).map_err(|e| e.to_string())?; } tx.commit().map_err(|e| e.to_string())?; Ok(persisted) }).await.map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
 async fn discard_temp_assets(assets: Vec<Asset>) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        for asset in assets {
-            if asset.storage_path.contains("printflow-data\\temp-assets") || asset.storage_path.contains("printflow-data/temp-assets") { let _ = fs::remove_file(asset.storage_path); }
-        }
-        Ok(())
-    }).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || { remove_temp_asset_files(&assets); Ok(()) }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-async fn list_batches(app: tauri::AppHandle) -> Result<Vec<BatchRecord>, String> {
-    // History cards only need ids, names and counts. Never hydrate the SVG
-    // files here: the assets table can contain hundreds of megabytes and this
-    // command runs during application startup.
-    tauri::async_runtime::spawn_blocking(move || {
-        let conn = database(&app)?;
-        let mut stmt = conn.prepare("SELECT id,saved_at,payload,metadata FROM batches ORDER BY saved_at DESC LIMIT 20").map_err(|e| e.to_string())?;
-        let rows = stmt.query_map([], |row| {
-            let payload: String = row.get(2)?;
-            let metadata: String = row.get(3)?;
-            let assets: Vec<Asset> = serde_json::from_str(&payload).unwrap_or_default();
-            Ok(BatchRecord { id: row.get(0)?, saved_at: row.get(1)?, assets: assets.into_iter().map(|asset| compact_asset(&asset)).collect(), metadata: serde_json::from_str(&metadata).unwrap_or_default() })
-        }).map_err(|e| e.to_string())?;
-        rows.map(|r| r.map_err(|e| e.to_string())).collect()
-    }).await.map_err(|e| e.to_string())?
+async fn list_batches(app: tauri::AppHandle, query: Option<batch_history::BatchListQuery>) -> Result<batch_history::BatchListResult, String> {
+    tauri::async_runtime::spawn_blocking(move || batch_history::list(&database(&app)?, &query.unwrap_or_default()))
+        .await.map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn load_batch_thumbnails(app: tauri::AppHandle, id: String) -> Result<Vec<batch_thumbnails::BatchThumbnail>, String> {
+    tauri::async_runtime::spawn_blocking(move || batch_thumbnails::load(&database(&app)?, &id))
+        .await.map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
 async fn load_batch(app: tauri::AppHandle, id: String) -> Result<BatchRecord, String> {
-    // Hydrate only the batch the user explicitly opened. This keeps startup
-    // cheap while preserving the original SVG data for editing and arranging.
     tauri::async_runtime::spawn_blocking(move || {
-        let conn = database(&app)?;
-        let row = conn.query_row("SELECT id,saved_at,payload,metadata FROM batches WHERE id=?1", [&id], |row| {
-            let payload: String = row.get(2)?;
-            let metadata: String = row.get(3)?;
-            let assets: Vec<Asset> = serde_json::from_str(&payload).unwrap_or_default();
-            Ok(BatchRecord { id: row.get(0)?, saved_at: row.get(1)?, assets: assets.into_iter().map(hydrate_asset).collect(), metadata: serde_json::from_str(&metadata).unwrap_or_default() })
-        }).optional().map_err(|e| e.to_string())?;
-        row.ok_or_else(|| "历史批次不存在或已被删除".to_string())
+        batch_history::manifest(&database(&app)?, &id)
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn load_batch_asset_svg(app: tauri::AppHandle, batch_id: String, asset_id: String) -> Result<tauri::ipc::Response, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        batch_history::artwork(&database(&app)?, &batch_id, &asset_id).map(tauri::ipc::Response::new)
     }).await.map_err(|e| e.to_string())?
 }
 
@@ -824,22 +820,7 @@ async fn load_batch(app: tauri::AppHandle, id: String) -> Result<BatchRecord, St
 async fn delete_batch(app: tauri::AppHandle, id: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let conn = database(&app)?;
-        let payload: Option<String> = conn.query_row("SELECT payload FROM batches WHERE id=?1", [&id], |row| row.get(0)).optional().map_err(|e| e.to_string())?;
-        let Some(payload) = payload else { return Ok(()) };
-        let assets: Vec<Asset> = serde_json::from_str(&payload).unwrap_or_default();
-        let mut referenced = HashSet::new();
-        let mut stmt = conn.prepare("SELECT payload FROM batches WHERE id<>?1").map_err(|e| e.to_string())?;
-        let rows = stmt.query_map([&id], |row| row.get::<_, String>(0)).map_err(|e| e.to_string())?;
-        for row in rows {
-            if let Ok(other) = row.and_then(|value| serde_json::from_str::<Vec<Asset>>(&value).map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))) { for asset in other { referenced.insert(asset.id); } }
-        }
-        conn.execute("DELETE FROM batches WHERE id=?1", [&id]).map_err(|e| e.to_string())?;
-        for asset in assets {
-            if referenced.contains(&asset.id) { continue; }
-            conn.execute("DELETE FROM assets WHERE id=?1", [&asset.id]).map_err(|e| e.to_string())?;
-            if asset.storage_path.contains("printflow-data\\assets") || asset.storage_path.contains("printflow-data/assets") { let _ = fs::remove_file(asset.storage_path); }
-        }
-        Ok(())
+        batch_history::delete(&conn, &id)
     }).await.map_err(|e| e.to_string())?
 }
 
@@ -873,8 +854,7 @@ async fn export_pdf(app: tauri::AppHandle, output: String, pages: Vec<String>) -
 }
 
 fn pdf_stage_path(id: &str) -> Result<PathBuf, String> {
-    if id.is_empty() || !id.bytes().all(|c| c.is_ascii_hexdigit() || c == b'-') { return Err("无效的导出缓存标识".into()); }
-    Ok(std::env::temp_dir().join(format!("printflow-pdf-{id}.svg")))
+    staged_artwork::path(id)
 }
 
 #[tauri::command]
@@ -939,7 +919,7 @@ async fn export_pdf_sources(output: String, pages: Vec<String>, progress_app: Op
             let resources_ms = phase_start.elapsed().as_millis();
             let phase_start = Instant::now();
             report("flatten");
-            let flattened = flatten_embedded_svg_images(embedded)?;
+            let flattened = flatten_svg_resources(embedded, staged)?;
             let flatten_ms = phase_start.elapsed().as_millis();
             let phase_start = Instant::now();
             report("fonts");
@@ -1005,7 +985,7 @@ pub fn run() {
             Target::new(TargetKind::Folder { path: log_dir, file_name: Some("printflow.log".into()) }),
         ]).build())
         .setup(|app| { let status_path = project_data_dir().join("cache/local-api.json"); let port = local_api::start(app.handle().clone(), &status_path).map_err(|e| format!("本地 API 启动失败：{e}"))?; log::info!(target: "printflow::local-api", "本地 SVG API 已监听 127.0.0.1:{port}"); Ok(()) })
-        .invoke_handler(tauri::generate_handler![import_assets, load_workspace, save_workspace, delete_asset, save_batch, persist_batch_assets, discard_temp_assets, list_batches, load_batch, delete_batch, export_artwork, export_pdf, stage_pdf_page, clear_pdf_pages, export_staged_pdf, load_product_configs, fetch_remote_image, load_finish_names, refresh_product_configs, custom_products::load_custom_product_config, custom_products::add_custom_product_name, custom_products::list_custom_products, custom_products::save_custom_product, custom_products::import_custom_product_image, coreldraw::open_with_coreldraw])
+        .invoke_handler(tauri::generate_handler![settings::load_storage_settings, settings::save_storage_settings, staged_artwork::write_export_resource_chunk, schematic_review::load_schematic_review_resource, schematic_review::save_schematic_review, schematic_review::list_schematic_reviews, schematic_review::delete_schematic_review, schematic_review::update_schematic_review_payment_status, schematic_review::load_schematic_review, production_imposition::submit_schematic_review_to_imposition, production_imposition::list_pending_impositions, production_imposition::load_imposition_job, production_imposition::load_imposition_image, production_imposition::return_imposition_to_review, import_assets, load_workspace, save_workspace, delete_asset, save_batch, discard_temp_assets, list_batches, load_batch_thumbnails, load_batch, load_batch_asset_svg, delete_batch, export_artwork, export_pdf, stage_pdf_page, clear_pdf_pages, export_staged_pdf, load_product_configs, fetch_remote_image, load_finish_names, refresh_product_configs, custom_products::load_custom_product_config, custom_products::add_custom_product_name, custom_products::list_custom_products, custom_products::save_custom_product, custom_products::import_custom_product_image, coreldraw::open_with_coreldraw])
         .run(tauri::generate_context!()).expect("error while running tauri application");
 }
 

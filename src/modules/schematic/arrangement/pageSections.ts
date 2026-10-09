@@ -12,3 +12,11 @@ export function headerFor(page: Page, group: ImageGroup): HeaderBlock | undefine
     && header.x <= group.x + SECTION_EPS && header.x + header.width >= group.x + group.width - SECTION_EPS)
     .sort((a, b) => a.y - b.y).at(-1)
 }
+
+/** Keep an already packed one-slot/two-slot row together during later backfill. */
+export function sharesMixedWidthRow(page: Page, group: ImageGroup) {
+  const header = headerFor(page, group)
+  if (!header || !header.columns.some(column => (column.span ?? 1) > 1)) return false
+  return Boolean(page.imageGroups?.some(other => other !== group && Math.abs(other.y - group.y) < SECTION_EPS
+    && Math.abs(other.width - group.width) > SECTION_EPS && headerFor(page, other) === header))
+}

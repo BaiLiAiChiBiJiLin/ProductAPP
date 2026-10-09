@@ -21,11 +21,13 @@ mod tests {
     fn catalog_matches_and_persists_without_overwriting_explicit_finish() {
         let path = std::env::temp_dir().join(format!("finish-test-{}.json", std::process::id()));
         fs::write(&path, r#"[{"name":"Epoxy","labelZh":"滴胶"}]"#).unwrap();
-        let mut assets: Vec<Asset> = serde_json::from_str(r#"[{"id":"a","name":"a","productId":"p","width":1,"height":1,"svg":"","attributes":{"Technique":"滴胶","QT":"Epoxy"}},{"id":"b","name":"b","productId":"p","width":1,"height":1,"svg":"","attributes":{"Finish":"Custom","Technique":"滴胶"}},{"id":"c","name":"c","productId":"p","width":1,"height":1,"svg":"","attributes":{"Accessories Color":"滴胶","QT":"Epoxy"}}]"#).unwrap();
+        let mut assets: Vec<Asset> = serde_json::from_str(r#"[{"id":"a","name":"a","productId":"p","width":1,"height":1,"svg":"","attributes":{"Technique":"滴胶","QT":"Epoxy"}},{"id":"b","name":"b","productId":"p","width":1,"height":1,"svg":"","attributes":{"Finish":"Custom","Technique":"滴胶"}},{"id":"c","name":"c","productId":"p","width":1,"height":1,"svg":"","attributes":{"Accessories Color":"滴胶","QT":"Epoxy"}},{"id":"d","name":"d","productId":"p","width":1,"height":1,"svg":"","finishMatchDisabled":true,"attributes":{"Technique":"滴胶"}},{"id":"e","name":"e","productId":"p","width":1,"height":1,"svg":"","attributes":{"工艺":"Epoxy","Technique":"滴胶"}}]"#).unwrap();
         fill(&mut assets, &path).unwrap();
         assert_eq!(assets[0].attributes["Finish"], "Epoxy");
         assert_eq!(assets[1].attributes["Finish"], "Custom");
         assert!(!assets[2].attributes.contains_key("Finish"));
+        assert!(!assets[3].attributes.contains_key("Finish"));
+        assert!(!assets[4].attributes.contains_key("Finish"));
         let _ = fs::remove_file(path);
     }
 }
@@ -46,7 +48,14 @@ pub fn fill(assets: &mut [Asset], path: &Path) -> Result<(), String> {
     }
     let index = &cache.as_ref().unwrap().2;
     for asset in assets {
+        // A user can intentionally clear Finish in the attribute editor. Do
+        // not recreate that value from another matching attribute on save.
+        if asset.finish_match_disabled { continue; }
         if asset.attributes.iter().any(|(k,v)| key(k) == "finish" && !v.trim().is_empty()) { continue; }
+        // Catalog products persist their selected Finish as the canonical
+        // Chinese process field. Treat it as an existing Finish as well, so
+        // saving does not create a duplicate legacy `Finish` attribute.
+        if asset.attributes.iter().any(|(k,v)| key(k) == "工艺" && !v.trim().is_empty()) { continue; }
         let mut matches = Vec::new();
         for (name, value) in &asset.attributes {
             if excluded(name) || value.len() > 1024 || value.starts_with("data:") || value.starts_with("http") { continue; }

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Konva from 'konva'
 import { Stage, Layer, Group } from 'react-konva'
 import ImageDimensionMarkers from '../src/modules/schematic/components/ImageDimensionMarkers'
-import type { Item, Page } from '../src/model'
+import type { Asset, Item, Page } from '../src/model'
 
 // Only raster painting is stubbed: these tests use real Konva nodes, transforms,
 // native window drag events and react-konva reconciliation (no component mocks).
@@ -21,16 +21,18 @@ const asset = { id: 'a', name: 'a', productId: '', width: 80, height: 100, svg: 
 const assets = new Map([['a', asset]])
 const initial: Item = { id: 'i', assetId: 'a', x: 160, y: 130, w: 80, h: 100, rotation: 0 }
 
-function mountRuler(axis: 'width' | 'height', zoom: number, range?: [number, number]) {
+function mountRuler(axis: 'width' | 'height', zoom: number, range?: [number, number], source: Asset = asset) {
   const stage = createRef<Konva.Stage>()
   const commit = vi.fn()
   const current: { value?: Page } = {}
+  const last = source.productName === 'Chained Charms' ? { ...initial, id: 'last', assetId: 'last', suppressRuler: true } : undefined
+  const sourceAssets = new Map([[source.id, source], ...(last ? [['last', { ...source, id: 'last' }] as const] : [])])
   function Harness() {
     const rulerPatch = range ? (axis === 'width' ? { rulerWidthRange: range } : { rulerHeightRange: range }) : {}
-    const [page, setPage] = useState<Page>({ id: 1, name: 'test', items: [{ ...initial, rulerWidth: axis === 'width', rulerHeight: axis === 'height', ...rulerPatch }], imageGroups: [{ id: 'g', itemIds: ['i'], x: 90, y: 50, width: 180, height: 180 }] })
+    const [page, setPage] = useState<Page>({ id: 1, name: 'test', items: [{ ...initial, rulerWidth: axis === 'width', rulerHeight: axis === 'height', ...rulerPatch }, ...(last ? [last] : [])], imageGroups: [{ id: 'g', itemIds: ['i', ...(last ? ['last'] : [])], x: 90, y: 50, width: 180, height: 180, imageCells: last ? ['i', 'last'].map(itemId => ({ itemId, x: 90, y: 50, width: 90, height: 180 })) : undefined }] })
     current.value = page
     return <Stage ref={stage} width={1000} height={700}><Layer><Group x={80} y={40} scaleX={zoom} scaleY={zoom}>
-      <ImageDimensionMarkers page={page} assets={assets} onChangeRuler={(id, patch) => {
+      <ImageDimensionMarkers page={page} assets={source === asset ? assets : sourceAssets} onChangeRuler={(id, patch) => {
         commit(id, patch)
         setPage(value => ({ ...value, items: value.items.map(item => item.id === id ? { ...item, ...patch } : item) }))
       }}/>
@@ -48,6 +50,61 @@ function press(node: Konva.Node) {
 }
 function move(x: number, y: number) { act(() => { fireEvent.mouseMove(window, { clientX: x, clientY: y, buttons: 1 }) }) }
 function release(x: number, y: number) { act(() => { fireEvent.mouseUp(window, { clientX: x, clientY: y }) }) }
+
+it('chain picture-bottom anchor remains stable while dragging and committing both arrows', () => {
+  const source = { ...asset, productName: 'Chained Charms', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 100"><image x="10" y="10" width="60" height="70" href="art.png"/></svg>' }
+  const { stage, page, commit } = mountRuler('height', 1.6, undefined, source)
+  expect(stage.find('.ruler-arrow')[0].y()).toBe(80)
+  expect(stage.find('.ruler-arrow')[1].y()).toBe(160)
+  for (const [index, delta] of [[0, 10], [1, -10]]) {
+    const arrow = stage.find('.ruler-arrow')[index]
+    const origin = press(arrow)
+    move(origin.x, origin.y + delta * 1.6)
+    expect(arrow.getAbsolutePosition().y).toBeCloseTo(origin.y + delta * 1.6)
+    release(origin.x, origin.y + delta * 1.6)
+    expect(stage.find('.ruler-arrow')[index].getAbsolutePosition().y).toBeCloseTo(origin.y + delta * 1.6)
+  }
+  expect(page().items[0].rulerHeightRange?.[0]).toBeCloseTo(0.125)
+  expect(page().items[0].rulerHeightRange?.[1]).toBeCloseTo(0.875)
+  expect(commit).toHaveBeenCalledTimes(2)
+})
+
+it.each([0.7, 1.6, 2.5])('picture-bottom arrow can extend to the full source bottom at zoom %s without snapping back', zoom => {
+  const source = { ...asset, productName: 'Chained Charms', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 100"><image x="10" y="10" width="60" height="70" href="art.png"/></svg>' }
+  const { stage, page } = mountRuler('height', zoom, undefined, source)
+  expect(stage.find('.ruler-label')[0].draggable()).toBe(false)
+  const arrow = stage.find('.ruler-arrow')[1]
+  expect(arrow.y()).toBe(160)
+  const origin = press(arrow)
+  for (const delta of [10, 20, 40]) {
+    move(origin.x, origin.y + delta * zoom)
+    expect(arrow.y()).toBeCloseTo(160 + Math.min(delta, 20))
+    expect(stage.find('.ruler-arrow')[0].y()).toBe(80)
+  }
+  release(origin.x, origin.y + 40 * zoom)
+  expect(stage.find('.ruler-arrow')[1].y()).toBeCloseTo(180)
+  expect(page().items[0].rulerHeightRange?.[1]).toBeCloseTo(1.25)
+  expect(stage.find('.ruler-label')[0].draggable()).toBe(false)
+  // It can also be shortened again after saving the extended range.
+  const end = press(stage.find('.ruler-arrow')[1])
+  move(end.x, end.y - 10 * zoom)
+  release(end.x, end.y - 10 * zoom)
+  expect(stage.find('.ruler-arrow')[1].y()).toBeCloseTo(170)
+  expect(page().items[0].rulerHeightRange?.[1]).toBeCloseTo(1.125)
+})
+
+it('standee height starts 3.4 mm shorter and still permits dragging to the real bottom', () => {
+  const source = { ...asset, productName: 'Standees', sourceGroupWidthMm: 32, sourceGroupHeightMm: 40 }
+  const { stage, page } = mountRuler('height', 1.6, undefined, source)
+  expect(stage.find('.ruler-arrow')[0].y()).toBe(80)
+  expect(stage.find('.ruler-arrow')[1].y()).toBeCloseTo(171.5)
+  const origin = press(stage.find('.ruler-arrow')[1])
+  move(origin.x, origin.y + 20 * 1.6)
+  release(origin.x, origin.y + 20 * 1.6)
+  expect(stage.find('.ruler-arrow')[0].y()).toBe(80)
+  expect(stage.find('.ruler-arrow')[1].y()).toBeCloseTo(180)
+  expect(page().items[0].rulerHeightRange?.[1]).toBeCloseTo(40 / 36.6)
+})
 
 describe.each(['width', 'height'] as const)('%s ruler drag', axis => {
   it.each([0.7, 1.6, 2.5])('both arrows track the pointer at zoom %s without sideways jumps or snapping back', zoom => {

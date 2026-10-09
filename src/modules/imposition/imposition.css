@@ -1,0 +1,63 @@
+.imposition-table .ant-table-tbody > tr.imposition-paid > td { background: var(--imposition-paid-bg); }
+.imposition-table .ant-table-tbody > tr.imposition-unpaid > td { background: var(--imposition-unpaid-bg); }
+.imposition-file-path, .imposition-attributes { overflow-wrap: anywhere; }
+.imposition-attributes strong { font-weight: 500; }
+
+.imposition-list-actions { display: flex; gap: 8px; }
+.imposition-workspace { height: calc(100vh - 64px); min-height: 0; display: flex; flex-direction: column; background: #f8fafc; color: #172033; }
+.imposition-workspace-header { flex: 0 0 122px; min-height: 122px; max-height: 122px; padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; background: #fff; border-bottom: 1px solid #e2e8f0; overflow: hidden; }
+.imposition-back-button { align-self: flex-start; margin-top: 4px; }
+.imposition-workspace-hint { margin-left: auto; align-self: flex-start; margin-top: 10px; color: #64748b; font-size: 12px; white-space: nowrap; }
+.imposition-layout-config { position: relative; min-width: 650px; padding: 10px 78px 10px 0; }
+.imposition-layout-config-title { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; color: #1e293b; }
+.imposition-layout-config-title strong { font-size: 14px; }
+.imposition-layout-config-title span { color: #94a3b8; font-size: 11px; }
+.imposition-layout-fields { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 7px 10px; }
+.imposition-layout-fields label { display: flex; flex-direction: column; gap: 3px; color: #64748b; font-size: 11px; }
+.imposition-layout-fields .ant-input-number { width: 78px; }
+.imposition-layout-fields .ant-input-number-input { font-size: 12px; }
+
+.imposition-workspace-actions, .imposition-mode { display: flex; align-items: center; gap: 6px; }
+.imposition-workspace-actions > span { min-width: 48px; text-align: center; color: #64748b; font-size: 12px; }
+.imposition-workspace-body { flex: 1 1 auto; min-height: 0; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr) 360px; }
+.imposition-canvas-region { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; background: #f1f5f9; }
+.imposition-canvas-toolbar { height: 46px; padding: 0 20px; display: flex; align-items: center; justify-content: space-between; background: #fff; border-bottom: 1px solid #e2e8f0; color: #64748b; font-size: 12px; }
+.imposition-mode .active { color: #2563eb; background: #eff6ff; }
+.imposition-canvas-scroll { position: relative; flex: 1 1 0; min-height: 0; height: 100%; overflow: hidden; overscroll-behavior: contain; display: flex; justify-content: center; align-items: flex-start; padding: 36px; touch-action: none; }
+.imposition-canvas-scroll.is-pan-mode, .imposition-canvas-scroll:has(.imposition-svg-pages) { cursor: default; }
+.imposition-canvas-scroll.is-pan-mode { cursor: grab; }
+.imposition-canvas-scroll.is-pan-mode:active { cursor: grabbing; }
+.imposition-svg-pages { flex: none; display: grid; grid-template-columns: repeat(4, max-content); grid-auto-rows: max-content; transform-origin: top center; user-select: none; align-items: start; justify-content: center; gap: 24px; padding-bottom: 24px; }
+.imposition-svg-canvas { display: block; flex: none; width: auto; height: auto; max-width: none; max-height: none; box-shadow: 0 10px 30px rgba(15, 23, 42, .12); transform-origin: top center; }
+.imposition-svg-item { cursor: pointer; }
+.imposition-svg-item:hover rect:first-child { stroke: #3b82f6; }
+.imposition-canvas-footer { min-height: 42px; padding: 0 20px; display: flex; justify-content: space-between; align-items: center; color: #94a3b8; font-size: 12px; background: #fff; border-top: 1px solid #e2e8f0; }
+.imposition-canvas-footer .imposition-workspace-actions { gap: 4px; }
+.imposition-canvas-footer .imposition-workspace-actions .ant-btn { height: 28px; padding-inline: 9px; font-size: 12px; }
+.imposition-canvas-footer .imposition-workspace-actions .ant-btn .lucide { width: 13px; height: 13px; }
+.imposition-canvas-footer .imposition-workspace-actions > span { min-width: auto; font-size: 11px; }
+.imposition-shortcut { margin-left: 8px; color: #94a3b8; font-size: 11px; }
+.imposition-sort-button { display: inline-flex; align-items: center; gap: 4px; color: #2563eb; border-color: #bfdbfe; background: #eff6ff; }
+.imposition-job-sidebar { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; background: #fff; border-left: 1px solid #dbe3ed; }
+.imposition-sidebar-heading { padding: 18px 16px 12px; display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 1px solid #edf2f7; }
+.imposition-sidebar-heading strong { display: block; font-size: 16px; }
+.imposition-sidebar-heading span { display: block; margin-top: 3px; color: #94a3b8; font-size: 12px; }
+.imposition-sidebar-heading .ant-tag { margin-top: 2px; }
+.imposition-job-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 12px; }
+.imposition-job-card { margin-bottom: 10px; border: 1px solid #dbe3ed; border-radius: 9px; overflow: hidden; background: #fff; transition: border-color .15s, box-shadow .15s; }
+.imposition-job-card.selected { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59, 130, 246, .1); }
+.imposition-job-trigger { width: 100%; padding: 12px; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; text-align: left; border: 0; background: transparent; cursor: pointer; color: #172033; }
+.imposition-job-trigger > span { min-width: 0; display: flex; gap: 7px; align-items: flex-start; }
+.imposition-job-trigger strong, .imposition-job-trigger small { display: block; }
+.imposition-job-trigger strong { font-size: 14px; }
+.imposition-job-trigger small { margin-top: 4px; color: #8a98aa; font-size: 11px; }
+.imposition-job-images { padding: 0 10px 8px 34px; background: #f8fafc; border-top: 1px solid #edf2f7; }
+.imposition-job-images button { width: 100%; padding: 8px 0; display: flex; justify-content: space-between; gap: 8px; border: 0; border-bottom: 1px solid #e8eef5; background: transparent; color: #475569; text-align: left; cursor: pointer; }
+.imposition-job-images button:last-of-type { border-bottom: 0; }
+.imposition-job-images button.active, .imposition-job-images button:hover { color: #2563eb; }
+.imposition-job-images small { color: #94a3b8; white-space: nowrap; }
+.imposition-job-loading { display: block; padding: 9px 0; color: #94a3b8; font-size: 12px; }
+.imposition-job-card-footer { min-height: 36px; padding: 0 10px 0 34px; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #edf2f7; color: #94a3b8; font-size: 11px; }
+.imposition-sidebar-tip { margin: 0 16px 16px; padding-top: 12px; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 12px; line-height: 1.6; }
+@media (max-width: 1100px) { .imposition-layout-config { min-width: 0; width: 100%; } .imposition-workspace-header { display: grid; grid-template-columns: auto 1fr; } .imposition-workspace-hint { grid-column: 2; margin-top: 0; } }
+@media (max-width: 900px) { .imposition-workspace-body { grid-template-columns: 1fr; } .imposition-job-sidebar { max-height: 380px; border-left: 0; border-top: 1px solid #dbe3ed; } .imposition-workspace-header { align-items: flex-start; gap: 12px; flex-direction: column; } }

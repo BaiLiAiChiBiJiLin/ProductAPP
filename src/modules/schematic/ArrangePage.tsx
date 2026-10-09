@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction, type ReactNode } from 'react'
 import { Button, InputNumber } from 'antd'
 import { Download, Hand, MousePointer2, Plus, WandSparkles, ZoomIn, ZoomOut, ArrowLeft, Combine } from 'lucide-react'
 import type { Asset, HeaderBlock, Item, LayoutBounds, Page, PageHeader } from '../../model'
@@ -16,8 +16,11 @@ import Loading from '../../components/Loading'
 import PageConfigPanel from './components/PageConfigPanel'
 import { pdfProgressText, type PdfExportProgress } from './services/exportService'
 import type { ProductAttributePatch } from './services/productOptionRules'
+import type { ArrangementDisplayState } from './services/arrangementDisplayState'
 
 type Props = {
+  displayState: ArrangementDisplayState
+  onDisplayStateChange: Dispatch<SetStateAction<ArrangementDisplayState>>
   sortMode: 'default' | 'upload'
   context: ReactNode
   assets: Asset[]
@@ -39,6 +42,7 @@ type Props = {
   onCombine: () => void
   onSelectGroup: (id: string, ctrlKey: boolean) => void
   onBack: () => void
+  onBackToHistory: () => void
   onExport: (format: 'jpg' | 'png' | 'svg' | 'pdf', displayOverrides: ReadonlyMap<string, DimensionDisplayOverride>) => void
   exporting?: boolean
   exportProgress?: PdfExportProgress
@@ -51,15 +55,19 @@ type Props = {
   onRemoveHeaderBlock: (id: string) => void
 }
 
-export default function ArrangePage({ context, assets, pages, activePage, selectedItem, selectedGroupIds, sortMode, onSelectPage, onSelectItem, onSelectGroup, onChangeItem, onChangeRulers, onChangeRuler = () => {}, onEditText = () => {}, onDropAsset, onDeleteGroups, onConfirmAssetAttributes, onAddPage, onAutoArrange, onCombine, onBack, onExport, exporting = false, exportProgress = { phase: 'rendering', completed: 0, total: 1 }, metadata = {}, onMetadataChange, layoutBounds, onBoundsChange, onAddHeaderBlock, onChangeHeaderBlock, onRemoveHeaderBlock }: Props) {
+export default function ArrangePage({ displayState, onDisplayStateChange, context, assets, pages, activePage, selectedItem, selectedGroupIds, sortMode, onSelectPage, onSelectItem, onSelectGroup, onChangeItem, onChangeRulers, onChangeRuler = () => {}, onEditText = () => {}, onDropAsset, onDeleteGroups, onConfirmAssetAttributes, onAddPage, onAutoArrange, onCombine, onBack, onBackToHistory, onExport, exporting = false, exportProgress = { phase: 'rendering', completed: 0, total: 1 }, metadata = {}, onMetadataChange, layoutBounds, onBoundsChange, onAddHeaderBlock, onChangeHeaderBlock, onRemoveHeaderBlock }: Props) {
   const [exportFormat, setExportFormat] = useState<'jpg' | 'png' | 'svg' | 'pdf'>('pdf')
   const [canvasMode, setCanvasMode] = useState<'select' | 'pan'>('select')
   const [sidePanel, setSidePanel] = useState<'pool' | 'attributes'>('pool')
-  const [zoom, setZoom] = useState(1)
-  const [dimensionDisplayOverrides, setDimensionDisplayOverrides] = useState<Map<string, DimensionDisplayOverride>>(new Map())
+  const { zoom, dimensionDisplayOverrides, visualScales, accessoryVisuals } = displayState
+  const updateDisplay = <K extends keyof ArrangementDisplayState>(key: K, update: SetStateAction<ArrangementDisplayState[K]>) => {
+    onDisplayStateChange(previous => ({ ...previous, [key]: typeof update === 'function' ? update(previous[key]) : update }))
+  }
+  const setZoom = (update: SetStateAction<number>) => updateDisplay('zoom', update)
+  const setDimensionDisplayOverrides = (update: SetStateAction<ArrangementDisplayState['dimensionDisplayOverrides']>) => updateDisplay('dimensionDisplayOverrides', update)
+  const setVisualScales = (update: SetStateAction<ArrangementDisplayState['visualScales']>) => updateDisplay('visualScales', update)
+  const setAccessoryVisuals = (update: SetStateAction<ArrangementDisplayState['accessoryVisuals']>) => updateDisplay('accessoryVisuals', update)
   const [boxSelection, setBoxSelection] = useState<string[]>([])
-  const [visualScales, setVisualScales] = useState<Map<string, number>>(new Map())
-  const [accessoryVisuals, setAccessoryVisuals] = useState<Map<string, { scale: number; x: number; y: number }>>(new Map())
   const [selectedAccessoryKey, setSelectedAccessoryKey] = useState<string | null>(null)
   const [visualScaleInput, setVisualScaleInput] = useState('100')
   useEffect(() => { setBoxSelection([]); setSelectedAccessoryKey(null) }, [activePage])
@@ -195,7 +203,7 @@ export default function ArrangePage({ context, assets, pages, activePage, select
       <button className="new-page" onClick={onAddPage}><Plus size={15}/>新建页面</button>
     </aside>
     <section className="canvas-area">
-      <div className="canvas-head"><Button type="primary" icon={<ArrowLeft size={16}/>} onClick={onBack} disabled={exporting}>返回图片列表</Button><div className="canvas-title-center"><h1>示意图打印预览</h1><span className="muted">页面 {page?.id ?? 1} / {pages.length} · {page?.items.filter(item => !item.derivedFrom).length ?? 0} 张图片</span></div><div className="canvas-actions"><select className="export-format" value={exportFormat} disabled={exporting} onChange={event => setExportFormat(event.target.value as typeof exportFormat)}><option value="jpg">JPG</option><option value="png">PNG</option><option value="svg">SVG</option><option value="pdf">PDF</option></select><Button type="primary" icon={exporting ? <Loading size="small" inline /> : <Download size={16}/>} disabled={exporting} onClick={() => onExport(exportFormat, dimensionDisplayOverrides)}>{exporting ? '导出中…' : '导出'}</Button></div></div>
+      <div className="canvas-head"><div className="canvas-back-actions"><Button type="primary" icon={<ArrowLeft size={16}/>} onClick={onBack} disabled={exporting}>返回图片列表</Button><Button onClick={onBackToHistory} disabled={exporting}>回到历史记录</Button></div><div className="canvas-title-center"><h1>示意图打印预览</h1><span className="muted">页面 {page?.id ?? 1} / {pages.length} · {page?.items.filter(item => !item.derivedFrom).length ?? 0} 张图片</span></div><div className="canvas-actions"><select className="export-format" value={exportFormat} disabled={exporting} onChange={event => setExportFormat(event.target.value as typeof exportFormat)}><option value="jpg">JPG</option><option value="png">PNG</option><option value="svg">SVG</option><option value="pdf">PDF</option></select><Button type="primary" icon={exporting ? <Loading size="small" inline /> : <Download size={16}/>} disabled={exporting} onClick={() => onExport(exportFormat, dimensionDisplayOverrides)}>{exporting ? '导出中…' : '导出'}</Button></div></div>
       <div className="toolbar">
         <Button type="text" className={canvasMode === 'select' ? 'toolbar-mode-active' : ''} icon={<MousePointer2 size={15}/>} onClick={() => setCanvasMode('select')}>选择</Button>
         <Button type="text" className={canvasMode === 'pan' ? 'toolbar-mode-active' : ''} icon={<Hand size={15}/>} onClick={() => setCanvasMode('pan')}>平移</Button>
@@ -220,7 +228,7 @@ export default function ArrangePage({ context, assets, pages, activePage, select
         <span className="toolbar-divider" role="separator" aria-orientation="vertical"/><span className="toolbar-spacer"/>
         <button className="zoom-btn" title="缩小画布" onClick={() => setZoom(value => Math.max(0.5, Number((value - 0.1).toFixed(2))))}><ZoomOut size={16}/></button><span className="zoom-value">{Math.round(zoom * 100)}%</span><button className="zoom-btn" title="放大画布" onClick={() => setZoom(value => Math.min(2.5, Number((value + 0.1).toFixed(2))))}><ZoomIn size={16}/></button>
       </div>
-      {page && <ArtworkCanvas page={page} assets={assetMap} selected={selectedItem} selectedIds={boxSelection} onBoxSelect={ids => { setSelectedAccessoryKey(null); onSelectItem(null); setBoxSelection(ids) }} selectedGroupIds={selectedGroupIds} onSelect={selectOne} onSelectGroup={selectGroup} onSelectAccessory={selectAccessory} selectedAccessoryKey={selectedAccessoryKey ?? undefined} accessoryVisuals={accessoryVisuals} onChangeAccessory={changeAccessory} onChange={onChangeItem} onDropAsset={onDropAsset} metadata={metadata} totalPages={pages.length} mode={canvasMode} zoom={zoom} onZoomChange={setZoom} layoutBounds={layoutBounds} onHeaderBlockChange={onChangeHeaderBlock} dimensionItemIds={dimensionItemIds} dimensionPrecision={dimensionPrecision} dimensionDecimalPlaces={dimensionDecimalPlaces} dimensionDisplayOverrides={dimensionDisplayOverrides} visualScales={visualScales} onChangeRuler={onChangeRuler} onEditText={onEditText}/>}<div className="canvas-footer"><span>画布尺寸：A4 · 210 × 297 mm</span><span>当前页面 {page?.items.filter(item => !item.derivedFrom).length ?? 0} 张 · 全部页面 {pages.reduce((total, item) => total + item.items.filter(image => !image.derivedFrom).length, 0)} 张</span><span className="saved"><i/>已自动保存</span></div>
+      {page && <ArtworkCanvas page={page} assets={assetMap} selected={selectedItem} selectedIds={boxSelection} onBoxSelect={ids => { setSelectedAccessoryKey(null); onSelectItem(null); setBoxSelection(ids) }} selectedGroupIds={selectedGroupIds} onSelect={selectOne} onSelectGroup={selectGroup} onSelectAccessory={selectAccessory} selectedAccessoryKey={selectedAccessoryKey ?? undefined} accessoryVisuals={accessoryVisuals} onChangeAccessory={changeAccessory} onChange={onChangeItem} onDropAsset={onDropAsset} metadata={metadata} totalPages={pages.length} mode={canvasMode} zoom={zoom} onZoomChange={setZoom} layoutBounds={layoutBounds} onHeaderBlockChange={onChangeHeaderBlock} dimensionItemIds={dimensionItemIds} dimensionPrecision={dimensionPrecision} dimensionDecimalPlaces={dimensionDecimalPlaces} dimensionDisplayOverrides={dimensionDisplayOverrides} visualScales={visualScales} onChangeRuler={onChangeRuler} onEditText={onEditText}/>}<div className="canvas-footer"><span>画布尺寸：A4 · 210 × 297 mm</span><span>当前页面 {page?.items.filter(item => !item.derivedFrom).length ?? 0} 张 · 全部页面 {pages.reduce((total, item) => total + item.items.filter(image => !image.derivedFrom).length, 0)} 张</span><span className="saved" title="导出成功后保存当前排列与调整，可在示意图审核中恢复"><i/>导出后保存到审核</span></div>
     </section>
     <aside className="assets-panel"><PageConfigPanel metadata={metadata} onMetadataChange={onMetadataChange} bounds={layoutBounds} onBoundsChange={onBoundsChange} pageId={page?.id ?? activePage} headerBlocks={page?.headerBlocks ?? []} selectedHeaderBlock={selectedItem} onSelectHeaderBlock={selectOne} onAddHeaderBlock={onAddHeaderBlock} onChangeHeaderBlock={onChangeHeaderBlock} onRemoveHeaderBlock={onRemoveHeaderBlock}/><div className="asset-section arrange-pool-section"><div className="arrange-pool-shell"><div className="arrange-side-tabs" role="tablist" aria-label="排列页图片面板"><button type="button" role="tab" aria-selected={sidePanel === 'pool'} className={sidePanel === 'pool' ? 'active' : ''} onClick={() => setSidePanel('pool')}>图片池</button><button type="button" role="tab" aria-selected={sidePanel === 'attributes'} className={sidePanel === 'attributes' ? 'active' : ''} disabled={!hasVisualSelection} title={hasVisualSelection ? '调整选中图片的画布显示大小' : '请先在画布中选择图片或图片组'} onClick={() => hasVisualSelection && setSidePanel('attributes')}>图片属性</button></div>{sidePanel === 'attributes' && hasVisualSelection ? <div className="arrange-attributes-content"><div className="visual-scale-controls" aria-label="图片视觉缩放"><span>图片显示</span><button type="button" className="zoom-btn" title="缩小图片" disabled={exporting} onClick={() => updateVisualScale(selectedVisualScale - CANVAS_DISPLAY_SCALE_STEP)}><ZoomOut size={15}/></button><input aria-label="图片显示百分比" type="number" min={25} max={300} step={1} value={visualScaleInput} disabled={exporting} onChange={event => setVisualScaleInput(event.target.value)} onBlur={commitVisualScale} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); commitVisualScale() } }}/><span>%</span><button type="button" className="zoom-btn" title="放大图片" disabled={exporting} onClick={() => updateVisualScale(selectedVisualScale + CANVAS_DISPLAY_SCALE_STEP)}><ZoomIn size={15}/></button><small>仅改变画布显示，不修改真实尺寸；标尺随显示大小调整</small></div>{singleAssetSelection && selectedAssetId ? <ProductAttributesPanel allowGrouping={false} assets={assets} selectedAssetIds={selectedAssetIds} onConfirmAttributes={patch => onConfirmAssetAttributes(selectedAssetId, patch)} showSelectionSummary={false} disabled={exporting}/> : null}</div> : <div className="arrange-pool-content"><AssetPool assets={assets} pages={pages} mode="arrange" onAddAsset={onDropAsset}/></div>}</div></div></aside>
   </main>

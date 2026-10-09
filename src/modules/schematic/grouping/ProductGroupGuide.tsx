@@ -24,7 +24,7 @@ export default function ProductGroupGuide({ assets }: { assets: Asset[] }) {
   })?.dataset.groupMemberId ?? null
   const handlePointerMove = (event: ReactPointerEvent<HTMLElement>) => {
     const pointer = pointerRef.current
-    if (!fixedSlots || !pointer || pointer.pointerId !== event.pointerId) return
+    if (!pointer || pointer.pointerId !== event.pointerId) return
     const distance = Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y)
     if (!pointer.active && distance < 5) return
     pointer.active = true
@@ -37,7 +37,7 @@ export default function ProductGroupGuide({ assets }: { assets: Asset[] }) {
     if (!pointer || pointer.pointerId !== event.pointerId) return
     if (pointer.active) {
       const targetId = targetAt(event)
-      if (targetId && targetId !== pointer.id) grouping.reorderMembers(pointer.id, targetId)
+      if (event.type !== 'pointercancel' && targetId && targetId !== pointer.id) grouping.reorderMembers(pointer.id, targetId)
       suppressClickRef.current = true
       window.setTimeout(() => { suppressClickRef.current = false }, 0)
     }
@@ -48,7 +48,7 @@ export default function ProductGroupGuide({ assets }: { assets: Asset[] }) {
   return <section className="product-group-guide" aria-label="产品分组引导" onPointerMove={handlePointerMove} onPointerUp={finishPointer} onPointerCancel={finishPointer}>
     <strong>{session.trigger.label} · 已加入 {session.memberIds.length} 张图片</strong>
     <p>{session.trigger.kind === 'free' ? '这是自由图片组，可点击暗色图片继续加入，产品和所有属性都可以分别设置。' : fixedSlots ? '点击暗色的未选产品卡片加入组，前四张按固定槽位排列，之后仍可继续添加图片。点击缩略图分别设置属性。' : '点击暗色的未选产品卡片加入组，点击缩略图分别设置属性。'}点击“确认”保存全组各自的属性并退出引导；“保存批次”保存后继续编辑。{session.trigger.kind !== 'free' && '已选产品显示红色，不能加入。'}</p>
-    {fixedSlots && <p>拖动缩略图调整顺序，前四个位置固定为 Example、Front、inside、Back；Example 可以置空，之后仍可添加图片。</p>}
+    <p>{fixedSlots ? '拖动缩略图调整顺序，前四个位置固定为 Example、Front、inside、Back；Example 可以置空，之后仍可添加图片。' : '拖动下方缩略图调整组内顺序，点击缩略图可编辑对应图片。'}</p>
     <p>“退出引导”或“取消选择”保留已保存内容，放弃本次未保存的修改。</p>
     {session.trigger.count && <p>所选立牌数量：{session.trigger.count} 件，请核对组内图片。</p>}
     <div className="product-group-thumbnails">
@@ -57,11 +57,12 @@ export default function ProductGroupGuide({ assets }: { assets: Asset[] }) {
         <span className="product-group-empty-label">空占位</span>
         <Button type="default" size="small" disabled={grouping.saving} onClick={() => grouping.setEmptyFirstSlot(false)}>取消置空</Button>
       </div>}
-      {session.memberIds.map((id, index) => { const asset = assets.find(item => item.id === id); const slotIndex = index + (session.emptyFirstSlot ? 1 : 0); return asset && <div key={id} data-group-member-id={id} className={`product-group-thumbnail ${fixedSlots ? 'is-reorderable' : ''} ${draggingId === id ? 'is-dragging' : ''} ${dropTargetId === id ? 'is-drop-target' : ''}`}>
-        <button type="button" draggable={false} className="product-group-thumbnail-select" title={fixedSlots ? '按住拖动调整图片位置' : undefined} aria-label={`编辑组内图片 ${asset.name}`} aria-pressed={id === session.activeId} disabled={grouping.saving}
+      {session.memberIds.map((id, index) => { const asset = assets.find(item => item.id === id); const slotIndex = index + (session.emptyFirstSlot ? 1 : 0); return asset && <div key={id} data-group-member-id={id} className={`product-group-thumbnail is-reorderable ${draggingId === id ? 'is-dragging' : ''} ${dropTargetId === id ? 'is-drop-target' : ''}`}>
+        <button type="button" draggable={false} className="product-group-thumbnail-select" title="按住拖动调整图片位置" aria-label={`编辑组内图片 ${asset.name}`} aria-pressed={id === session.activeId} disabled={grouping.saving}
           onPointerDown={event => {
-            if (!fixedSlots || grouping.saving || event.button !== 0) return
+            if (grouping.saving || event.button !== 0) return
             event.preventDefault()
+            event.currentTarget.setPointerCapture(event.pointerId)
             pointerRef.current = { id, pointerId: event.pointerId, x: event.clientX, y: event.clientY, active: false }
           }}
           onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return }; grouping.selectMember(id, 'thumbnail') }}>
