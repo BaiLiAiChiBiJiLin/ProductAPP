@@ -29,6 +29,7 @@
 .imposition-canvas-scroll.is-pan-mode:active { cursor: grabbing; }
 .imposition-svg-pages { flex: none; display: grid; grid-template-columns: repeat(4, max-content); grid-auto-rows: max-content; transform-origin: top center; user-select: none; align-items: start; justify-content: center; gap: 24px; padding-bottom: 24px; }
 .imposition-svg-canvas { display: block; flex: none; width: auto; height: auto; max-width: none; max-height: none; box-shadow: 0 10px 30px rgba(15, 23, 42, .12); transform-origin: top center; }
+.imposition-konva-stage { display: block; flex: none; box-shadow: 0 10px 30px rgba(15, 23, 42, .12); }
 .imposition-svg-item { cursor: pointer; }
 .imposition-svg-item:hover rect:first-child { stroke: #3b82f6; }
 .imposition-canvas-footer { min-height: 42px; padding: 0 20px; display: flex; justify-content: space-between; align-items: center; color: #94a3b8; font-size: 12px; background: #fff; border-top: 1px solid #e2e8f0; }
