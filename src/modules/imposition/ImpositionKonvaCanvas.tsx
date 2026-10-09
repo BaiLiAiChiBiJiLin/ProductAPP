@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Circle, Group, Image as KonvaImage, Layer, Rect, Stage, Transformer } from 'react-konva'
 import type Konva from 'konva'
 import type { ProductionImage } from './impositionRecords'
@@ -33,9 +33,9 @@ function overlaps(left: PackedImpositionItem, leftRotation: number, right: Packe
   return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
 }
 
-function CanvasImage({ item, source, scale, selected, onSelect, onCommit, nodeRef }: { item: PackedImpositionItem; source?: string; scale: number; selected: boolean; onSelect: () => void; onCommit: (x: number, y: number, rotation: number) => void; nodeRef: (node: Konva.Image | null) => void }) {
+function CanvasImage({ item, source, scale, onSelect, onCommit, nodeRef }: { item: PackedImpositionItem; source?: string; scale: number; onSelect: () => void; onCommit: (x: number, y: number, rotation: number) => void; nodeRef: (node: Konva.Image | null) => void }) {
   const image = useSourceImage(source)
-  return <KonvaImage ref={nodeRef} image={image} x={item.x * scale} y={item.y * scale} width={item.width * scale} height={item.height * scale} offsetX={item.width * scale / 2} offsetY={item.height * scale / 2} draggable={!selected || !false} onClick={event => { event.cancelBubble = true; onSelect() }} onDragEnd={event => onCommit(event.target.x() / scale - item.width / 2, event.target.y() / scale - item.height / 2, event.target.rotation())} onTransformEnd={event => onCommit(event.target.x() / scale - item.width / 2, event.target.y() / scale - item.height / 2, event.target.rotation())} opacity={image ? 1 : .35} />
+  return <KonvaImage ref={nodeRef} image={image} x={(item.x + item.width / 2) * scale} y={(item.y + item.height / 2) * scale} width={item.width * scale} height={item.height * scale} offsetX={item.width * scale / 2} offsetY={item.height * scale / 2} draggable onClick={event => { event.cancelBubble = true; onSelect() }} onDragEnd={event => onCommit(event.target.x() / scale - item.width / 2, event.target.y() / scale - item.height / 2, event.target.rotation())} onTransformEnd={event => onCommit(event.target.x() / scale - item.width / 2, event.target.y() / scale - item.height / 2, event.target.rotation())} opacity={image ? 1 : .35} />
 }
 
 export default function ImpositionKonvaCanvas(props: Props) {
@@ -56,7 +56,6 @@ export default function ImpositionKonvaCanvas(props: Props) {
   const rows = Math.max(1, Math.ceil(localPages.length / columns))
   const stageWidth = columns * pageWidth + (columns - 1) * gap
   const stageHeight = rows * pageHeight + (rows - 1) * gap
-  const scaled = boardScale * zoom
   const handleCommit = (pageIndex: number, item: PackedImpositionItem, x: number, y: number, rotation: number) => {
     const next = { ...item, x: Math.max(0, x), y: Math.max(0, y) }
     const page = localPages[pageIndex] ?? []
@@ -70,7 +69,7 @@ export default function ImpositionKonvaCanvas(props: Props) {
       <Rect width={pageWidth} height={pageHeight} fill="#fff" stroke="#cbd5e1" strokeWidth={1}/>
       <Rect x={effectiveX * boardScale} y={effectiveY * boardScale} width={effectiveWidth * boardScale} height={effectiveHeight * boardScale} stroke="#ef4444" dash={[2 * boardScale, 2 * boardScale]} strokeWidth={.8} listening={false}/>
       {Array.from({ length: Math.max(0, holeCount) }).map((_, index) => <Circle key={index} x={(holeLeft + holeSize / 2) * boardScale} y={(holeStart + index * holeGap + holeSize / 2) * boardScale} radius={holeSize * boardScale / 2} fill="#2563eb" listening={false}/>) }
-      {page.map(item => <CanvasImage key={item.image.id} item={item} source={imageSources[item.image.id]} scale={boardScale} selected={selectedImageId === item.image.id} onSelect={() => onSelectImage(item.image.id)} onCommit={(x, y, rotation) => handleCommit(pageIndex, item, x, y, rotation)} nodeRef={node => { nodeRefs.current[item.image.id] = node }}/>) }
+      {page.map(item => <CanvasImage key={item.image.id} item={item} source={imageSources[item.image.id]} scale={boardScale} onSelect={() => onSelectImage(item.image.id)} onCommit={(x, y, rotation) => handleCommit(pageIndex, item, x, y, rotation)} nodeRef={node => { nodeRefs.current[item.image.id] = node }}/>) }
     </Group> })}
     <Transformer ref={transformerRef} resizeEnabled={false} rotateEnabled={!panMode} rotateAnchorOffset={22} borderStroke="#2563eb" visible={Boolean(selectedNode)} />
   </Layer></Stage>
