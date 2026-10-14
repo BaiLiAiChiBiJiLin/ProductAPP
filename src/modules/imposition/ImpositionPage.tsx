@@ -1,83 +1,275 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Button, ConfigProvider, Drawer, Dropdown, Input, InputNumber, Pagination, Popconfirm, Table, Tag, theme } from 'antd'
+import { Alert, Button, Checkbox, ConfigProvider, Divider, Drawer, Dropdown, Input, InputNumber, Pagination, Popconfirm, Select, Table, Tag, theme } from 'antd'
 import type { CSSProperties, PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react'
+import { listen } from '@tauri-apps/api/event'
 import zhCN from 'antd/es/locale/zh_CN'
-import { ArrowLeft, ChevronDown, ChevronRight, Hand, MousePointer2, RefreshCw, ZoomIn, ZoomOut } from 'lucide-react'
-import { listPendingImpositions, loadImpositionImage, loadImpositionJob, returnImpositionToReview, type ImpositionJob, type ImpositionListResult, type ImpositionRecord, type ProductionImage } from './impositionRecords'
-import ImpositionKonvaCanvas from './ImpositionKonvaCanvas'
+import { ArrowLeft, Download, ChevronDown, ChevronLeft, ChevronRight, Hand, MousePointer2, RefreshCw, ZoomIn, ZoomOut } from 'lucide-react'
+import { expandImpositionImages, getImpositionQuantity, impositionImageId, listPendingImpositions, loadImpositionImage, loadImpositionJob, loadImpositionPolygon, packImpositionIrregular, returnImpositionToReview, updateImpositionImageQuantity, type ImpositionJob, type ImpositionListResult, type ImpositionRecord, type ProductionImage } from './impositionRecords'
+import ImpositionKonvaCanvas, { type PackedImpositionItem } from './ImpositionKonvaCanvas'
+import ImpositionPdfExportModal from './ImpositionPdfExportModal'
+import ImpositionUpload from './ImpositionUpload'
+import ImpositionThumbnail from './ImpositionThumbnail'
+import { zoomAtPointer } from './zoomAtPointer'
+import { groupRepeatedPackingPages, summarizePackingResult, type PackingObjective, type PackingPlan } from './packingAlgorithms'
 import ModulePage from '../../components/ModulePage'
+import Loading from '../../components/Loading'
 import './imposition.css'
 
-type LayoutConfig = { plateHeight: number; plateWidth: number; effectiveHeight: number; effectiveWidth: number; effectiveRight: number; holeSize: number; holeCount: number; holeGap: number; holeLeft: number }
-type WorkspaceProps = { jobs: ImpositionJob[]; activeJobId?: string; onBack: () => void; onSelectJob: (id: string) => void; onReturn: (id: string) => void; returningId?: string; loading: boolean }
-
-function ImpositionWorkspace({ jobs, activeJobId, onBack, onSelectJob, onReturn, returningId, loading }: WorkspaceProps) {
+type LayoutConfig = { plateHeight: number; plateWidth: number; effectiveHeight: number; effectiveWidth: number; effectiveRight: number; spacing: number; holeSize: number; holeCount: number; holeGap: number; holeLeft: number }
+type WorkspaceProps = { jobs: ImpositionJob[]; temporaryRecords: ImpositionRecord[]; onImported: (record: ImpositionRecord) => void; activeJobId?: string; onBack: () => void; onSelectJob: (id: string) => void; onReturn: (id: string) => void; returningId?: string; loading: boolean }
+const EMPTY_IMPOSITION_IMAGES: ProductionImage[] = []
+const EMPTY_PACKED_PAGES: PackingPlan['pages'] = []
+type PackingProgressStage = 'outline' | 'prepare' | 'search' | 'validate' | 'render'
+const PACKING_PROGRESS_COPY: Record<PackingProgressStage, { title: string; detail: string; progress: number }> = {
+  outline: { title: '提取图片轮廓', detail: '正在读取 SVG 路径并生成多边形轮廓…', progress: 12 },
+  prepare: { title: '准备异形排版数据', detail: '正在合并 QT 数量、间距和板材有效区域…', progress: 25 },
+  search: { title: '搜索异形排版方案', detail: '正在尝试旋转、碰撞检测和空隙填充；复杂任务会继续计算，不会因固定时限停止…', progress: 46 },
+  validate: { title: '校验排版结果', detail: '正在检查边界、图片间距和未放置图片…', progress: 88 },
+  render: { title: '加载排版预览', detail: '正在加载已放置的原图并准备画布…', progress: 96 },
+}
+function ImpositionWorkspace({ jobs, temporaryRecords, onImported, activeJobId, onBack, onSelectJob, onReturn, returningId, loading }: WorkspaceProps) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const [details, setDetails] = useState<Record<string, ImpositionRecord>>({})
   const [imageSources, setImageSources] = useState<Record<string, string>>({})
+  const [imagePolygons, setImagePolygons] = useState<Record<string, Array<[number, number]>>>({})
+  const [invalidOutlineIds, setInvalidOutlineIds] = useState<Set<string>>(() => new Set())
+  const [selectedByJob, setSelectedByJob] = useState<Record<string, string[]>>({})
+  const [loadingJobIds, setLoadingJobIds] = useState<Set<string>>(() => new Set())
+  const [uploading, setUploading] = useState(false)
+  const recordRequests = useRef(new Map<string, Promise<ImpositionRecord>>())
+  const calculateLock = useRef(false)
+  const mounted = useRef(true)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  const [outlineErrorCount, setOutlineErrorCount] = useState(0)
   const [detailError, setDetailError] = useState('')
+  const [quantityDrafts, setQuantityDrafts] = useState<Record<string, number>>({})
+  const [quantitySavingId, setQuantitySavingId] = useState<string>()
   const [zoom, setZoom] = useState(1)
   const [selectedImageId, setSelectedImageId] = useState<string>()
+  const committedPages = useRef<PackedImpositionItem[][] | undefined>(undefined)
+  const [exportSnapshot, setExportSnapshot] = useState<{ pages: PackingPlan['pages']; sources: Record<string, string> }>()
   const [panMode, setPanMode] = useState(false)
   const [spacePressed, setSpacePressed] = useState(false)
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 })
+  const [layoutExpanded, setLayoutExpanded] = useState(false)
   const [sortMode, setSortMode] = useState<'customer' | 'time'>('customer')
-  const [layout, setLayout] = useState<LayoutConfig>({ plateHeight: 464, plateWidth: 300, effectiveHeight: 440, effectiveWidth: 285, effectiveRight: 5, holeSize: 3, holeCount: 2, holeGap: 203.468, holeLeft: 4 })
+  const [layout, setLayout] = useState<LayoutConfig>({ plateHeight: 464, plateWidth: 300, effectiveHeight: 440, effectiveWidth: 285, effectiveRight: 5, spacing: 3, holeSize: 3, holeCount: 2, holeGap: 203.468, holeLeft: 4 })
+  const [packingObjective, setPackingObjective] = useState<PackingObjective>('least-material')
+  const [allSheetsExpanded, setAllSheetsExpanded] = useState(false)
+  const [packingLoading, setPackingLoading] = useState(false)
+  const [packingProgressStage, setPackingProgressStage] = useState<PackingProgressStage>('outline')
+  const [packingProgress, setPackingProgress] = useState(0)
+  const [packingElapsedMs, setPackingElapsedMs] = useState(0)
+  const [packingProgressDetail, setPackingProgressDetail] = useState('')
+  const [packingProgressCounts, setPackingProgressCounts] = useState({ completed: 0, total: 0 })
+  const progressEventAtRef = useRef(0)
+  const packingProgressStageRef = useRef<PackingProgressStage>('outline')
   const panRef = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | undefined>(undefined)
+  const canvasRef = useRef<HTMLDivElement>(null)
+  const pointerRef = useRef<{ x: number; y: number } | undefined>(undefined)
   const displayJobs = useMemo(() => [...jobs].sort((left, right) => sortMode === 'customer' ? (left.customerName || '').localeCompare(right.customerName || '') : new Date(right.submittedAt).getTime() - new Date(left.submittedAt).getTime()), [jobs, sortMode])
   const activeJob = displayJobs.find(job => job.id === activeJobId) ?? displayJobs[0]
-  const activeDetail = activeJob ? details[activeJob.id] : undefined
+  const ensureRecord = (id: string): Promise<ImpositionRecord> => {
+    const existing = details[id] ?? temporaryRecords.find(record => record.id === id)
+    if (existing) return Promise.resolve(existing)
+    const pending = recordRequests.current.get(id)
+    if (pending) return pending
+    setLoadingJobIds(current => new Set([...current, id]))
+    const request = loadImpositionJob(id).then(record => {
+      if (mounted.current) setDetails(current => ({ ...current, [record.id]: record }))
+      return record
+    }).finally(() => {
+      recordRequests.current.delete(id)
+      if (mounted.current) setLoadingJobIds(current => { const next = new Set(current); next.delete(id); return next })
+    })
+    recordRequests.current.set(id, request)
+    return request
+  }
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => { if (event.code === 'Space' && !event.repeat) { event.preventDefault(); setSpacePressed(true) } }
+    setDetails(current => ({ ...current, ...Object.fromEntries(temporaryRecords.map(record => [record.id, record])) }))
+  }, [temporaryRecords])
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => { if (event.code === 'Space' && !event.repeat && !(event.target instanceof HTMLElement && event.target.closest('input, textarea, select, [contenteditable=true], [role=dialog]'))) { event.preventDefault(); setSpacePressed(true) } }
     const onKeyUp = (event: KeyboardEvent) => { if (event.code === 'Space') setSpacePressed(false) }
     window.addEventListener('keydown', onKeyDown); window.addEventListener('keyup', onKeyUp)
     return () => { window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp) }
   }, [])
-  const updateZoom = (delta: number) => setZoom(value => Math.max(.6, Math.min(5, Number((value + delta).toFixed(1)))))
-  const onCanvasWheel = (event: ReactWheelEvent<HTMLDivElement>) => { if (!event.ctrlKey) return; event.preventDefault(); updateZoom(event.deltaY > 0 ? -.1 : .1) }
+  const updateZoom = (delta: number, pointer = pointerRef.current) => {
+    const nextZoom = Math.max(.6, Math.min(5, Number((zoom + delta).toFixed(1))))
+    const canvas = canvasRef.current
+    if (!canvas || nextZoom === zoom) return
+    const viewport = { width: canvas.clientWidth, height: canvas.clientHeight }
+    const scene = { width: 4 * boardWidth * boardScale + 3 * 24, height: Math.max(1, Math.ceil(displayedSheetCount / 4)) * (boardHeight * boardScale + 24) - 24 }
+    setPanOffset(zoomAtPointer(pointer ?? { x: viewport.width / 2, y: viewport.height / 2 }, panOffset, zoom, nextZoom, viewport, scene))
+    setZoom(nextZoom)
+  }
+  const onCanvasWheel = (event: ReactWheelEvent<HTMLDivElement>) => { if (!event.ctrlKey) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); const pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top }; pointerRef.current = pointer; updateZoom(event.deltaY > 0 ? -.1 : .1, pointer) }
   const onCanvasPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => { if (!(panMode || spacePressed)) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); panRef.current = { x: event.clientX, y: event.clientY, offsetX: panOffset.x, offsetY: panOffset.y } }
-  const onCanvasPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => { if (!panRef.current) return; event.preventDefault(); setPanOffset({ x: panRef.current.offsetX + event.clientX - panRef.current.x, y: panRef.current.offsetY + event.clientY - panRef.current.y }) }
+  const onCanvasPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => { const rect = event.currentTarget.getBoundingClientRect(); pointerRef.current = { x: event.clientX - rect.left, y: event.clientY - rect.top }; if (!panRef.current) return; event.preventDefault(); setPanOffset({ x: panRef.current.offsetX + event.clientX - panRef.current.x, y: panRef.current.offsetY + event.clientY - panRef.current.y }) }
   const onCanvasPointerUp = () => { panRef.current = undefined }
 
   useEffect(() => {
     if (!activeJob || details[activeJob.id]) return
-    let cancelled = false
-    setDetailError('')
-    void loadImpositionJob(activeJob.id).then(record => { if (!cancelled) setDetails(current => ({ ...current, [record.id]: record })) }).catch(reason => { if (!cancelled) setDetailError(`加载拼版图片失败：${String(reason)}`) })
-    return () => { cancelled = true }
-  }, [activeJob, details])
+    void ensureRecord(activeJob.id).catch(reason => { if (mounted.current) setDetailError(`加载拼版图片失败：${String(reason)}`) })
+  }, [activeJob?.id])
   const toggle = (id: string) => {
     setExpanded(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next })
     onSelectJob(id)
+    void ensureRecord(id).catch(reason => setDetailError(`加载拼版图片失败：${String(reason)}`))
   }
-  const images = activeDetail?.images ?? []
+  const selectJob = async (id: string, checked: boolean) => {
+    if (packingLoading || uploading) return
+    try {
+      const record = await ensureRecord(id)
+      if (!mounted.current) return
+      setSelectedByJob(current => ({ ...current, [id]: checked ? record.images.map(image => image.id) : [] }))
+    } catch (reason) { setDetailError(`加载拼版图片失败：${String(reason)}`) }
+  }
+  const qualifiedImages = useRef(new Map<string, { original: ProductionImage; qualified: ProductionImage }>())
+  const selectedImagesRef = useRef<ProductionImage[]>(EMPTY_IMPOSITION_IMAGES)
+  const images = useMemo(() => {
+    const next = jobs.flatMap(job => (details[job.id]?.images ?? EMPTY_IMPOSITION_IMAGES)
+      .filter(image => selectedByJob[job.id]?.includes(image.id))
+      .map(image => {
+        const id = impositionImageId(job.id, image.id)
+        const cached = qualifiedImages.current.get(id)
+        if (cached?.original === image) return cached.qualified
+        const qualified = { ...image, id }
+        qualifiedImages.current.set(id, { original: image, qualified })
+        return qualified
+      }))
+    const previous = selectedImagesRef.current
+    if (next.length === previous.length && next.every((image, index) => image === previous[index])) return previous
+    selectedImagesRef.current = next
+    return next
+  }, [jobs, details, selectedByJob])
+  const packingImages = useMemo(() => expandImpositionImages(images), [images])
+  const [backendPlan, setBackendPlan] = useState<PackingPlan>()
   useEffect(() => {
-    if (!images.length) return
+    packingProgressStageRef.current = packingProgressStage
+  }, [packingProgressStage])
+  useEffect(() => {
+    if (!packingLoading) return
+    const startedAt = Date.now()
+    const timer = window.setInterval(() => {
+      const elapsed = Date.now() - startedAt
+      setPackingElapsedMs(elapsed)
+      // Once the engine reports real work, keep that measured progress while
+      // the next contour/template is computing instead of racing to 86%.
+      if (progressEventAtRef.current > 0) return
+      const stage = PACKING_PROGRESS_COPY[packingProgressStageRef.current]
+      const dynamicProgress = packingProgressStageRef.current === 'search'
+        ? Math.min(86, stage.progress + elapsed / 1000 * 1.4)
+        : stage.progress
+      setPackingProgress(Math.max(1, Math.round(dynamicProgress)))
+    }, 200)
+    return () => window.clearInterval(timer)
+  }, [packingLoading])
+  useEffect(() => {
+    if (!packingLoading) return
     let cancelled = false
-    void Promise.all(images.map(async image => [image.id, await loadImpositionImage(image.filePath)] as const))
+    let unlisten = () => {}
+    const stageForPhase: Record<string, PackingProgressStage> = {
+      starting: 'prepare', validating: 'outline', nesting: 'search', finalizing: 'validate', completed: 'render', failed: 'validate',
+      geometry: 'outline', search: 'search', validation: 'validate',
+    }
+    void listen<{ phase: string; detail: string; percent: number; completed: number; total: number; algorithm: string }>('imposition-progress', event => {
+      if (cancelled) return
+      const payload = event.payload
+      if (payload.algorithm && payload.algorithm !== 'local-tools') return
+      progressEventAtRef.current = Date.now()
+      const stage = stageForPhase[payload.phase]
+      if (stage) setPackingProgressStage(stage)
+      if (payload.detail) setPackingProgressDetail(payload.detail)
+      if (Number.isFinite(payload.completed) && Number.isFinite(payload.total)) setPackingProgressCounts({ completed: payload.completed, total: payload.total })
+      const reported = Number(payload.percent)
+      if (Number.isFinite(reported)) {
+        const ranges: Record<PackingProgressStage, [number, number]> = { outline: [8, 25], prepare: [25, 34], search: [34, 82], validate: [82, 94], render: [94, 99] }
+        const [start, end] = ranges[stage ?? packingProgressStageRef.current]
+        setPackingProgress(payload.algorithm === 'local-tools'
+          ? Math.round(Math.max(0, Math.min(100, reported)))
+          : Math.round(start + (end - start) * Math.max(0, Math.min(100, reported)) / 100))
+      }
+      if (payload.phase === 'completed') setPackingProgress(100)
+    }).then(next => { if (cancelled) next(); else unlisten = next }).catch(() => {})
+    return () => { cancelled = true; unlisten() }
+  }, [packingLoading])
+  useEffect(() => {
+    // Editing selection, QT or settings invalidates the result, but never starts
+    // a solver. The next explicit click captures the complete input snapshot.
+    setBackendPlan(undefined)
+    committedPages.current = undefined
+    setSelectedImageId(undefined)
+    setImagePolygons({})
+    setInvalidOutlineIds(new Set())
+    setOutlineErrorCount(0)
+  }, [images, layout, packingObjective])
+  async function calculate() {
+    if (calculateLock.current || uploading || quantitySavingId || loadingJobIds.size || !packingImages.length) return
+    calculateLock.current = true
+    setPackingLoading(true); setDetailError(''); setBackendPlan(undefined)
+    committedPages.current = undefined
+    setInvalidOutlineIds(new Set()); setOutlineErrorCount(0)
+    setPackingProgressStage('outline'); setPackingProgress(0); setPackingElapsedMs(0)
+    setPackingProgressDetail(PACKING_PROGRESS_COPY.outline.detail)
+    setPackingProgressCounts({ completed: 0, total: images.length })
+    progressEventAtRef.current = 0
+    try {
+      // Let the loading dialog paint before extracting any contours.
+      await new Promise(resolve => window.setTimeout(resolve, 30))
+      const candidates = images.filter(image => getImpositionQuantity(image) > 0)
+      const polygons: Record<string, Array<[number, number]>> = {}
+      const invalid = new Set<string>()
+      let cursor = 0; let completed = 0
+      await Promise.all(Array.from({ length: Math.min(3, candidates.length) }, async () => {
+        while (cursor < candidates.length && mounted.current) {
+          const image = candidates[cursor++]
+          try { polygons[image.id] = await loadImpositionPolygon(image.filePath, image.widthMm, image.heightMm) }
+          catch { invalid.add(image.id) }
+          completed++
+          if (mounted.current) { setPackingProgressCounts({ completed, total: candidates.length }); setPackingProgress(Math.round(25 * completed / candidates.length)) }
+        }
+      }))
+      if (!mounted.current) return
+      setImagePolygons(polygons); setInvalidOutlineIds(invalid); setOutlineErrorCount(invalid.size)
+      if (invalid.size) setExpanded(current => new Set([...current, ...jobs.filter(job => details[job.id]?.images.some(image => invalid.has(impositionImageId(job.id, image.id)))).map(job => job.id)]))
+      setPackingProgressStage('prepare'); setPackingProgress(25)
+      const requestData = { plateWidthMm: layout.plateWidth, plateHeightMm: layout.plateHeight, effectiveWidthMm: layout.effectiveWidth, effectiveHeightMm: layout.effectiveHeight, effectiveRightMm: layout.effectiveRight, spacingMm: layout.spacing, objective: packingObjective, irregularAlgorithm: 'local-tools' as const, items: candidates.filter(image => !invalid.has(image.id)).map(image => ({ id: image.id, widthMm: image.widthMm, heightMm: image.heightMm, quantity: getImpositionQuantity(image), polygon: polygons[image.id] })) }
+      setPackingProgressStage('search')
+      const result = requestData.items.length ? await packImpositionIrregular(requestData) : { placements: [], unplaced: [], sheetsUsed: 0, utilization: 0, algorithm: '所选图片均无有效轮廓' }
+      if (!mounted.current) return
+      if (!result) throw new Error('拼版未返回结果')
+      setPackingProgressStage('validate')
+      const next = summarizePackingResult(result, packingImages, polygons)
+      setBackendPlan(next)
+      if (next.excludedItems.length) setExpanded(current => new Set([...current, ...jobs.filter(job => details[job.id]?.images.some(image => next.excludedItems.some(item => item.id === impositionImageId(job.id, image.id)))).map(job => job.id)]))
+      setPackingProgressStage('render'); setPackingProgress(100)
+    } catch (reason) { if (mounted.current) setDetailError(`异形拼版计算失败：${String(reason)}`) }
+    finally { calculateLock.current = false; if (mounted.current) setPackingLoading(false) }
+  }
+  const activePlan: PackingPlan = backendPlan ?? { pages: EMPTY_PACKED_PAGES, sheetsUsed: 0, placedCount: 0, utilization: 0, cuttingLines: 0, unplacedCount: packingImages.length, unplacedIds: [], excludedItems: [], warnings: [], algorithm: '等待异形拼版结果' }
+  const packedPages = activePlan.pages
+  const repeatedLayouts = useMemo(() => groupRepeatedPackingPages(packedPages), [packedPages])
+  const collapseRepeatedLayouts = packingObjective === 'least-cutting' && !allSheetsExpanded
+  const displayedSheetCount = collapseRepeatedLayouts ? repeatedLayouts.length : packedPages.length
+  useEffect(() => {
+    setAllSheetsExpanded(false)
+  }, [backendPlan, packingObjective])
+  // The solver only receives SVG contour polygons. Delay raster/original image
+  // loading until the solver has returned placements, and load each source
+  // image once even when its QT expands to many canvas nodes. Unplaced assets
+  // therefore do not consume image memory while a large nest is calculating.
+  const placedSourceIds = useMemo(() => new Set(packedPages.flatMap(page => page.map(({ image }) => image.sourceImageId ?? image.id))), [packedPages])
+  useEffect(() => {
+    const placedImages = images.filter(image => placedSourceIds.has(image.id))
+    if (!placedImages.length) { setImageSources(current => Object.keys(current).length ? {} : current); return }
+    let cancelled = false
+    setImageSources(current => Object.fromEntries(placedImages.filter(image => current[image.id]).map(image => [image.id, current[image.id]])))
+    void Promise.all(placedImages.filter(image => !imageSources[image.id]).map(async image => [image.id, await loadImpositionImage(image.filePath)] as const))
       .then(entries => { if (!cancelled) setImageSources(current => ({ ...current, ...Object.fromEntries(entries) })) })
       .catch(reason => { if (!cancelled) setDetailError(`加载拼版原图失败：${String(reason)}`) })
     return () => { cancelled = true }
-  }, [images])
-  const packedPages = useMemo(() => {
-    const pages: Array<Array<{ image: ProductionImage; x: number; y: number; width: number; height: number }>> = [[]]
-    const left = Math.max(layout.holeLeft + layout.holeSize + 4, 8)
-    const right = Math.max(left + 1, Math.min(layout.effectiveWidth, layout.plateWidth - layout.effectiveRight))
-    const bottom = Math.max(1, layout.effectiveHeight)
-    let x = left
-    let y = 8
-    let rowHeight = 0
-    for (const image of images) {
-      const width = Math.max(1, Math.min(image.widthMm, right - left))
-      const height = Math.max(1, Math.min(image.heightMm, bottom))
-      if (x > left && x + width > right) { x = left; y += rowHeight + 4; rowHeight = 0 }
-      if (y + height > bottom) { pages.push([]); x = left; y = 8; rowHeight = 0 }
-      pages.at(-1)!.push({ image, x, y, width, height })
-      x += width + 4
-      rowHeight = Math.max(rowHeight, height)
-    }
-    return pages.filter(page => page.length)
-  }, [images, layout])
+  }, [images, placedSourceIds])
   const boardWidth = Math.max(1, layout.plateWidth)
   const boardHeight = Math.max(1, layout.plateHeight)
   const boardScale = Math.min(1.6, Math.max(.7, 520 / boardHeight))
@@ -86,15 +278,77 @@ function ImpositionWorkspace({ jobs, activeJobId, onBack, onSelectJob, onReturn,
   const effectiveDisplayWidth = Math.min(layout.effectiveWidth, boardWidth - layout.effectiveRight)
   const holeExtent = Math.max(0, (layout.holeCount - 1) * layout.holeGap + layout.holeSize)
   const holeStart = (boardHeight - holeExtent) / 2
+  const invalidOutlineLabels = images.filter(image => invalidOutlineIds.has(image.id)).map(image => image.name || image.id)
+  const unplacedAssetIds = new Set(activePlan.unplacedIds.map(id => id.split('#qt-')[0]))
+  const excludedReasons = new Map(activePlan.excludedItems.map(item => [item.id.split('#qt-')[0], item.reason]))
+  // An aggregate contour warning identifies the largest source outline while
+  // the solver continues with batches. Keep that source row visible in red;
+  // it is a diagnostic marker, not an excluded placement.
+  const complexityWarningIds = new Set(activePlan.warnings
+    .filter(warning => warning.includes('最大轮廓图片：'))
+    .flatMap(warning => (warning.split('最大轮廓图片：')[1] ?? '').split(/[，,]/).map(id => id.trim()).filter(Boolean)))
+  const complexityWarningReasons = new Map([...complexityWarningIds].map(id => [id, '轮廓总复杂度过高，已分批计算；图片仍会继续参与拼版']))
+  const complexityWarningLabels = images.filter(image => complexityWarningIds.has(image.id)).map(image => image.name || image.id)
+  const excludedLabels = images.filter(image => excludedReasons.has(image.id)).map(image => image.name || image.id)
+  const outlineStatus = outlineErrorCount ? `${outlineErrorCount} 张轮廓无效，已剔除：${invalidOutlineLabels.slice(0, 2).join('、')}${invalidOutlineLabels.length > 2 ? '…' : ''}`
+    : excludedLabels.length ? `${excludedLabels.length} 张图片未参与异形拼版：${excludedLabels.slice(0, 2).join('、')}${excludedLabels.length > 2 ? '…' : ''}`
+    : complexityWarningLabels.length ? `轮廓复杂度过高，已分批计算：${complexityWarningLabels.slice(0, 2).join('、')}${complexityWarningLabels.length > 2 ? '…' : ''}`
+    : `已选 ${images.length} 张图片 · QT ${packingImages.length} 份 · 间距 ${layout.spacing} mm`
+  const updateQuantity = async (jobId: string, imageId: string, rawQuantity: number) => {
+    if (packingLoading) return
+    const quantity = Math.max(0, Math.min(10_000, Math.floor(rawQuantity)))
+    const key = `${jobId}:${imageId}`
+    setQuantityDrafts(current => ({ ...current, [key]: quantity }))
+    const savedImage = details[jobId]?.images.find(image => image.id === imageId)
+    if (savedImage && getImpositionQuantity(savedImage) === quantity) return
+    if (quantitySavingId === key) return
+    setQuantitySavingId(key)
+    try {
+      const currentRecord = details[jobId]
+      const record = currentRecord?.temporary
+        ? { ...currentRecord, images: currentRecord.images.map(image => image.id === imageId ? { ...image, attributes: { ...image.attributes, QT: String(quantity) } } : image) }
+        : await updateImpositionImageQuantity(jobId, imageId, quantity)
+      if (record.temporary) onImported(record)
+      setDetails(current => ({ ...current, [record.id]: record }))
+      setDetailError('')
+    } catch (reason) {
+      setDetailError(`保存 QT 数量失败：${String(reason)}`)
+    } finally {
+      setQuantityDrafts(current => { const next = { ...current }; delete next[key]; return next })
+      setQuantitySavingId(current => current === key ? undefined : current)
+    }
+  }
   return <div className="imposition-workspace">
-    <header className="imposition-workspace-header"><Button className="imposition-back-button" type="primary" icon={<ArrowLeft size={16}/>} onClick={onBack}>返回待拼版</Button><section className="imposition-layout-config" aria-label="拼版版面配置"><div className="imposition-layout-config-title"><strong>版面配置</strong><span>单位：mm</span></div><div className="imposition-layout-fields"><label>板材高<InputNumber size="small" min={1} value={layout.plateHeight} onChange={value => setLayout(current => ({ ...current, plateHeight: value ?? current.plateHeight }))}/></label><label>板材宽<InputNumber size="small" min={1} value={layout.plateWidth} onChange={value => setLayout(current => ({ ...current, plateWidth: value ?? current.plateWidth }))}/></label><label>有效高<InputNumber size="small" min={1} value={layout.effectiveHeight} onChange={value => setLayout(current => ({ ...current, effectiveHeight: value ?? current.effectiveHeight }))}/></label><label>有效宽<InputNumber size="small" min={1} value={layout.effectiveWidth} onChange={value => setLayout(current => ({ ...current, effectiveWidth: value ?? current.effectiveWidth }))}/></label><label>有效区域右侧距<InputNumber size="small" min={0} value={layout.effectiveRight} onChange={value => setLayout(current => ({ ...current, effectiveRight: value ?? current.effectiveRight }))}/></label><label>版面孔<InputNumber size="small" min={0} value={layout.holeSize} onChange={value => setLayout(current => ({ ...current, holeSize: value ?? current.holeSize }))}/></label><label>数量<InputNumber size="small" min={0} precision={0} value={layout.holeCount} onChange={value => setLayout(current => ({ ...current, holeCount: value ?? current.holeCount }))}/></label><label>孔间距<InputNumber size="small" min={0} precision={3} value={layout.holeGap} onChange={value => setLayout(current => ({ ...current, holeGap: value ?? current.holeGap }))}/></label><label>版孔左侧距<InputNumber size="small" min={0} precision={1} value={layout.holeLeft} onChange={value => setLayout(current => ({ ...current, holeLeft: value ?? current.holeLeft }))}/></label></div></section><span className="imposition-workspace-hint">{activeJob ? `${activeJob.customerName || '未填写客户'} · ${activeJob.imageCount} 张图片` : '请选择右侧任务'}</span></header>
+    <header className="imposition-workspace-header"><div className="imposition-header-tools"><Button aria-label="返回待拼版" className="imposition-back-button" type="primary" icon={<ArrowLeft size={16}/>} disabled={packingLoading} title={packingLoading ? "正在计算，完成后可返回" : undefined} onClick={onBack}>返回待拼版</Button><section className={`imposition-layout-config ${layoutExpanded ? 'is-expanded' : ''}`} aria-label="拼版版面配置"><button type="button" className="imposition-layout-toggle" aria-label={layoutExpanded ? '收起版面配置' : '展开版面配置'} aria-expanded={layoutExpanded} aria-controls="imposition-layout-fields" onClick={() => setLayoutExpanded(value => !value)}><span><strong>版面配置</strong><small>{layout.plateWidth} × {layout.plateHeight} mm</small></span>{layoutExpanded ? <ChevronLeft size={16}/> : <ChevronRight size={16}/>}</button>{layoutExpanded && <div id="imposition-layout-fields" className="imposition-layout-fields"><label>板材高<InputNumber disabled={packingLoading} size="small" min={1} value={layout.plateHeight} onChange={value => setLayout(current => ({ ...current, plateHeight: value ?? current.plateHeight }))}/></label><label>板材宽<InputNumber disabled={packingLoading} size="small" min={1} value={layout.plateWidth} onChange={value => setLayout(current => ({ ...current, plateWidth: value ?? current.plateWidth }))}/></label><label>有效高<InputNumber disabled={packingLoading} size="small" min={1} value={layout.effectiveHeight} onChange={value => setLayout(current => ({ ...current, effectiveHeight: value ?? current.effectiveHeight }))}/></label><label>有效宽<InputNumber disabled={packingLoading} size="small" min={1} value={layout.effectiveWidth} onChange={value => setLayout(current => ({ ...current, effectiveWidth: value ?? current.effectiveWidth }))}/></label><label>有效区域右侧距<InputNumber disabled={packingLoading} size="small" min={0} value={layout.effectiveRight} onChange={value => setLayout(current => ({ ...current, effectiveRight: value ?? current.effectiveRight }))}/></label><label>图片间距<InputNumber disabled={packingLoading} size="small" min={0} precision={2} value={layout.spacing} onChange={value => setLayout(current => ({ ...current, spacing: value ?? current.spacing }))}/></label><label>版面孔<InputNumber disabled={packingLoading} size="small" min={0} value={layout.holeSize} onChange={value => setLayout(current => ({ ...current, holeSize: value ?? current.holeSize }))}/></label><label>数量<InputNumber disabled={packingLoading} size="small" min={0} precision={0} value={layout.holeCount} onChange={value => setLayout(current => ({ ...current, holeCount: value ?? current.holeCount }))}/></label><label>孔间距<InputNumber disabled={packingLoading} size="small" min={0} precision={3} value={layout.holeGap} onChange={value => setLayout(current => ({ ...current, holeGap: value ?? current.holeGap }))}/></label><label>版孔左侧距<InputNumber disabled={packingLoading} size="small" min={0} precision={1} value={layout.holeLeft} onChange={value => setLayout(current => ({ ...current, holeLeft: value ?? current.holeLeft }))}/></label></div>}</section><Divider type="vertical" className="imposition-packing-divider"/><section className="imposition-packing-settings" aria-label="拼版设置"><div className="imposition-packing-title"><strong>拼版设置</strong><span title={outlineStatus}>{outlineStatus}</span></div><Select disabled={packingLoading} className="imposition-objective-select" aria-label="拼版策略" popupMatchSelectWidth={260} title={packingObjective === 'least-material' ? '单板尽量多放' : '重复统一版式'} size="small" value={packingObjective} onChange={value => setPackingObjective(value)} options={[{ label: '节省板材（单板尽量多放）', value: 'least-material' }, { label: '切割方案优先（重复统一版式）', value: 'least-cutting' }]} /><Button size="small" type="primary" loading={packingLoading} disabled={uploading || !!quantitySavingId || !!loadingJobIds.size || !packingImages.length} onClick={() => void calculate()}>重新计算</Button><div className="imposition-packing-results"><span>本次板材 <strong>{backendPlan ? activePlan.sheetsUsed : '—'}</strong></span><span>切割布局 <strong>{backendPlan ? activePlan.cuttingLines : '—'}</strong></span></div><small>已放置 {activePlan.placedCount}/{packingImages.length} 张 · 未放置 {activePlan.unplacedCount} 张</small></section><div className="imposition-header-export"><span className="imposition-workspace-hint">{`已选 ${images.length} 张图片 · QT ${packingImages.length} 份`}</span><Button type="primary" icon={<Download size={15}/>} disabled={packingLoading || !activePlan.placedCount} onClick={() => setExportSnapshot({ pages: (committedPages.current ?? packedPages).map(page => page.map(item => ({ ...item, rotation: item.rotation ?? 0 }))), sources: { ...imageSources } })}>导出 PDF</Button></div></div><div className="imposition-header-import"><ImpositionUpload disabled={packingLoading} onBusyChange={setUploading} onError={setDetailError} onImported={record => { onImported(record); setDetails(current => ({ ...current, [record.id]: record })); setExpanded(current => new Set([...current, record.id])); onSelectJob(record.id) }}/></div></header>
     <div className="imposition-workspace-body">
-      <main className="imposition-canvas-region">{detailError && <Alert type="error" message={detailError} showIcon/>}<div className={`imposition-canvas-scroll ${panMode || spacePressed ? 'is-pan-mode' : ''}`} onWheel={onCanvasWheel} onPointerDown={onCanvasPointerDown} onPointerMove={onCanvasPointerMove} onPointerUp={onCanvasPointerUp}><ImpositionKonvaCanvas pages={packedPages} imageSources={imageSources} boardWidth={boardWidth} boardHeight={boardHeight} boardScale={boardScale} effectiveX={effectiveX} effectiveY={effectiveY} effectiveWidth={effectiveDisplayWidth} effectiveHeight={layout.effectiveHeight} holeCount={layout.holeCount} holeSize={layout.holeSize} holeLeft={layout.holeLeft} holeStart={holeStart} holeGap={layout.holeGap} zoom={zoom} panOffset={panOffset} panMode={panMode || spacePressed} selectedImageId={selectedImageId} onSelectImage={setSelectedImageId}/></div><footer className="imposition-canvas-footer"><div className="imposition-mode"><Button type="text" className={!panMode ? 'active' : ''} icon={<MousePointer2 size={14}/>} onClick={() => setPanMode(false)}>选择</Button><Button type="text" className={panMode ? 'active' : ''} icon={<Hand size={14}/>} onClick={() => setPanMode(value => !value)}>平移</Button><span className="imposition-shortcut">空格：平移 · Ctrl + 滚轮：缩放</span></div><div className="imposition-workspace-actions"><Button aria-label="缩小" icon={<ZoomOut size={15}/>} onClick={() => updateZoom(-.1)}>缩小</Button><span>{Math.round(zoom * 100)}%</span><Button aria-label="放大" icon={<ZoomIn size={15}/>} onClick={() => updateZoom(.1)}>放大</Button><span>{packedPages.length} 个版面 · 选中 {selectedImageId ? 1 : 0} 张图片</span></div></footer></main>
-      <aside className="imposition-job-sidebar"><div className="imposition-sidebar-heading"><div><strong>待拼版</strong><span>{jobs.length} 个任务</span></div><Dropdown trigger={['click']} menu={{ items: [{ key: 'customer', label: '按客户' }, { key: 'time', label: '按时间' }], onClick: ({ key }) => setSortMode(key as 'customer' | 'time') }}><Button size="small" className="imposition-sort-button">{sortMode === 'customer' ? '按客户' : '按时间'} <ChevronDown size={13}/></Button></Dropdown></div><div className="imposition-job-list">{displayJobs.map(job => { const open = expanded.has(job.id); const record = details[job.id]; return <section className={`imposition-job-card ${activeJob?.id === job.id ? 'selected' : ''}`} key={job.id}><button className="imposition-job-trigger" onClick={() => toggle(job.id)} aria-expanded={open}><span>{open ? <ChevronDown size={15}/> : <ChevronRight size={15}/>}<span><strong>{job.customerName || '未填写客户'}</strong><small>{new Date(job.submittedAt).toLocaleString()} · {job.imageCount} 张图片</small></span></span><Tag color={job.paymentStatus === 'paid' ? 'success' : 'orange'}>{job.paymentStatus === 'paid' ? '付款' : '未付款'}</Tag></button>{open && <div className="imposition-job-images">{record?.images.map(image => <button key={image.id} className={selectedImageId === image.id && activeJob?.id === job.id ? 'active' : ''} onClick={() => { onSelectJob(job.id); setSelectedImageId(image.id) }}><span>{image.name}</span><small>{image.widthMm.toFixed(1)} × {image.heightMm.toFixed(1)} mm</small></button>)}{!record && <span className="imposition-job-loading">加载图片明细…</span>}</div>}<div className="imposition-job-card-footer"><span>导出：{job.output.split(/[\\/]/).pop()}</span><Popconfirm title="回退到示意图审核？" description="回退后可重新发起拼版。" okText="回退" cancelText="取消" onConfirm={() => onReturn(job.id)}><Button type="link" danger loading={returningId === job.id} disabled={loading || Boolean(returningId)}>回退</Button></Popconfirm></div></section>})}</div><div className="imposition-sidebar-tip">展开任务可查看它所拥有的图片，点击图片可在画布中定位。</div></aside>
+    <main className="imposition-canvas-region">{packingLoading && <div className="imposition-calculating-overlay" role="status" aria-live="polite"><div className="imposition-calculating-dialog"><Loading size="large"/><strong>{PACKING_PROGRESS_COPY[packingProgressStage].title}</strong><span>{packingProgressDetail || PACKING_PROGRESS_COPY[packingProgressStage].detail}</span><div className="imposition-progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={packingProgress} aria-label={PACKING_PROGRESS_COPY[packingProgressStage].title}><div className="imposition-progress-value" style={{ width: `${packingProgress}%` }}/></div><small>{packingProgress}% · 已运行 {Math.floor(packingElapsedMs / 1000)} 秒 · {packingProgressCounts.total ? `已处理 ${packingProgressCounts.completed}/${packingProgressCounts.total} 项 · ` : ''}{images.length} 个基础图片 / {packingImages.length} 个数量</small></div></div>}{detailError && <Alert type="error" message={detailError} showIcon/>}<div ref={canvasRef} className={`imposition-canvas-scroll ${panMode || spacePressed ? 'is-pan-mode' : ''}`} onWheel={onCanvasWheel} onPointerDown={onCanvasPointerDown} onPointerMove={onCanvasPointerMove} onPointerUp={onCanvasPointerUp}>{!backendPlan && !packingLoading && <div className="imposition-empty-canvas">勾选右侧图片，点击“重新计算”生成拼版</div>}<ImpositionKonvaCanvas collapseRepeatedLayouts={collapseRepeatedLayouts} pages={packedPages} imageSources={imageSources} polygons={imagePolygons} boardWidth={boardWidth} boardHeight={boardHeight} boardScale={boardScale} effectiveX={effectiveX} effectiveY={effectiveY} effectiveWidth={effectiveDisplayWidth} effectiveHeight={layout.effectiveHeight} spacing={layout.spacing} holeCount={layout.holeCount} holeSize={layout.holeSize} holeLeft={layout.holeLeft} holeStart={holeStart} holeGap={layout.holeGap} zoom={zoom} panOffset={panOffset} panMode={panMode || spacePressed} selectedImageId={selectedImageId} onSelectImage={setSelectedImageId} onPagesChange={pages => { committedPages.current = pages }}/></div><footer className="imposition-canvas-footer"><div className="imposition-mode"><Button type="text" className={!panMode ? 'active' : ''} icon={<MousePointer2 size={14}/>} onClick={() => setPanMode(false)}>选择</Button><Button type="text" className={panMode ? 'active' : ''} icon={<Hand size={14}/>} onClick={() => setPanMode(value => !value)}>平移</Button><span className="imposition-shortcut">空格：平移 · Ctrl + 滚轮：缩放</span></div><div className="imposition-workspace-actions">{collapseRepeatedLayouts && backendPlan && <Button onClick={() => { setAllSheetsExpanded(true); setSelectedImageId(undefined) }}>展开全部板材并编辑</Button>}<Button aria-label="缩小" icon={<ZoomOut size={15}/>} onClick={() => updateZoom(-.1)} >缩小</Button><span>{Math.round(zoom * 100)}%</span><Button aria-label="放大" icon={<ZoomIn size={15}/>} onClick={() => updateZoom(.1)}>放大</Button><span>{collapseRepeatedLayouts ? `${displayedSheetCount} 种版式 · 共 ${activePlan.sheetsUsed} 块板材` : `${packedPages.length} 个版面`} · 选中 {selectedImageId ? 1 : 0} 张图片</span></div></footer></main>
+      <aside className="imposition-job-sidebar">
+        <div className="imposition-sidebar-heading"><div><strong>待拼版</strong><span>{jobs.length} 个任务 · 已选 {images.length} 张图片</span></div><Dropdown trigger={['click']} menu={{ items: [{ key: 'customer', label: '按客户' }, { key: 'time', label: '按时间' }], onClick: ({ key }) => setSortMode(key as 'customer' | 'time') }}><Button size="small" className="imposition-sort-button">{sortMode === 'customer' ? '按客户' : '按时间'} <ChevronDown size={13}/></Button></Dropdown></div>
+        <div className="imposition-job-list">{displayJobs.map(job => {
+          const open = expanded.has(job.id); const record = details[job.id]
+          const selected = selectedByJob[job.id] ?? []
+          const selectedCount = record?.images.filter(image => selected.includes(image.id)).length ?? 0
+          const count = record?.images.length ?? job.imageCount
+          return <section className={`imposition-job-card ${activeJob?.id === job.id ? 'selected' : ''}`} key={job.id}>
+            <button className="imposition-job-trigger" onClick={() => toggle(job.id)} aria-expanded={open}><span>{open ? <ChevronDown size={15}/> : <ChevronRight size={15}/>}<span><strong>{job.customerName || '未填写客户'}</strong><small>{new Date(job.submittedAt).toLocaleString()} · {count} 张图片</small></span></span>{job.temporary ? <Tag>临时文件</Tag> : <Tag color={job.paymentStatus === 'paid' ? 'success' : 'orange'}>{job.paymentStatus === 'paid' ? '付款' : '未付款'}</Tag>}</button>
+            {open && <div className="imposition-job-images">{record?.images.map(image => {
+              const key = job.id + ':' + image.id; const sourceId = impositionImageId(job.id, image.id); const quantity = quantityDrafts[key] ?? getImpositionQuantity(image)
+              const issueReason = excludedReasons.get(sourceId) ?? complexityWarningReasons.get(sourceId) ?? (invalidOutlineIds.has(sourceId) ? 'SVG 轮廓无效，已跳过此图片' : unplacedAssetIds.has(sourceId) ? '本次排版未放置此图片（有效区域不足或无可行位置）' : '')
+              return <div key={image.id} className={`imposition-job-image ${selectedImageId?.split('#qt-')[0] === sourceId ? 'active ' : ''}${issueReason ? 'is-invalid-outline' : ''}`}>
+                <Checkbox aria-label={`参与拼版 ${image.name}`} checked={selected.includes(image.id)} disabled={packingLoading || uploading} onChange={event => setSelectedByJob(current => ({ ...current, [job.id]: event.target.checked ? [...new Set([...(current[job.id] ?? []), image.id])] : (current[job.id] ?? []).filter(id => id !== image.id) }))}/>
+                <button className="imposition-image-locate" title={`定位 ${image.name}`} onClick={() => { onSelectJob(job.id); setSelectedImageId(sourceId) }}><ImpositionThumbnail path={image.filePath} name={image.name}/></button>
+                <div className="imposition-job-image-content"><span className="imposition-job-image-name" title={image.name}>{image.name}</span><div className="imposition-job-image-meta"><small>{image.widthMm.toFixed(1)} × {image.heightMm.toFixed(1)} mm</small><label className="imposition-job-quantity"><span>QT</span><InputNumber aria-label={`QT ${image.name}`} size="small" min={0} max={10000} precision={0} value={quantity} disabled={packingLoading || uploading || Boolean(quantitySavingId)} onChange={value => { if (value != null) setQuantityDrafts(current => ({ ...current, [key]: Math.max(0, Math.min(10000, Math.floor(value))) })) }} onBlur={() => void updateQuantity(job.id, image.id, quantityDrafts[key] ?? quantity)} onPressEnter={() => void updateQuantity(job.id, image.id, quantityDrafts[key] ?? quantity)}/></label></div>{issueReason && <small className="imposition-job-image-issue">{issueReason}</small>}</div>
+              </div>
+            })}{!record && <span className="imposition-job-loading"><Loading size="small" inline text="加载图片明细…"/></span>}</div>}
+            <div className="imposition-job-card-footer"><Checkbox aria-label={`选择任务 ${job.customerName || '未填写客户'}`} checked={count > 0 && selectedCount === count} indeterminate={selectedCount > 0 && selectedCount < count} disabled={packingLoading || uploading || loadingJobIds.has(job.id)} onChange={event => void selectJob(job.id, event.target.checked)}>已选 {selectedCount}/{count} 张图片</Checkbox>{!job.temporary && <Popconfirm title="回退到示意图审核？" description="回退后可重新发起拼版。" okText="回退" cancelText="取消" onConfirm={() => onReturn(job.id)}><Button type="link" danger loading={returningId === job.id} disabled={loading || packingLoading || Boolean(returningId)}>回退</Button></Popconfirm>}</div>
+          </section>
+        })}</div>
+        <div className="imposition-sidebar-tip">勾选需要拼版的图片，再点击“重新计算”。点击缩略图可在画布中定位。</div>
+      </aside>
     </div>
+    {exportSnapshot && <ImpositionPdfExportModal pages={exportSnapshot.pages} imageSources={exportSnapshot.sources} widthMm={boardWidth} heightMm={boardHeight} holes={{ count: layout.holeCount, sizeMm: layout.holeSize, gapMm: layout.holeGap, leftMm: layout.holeLeft }} onClose={() => setExportSnapshot(undefined)}/>}
   </div>
 }
-
 
 
 export default function ImpositionPage({ active, revision, onReturned }: { active: boolean; revision: number; onReturned?: () => void }) {
@@ -110,7 +364,9 @@ export default function ImpositionPage({ active, revision, onReturned }: { activ
   const [detail, setDetail] = useState<ImpositionRecord>()
   const [detailError, setDetailError] = useState('')
   const [screen, setScreen] = useState<'list' | 'workspace'>('list')
+  const [temporaryRecords, setTemporaryRecords] = useState<ImpositionRecord[]>([])
   const [workspaceJobId, setWorkspaceJobId] = useState<string>()
+  const workspaceJobs = useMemo(() => [...temporaryRecords, ...result.records], [temporaryRecords, result.records])
   const { token } = theme.useToken()
   const colors = { '--imposition-paid-bg': token.colorSuccessBg, '--imposition-unpaid-bg': token.orange1 } as CSSProperties
   const search = query.trim()
@@ -149,7 +405,7 @@ export default function ImpositionPage({ active, revision, onReturned }: { activ
     } catch (reason) { setError(`回退到示意图审核失败：${String(reason)}`) }
     finally { operationLock.current = false; setReturningId(undefined) }
   }
-  if (screen === 'workspace') return <ConfigProvider locale={zhCN}><ImpositionWorkspace jobs={result.records} activeJobId={workspaceJobId} onBack={() => setScreen('list')} onSelectJob={setWorkspaceJobId} onReturn={returnToReview} returningId={returningId} loading={loading}/></ConfigProvider>
+  if (screen === 'workspace') return <ConfigProvider locale={zhCN}><ImpositionWorkspace jobs={workspaceJobs} temporaryRecords={temporaryRecords} onImported={record => setTemporaryRecords(current => [...current.filter(item => item.id !== record.id), record])} activeJobId={workspaceJobId} onBack={() => setScreen('list')} onSelectJob={setWorkspaceJobId} onReturn={returnToReview} returningId={returningId} loading={loading}/></ConfigProvider>
   return <ConfigProvider locale={zhCN}>
     <ModulePage className="imposition-page" style={colors} title="生产拼版" description="示意图审核转入的记录在这里等待拼版。"
       actions={<div className="imposition-list-actions"><Button icon={<RefreshCw size={15}/>} loading={loading} onClick={() => setRefresh(value => value + 1)}>刷新</Button><Button type="primary" onClick={() => { setWorkspaceJobId(result.records[0]?.id); setScreen('workspace') }}>开始拼版</Button></div>}

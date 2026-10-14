@@ -1,7 +1,7 @@
 import type { Asset, Item, Page } from '../../../model.ts'
 import { dimensionForItem, rulerDimensionLabel } from './imageDimensionService.ts'
 
-export type RulerPatch = Partial<Pick<Item, 'rulerUnit' | 'rulerWidth' | 'rulerHeight'>>
+export type RulerPatch = Partial<Pick<Item, 'rulerUnit' | 'rulerWidth' | 'rulerHeight' | 'sizeAxis'>>
 export type CanvasPoint = { x: number; y: number }
 export function selectionBounds(start: CanvasPoint, end: CanvasPoint) {
   return { x: Math.min(start.x, end.x), y: Math.min(start.y, end.y), width: Math.abs(end.x - start.x), height: Math.abs(end.y - start.y) }
@@ -35,8 +35,8 @@ export function updateSelectedRulers(page: Page, ids: string[], patch: RulerPatc
   const updateDetails = (details: NonNullable<Page['imageGroups']>[number]['details'] | undefined, itemIds: string[]) => {
     if (!details || !itemIds.some(id => selected.has(id))) return details
     const first = itemIds.find(id => !byId.get(id)?.derivedFrom)
-    return { ...details, size: first ? label(first) ?? details.size : details.size,
-      sizes: details.sizes?.map(value => ({ ...value, label: label(value.itemId) ?? value.label })) }
+    return { ...details, size: first && selected.has(first) ? label(first) ?? details.size : details.size,
+      sizes: details.sizes?.map(value => selected.has(value.itemId) ? { ...value, label: label(value.itemId) ?? value.label } : value) }
   }
   return { ...page, items, imageGroups: page.imageGroups?.map(group => {
     const details = updateDetails(group.details, group.itemIds)

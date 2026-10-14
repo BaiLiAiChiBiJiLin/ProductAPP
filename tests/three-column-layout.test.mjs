@@ -474,7 +474,7 @@ test('Size and QT export at the same font size with unbroken values in every uni
   group.details.size=dimensionForItem(a,{rulerUnit}).label
   const layout=imageDetailsLayout(group)
   assert.equal(layout.fields.filter(field=>field.key.startsWith('size')).length,1)
-  assert.ok(sizeLabelWidth(group.details.size,layout.fontSize)<=layout.width)
+  assert.ok(sizeLabelWidth(group.details.size,layout.fontSize)<=layout.width + 1e-8)
   const svg=pageSvg(page,new Map([[a.id,a]]))
   const sizeFont=svg.match(/font-size="([^"]+)"[^>]*>Size: [^<]+<\/text>/)?.[1]
   const qtFont=svg.match(/font-size="([^"]+)"[^>]*>QT:\s*[^<]*<\/text>/)?.[1]

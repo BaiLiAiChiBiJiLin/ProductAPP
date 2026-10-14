@@ -4,8 +4,9 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 const showWindow = () => {
   if (isTauri()) void getCurrentWindow().show().catch(console.error)
 }
-// Paint the static splash before revealing the WebView or loading the React tree.
-requestAnimationFrame(() => requestAnimationFrame(showWindow))
+// Hidden WebViews may suspend animation frames. Visibility must not depend
+// on painting or on the React bundle finishing its load.
+showWindow()
 const retry = document.getElementById('startup-retry')!
 retry.onclick = () => window.location.reload()
 const failed = () => {

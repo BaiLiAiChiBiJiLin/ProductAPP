@@ -1,4 +1,5 @@
-import type { Asset } from '../../../model'
+import type { Asset, NoteImage } from '../../../model'
+import { getNoteImages, noteImagesPatch } from './assetNotesService.ts'
 import type { ProductOption, ProductOptionValue } from './productConfigService'
 
 export type ProductAttributePatch = {
@@ -12,6 +13,7 @@ export type ProductAttributePatch = {
   attributeImage?: { key: string; url: string }
   note?: string
   noteImage?: string
+  noteImages?: NoteImage[]
   /** Prevent the save-time Finish matcher from restoring an explicitly cleared value. */
   suppressFinishMatch?: boolean
 }
@@ -108,7 +110,7 @@ export function applyProductAttributePatch(asset: Asset, patch: ProductAttribute
     attributes: applyAttributeValues(asset.attributes, patch),
     attributeImages: applyAttributeImages(asset.attributeImages, patch),
     ...(patch.note !== undefined ? { note: patch.note } : {}),
-    ...(patch.noteImage !== undefined ? { noteImage: patch.noteImage } : {}),
+    ...(patch.noteImages !== undefined || patch.noteImage !== undefined ? noteImagesPatch(getNoteImages(patch)) : {}),
     ...(patch.suppressFinishMatch !== undefined ? { finishMatchDisabled: patch.suppressFinishMatch } : {}),
   }
 }

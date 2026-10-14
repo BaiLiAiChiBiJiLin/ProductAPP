@@ -1,18 +1,50 @@
 //! One compact catalog index shared by every batch; SVG/image data is never copied.
-use std::{collections::HashMap, fs, path::Path, sync::{Mutex, OnceLock}, time::SystemTime};
 use crate::assets::Asset;
-type Cache = Option<(std::path::PathBuf, Option<SystemTime>, HashMap<String, String>)>;
+use std::{
+    collections::HashMap,
+    fs,
+    path::Path,
+    sync::{Mutex, OnceLock},
+    time::SystemTime,
+};
+type Cache = Option<(
+    std::path::PathBuf,
+    Option<SystemTime>,
+    HashMap<String, String>,
+)>;
 static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
 pub fn invalidate() {
     if let Some(cache) = CACHE.get() {
-        if let Ok(mut cache) = cache.lock() { *cache = None; }
+        if let Ok(mut cache) = cache.lock() {
+            *cache = None;
+        }
     }
 }
-fn key(value: &str) -> String { value.chars().filter(|c| !c.is_whitespace() && *c != '_' && *c != '-').flat_map(char::to_lowercase).collect() }
+fn key(value: &str) -> String {
+    value
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '_' && *c != '-')
+        .flat_map(char::to_lowercase)
+        .collect()
+}
 fn excluded(name: &str) -> bool {
     let name = key(name);
-    matches!(name.as_str(), "product" | "productname" | "productid" | "产品" | "产品名" | "产品名称" | "qt" | "quantity" | "数量")
-        || name.contains("accessor") || name.contains("配件") || name.contains("image") || name.contains("图片") || name.contains("数量")
+    matches!(
+        name.as_str(),
+        "product"
+            | "productname"
+            | "productid"
+            | "产品"
+            | "产品名"
+            | "产品名称"
+            | "qt"
+            | "quantity"
+            | "数量"
+    ) || name.contains("accessor")
+        || name.contains("配件")
+        || name.contains("image")
+        || name.contains("图片")
+        || name.contains("数量")
 }
 #[cfg(test)]
 mod tests {
@@ -32,16 +64,36 @@ mod tests {
     }
 }
 pub fn fill(assets: &mut [Asset], path: &Path) -> Result<(), String> {
-    if assets.iter().all(|a| a.attributes.iter().any(|(k,v)| key(k) == "finish" && !v.trim().is_empty())) { return Ok(()); }
-    let modified = fs::metadata(path).map_err(|e| format!("工艺缓存读取失败：{e}"))?.modified().ok();
-    let mut cache = CACHE.get_or_init(|| Mutex::new(None)).lock().map_err(|e| e.to_string())?;
-    if cache.as_ref().is_none_or(|(p,m,_)| p != path || *m != modified) {
-        let records: Vec<super::FinishCacheRecord> = serde_json::from_reader(std::io::BufReader::new(fs::File::open(path).map_err(|e| e.to_string())?)).map_err(|e| e.to_string())?;
+    if assets.iter().all(|a| {
+        a.attributes
+            .iter()
+            .any(|(k, v)| key(k) == "finish" && !v.trim().is_empty())
+    }) {
+        return Ok(());
+    }
+    let modified = fs::metadata(path)
+        .map_err(|e| format!("工艺缓存读取失败：{e}"))?
+        .modified()
+        .ok();
+    let mut cache = CACHE
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .map_err(|e| e.to_string())?;
+    if cache
+        .as_ref()
+        .is_none_or(|(p, m, _)| p != path || *m != modified)
+    {
+        let records: Vec<super::FinishCacheRecord> = serde_json::from_reader(
+            std::io::BufReader::new(fs::File::open(path).map_err(|e| e.to_string())?),
+        )
+        .map_err(|e| e.to_string())?;
         let mut index = HashMap::new();
         for record in records {
             if let Some(name) = record.name.filter(|n| !n.trim().is_empty()) {
                 index.insert(key(&name), name.clone());
-                if let Some(label) = record.label_zh.filter(|n| !n.trim().is_empty()) { index.insert(key(&label), name); }
+                if let Some(label) = record.label_zh.filter(|n| !n.trim().is_empty()) {
+                    index.insert(key(&label), name);
+                }
             }
         }
         *cache = Some((path.to_owned(), modified, index));
@@ -50,18 +102,46 @@ pub fn fill(assets: &mut [Asset], path: &Path) -> Result<(), String> {
     for asset in assets {
         // A user can intentionally clear Finish in the attribute editor. Do
         // not recreate that value from another matching attribute on save.
-        if asset.finish_match_disabled { continue; }
-        if asset.attributes.iter().any(|(k,v)| key(k) == "finish" && !v.trim().is_empty()) { continue; }
+        if asset.finish_match_disabled {
+            continue;
+        }
+        if asset
+            .attributes
+            .iter()
+            .any(|(k, v)| key(k) == "finish" && !v.trim().is_empty())
+        {
+            continue;
+        }
         // Catalog products persist their selected Finish as the canonical
         // Chinese process field. Treat it as an existing Finish as well, so
         // saving does not create a duplicate legacy `Finish` attribute.
-        if asset.attributes.iter().any(|(k,v)| key(k) == "工艺" && !v.trim().is_empty()) { continue; }
+        if asset
+            .attributes
+            .iter()
+            .any(|(k, v)| key(k) == "工艺" && !v.trim().is_empty())
+        {
+            continue;
+        }
         let mut matches = Vec::new();
         for (name, value) in &asset.attributes {
-            if excluded(name) || value.len() > 1024 || value.starts_with("data:") || value.starts_with("http") { continue; }
-            if let Some(found) = index.get(&key(value)) { if !matches.contains(found) { matches.push(found.clone()); } }
+            if excluded(name)
+                || value.len() > 1024
+                || value.starts_with("data:")
+                || value.starts_with("http")
+            {
+                continue;
+            }
+            if let Some(found) = index.get(&key(value)) {
+                if !matches.contains(found) {
+                    matches.push(found.clone());
+                }
+            }
         }
-        if !matches.is_empty() { asset.attributes.insert("Finish".into(), matches.join(" / ")); }
+        if !matches.is_empty() {
+            asset
+                .attributes
+                .insert("Finish".into(), matches.join(" / "));
+        }
     }
     Ok(())
 }

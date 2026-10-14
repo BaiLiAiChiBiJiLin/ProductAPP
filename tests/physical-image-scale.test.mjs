@@ -98,13 +98,21 @@ test('physical metadata controls comparison and a lone tiny image fills its avai
   assert.ok(item.h > 80)
 })
 
-test('single portrait, square and landscape pictures use the right edge of their image column', () => {
+test('single pictures fill the image column until either its width or height is exhausted', () => {
   for (const [width, height] of [[50, 59.7], [60, 60], [80, 40]]) {
     const asset = source('main', width, height)
     const [page] = paginateAssets([asset])
     const item = page.items[0], group = page.imageGroups[0], cell = group.imageCells[0]
-    close(item.x + item.w / 2, group.detailsX)
-    close(item.x + item.w / 2, cell.x + cell.width)
+    const leftGutter = width < height ? 13 : 4
+    const availableWidth = cell.width - leftGutter
+    const availableHeight = cell.height - 30
+    if (availableWidth / width <= availableHeight / height) {
+      close(item.x + item.w / 2, group.detailsX)
+      close(item.x + item.w / 2, cell.x + cell.width)
+    } else {
+      close(item.h, availableHeight)
+      assert.ok(item.x + item.w / 2 <= group.detailsX + 1e-7)
+    }
     close(item.w / item.h, width / height)
     assert.ok(item.y - item.h / 2 >= cell.y + 14 - 1e-7)
     assert.ok(item.y + item.h / 2 <= cell.y + cell.height - 16 + 1e-7)

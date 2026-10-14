@@ -9,9 +9,11 @@ fn length_mm(value: Option<&str>, fallback_user_units: f64) -> f64 {
     let Some(raw) = value.map(str::trim).filter(|value| !value.is_empty()) else {
         return fallback_user_units * 25.4 / 96.0;
     };
-    let end = raw.find(|character: char| {
-        !(character.is_ascii_digit() || matches!(character, '.' | '+' | '-' | 'e' | 'E'))
-    }).unwrap_or(raw.len());
+    let end = raw
+        .find(|character: char| {
+            !(character.is_ascii_digit() || matches!(character, '.' | '+' | '-' | 'e' | 'E'))
+        })
+        .unwrap_or(raw.len());
     let number = raw[..end].parse::<f64>().unwrap_or(fallback_user_units);
     match raw[end..].trim().to_ascii_lowercase().as_str() {
         "mm" => number,
@@ -27,12 +29,20 @@ fn length_mm(value: Option<&str>, fallback_user_units: f64) -> f64 {
 fn view_box(source: &str) -> Result<[f64; 4], String> {
     let document = roxmltree::Document::parse_with_options(
         source,
-        roxmltree::ParsingOptions { allow_dtd: true, ..Default::default() },
-    ).map_err(|error| format!("XML 解析失败：{error}"))?;
+        roxmltree::ParsingOptions {
+            allow_dtd: true,
+            ..Default::default()
+        },
+    )
+    .map_err(|error| format!("XML 解析失败：{error}"))?;
     let root = document.root_element();
-    let values = root.attribute("viewBox").unwrap_or_default()
-        .replace(',', " ").split_whitespace()
-        .filter_map(|value| value.parse::<f64>().ok()).collect::<Vec<_>>();
+    let values = root
+        .attribute("viewBox")
+        .unwrap_or_default()
+        .replace(',', " ")
+        .split_whitespace()
+        .filter_map(|value| value.parse::<f64>().ok())
+        .collect::<Vec<_>>();
     if values.len() != 4 || values[2] <= 0.0 || values[3] <= 0.0 {
         return Err("SVG 缺少有效 viewBox".into());
     }
@@ -45,18 +55,27 @@ fn main() -> Result<(), String> {
     let box_values = view_box(&source)?;
     let document = roxmltree::Document::parse_with_options(
         &source,
-        roxmltree::ParsingOptions { allow_dtd: true, ..Default::default() },
-    ).map_err(|error| format!("XML 解析失败：{error}"))?;
+        roxmltree::ParsingOptions {
+            allow_dtd: true,
+            ..Default::default()
+        },
+    )
+    .map_err(|error| format!("XML 解析失败：{error}"))?;
     let root = document.root_element();
     let width_mm = length_mm(root.attribute("width"), box_values[2]);
     let height_mm = length_mm(root.attribute("height"), box_values[3]);
     let stroke_width = source.find("stroke-width:").and_then(|start| {
-        source[start + "stroke-width:".len()..].split(|character: char| !character.is_ascii_digit() && character != '.').next()?.parse::<f64>().ok()
+        source[start + "stroke-width:".len()..]
+            .split(|character: char| !character.is_ascii_digit() && character != '.')
+            .next()?
+            .parse::<f64>()
+            .ok()
     });
 
     let mut options = Options::default();
     options.resources_dir = Path::new(&path).parent().map(Path::to_path_buf);
-    let tree = Tree::from_str(&source, &options).map_err(|error| format!("SVG 解析失败：{error}"))?;
+    let tree =
+        Tree::from_str(&source, &options).map_err(|error| format!("SVG 解析失败：{error}"))?;
     let bounds = tree.root().abs_layer_bounding_box();
     let geometry = tree.root().abs_bounding_box();
     let stroke = tree.root().abs_stroke_bounding_box();
@@ -80,14 +99,43 @@ fn main() -> Result<(), String> {
         let corel_like_height = height_mm - stroke / box_values[3] * height_mm;
         println!("CorelDRAW 近似几何尺寸(排除首个 stroke-width={stroke}): {corel_like_width:.6} mm × {corel_like_height:.6} mm");
     }
-    println!("viewBox: [{:.6}, {:.6}, {:.6}, {:.6}]", box_values[0], box_values[1], box_values[2], box_values[3]);
-    println!("usvg viewport(px): {:.6} × {:.6}", tree.size().width(), tree.size().height());
-    println!("绝对包围盒(usvg viewport px): x={:.6}, y={:.6}, w={:.6}, h={:.6}", bounds.x(), bounds.y(), bounds.width(), bounds.height());
-    println!("几何包围盒(usvg px): x={:.6}, y={:.6}, w={:.6}, h={:.6}", geometry.x(), geometry.y(), geometry.width(), geometry.height());
-    println!("含描边包围盒(usvg px): x={:.6}, y={:.6}, w={:.6}, h={:.6}", stroke.x(), stroke.y(), stroke.width(), stroke.height());
+    println!(
+        "viewBox: [{:.6}, {:.6}, {:.6}, {:.6}]",
+        box_values[0], box_values[1], box_values[2], box_values[3]
+    );
+    println!(
+        "usvg viewport(px): {:.6} × {:.6}",
+        tree.size().width(),
+        tree.size().height()
+    );
+    println!(
+        "绝对包围盒(usvg viewport px): x={:.6}, y={:.6}, w={:.6}, h={:.6}",
+        bounds.x(),
+        bounds.y(),
+        bounds.width(),
+        bounds.height()
+    );
+    println!(
+        "几何包围盒(usvg px): x={:.6}, y={:.6}, w={:.6}, h={:.6}",
+        geometry.x(),
+        geometry.y(),
+        geometry.width(),
+        geometry.height()
+    );
+    println!(
+        "含描边包围盒(usvg px): x={:.6}, y={:.6}, w={:.6}, h={:.6}",
+        stroke.x(),
+        stroke.y(),
+        stroke.width(),
+        stroke.height()
+    );
     println!("换算结果(mm): x={measured_x_mm:.6}, y={measured_y_mm:.6}, w={measured_width_mm:.6}, h={measured_height_mm:.6}");
     println!("可见像素包围盒(viewport px): x={:.6}, y={:.6}, w={visible_width_mm:.6}, h={visible_height_mm:.6}", visible[0], visible[1]);
-    println!("可见像素换算(mm): w={:.6}, h={:.6}", visible_width_mm * sx, visible_height_mm * sy);
+    println!(
+        "可见像素换算(mm): w={:.6}, h={:.6}",
+        visible_width_mm * sx,
+        visible_height_mm * sy
+    );
     Ok(())
 }
 
@@ -97,12 +145,32 @@ fn rendered_bounds(tree: &Tree) -> Option<[f64; 4]> {
     let width = (tree.size().width() * scale).ceil().max(1.0) as u32;
     let height = (tree.size().height() * scale).ceil().max(1.0) as u32;
     let mut pixmap = tiny_skia::Pixmap::new(width, height)?;
-    resvg::render(tree, tiny_skia::Transform::from_scale(scale, scale), &mut pixmap.as_mut());
-    let mut min_x = width; let mut min_y = height; let mut max_x = 0; let mut max_y = 0; let mut found = false;
+    resvg::render(
+        tree,
+        tiny_skia::Transform::from_scale(scale, scale),
+        &mut pixmap.as_mut(),
+    );
+    let mut min_x = width;
+    let mut min_y = height;
+    let mut max_x = 0;
+    let mut max_y = 0;
+    let mut found = false;
     for (index, pixel) in pixmap.data().chunks_exact(4).enumerate() {
-        if pixel[3] <= 2 { continue; }
-        let x = (index as u32) % width; let y = (index as u32) / width;
-        min_x = min_x.min(x); min_y = min_y.min(y); max_x = max_x.max(x); max_y = max_y.max(y); found = true;
+        if pixel[3] <= 2 {
+            continue;
+        }
+        let x = (index as u32) % width;
+        let y = (index as u32) / width;
+        min_x = min_x.min(x);
+        min_y = min_y.min(y);
+        max_x = max_x.max(x);
+        max_y = max_y.max(y);
+        found = true;
     }
-    found.then_some([min_x as f64 / scale as f64, min_y as f64 / scale as f64, (max_x + 1) as f64 / scale as f64, (max_y + 1) as f64 / scale as f64])
+    found.then_some([
+        min_x as f64 / scale as f64,
+        min_y as f64 / scale as f64,
+        (max_x + 1) as f64 / scale as f64,
+        (max_y + 1) as f64 / scale as f64,
+    ])
 }

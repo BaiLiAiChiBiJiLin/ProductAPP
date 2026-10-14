@@ -1,0 +1,9 @@
+.imposition-upload { width: 240px; max-width: 100%; flex-shrink: 0; }
+.imposition-upload-zone { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 62px; padding: 9px 12px; color: #1677ff; background: #f7faff; border: 1px dashed #91caff; border-radius: 8px; cursor: pointer; text-align: left; }
+.imposition-upload-zone strong, .imposition-upload-zone small { display: block; }
+.imposition-upload-zone strong { font-size: 12px; font-weight: 500; }
+.imposition-upload-zone small { margin-top: 4px; font-size: 11px; color: #7585a2; }
+.imposition-upload-zone:hover, .imposition-upload-zone.is-drop-active { background: #e6f4ff; border-color: #1677ff; }
+.imposition-upload-zone:disabled { cursor: default; opacity: .65; }
+.imposition-upload-zone:focus-visible { outline: 2px solid #1677ff; outline-offset: 2px; }
+.imposition-upload-error { display: block; color: #cf1322; margin-top: 4px; overflow-wrap: anywhere; }

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { imageGroupsForDimension, imageDimensionForAsset, imageDimensionMarkerLayout, imageDimensionMarkersSvg } from '../src/modules/schematic/services/imageDimensionService.ts'
+import { imageGroupsForDimension, imageDimensionForAsset, imageDimensionMarkerLayout, imageDimensionMarkersSvg, dimensionGroups } from '../src/modules/schematic/services/imageDimensionService.ts'
 
 const assets = new Map([
   ['portrait', { id: 'portrait', width: 30, height: 60, attributes: { Size: '8 cm' } }],
@@ -71,6 +71,17 @@ test('custom ruler ranges stay attached to the image geometry', () => {
  assert.deepEqual(marker.range, [0.25, 0.75])
  assert.equal(marker.x1, custom.x - custom.w / 2 + custom.w * 0.25)
  assert.equal(marker.x2, custom.x - custom.w / 2 + custom.w * 0.75)
+})
+
+test('enabling the second ruler preserves an implicit default axis from older item data', () => {
+  const source = { ...assets.get('landscape'), id: 'implicit-axis' }
+  const custom = item('implicit-axis-item', source.id, 100, 80, 80, 40)
+  custom.rulerHeight = true
+  const page = { items: [custom], imageGroups: [{ id: 'implicit-axis-group', itemIds: [custom.id], x: 20, y: 20, width: 180, height: 100 }] }
+  const groups = dimensionGroups(page)
+  assert.equal(groups.length, 2)
+  const markers = groups.map(group => imageDimensionMarkerLayout(group, page, new Map([[source.id, source]])))
+  assert.deepEqual(markers.map(marker => marker.horizontal), [true, false])
 })
 
 test('stale group members do not suppress standalone images or duplicate markers', () => {

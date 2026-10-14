@@ -26,10 +26,12 @@ pub fn page_fonts() -> Result<Arc<Database>, String> {
 
 #[cfg(target_os = "windows")]
 fn has_family(fonts: &Database, family: &str) -> bool {
-    fonts.query(&usvg::fontdb::Query {
-        families: &[usvg::fontdb::Family::Name(family)],
-        ..Default::default()
-    }).is_some()
+    fonts
+        .query(&usvg::fontdb::Query {
+            families: &[usvg::fontdb::Family::Name(family)],
+            ..Default::default()
+        })
+        .is_some()
 }
 
 #[cfg(target_os = "windows")]
@@ -49,11 +51,31 @@ fn load_files(fonts: &mut Database, directory: &std::path::Path, names: &[&str])
 fn load_windows_page_fonts(directory: &std::path::Path) -> Result<Database, String> {
     let mut fonts = Database::new();
     // Cover regular, bold and italic English text, plus regular/bold Chinese.
-    load_files(&mut fonts, directory, &["arial.ttf", "arialbd.ttf", "ariali.ttf", "arialbi.ttf", "msyh.ttc", "msyhbd.ttc"]);
+    load_files(
+        &mut fonts,
+        directory,
+        &[
+            "arial.ttf",
+            "arialbd.ttf",
+            "ariali.ttf",
+            "arialbi.ttf",
+            "msyh.ttc",
+            "msyhbd.ttc",
+        ],
+    );
     let english = if has_family(&fonts, "Arial") {
         "Arial"
     } else {
-        load_files(&mut fonts, directory, &["segoeui.ttf", "segoeuib.ttf", "segoeuii.ttf", "segoeuiz.ttf"]);
+        load_files(
+            &mut fonts,
+            directory,
+            &[
+                "segoeui.ttf",
+                "segoeuib.ttf",
+                "segoeuii.ttf",
+                "segoeuiz.ttf",
+            ],
+        );
         if !has_family(&fonts, "Segoe UI") {
             return Err("导出缺少英文字体：请安装 Arial 或 Segoe UI".into());
         }
@@ -82,24 +104,50 @@ mod tests {
     #[test]
     fn page_fonts_cover_english_styles_and_chinese() {
         let mut fonts = page_fonts().unwrap();
-        for (weight, style) in [(Weight::NORMAL, Style::Normal), (Weight::BOLD, Style::Normal), (Weight::NORMAL, Style::Italic), (Weight::BOLD, Style::Italic)] {
-            let id = fonts.query(&Query { families: &[Family::Name("Arial")], weight, style, ..Default::default() }).unwrap();
+        for (weight, style) in [
+            (Weight::NORMAL, Style::Normal),
+            (Weight::BOLD, Style::Normal),
+            (Weight::NORMAL, Style::Italic),
+            (Weight::BOLD, Style::Italic),
+        ] {
+            let id = fonts
+                .query(&Query {
+                    families: &[Family::Name("Arial")],
+                    weight,
+                    style,
+                    ..Default::default()
+                })
+                .unwrap();
             let face = fonts.face(id).unwrap();
             assert_eq!(face.weight, weight);
             assert_eq!(face.style, style);
         }
-        let arial = fonts.query(&Query { families: &[Family::Name("Arial")], ..Default::default() }).unwrap();
+        let arial = fonts
+            .query(&Query {
+                families: &[Family::Name("Arial")],
+                ..Default::default()
+            })
+            .unwrap();
         let fallback = usvg::FontResolver::default_fallback_selector();
         for character in "里斯张三客户订单页数".chars() {
-            let id = fallback(character, &[arial], &mut fonts).expect("Chinese character must have a font");
-            assert!(fonts.face(id).unwrap().families.iter().any(|(family, _)| family == "Microsoft YaHei"));
+            let id = fallback(character, &[arial], &mut fonts)
+                .expect("Chinese character must have a font");
+            assert!(fonts
+                .face(id)
+                .unwrap()
+                .families
+                .iter()
+                .any(|(family, _)| family == "Microsoft YaHei"));
         }
     }
 
     #[test]
     fn missing_page_fonts_report_error_without_scanning_other_directories() {
-        let missing = std::env::temp_dir().join(format!("printflow-missing-fonts-{}", std::process::id()));
+        let missing =
+            std::env::temp_dir().join(format!("printflow-missing-fonts-{}", std::process::id()));
         assert!(!missing.exists());
-        assert!(load_windows_page_fonts(&missing).unwrap_err().contains("英文字体"));
+        assert!(load_windows_page_fonts(&missing)
+            .unwrap_err()
+            .contains("英文字体"));
     }
 }

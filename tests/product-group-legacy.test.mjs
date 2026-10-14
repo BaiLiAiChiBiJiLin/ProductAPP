@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { repairLegacyProductGroups, restoreProductGroup, applyGroupedAttributePatch } from '../src/modules/schematic/grouping/productGroupRestore.ts'
+import { getNoteImages } from '../src/modules/schematic/services/assetNotesService.ts'
 import { applyProductGroup } from '../src/modules/schematic/grouping/productGrouping.ts'
 import { normalizeProductConfigs } from '../src/modules/schematic/services/productConfigService.ts'
 
@@ -39,7 +40,8 @@ test('legacy color-only members recover product, independent notes and confirmat
   const session = restoreProductGroup(reloaded, '1', products)
   assert.equal(session.leaderId, '3')
   const reapplied = applyProductGroup(reloaded, session, products)
-  assert.deepEqual(reapplied.map(({ productGroupPosition, finishMatchDisabled, ...asset }) => asset), reloaded.map(({ finishMatchDisabled, ...asset }) => asset))
+  // Confirming upgrades legacy noteImage into the equivalent named-image list.
+  assert.deepEqual(reapplied.map(({ productGroupPosition, finishMatchDisabled, ...asset }) => ({ ...asset, noteImages: getNoteImages(asset) })), reloaded.map(({ finishMatchDisabled, ...asset }) => ({ ...asset, noteImages: getNoteImages(asset) })))
   assert.deepEqual(Object.fromEntries(reapplied.map(asset => [asset.id, asset.productGroupPosition])), { '1': 2, '2': 3, '3': 1 })
 })
 

@@ -2,6 +2,7 @@ import { Descriptions, Modal, Tag } from 'antd'
 import type { Asset } from '../../../model'
 import type { ProductConfig } from '../services/productConfigService'
 import './asset-details.css'
+import { getNoteImages } from '../services/assetNotesService'
 
 type Props = { asset: Asset | null; products: ProductConfig[]; onClose: () => void }
 
@@ -16,6 +17,7 @@ export default function AssetDetailsModal({ asset, products, onClose }: Props) {
   const attributeLabel = (key: string) => product?.options.find(option => option.name === key)?.label || key
   const attributes = Object.entries(asset.attributes ?? {})
   const attributeImages = Object.entries(asset.attributeImages ?? {}).filter(([, url]) => url)
+  const noteImages = getNoteImages(asset)
 
   return <Modal open title="图片资产详情" onCancel={onClose} footer={null} centered width={760} className="asset-details-modal">
     <Descriptions bordered size="small" column={1} items={[
@@ -49,6 +51,6 @@ export default function AssetDetailsModal({ asset, products, onClose }: Props) {
       {attributes.length ? <Descriptions bordered size="small" column={1} items={attributes.map(([key, value]) => ({ key, label: attributeLabel(key), children: value || '未填写' }))}/> : <p>暂无产品属性</p>}
       {attributeImages.length > 0 && <div className="asset-details-attachments">{attributeImages.map(([key, url]) => <figure key={key}><img src={url} alt={attributeLabel(key)} loading="lazy"/><figcaption>{attributeLabel(key)}</figcaption></figure>)}</div>}
     </section>
-    {(asset.note || asset.noteImage) && <section aria-label="资产备注"><h3>备注</h3><p className="asset-details-note">{asset.note}</p>{asset.noteImage && <img className="asset-details-note-image" src={asset.noteImage} alt="备注图片"/>}</section>}
+    {(asset.note || noteImages.length > 0) && <section aria-label="资产备注"><h3>备注</h3><p className="asset-details-note">{asset.note}</p><div className="asset-details-note-images">{noteImages.map((image, index) => <figure key={index}><img className="asset-details-note-image" src={image.src} alt={image.name || `备注图片 ${index + 1}`} loading="lazy"/>{image.name && <figcaption>{image.name}</figcaption>}</figure>)}</div></section>}
   </Modal>
 }

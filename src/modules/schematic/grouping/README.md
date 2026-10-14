@@ -42,7 +42,7 @@
 
 每张 `Asset` 使用可选 `productGroupId`、`productGroupColor`、`productGroupLeaderId` 和固定槽位需要的 `productGroupPosition`。同组图片使用相同组身份和颜色，颜色创建时确定一次。Rust 对应 `product_group_id`、`product_group_color`、`product_group_leader_id`、`product_group_position`，通过 camelCase Serde 写入现有批次资产 JSON，并参与批次签名；旧数据缺少这些字段时默认为空或零，不需要数据库表迁移。移除主图时同步新的主图 ID，解组时清空组身份和槽位。
 
-属性仍存于每张资产的 `productId`、`productName`、`attributes`、`attributeImages`、`note`、`noteImage` 和 `attributesConfirmed`。自定义产品的本地预设 ID 在保存时同步给组内草稿，但不复制成员的尺寸、QT 或备注。
+属性仍存于每张资产的 `productId`、`productName`、`attributes`、`attributeImages`、`note`、`noteImages` 和 `attributesConfirmed`。自定义产品的本地预设 ID 在保存时同步给组内草稿，但不复制成员的尺寸、QT 或备注。
 
 ## 验证
 
@@ -51,3 +51,7 @@
 交互回归覆盖：普通点击不进引导、手动进入、直接结束保存全组、保存批次提交全部草稿、状态同步、取消选择和退出不写入、失败重试、重新打开历史回显，以及小窗口内部滚动。
 
 2026-09-17 使用 `Lapitalii Klein马口铁` 历史批次的真实元数据与本地产品配置做只读验证：原组 3 个成员中 2 个缺产品，补全后 3 个都有产品与确认状态，数据库原始记录未被测试修改。对应最小回归见 `tests/product-group-legacy.test.mjs`。
+
+### 备注图片
+
+每张资产可保存最多三张备注图，`noteImages` 按顺序存储 `{ src, name }`，名称允许为空。已有产品和自定义产品使用同一编辑器；组内每张资产的备注图和名称独立保存。旧批次只有 `noteImage` 时按一张无名备注图回填；新列表显式为 `[]` 表示清空，不能再回退旧值。新写入同步 `noteImage` 为第一张图（无图时为空），兼容旧记录和集成。前端确认、Rust 批次存储及生产记录均保留整个列表。

@@ -10,9 +10,16 @@ fn render(path: &str) -> tiny_skia::Pixmap {
     let mut pixels = tiny_skia::Pixmap::new(
         (tree.size().width() * scale).ceil() as u32,
         (tree.size().height() * scale).ceil() as u32,
-    ).unwrap();
-    resvg::render(&tree, tiny_skia::Transform::from_scale(scale, scale), &mut pixels.as_mut());
-    pixels.save_png(Path::new(path).with_extension("png")).unwrap();
+    )
+    .unwrap();
+    resvg::render(
+        &tree,
+        tiny_skia::Transform::from_scale(scale, scale),
+        &mut pixels.as_mut(),
+    );
+    pixels
+        .save_png(Path::new(path).with_extension("png"))
+        .unwrap();
     pixels
 }
 
@@ -27,10 +34,25 @@ fn main() {
     }
     let original = render(&args[1]);
     let converted = render(&args[2]);
-    assert_eq!((original.width(), original.height()), (converted.width(), converted.height()));
-    let max_difference = original.data().iter().zip(converted.data())
-        .map(|(a,b)| a.abs_diff(*b)).max().unwrap();
-    println!("{}x{}; maximum channel difference: {}", original.width(), original.height(), max_difference);
-    assert!(max_difference <= 1, "coordinate conversion changed rendering");
+    assert_eq!(
+        (original.width(), original.height()),
+        (converted.width(), converted.height())
+    );
+    let max_difference = original
+        .data()
+        .iter()
+        .zip(converted.data())
+        .map(|(a, b)| a.abs_diff(*b))
+        .max()
+        .unwrap();
+    println!(
+        "{}x{}; maximum channel difference: {}",
+        original.width(),
+        original.height(),
+        max_difference
+    );
+    assert!(
+        max_difference <= 1,
+        "coordinate conversion changed rendering"
+    );
 }
-

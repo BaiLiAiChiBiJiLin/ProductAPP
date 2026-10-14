@@ -26,6 +26,10 @@ it('selected image unit and independent dimension controls update the item; dese
  fireEvent.change(screen.getByLabelText('标尺单位'),{target:{value:'in'}})
  expect(screen.getByRole('status').textContent).toContain('"rulerUnit":"in"')
  fireEvent.click(width);expect(width.checked).toBe(true);expect(height.checked).toBe(true)
+ const sizeAxis=screen.getByLabelText('Size使用方向') as HTMLSelectElement
+ expect(sizeAxis.value).toBe('height')
+ fireEvent.change(sizeAxis,{target:{value:'width'}})
+ expect(screen.getByRole('status').textContent).toContain('"sizeAxis":"width"')
  fireEvent.click(height);expect(height.checked).toBe(false)
  fireEvent.click(screen.getByText('取消图片选择'))
  expect((screen.getByLabelText('标尺单位') as HTMLSelectElement).disabled).toBe(true)

@@ -1,5 +1,5 @@
 import { accessoryFrame } from './accessoryFrameService.ts'
-import { GROUP_GAP, type Item, type Page } from '../../../model.ts'
+import { GROUP_GAP, type DetailImageVisual, type Item, type Page } from '../../../model.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
 import { imageDetailsLayout } from './imageDetailsLayoutService.ts'
 import { detailPanelsForGroup } from '../arrangement/productGroupDetails.ts'
@@ -43,7 +43,15 @@ export function equalizeRowBackgrounds(groups: ImageGroup[]): ImageGroup[] {
   })
 }
 
-export function groupBackgroundsSvg(page: Page): string {
+function visualTransform(centerX: number, centerY: number, visual?: DetailImageVisual) {
+  if (!visual) return ''
+  const scale = Number.isFinite(visual.scale) && visual.scale > 0 ? visual.scale : 1
+  const x = Number.isFinite(visual.x) ? visual.x : 0
+  const y = Number.isFinite(visual.y) ? visual.y : 0
+  return ` transform="translate(${centerX + x} ${centerY + y}) scale(${scale}) translate(${-centerX} ${-centerY})"`
+}
+
+export function groupBackgroundsSvg(page: Page, accessoryVisuals?: ReadonlyMap<string, DetailImageVisual>): string {
   const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[character] ?? character))
   return `<g data-image-group-backgrounds="true" fill="${GROUP_BACKGROUND}">${imageGroupsForPage(page).map(group => {
     const multipleDetails = Boolean(group.detailGroups?.length)
@@ -52,11 +60,18 @@ export function groupBackgroundsSvg(page: Page): string {
     const panels = detailPanelsForGroup(group).map(panel => {
     const group = panel
     const details = group.details
-    const { x, y, line, fontSize, fields, bodyY, imageSize, noteX, noteWidth, noteY, noteLines, noteLine, noteFontSize, noteImageSize, noteImageY } = imageDetailsLayout(group)
-    const fieldText = fields.map((field, index) => `<text x="${x}" y="${y + line * (index + 1) - 2}" font-family="Arial, Microsoft YaHei, sans-serif" font-size="${Math.min(fontSize, field.fontSize ?? fontSize)}" font-weight="700" fill="#475569">${escape(field.text)}</text>`).join('')
+    const { x, y, line, fontSize, fields, bodyY, imageSize, accessoryX, noteX, noteWidth, noteY, noteLines, noteLine, noteFontSize, noteImages } = imageDetailsLayout(group)
+    const fieldText = fields.map((field, index) => `<text x="${x}" y="${y + line * index + Math.min(fontSize, field.fontSize ?? fontSize)}" font-family="Arial, Microsoft YaHei, sans-serif" font-size="${Math.min(fontSize, field.fontSize ?? fontSize)}" font-weight="${field.key.startsWith('size') || field.key === 'qt' ? 400 : 700}" fill="#475569">${escape(field.text)}</text>`).join('')
     const noteText = noteLines.map((value, index) => `<text text-anchor="middle" x="${noteX + noteWidth / 2}" y="${noteY + index * noteLine + noteLine - 2}" font-family="Arial, Microsoft YaHei, sans-serif" font-size="${noteFontSize}" fill="#475569">${escape(value)}</text>`).join('')
-    const frame = accessoryFrame(details?.accessoryImage ?? '', x, bodyY, imageSize, details?.accessoryCode)
-    const text = details ? `${fieldText}${details.accessoryImage ? `<rect x="${frame.x}" y="${frame.y}" width="${frame.frameWidth}" height="${frame.frameHeight}" rx="1" fill="#fff"/><svg x="${frame.imageX}" y="${frame.imageY}" width="${frame.width}" height="${frame.height}" viewBox="${frame.crop.x} ${frame.crop.y} ${frame.crop.width} ${frame.crop.height}" overflow="hidden"><image data-printflow-accessory="true" width="${frame.natural.width}" height="${frame.natural.height}" href="${escape(details.accessoryImage)}"/></svg>${details.accessoryCode ? `<text x="${x + imageSize / 2}" y="${frame.codeY + 9}" text-anchor="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="8" font-weight="700" fill="#475569">${escape(details.accessoryCode)}</text>` : ''}` : ''}${noteText}${details.noteImage && noteImageSize > 0 ? `<image data-printflow-note="true" x="${noteX + (noteWidth - noteImageSize) / 2}" y="${noteImageY}" width="${noteImageSize}" height="${noteImageSize}" preserveAspectRatio="xMidYMid meet" href="${escape(details.noteImage)}"/>` : ''}` : ''
+    const notePictures = noteImages.map((image, index) => {
+      const key = index === 0 ? `${group.id}:note` : `${group.id}:note:${index}`
+      const transform = visualTransform(image.x + image.size / 2, image.y + (image.size - image.captionHeight) / 2, accessoryVisuals?.get(key))
+      return `<g data-printflow-note-group="${escape(key)}"${transform}><image data-printflow-note="true" x="${image.x}" y="${image.y}" width="${image.size}" height="${image.size}" preserveAspectRatio="xMidYMid meet" href="${escape(image.src)}"/>${image.name ? `<text data-printflow-note-name="true" text-anchor="middle" x="${image.x + image.size / 2}" y="${image.y - image.captionHeight + image.captionFontSize}" font-family="Arial, Microsoft YaHei, sans-serif" font-size="${image.captionFontSize}" fill="#ff4d4f">${escape(image.name)}</text>` : ''}</g>`
+    }).join('')
+    const frame = accessoryFrame(details?.accessoryImage ?? '', accessoryX, bodyY, imageSize, details?.accessoryCode)
+    const accessoryKey = `${group.id}:accessory`
+    const accessoryTransform = visualTransform(frame.x + frame.frameWidth / 2, frame.y + frame.frameHeight / 2, accessoryVisuals?.get(accessoryKey))
+    const text = details ? `${fieldText}${details.accessoryImage ? `<g data-printflow-accessory-group="${escape(accessoryKey)}"${accessoryTransform}><rect x="${frame.x}" y="${frame.y}" width="${frame.frameWidth}" height="${frame.frameHeight}" rx="1" fill="#fff"/><svg x="${frame.imageX}" y="${frame.imageY}" width="${frame.width}" height="${frame.height}" viewBox="${frame.crop.x} ${frame.crop.y} ${frame.crop.width} ${frame.crop.height}" overflow="hidden"><image data-printflow-accessory="true" width="${frame.natural.width}" height="${frame.natural.height}" href="${escape(details.accessoryImage)}"/></svg>${details.accessoryCode ? `<text x="${accessoryX + imageSize / 2}" y="${frame.codeY + 9}" text-anchor="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="8" font-weight="700" fill="#475569">${escape(details.accessoryCode)}</text>` : ''}</g>` : ''}${noteText}${notePictures}` : ''
     return details ? multipleDetails ? `<g data-printflow-details="true">${text}</g>` : text : ''
     }).join('')
     const background = groupBackgroundRects(group).map(rect => `<rect data-group-background="${escape(group.id)}" x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" fill="${GROUP_BACKGROUND}"/>`).join('')

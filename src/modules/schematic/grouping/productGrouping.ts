@@ -1,3 +1,4 @@
+import { getNoteImages, noteImagesPatch } from '../services/assetNotesService.ts'
 import type { Asset } from '../../../model'
 import type { AttributeDraft } from '../services/attributeDraftService'
 import { catalogConfirmationPatch } from '../services/attributeDraftService.ts'
@@ -102,7 +103,7 @@ export function inheritGroupIdentity(editor: GroupEditor, leader: GroupEditor, p
 export function readGroupAssetEditor(asset: Asset): GroupEditor {
   return {
     mode: asset.productId.startsWith('custom:') ? 'custom' : 'existing',
-    draft: { productId: asset.productId, attributes: { ...asset.attributes }, images: { ...asset.attributeImages }, note: asset.note ?? '', noteImage: asset.noteImage ?? '', finishMatchDisabled: Boolean(asset.finishMatchDisabled) },
+    draft: { productId: asset.productId, attributes: { ...asset.attributes }, images: { ...asset.attributeImages }, note: asset.note ?? '', ...noteImagesPatch(getNoteImages(asset)), finishMatchDisabled: Boolean(asset.finishMatchDisabled) },
     custom: { id: Number(asset.productId.slice(7)) || null, name: asset.productName ?? '', size: asset.attributes?.Size ?? '', printOption: asset.attributes?.['Print Option'] ?? '', finish: asset.attributes?.Finish ?? '', accessoryColor: asset.attributes?.['Accessories Color'] ?? '', accessoryColorImage: asset.attributeImages?.['Accessories Color'] ?? '', qt: asset.attributes?.QT?.trim() ? Number(asset.attributes.QT) : null, attributes: { ...asset.attributes }, attributeImages: { ...asset.attributeImages }, finishMatchDisabled: Boolean(asset.finishMatchDisabled) },
   }
 }
@@ -175,7 +176,7 @@ export function confirmGroupEditor(asset: Asset, editor: GroupEditor, leader: Gr
   if (fixed.mode === 'existing' && !product) return independent ? asset : (() => { throw new Error('请选择有效产品。') })()
   if (fixed.mode === 'custom' && !fixed.custom.name.trim()) return independent ? asset : (() => { throw new Error('请填写自定义产品名称。') })()
   const patch = fixed.mode === 'existing' ? catalogConfirmationPatch(fixed.draft, product!)
-    : { ...customProductPatch(fixed.custom), note: fixed.draft.note, noteImage: fixed.draft.noteImage }
+    : { ...customProductPatch(fixed.custom), note: fixed.draft.note, ...noteImagesPatch(getNoteImages(fixed.draft)) }
   if (fixed.mode === 'existing') for (const key of sharedOptionNames(leader, products)) {
     // Retain the fixed count even while this member's technique is temporarily empty.
     if (fixed.draft.attributes[key]) {

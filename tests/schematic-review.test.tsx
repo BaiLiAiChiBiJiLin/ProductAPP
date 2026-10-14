@@ -54,7 +54,7 @@ beforeEach(() => {
   mocks.save.mockResolvedValue('C:\\new-proof.pdf')
   mocks.exportPdf.mockResolvedValue(undefined)
   mocks.exportPage.mockResolvedValue(undefined)
-  mocks.invoke.mockImplementation(async (command: string) => command === 'list_batches' ? [] : command === 'list_schematic_reviews' ? { records: [], total: 0, page: 1, pageSize: 20 } : undefined)
+  mocks.invoke.mockImplementation(async (command: string) => command === 'list_batches' ? { records: [], total: 0, page: 1, pageSize: 12 } : command === 'list_schematic_reviews' ? { records: [], total: 0, page: 1, pageSize: 20 } : undefined)
   Object.defineProperty(window, 'matchMedia', { writable: true, value: vi.fn(() => ({ matches: false, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() })) })
   // jsdom does not support pseudo-element styles used by the table scrollbar probe.
   const getStyle = window.getComputedStyle.bind(window)
@@ -88,6 +88,59 @@ it('restores exact arrangement, text, rulers and independent visuals without aut
   expect(mocks.autoArrange).not.toHaveBeenCalled()
 })
 
+it('moving or switching either artwork preserves custom Size text and the other side', async () => {
+  const record = fixture()
+  const page = record.pages[0]
+  const main = page.items[0]
+  const group = page.imageGroups![0]
+  const back = { ...main, id: `${main.id}-back`, derivedFrom: main.id, suppressRuler: true, backSvg: '<svg>back</svg>' }
+  page.items.push(back)
+  group.itemIds.push(back.id)
+  group.details!.size = 'custom Size'
+  group.detailGroups = [{ itemIds: [main.id, back.id], details: { ...group.details! } }]
+  const originalDetails = structuredClone(page.imageGroups)
+  render(<SchematicPage initialRecord={record}/> )
+  await screen.findByText('恢复的排列页')
+  act(() => latestArrange().onChangeItem({ ...latestArrange().pages[0].items[0], x: 124 }))
+  act(() => latestArrange().onChangeItem({ ...latestArrange().pages[0].items[0], svgLayerId: 'front-layer', backSvg: '<svg>front</svg>' }))
+  act(() => latestArrange().onChangeItem({ ...latestArrange().pages[0].items[1], svgLayerId: 'back-layer', backSvg: '<svg>new back</svg>', rulerWidth: true }))
+  expect(latestArrange().pages[0].imageGroups).toEqual(originalDetails)
+  expect(latestArrange().pages[0].items[0].x).toBe(124)
+  expect(latestArrange().pages[0].items[0].backSvg).toBe('<svg>front</svg>')
+  expect(latestArrange().pages[0].items[1].backSvg).toBe('<svg>new back</svg>')
+})
+
+it('only ruler changes update their own Size using the saved precision and panel ownership', async () => {
+  const record = fixture()
+  Object.assign(record.assets[0], { width: 30, height: 60, attributes: { Size: '60 mm' } })
+  const page = record.pages[0]
+  const main = page.items[0]
+  const second = { ...main, id: 'other-image' }
+  page.items.push(second)
+  const group = page.imageGroups![0]
+  group.itemIds.push(second.id)
+  group.details!.size = 'custom primary Size'
+  group.details!.sizes = [{ itemId: main.id, label: 'custom primary Size' }, { itemId: second.id, label: 'custom other Size' }]
+  group.detailGroups = [main, second].map(item => ({ itemIds: [item.id], details: { size: `custom ${item.id}`, qt: '', finish: '' } }))
+  render(<SchematicPage initialRecord={record}/> )
+  await screen.findByText('恢复的排列页')
+  act(() => latestArrange().onChangeItem({ ...latestArrange().pages[0].items[1], rulerWidth: true, rulerHeight: false }))
+  let details = latestArrange().pages[0].imageGroups![0]
+  expect(details.details!.size).toBe('custom primary Size')
+  expect(details.details!.sizes!.map(value => value.label)).toEqual(['custom primary Size', '3.0 cm'])
+  expect(details.detailGroups!.map(panel => panel.details.size)).toEqual([`custom ${main.id}`, '3.0 cm'])
+  act(() => latestArrange().onChangeItem({ ...latestArrange().pages[0].items[0], rulerWidth: true, rulerHeight: false }))
+  details = latestArrange().pages[0].imageGroups![0]
+  expect(details.details!.size).toBe('3 cm')
+  expect(details.details!.sizes!.map(value => value.label)).toEqual(['3 cm', '3.0 cm'])
+  expect(details.detailGroups!.map(panel => panel.details.size)).toEqual(['3 cm', '3.0 cm'])
+  act(() => latestArrange().onDisplayStateChange(previous => ({ ...previous,
+    dimensionDisplayOverrides: new Map([[main.id, { decimalPlaces: 2, precision: 'default' }]]),
+  })))
+  act(() => latestArrange().onChangeItem({ ...latestArrange().pages[0].items[0], rulerHeight: true, sizeAxis: 'height' }))
+  expect(latestArrange().pages[0].imageGroups![0].details!.size).toBe('6.00 cm')
+})
+
 it('records the exported revision only after successful export, and saves later edits as another revision', async () => {
   const record = fixture()
   const saved = vi.fn()
@@ -96,6 +149,7 @@ it('records the exported revision only after successful export, and saves later 
   render(<SchematicPage initialRecord={record} onRecordSaved={saved}/> )
   fireEvent.click(await screen.findByText('导出测试 PDF'))
   await waitFor(() => expect(mocks.exportPdf).toHaveBeenCalledOnce())
+  expect(mocks.exportPdf.mock.calls[0][7]).toEqual(restoreArrangementDisplay(record.display).accessoryVisuals)
   expect(mocks.invoke.mock.calls.filter(call => call[0] === 'save_schematic_review')).toHaveLength(0)
   await act(async () => complete())
   await waitFor(() => expect(saved).toHaveBeenCalledOnce())
@@ -108,6 +162,7 @@ it('records the exported revision only after successful export, and saves later 
   fireEvent.click(screen.getByText('放大主图'))
   fireEvent.click(screen.getByText('导出测试 PNG'))
   await waitFor(() => expect(saved).toHaveBeenCalledTimes(2))
+  expect(mocks.exportPage.mock.calls[0][8]).toEqual(latestArrange().displayState.accessoryVisuals)
   const second = mocks.invoke.mock.calls.filter(call => call[0] === 'save_schematic_review')[1][1].record as SchematicReviewRecord
   expect(second.pages[0].items[0].x).toBe(123)
   expect(second.display.visualScales[0][1]).toBe(2)
@@ -141,7 +196,7 @@ it('reports record failure independently from file export and permits retrying t
 it('retries record persistence without exporting the file again', async () => {
   let attempts = 0
   mocks.invoke.mockImplementation(async command => {
-    if (command === 'list_batches') return []
+    if (command === 'list_batches') return { records: [], total: 0, page: 1, pageSize: 12 }
     if (command === 'save_schematic_review' && attempts++ === 0) throw new Error('数据库暂时不可写')
   })
   const onRecordSaved = vi.fn()
@@ -173,7 +228,7 @@ it('review list loads lightweight summaries, searches and opens the selected rec
 
 it('App edit routing restores the record again after returning to the list', async () => {
   const record = fixture()
-  mocks.invoke.mockImplementation(async command => command === 'list_schematic_reviews' ? { records: [summary(record)], total: 1, page: 1, pageSize: 20 } : command === 'load_schematic_review' ? structuredClone(record) : command === 'list_batches' ? [] : undefined)
+  mocks.invoke.mockImplementation(async command => command === 'list_schematic_reviews' ? { records: [summary(record)], total: 1, page: 1, pageSize: 20 } : command === 'load_schematic_review' ? structuredClone(record) : command === 'list_batches' ? { records: [], total: 0, page: 1, pageSize: 12 } : undefined)
   render(<App/> )
   fireEvent.click(screen.getByRole('button', { name: '示意图审核' }))
   fireEvent.click(await screen.findByRole('button', { name: /^编\s*辑$/ }))
@@ -230,7 +285,7 @@ it('App stays in review after transfer and refreshes the pending table when expl
   let transferred = false
   const job = { id: 'new-job', sourceReviewId: record.id, customerName: '审核客户', output: record.output, submittedAt: record.savedAt, paymentStatus: 'unpaid', status: 'pending', imageCount: 1 }
   mocks.invoke.mockImplementation(async command => {
-    if (command === 'list_batches') return []
+    if (command === 'list_batches') return { records: [], total: 0, page: 1, pageSize: 12 }
     if (command === 'list_schematic_reviews') return { records: [{ ...summary(record), impositionJobId: transferred ? job.id : undefined }], total: 1, page: 1, pageSize: 20 }
     if (command === 'submit_schematic_review_to_imposition') { transferred = true; return job }
     if (command === 'list_pending_impositions') return { records: transferred ? [job] : [], total: transferred ? 1 : 0, page: 1, pageSize: 20 }
@@ -333,7 +388,7 @@ it('returns a pending order to review and allows paid or unpaid imposition again
   let paymentStatus = 'paid'
   const job = () => ({ id: 'return-job', sourceReviewId: record.id, customerName: '审核客户', output: record.output, submittedAt: record.savedAt, paymentStatus, status: 'pending', imageCount: 1 })
   mocks.invoke.mockImplementation(async (command, args) => {
-    if (command === 'list_batches') return []
+    if (command === 'list_batches') return { records: [], total: 0, page: 1, pageSize: 12 }
     if (command === 'list_schematic_reviews') return { records: [{ ...summary(record), paymentStatus, returned, impositionJobId: pending ? 'return-job' : undefined }], total: 1, page: 1, pageSize: 20 }
     if (command === 'list_pending_impositions') return { records: pending ? [job()] : [], total: pending ? 1 : 0, page: 1, pageSize: 20 }
     if (command === 'return_imposition_to_review') { pending = false; returned = true }

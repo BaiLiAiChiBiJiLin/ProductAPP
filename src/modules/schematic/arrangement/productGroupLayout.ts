@@ -1,16 +1,13 @@
-import { GROUP_GAP, type Item } from '../../../model.ts'
+import { DETAIL_AREA_RATIO, GROUP_GAP, IMAGE_AREA_RATIO, type Item } from '../../../model.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
 import { imageCenterWithDimensionGutter } from '../services/imageDimensionService.ts'
 import { quantityLabel, wrapNote } from '../services/imageDetailsLayoutService.ts'
+import { getNoteImages } from '../services/assetNotesService.ts'
 
 export const PRODUCT_GROUP_ROW_HEIGHT = 110
 // The ruler is drawn close to the artwork. Keep only a small clearance in the
 // footprint; the old 14-unit reservation made product-group images needlessly small.
 export const PRODUCT_GROUP_MARKER_SPACE = 3
-// Keep the four fixed detail labels readable while allowing two compact
-// product groups to share one row when their fields are short or empty.
-export const PRODUCT_GROUP_DETAIL_MIN_WIDTH = 70
-export const PRODUCT_GROUP_DETAIL_MAX_WIDTH = 132
 
 function footprint(item: Item) {
   const radians = item.rotation * Math.PI / 180
@@ -33,11 +30,9 @@ export function productGroupFootprint(items: Item[], maxHeight: number, group?: 
   const widestFirst = Array.from({ length: Math.min(slotCount, 3) }, (_, index) => Math.min(slotCount, 3) - index)
   const preferred = Number.isInteger(preferredColumns) && preferredColumns! >= 1 && preferredColumns! <= slotCount ? [preferredColumns!] : []
   const candidates = [...preferred, ...widestFirst.filter(columns => !preferred.includes(columns))]
-  const detailWidth = detailWidthForPanels(group?.detailGroups ?? [])
   for (const columns of candidates) {
     const imageWidth = cellWidth * columns
-    // Keep the product information panel compact so it cannot consume an
-    // otherwise usable image column.
+    const detailWidth = imageWidth / IMAGE_AREA_RATIO * DETAIL_AREA_RATIO
     if (imageWidth + detailWidth > maxWidth + 1e-7) continue
     const panels = group?.detailGroups ?? []
     const detailColumns = Math.min(columns, Math.max(1, panels.length))
@@ -46,7 +41,7 @@ export function productGroupFootprint(items: Item[], maxHeight: number, group?: 
       const lines = [details.heading ?? '', `Size: ${details.size}`, quantityLabel(details.qt), 'Accessory:', ...(details.fields ?? []).map(field => field.text)]
         .reduce((total, text) => total + wrapNote(text, detailPanelWidth, 10).length, 0)
       const noteLines = details.note ? wrapNote(details.note, detailPanelWidth, 8).length : 0
-      return 8 + lines * 11 + noteLines * 10 + (details.accessoryImage ? 48 : 0) + (details.noteImage ? 32 : 0)
+      return 8 + lines * 11 + noteLines * 10 + (details.accessoryImage ? 48 : 0) + (getNoteImages(details).length ? 32 : 0)
     }))
     const height = Math.max(cellHeight * Math.ceil(slotCount / columns), Math.ceil(panels.length / detailColumns) * detailHeight)
     if (height <= maxHeight + 1e-7) return { imageWidth, height, columns, cellHeight, detailWidth }
@@ -54,21 +49,9 @@ export function productGroupFootprint(items: Item[], maxHeight: number, group?: 
   throw new Error('产品组的图片或产品信息超出整页排列区域，请扩大排列区域或减少组内图片。')
 }
 
-function textWidth(text: string, fontSize = 10) {
-  return [...text].reduce((width, character) => width + (/[\u0000-\u00ff]/.test(character) ? fontSize * 0.6 : fontSize), 0)
-}
-
-function detailWidthForPanels(panels: NonNullable<ImageGroup['detailGroups']>) {
-  const widest = Math.max(0, ...panels.flatMap(({ details }) => [
-    details.heading ?? '', details.size ? `Size: ${details.size}` : '', quantityLabel(details.qt),
-    details.finish ? `Finish: ${details.finish}` : '', 'Accessory:', ...(details.fields ?? []).map(field => field.text), details.note ?? '',
-  ].map(text => textWidth(text))))
-  return Math.min(PRODUCT_GROUP_DETAIL_MAX_WIDTH, Math.max(PRODUCT_GROUP_DETAIL_MIN_WIDTH, widest + 12))
-}
-
 /** Placement keeps current image sizes and reserves independent dimension/label gutters. */
-export function placeProductGroup(items: Item[], group: ImageGroup, x: number, y: number, width: number, height: number, columns: number, detailWidth = detailWidthForPanels(group.detailGroups ?? [])) {
-  const compactDetailWidth = Math.min(Math.max(1, width - 1), detailWidth)
+export function placeProductGroup(items: Item[], group: ImageGroup, x: number, y: number, width: number, height: number, columns: number) {
+  const compactDetailWidth = width * DETAIL_AREA_RATIO
   const imageAreaWidth = width - compactDetailWidth
   const cellWidth = imageAreaWidth / columns
   const emptyExample = Boolean(group.emptyExample && !group.emptyExampleMerged)

@@ -1,8 +1,9 @@
-import type { Asset } from '../../../model'
+import type { Asset, NoteImage } from '../../../model'
+import { getNoteImages, noteImagesPatch, sameNoteImages } from './assetNotesService.ts'
 import type { ProductConfig } from './productConfigService'
 import { availableOptionValues, type ProductAttributePatch } from './productOptionRules.ts'
 
-export type AttributeDraft = { productId: string; attributes: Record<string, string>; images: Record<string, string>; note: string; noteImage: string; finishMatchDisabled?: boolean }
+export type AttributeDraft = { productId: string; attributes: Record<string, string>; images: Record<string, string>; note: string; noteImage: string; noteImages?: NoteImage[]; finishMatchDisabled?: boolean }
 export const emptyAttributeDraft = (): AttributeDraft => ({ productId: '', attributes: {}, images: {}, note: '', noteImage: '', finishMatchDisabled: false })
 
 /** A blank asset inherits the previous form without changing any asset. */
@@ -18,7 +19,7 @@ export function readSelectionDraft(previous: AttributeDraft, selected: Asset[]):
   for (const key of imageKeys) if (selected.every(asset => (asset.attributeImages?.[key] ?? '') === (first.attributeImages?.[key] ?? ''))) images[key] = first.attributeImages?.[key] ?? ''
   return { productId: first.productId, attributes: selected.length === 1 ? { ...first.attributes } : attributes, images: selected.length === 1 ? { ...first.attributeImages } : images,
     note: selected.every(asset => (asset.note ?? '') === (first.note ?? '')) ? first.note ?? '' : previous.note,
-    noteImage: selected.every(asset => (asset.noteImage ?? '') === (first.noteImage ?? '')) ? first.noteImage ?? '' : previous.noteImage,
+    ...noteImagesPatch(selected.every(asset => sameNoteImages(getNoteImages(asset), getNoteImages(first))) ? getNoteImages(first) : getNoteImages(previous)),
     finishMatchDisabled: selected.length === 1 ? Boolean(first.finishMatchDisabled) : previous.finishMatchDisabled }
 }
 
@@ -52,5 +53,5 @@ export function catalogConfirmationPatch(draft: AttributeDraft, product: Product
     }
   }
   if (draft.attributes.QT) attributes.QT = draft.attributes.QT
-  return { productId: product.id, productName: product.title, attributes, attributeImages, clearAttributes: true, note: draft.note, noteImage: draft.noteImage, suppressFinishMatch: Boolean(draft.finishMatchDisabled) }
+  return { productId: product.id, productName: product.title, attributes, attributeImages, clearAttributes: true, note: draft.note, ...noteImagesPatch(getNoteImages(draft)), suppressFinishMatch: Boolean(draft.finishMatchDisabled) }
 }

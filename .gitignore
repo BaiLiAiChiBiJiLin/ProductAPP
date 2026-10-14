@@ -39,7 +39,15 @@ src-tauri/printflow-data/
 # Local build and measurement output
 .cargo-target/
 .cargo-test-target/
+.cargo-target-*/
+.tools/nesting/rust-core-target/
+output/
+outputs/
 artifacts/
 measurement-output/
 .source-backups/
 .measure-groups-output.txt
+
+# Python runtime and test bytecode
+__pycache__/
+*.py[cod]

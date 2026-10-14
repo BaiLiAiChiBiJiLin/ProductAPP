@@ -1,10 +1,10 @@
 [package]
 name = "app"
-version = "0.1.24"
+version = "0.1.26"
 description = "PrintFlow production layout desktop app"
 authors = ["PrintFlow"]
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.88.0"
 
 [lib]
 name = "app_lib"
@@ -18,19 +18,22 @@ serde_json = { version = "1.0", features = ["raw_value"] }
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 chrono = "0.4.45"
-tauri = { version = "2.11.3", features = [] }
+tauri = { version = "2.11.3", default-features = false, features = ["wry", "compression", "dynamic-acl"] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
 tokio = { version = "1", features = ["fs", "rt-multi-thread"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "blocking"] }
-rquickjs = { version = "0.9", optional = true }
 rusqlite = { version = "0.32", features = ["bundled"] }
 usvg = "0.45"
 resvg = "0.45"
 tiny-skia = "0.11"
 base64 = "0.22"
 roxmltree = "0.20"
-image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+# Keep the decoders used by the PDF converter available for images uploaded as
+# custom-product accessories/notes. svg2pdf shares this image crate, so the
+# WebP feature also enables its WebP branch (without it, export fails with
+# "An unknown type of image appears in the SVG.").
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 printpdf = { version = "0.7", default-features = false, features = ["embedded_images", "svg"] }
 pdf-writer = "0.12.1"
 svg2pdf = "0.13"

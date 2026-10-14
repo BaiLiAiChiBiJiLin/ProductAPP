@@ -15,11 +15,25 @@ pub fn read(reference: &str) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn write_export_resource_chunk(id: String, text: String, append: bool) -> Result<(), String> {
-    if text.len() > 256 * 1024 { return Err("导出数据块超过大小限制".into()); }
+pub async fn write_export_resource_chunk(
+    id: String,
+    text: String,
+    append: bool,
+) -> Result<(), String> {
+    if text.len() > 256 * 1024 {
+        return Err("导出数据块超过大小限制".into());
+    }
     tauri::async_runtime::spawn_blocking(move || {
-        let mut file = fs::OpenOptions::new().write(true).create(!append).truncate(!append).append(append)
-            .open(path(&id)?).map_err(|error| error.to_string())?;
-        file.write_all(text.as_bytes()).map_err(|error| error.to_string())
-    }).await.map_err(|error| error.to_string())?
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create(!append)
+            .truncate(!append)
+            .append(append)
+            .open(path(&id)?)
+            .map_err(|error| error.to_string())?;
+        file.write_all(text.as_bytes())
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }

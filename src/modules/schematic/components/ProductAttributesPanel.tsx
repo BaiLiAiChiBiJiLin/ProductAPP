@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type SetStateAction } from 'react'
 import { Alert, Button, InputNumber, Select, Tabs, Tooltip, message } from 'antd'
 import AssetNotesEditor from './AssetNotesEditor'
+import { getNoteImages, noteImagesPatch } from '../services/assetNotesService'
 import type { Asset } from '../../../model'
 import Loading from '../../../components/Loading'
 import useProductConfigs from '../hooks/useProductConfigs'
@@ -15,6 +16,7 @@ import { groupingTrigger, sharedOptionNames, type GroupEditor } from '../groupin
 import ProductGroupGuide from '../grouping/ProductGroupGuide'
 import { restoreProductGroup } from '../grouping/productGroupRestore'
 import { orderAssetsByProductGroup } from '../services/productGroupOrdering'
+import { useAttributePanelOverflow } from '../hooks/useAttributePanelOverflow'
 
 type Props = { assets: Asset[]; selectedAssetIds: Set<string>; onConfirmAttributes: (patch: ProductAttributePatch) => Promise<void>; disabled?: boolean; selectionHint?: string; allowGrouping?: boolean; showSelectionSummary?: boolean }
 export default function ProductAttributesPanel({ assets, selectedAssetIds, onConfirmAttributes, disabled = false, selectionHint, allowGrouping = true, showSelectionSummary = true }: Props) {
@@ -43,6 +45,7 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
   const confirmingRef = useRef(false)
   const [error, setError] = useState('')
   const groupEntryRef = useRef<HTMLDivElement>(null)
+  const overflowing = useAttributePanelOverflow(groupEntryRef)
   const selectionKey = `${session?.id ?? ''}:${selected.map(asset => asset.id).join('|')}`
   const [previousSelection, setPreviousSelection] = useState<string | null>(null)
   if (selectionKey !== previousSelection) {
@@ -56,9 +59,9 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
       const isCustom = next.productId.startsWith('custom:')
       setMode(isCustom ? 'custom' : 'existing')
       if (isCustom) setCustom({ id: Number(next.productId.slice(7)), name: selected[0]?.productName ?? '', size: next.attributes.Size ?? '', printOption: next.attributes['Print Option'] ?? '', finish: next.attributes.Finish ?? '', accessoryColor: next.attributes['Accessories Color'] ?? '', accessoryColorImage: next.images['Accessories Color'] ?? '', qt: next.attributes.QT?.trim() ? Number(next.attributes.QT) : null, attributes: { ...next.attributes }, attributeImages: { ...next.images }, finishMatchDisabled: Boolean(next.finishMatchDisabled) })
-    } else if (!session && selected.length === 1 && (selected[0].note || selected[0].noteImage)) {
+    } else if (!session && selected.length === 1 && (selected[0].note || getNoteImages(selected[0]).length)) {
       // Notes remain independent when a product has been cleared from an image.
-      setDraft({ ...draft, note: selected[0].note ?? '', noteImage: selected[0].noteImage ?? '' })
+      setDraft({ ...draft, note: selected[0].note ?? '', ...noteImagesPatch(getNoteImages(selected[0])) })
     }
   }
   useEffect(() => {
@@ -104,7 +107,7 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
     setError('')
     try {
       let patch: ProductAttributePatch
-      if (mode === 'custom') { const saved = await saveCustomProduct(custom); setCustom(saved); patch = { ...customProductPatch(saved), note: draft.note, noteImage: draft.noteImage } }
+      if (mode === 'custom') { const saved = await saveCustomProduct(custom); setCustom(saved); patch = { ...customProductPatch(saved), note: draft.note, ...noteImagesPatch(getNoteImages(draft)) } }
       else patch = catalogConfirmationPatch(draft, product!)
       await onConfirmAttributes(patch)
       grouping?.clearDrafts(selected.map(asset => asset.id))
@@ -130,11 +133,11 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
         </div>
       </div>
       <div hidden={mode !== 'custom'}><CustomProductForm draft={custom} onDraftChange={changeCustom} productLocked={locked}/></div>
-      <AssetNotesEditor assets={selected.map(asset => ({ ...asset, note: draft.note, noteImage: draft.noteImage }))} onUploadingChange={setUploadingNote} onAssign={patch => changeEditor({ ...editor, draft: { ...draft, ...(patch.note !== undefined ? { note: patch.note } : {}), ...(patch.noteImage !== undefined ? { noteImage: patch.noteImage } : {}) } })}/>
+      <AssetNotesEditor assets={selected.map(asset => ({ ...asset, note: draft.note, ...noteImagesPatch(getNoteImages(draft)) }))} onUploadingChange={setUploadingNote} onAssign={patch => changeEditor({ ...editor, draft: { ...draft, ...(patch.note !== undefined ? { note: patch.note } : {}), ...(patch.noteImages !== undefined || patch.noteImage !== undefined ? noteImagesPatch(getNoteImages(patch)) : {}) } })}/>
     </fieldset>
     {error && <div role="alert" className="product-config-error">{error}</div>}
     <ProductGroupGuide assets={assets}/>
     {!session && selected.length === 1 && grouping?.isPending(selected[0].id) && <p role="status" className="product-group-pending">这张图片的分组已保存，属性尚未确认，请点击“确认”保存。</p>}
-    <div ref={groupEntryRef} className="attribute-confirm">{session && <Tooltip title="取消选择并退出引导，保留已保存内容，放弃尚未保存的修改"><Button disabled={disabled || confirming || uploadingNote || grouping?.saving} onClick={() => grouping!.cancelGuide()}>退出引导</Button></Tooltip>}<Button type="primary" disabled={!selected.length || disabled || confirming || uploadingNote || grouping?.saving} icon={confirming || grouping?.saving ? <Loading size="small" inline/> : undefined} onClick={() => void confirm()}>{confirming || grouping?.saving ? '正在保存…' : '确认'}</Button></div>
+    <div ref={groupEntryRef} className={`attribute-confirm ${overflowing ? 'has-scroll-shadow' : ''}`}>{session && <Tooltip title="取消选择并退出引导，保留已保存内容，放弃尚未保存的修改"><Button disabled={disabled || confirming || uploadingNote || grouping?.saving} onClick={() => grouping!.cancelGuide()}>退出引导</Button></Tooltip>}<Button type="primary" disabled={!selected.length || disabled || confirming || uploadingNote || grouping?.saving} icon={confirming || grouping?.saving ? <Loading size="small" inline/> : undefined} onClick={() => void confirm()}>{confirming || grouping?.saving ? '正在保存…' : '确认'}</Button></div>
   </div>
 }

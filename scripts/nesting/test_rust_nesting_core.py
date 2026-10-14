@@ -1,0 +1,359 @@
+"""Python/Rust differential and ABI ownership checks for the shared core.
+
+Build a candidate with build_rust_core.ps1 -SkipDeploy, then set
+PRINTFLOW_NESTING_CORE_LIBRARY to that candidate to run the native checks.
+"""
+from __future__ import annotations
+
+import contextlib
+import ctypes as ct
+import gc
+import io
+import math
+import os
+from pathlib import Path
+import pickle
+import sys
+import tempfile
+import types
+import unittest
+from unittest.mock import patch
+import weakref
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'src-tauri/src/imposition/local_nesting'))
+import numpy as np
+import nesting_common as common
+import nesting_rust as native
+from svg_benchmark_geometry import parse_sources
+
+
+def mask_item(mask, angle=0, **extra):
+    mask = np.asarray(mask, dtype=np.uint8)
+    return dict(mask=mask, h=mask.shape[0], w=mask.shape[1], angle=angle, bx=.25, by=-.75, **extra)
+
+
+def python_pack(*args, **kwargs):
+    return getattr(common, '_pack_one_python', common.pack_one)(*args, **kwargs)
+
+
+def run_native(*args, **kwargs):
+    return native.dispatch(python_pack, *args, **kwargs)
+
+
+class NativeFallbackTests(unittest.TestCase):
+    def setUp(self):
+        self.srcs = [dict(i=0, area=4)]
+        self.bank = native.MaskBank({0: [mask_item(np.ones((2, 2), np.uint8))]})
+        self.addCleanup(self.bank.close)
+
+    def call(self, remaining, progress=None):
+        return run_native(self.srcs, self.bank, remaining, 8, 7, 0, 0, 1, 42, progress=progress)
+
+    def test_explicit_python_never_loads_native_library(self):
+        with patch.dict(os.environ, PRINTFLOW_NESTING_CORE='python'), patch.object(native, '_load_library') as load:
+            self.assertEqual(len(self.call([5])), 5)
+        load.assert_not_called()
+        self.assertEqual(native.core_status(self.bank)['backend'], 'python')
+
+    def test_missing_library_is_explicit_in_rust_mode(self):
+        with patch.dict(os.environ, PRINTFLOW_NESTING_CORE='rust', PRINTFLOW_NESTING_CORE_LIBRARY=str(ROOT / 'missing-native-core.dll')):
+            with self.assertRaises(native.RustUnavailable):
+                self.call([5])
+
+    def test_auto_missing_library_falls_back_once_per_bank(self):
+        log = io.StringIO()
+        with (patch.dict(os.environ, PRINTFLOW_NESTING_CORE='auto', PRINTFLOW_NESTING_CORE_LIBRARY=str(ROOT / 'missing-native-core.dll')),
+              contextlib.redirect_stderr(log)):
+            first, second = self.call([5]), self.call([5])
+        self.assertEqual(first, second)
+        self.assertEqual(log.getvalue().count('PRINTFLOW_NESTING_CORE '), 1)
+        self.assertEqual(native.core_status(self.bank)['backend'], 'python')
+        self.assertIn('unavailable', native.core_status(self.bank)['reason'])
+
+    def test_partial_native_failure_restarts_with_original_quantities(self):
+        class FailingContext:
+            closed = False
+            def pack(_self, _sources, _bank, remaining, *_args):
+                remaining[0] -= 2
+                raise native.NativeCoreError('injected board failure')
+            def close(_self):
+                _self.closed = True
+        context = FailingContext()
+        self.bank._native_context = context
+        baseline_remaining = [5]
+        expected = python_pack(self.srcs, self.bank, baseline_remaining, 8, 7, 0, 0, 1, 42)
+        remaining = [5]
+        with patch.dict(os.environ, PRINTFLOW_NESTING_CORE='auto'), contextlib.redirect_stderr(io.StringIO()):
+            actual = self.call(remaining)
+        self.assertEqual(actual, expected)
+        self.assertEqual(remaining, baseline_remaining)
+        self.assertTrue(context.closed)
+        self.assertIsNone(self.bank._native_context)
+
+    def test_resource_guard_respects_commit_reserve_and_thread_cap(self):
+        with patch.object(native, '_available_memory', return_value=400 * 1024**2), patch.dict(os.environ, PRINTFLOW_NESTING_THREADS='4'):
+            workers, budget = native._resource_limits(1024)
+            self.assertEqual(workers, 1)
+            self.assertEqual(budget, 144 * 1024**2)
+        with patch.object(native, '_available_memory', return_value=260 * 1024**2):
+            with self.assertRaises(native.NativeCoreError):
+                native._resource_limits(1024**2)
+        with patch.object(native, '_available_memory', return_value=4 * 1024**3), patch.dict(os.environ, PRINTFLOW_NESTING_THREADS='999'):
+            self.assertEqual(native._resource_limits(1024)[0], 4)
+
+    def test_repeated_fallback_does_not_retain_tracebacks_or_board_buffers(self):
+        scratch_refs = []
+        class FailingContext:
+            def pack(_self, _sources, _bank, remaining, *_args):
+                scratch = np.ones((32, 32), np.uint8)
+                scratch_refs.append(weakref.ref(scratch))
+                remaining[0] -= 1
+                raise native.NativeCoreError('simulated native allocation failure')
+            def close(_self):
+                pass
+        self.bank._native_context = FailingContext()
+        expected = python_pack(self.srcs, self.bank, [5], 8, 7, 0, 0, 1, 42)
+        with patch.dict(os.environ, PRINTFLOW_NESTING_CORE='auto'), contextlib.redirect_stderr(io.StringIO()):
+            for _ in range(24):
+                remaining = [5]
+                self.assertEqual(self.call(remaining), expected)
+                self.assertEqual(remaining, [0])
+                failure = self.bank._native_failure
+                self.assertEqual(len(failure), 3)
+                self.assertFalse(any(isinstance(value, (BaseException, types.TracebackType)) for value in failure))
+                self.assertIs(failure[1], False)
+        gc.collect()
+        self.assertEqual(len(scratch_refs), 1)
+        self.assertIsNone(scratch_refs[0]())
+        self.assertEqual(native.core_status(self.bank)['python_calls'], 24)
+
+    def test_cached_missing_library_still_fails_explicit_rust_selection(self):
+        with (patch.dict(os.environ, PRINTFLOW_NESTING_CORE='auto', PRINTFLOW_NESTING_CORE_LIBRARY=str(ROOT / 'missing-native-core.dll')),
+              contextlib.redirect_stderr(io.StringIO())):
+            self.call([5])
+            self.assertIs(self.bank._native_failure[1], True)
+            with patch.dict(os.environ, PRINTFLOW_NESTING_CORE='rust'):
+                with self.assertRaises(native.RustUnavailable) as first:
+                    self.call([5])
+                with self.assertRaises(native.RustUnavailable) as second:
+                    self.call([5])
+                self.assertIsNot(first.exception, second.exception)
+
+    def test_pickled_bank_does_not_keep_native_handles_or_failures(self):
+        self.bank._native_context = object()
+        self.bank._native_failure = ('x', native.NativeCoreError('not persisted'))
+        clone = pickle.loads(pickle.dumps(self.bank))
+        self.bank._native_context = None
+        self.assertIsInstance(clone, native.MaskBank)
+        self.assertFalse(hasattr(clone, '_native_context'))
+        self.assertFalse(hasattr(clone, '_native_failure'))
+
+
+@unittest.skipUnless(Path(native._library_path()).is_file(), 'Build the native candidate and set PRINTFLOW_NESTING_CORE_LIBRARY')
+class NativeDifferentialTests(unittest.TestCase):
+    def setUp(self):
+        self.env = patch.dict(os.environ, PRINTFLOW_NESTING_CORE='rust')
+        self.env.start()
+        self.addCleanup(self.env.stop)
+
+    def compare(self, srcs, bank, quantities, width=83, height=67, gap=0, margin=0,
+                resolution=1, seed=0, mode='top', order='small', lookahead=1, threads='1'):
+        baseline_remaining, actual_remaining = list(quantities), list(quantities)
+        baseline_progress, actual_progress = [], []
+        args = (width, height, gap, margin, resolution, seed, mode, order, lookahead)
+        expected = python_pack(srcs, bank, baseline_remaining, *args,
+                               progress=lambda *values: baseline_progress.append(values))
+        with patch.dict(os.environ, PRINTFLOW_NESTING_THREADS=threads):
+            actual = run_native(srcs, bank, actual_remaining, *args,
+                                progress=lambda *values: actual_progress.append(values))
+        self.assertEqual(actual, expected)
+        self.assertEqual(actual_remaining, baseline_remaining)
+        self.assertEqual(actual_progress, baseline_progress)
+        if isinstance(bank, native.MaskBank):
+            self.assertEqual(native.core_status(bank)['backend'], 'rust', native.core_status(bank))
+        return actual
+
+    def test_random_binary_masks_modes_orders_lookahead_and_rotations(self):
+        rng = np.random.default_rng(7812)
+        orders = ('small', 'large', 'random', 'balanced', 'mixed')
+        for case in range(36):
+            srcs, bank = [], native.MaskBank()
+            for source in range(3):
+                h, w = rng.integers(1, 18, size=2)
+                mask = (rng.random((h, w)) < rng.uniform(.1, .95)).astype(np.uint8)
+                srcs.append(dict(i=source, area=float(mask.sum())))
+                bank[source] = [mask_item(np.rot90(mask, k), 90*k) for k in range(4)]
+            try:
+                with self.subTest(case=case):
+                    self.compare(srcs, bank, [12, 9, 7], width=51 + case % 17, height=39 + case % 11,
+                                 seed=case, mode=('top', 'bl', 'low')[case % 3],
+                                 order=orders[case % 5], lookahead=1 + case % 4)
+            finally:
+                bank.close()
+
+    def test_word_boundaries_and_all_zero_masks(self):
+        for width in (1, 63, 64, 65, 127, 128, 129):
+            masks = [np.ones((2, width), np.uint8), np.zeros((1, width), np.uint8)]
+            for mask in masks:
+                with self.subTest(width=width, empty=not mask.any()):
+                    bank = native.MaskBank({0: [mask_item(mask)]})
+                    try:
+                        self.compare([dict(i=0, area=float(mask.sum()))], bank, [9], width=width * 2 + 1, height=5)
+                    finally:
+                        bank.close()
+
+    def test_sparse_sources_shared_rotation_cache_and_thread_determinism(self):
+        mask = np.array([[1, 1, 0], [1, 0, 0], [1, 1, 1]], np.uint8)
+        variants = [mask_item(np.rot90(mask, k), k*90) for k in range(4)]
+        srcs = [dict(i=3, area=6), dict(i=1, area=6), dict(i=0, area=2)]
+        results = []
+        for threads in ('1', '2', '4'):
+            bank = native.MaskBank({3: variants, 1: variants, 0: [mask_item([[1, 1]])]})
+            try:
+                results.append(self.compare(srcs, bank, [8, 20, 7, 30], width=29, height=17,
+                                            order='random', seed=76, lookahead=3, threads=threads))
+                self.assertEqual(native.core_status(bank)['mask_count'], 5)
+                self.assertLessEqual(native.core_status(bank)['threads'], int(threads))
+            finally:
+                bank.close()
+        self.assertEqual(results[0], results[1])
+        self.assertEqual(results[1], results[2])
+
+    def test_quantity_above_1200_and_trials_share_one_native_bank(self):
+        bank = native.MaskBank({0: [mask_item([[1]])]})
+        try:
+            self.compare([dict(i=0, area=1)], bank, [1201], width=35, height=35)
+            first = bank._native_context
+            first_memory = native.core_status(bank)['bank_bytes']
+            self.compare([dict(i=0, area=1)], bank, [1230], width=35, height=35, seed=5)
+            self.assertIs(bank._native_context, first)
+            self.assertEqual(native.core_status(bank)['mask_count'], 1)
+            self.assertLess(native.core_status(bank)['bank_bytes'] - first_memory, 4096)
+        finally:
+            bank.close()
+
+    def test_frame_edge_limits_nonintegral_grid_and_full_board_fit(self):
+        srcs = [dict(i=0, area=217.21, frame=object())]
+        bank = native.MaskBank({0: [mask_item(np.ones((22, 42), np.uint8),
+                                             frame_width=20.3, frame_height=10.7)]})
+        try:
+            placed = self.compare(srcs, bank, [2], width=20.3, height=10.7, resolution=.5)
+            self.assertEqual(len(placed), 1)
+        finally:
+            bank.close()
+
+    def test_ties_keep_source_and_variant_order(self):
+        variants = [mask_item([[1, 1]], 270), mask_item([[1, 1]], 90)]
+        srcs = [dict(i=1, area=2), dict(i=0, area=2)]
+        bank = native.MaskBank({0: variants, 1: variants})
+        try:
+            result = self.compare(srcs, bank, [4, 4], width=6, height=3, lookahead=2)
+            self.assertEqual(result[0]['i'], 1)
+            self.assertTrue(all(entry['angle'] == 270 for entry in result))
+        finally:
+            bank.close()
+
+    def test_invalid_geometry_and_callback_exceptions_are_not_fallbacks(self):
+        bank = native.MaskBank({0: [mask_item([[1]])]})
+        srcs = [dict(i=0, area=1)]
+        try:
+            with self.assertRaisesRegex(ValueError, 'finite'):
+                run_native(srcs, bank, [2], math.inf, 3, 0, 0, 1, 1)
+            remaining = [2]
+            def fail_progress(*_args):
+                raise ValueError('progress consumer failed')
+            with self.assertRaisesRegex(ValueError, 'progress consumer failed'):
+                run_native(srcs, bank, remaining, 3, 3, 0, 0, 1, 1, progress=fail_progress)
+            self.assertEqual(remaining, [2])
+            self.compare(srcs, bank, [2], width=3, height=3)
+        finally:
+            bank.close()
+
+    def test_context_destruction_plain_dict_and_bank_lifetime(self):
+        srcs = [dict(i=0, area=1)]
+        bank = native.MaskBank({0: [mask_item([[1]])]})
+        self.compare(srcs, bank, [2], width=3, height=3)
+        reference = weakref.ref(bank._native_context)
+        del bank
+        gc.collect()
+        self.assertIsNone(reference())
+        plain = {0: [mask_item([[1]])]}
+        closed = []
+        original_close = native._NativeBank.close
+        def close(context):
+            original_close(context)
+            closed.append(context.handle.value)
+        with patch.object(native._NativeBank, 'close', close):
+            self.compare(srcs, plain, [2], width=3, height=3)
+        self.assertTrue(closed)
+        self.assertTrue(all(handle is None for handle in closed))
+
+    def test_small_output_buffer_returns_error_and_context_can_be_reused(self):
+        bank = native.MaskBank({0: [mask_item([[1]])]})
+        try:
+            self.compare([dict(i=0, area=1)], bank, [3], width=3, height=3)
+            context = bank._native_context
+            output = (native._Placement * 1)()
+            self.assertNotEqual(context.lib.nc_copy_placements(context.handle, output, 1), 0)
+            self.compare([dict(i=0, area=1)], bank, [2], width=3, height=3)
+        finally:
+            bank.close()
+
+    def test_later_fallback_marks_the_job_mixed_and_releases_context(self):
+        bank = native.MaskBank({0: [mask_item([[1]])]})
+        srcs = [dict(i=0, area=1)]
+        try:
+            self.compare(srcs, bank, [3], width=3, height=3)
+            context = bank._native_context
+            with (patch.object(context, 'pack', side_effect=native.NativeCoreError('injected native error')),
+                  contextlib.redirect_stderr(io.StringIO())):
+                self.assertEqual(len(run_native(srcs, bank, [3], 3, 3, 0, 0, 1, 0)), 3)
+            status = native.core_status(bank)
+            self.assertEqual(status['backend'], 'mixed')
+            self.assertEqual((status['rust_calls'], status['python_calls']), (1, 1))
+            self.assertFalse(context.handle)
+        finally:
+            bank.close()
+
+    def test_progress_callback_cannot_destroy_active_context(self):
+        bank = native.MaskBank({0: [mask_item([[1]])]})
+        srcs, remaining = [dict(i=0, area=1)], [3]
+        try:
+            with self.assertRaisesRegex(native.NativeCoreError, 'Cannot close'):
+                run_native(srcs, bank, remaining, 3, 3, 0, 0, 1, 0, progress=lambda *_args: bank.close())
+            self.assertEqual(remaining, [3])
+            self.compare(srcs, bank, [3], width=3, height=3)
+        finally:
+            bank.close()
+
+    def test_progress_callback_cannot_call_native_status_on_active_context(self):
+        bank = native.MaskBank({0: [mask_item([[1]])]})
+        srcs, remaining = [dict(i=0, area=1)], [3]
+        try:
+            with self.assertRaisesRegex(native.NativeCoreError, 'Cannot inspect'):
+                run_native(srcs, bank, remaining, 3, 3, 0, 0, 1, 0,
+                           progress=lambda *_args: bank._native_context.status())
+            self.assertEqual(remaining, [3])
+            self.compare(srcs, bank, [3], width=3, height=3)
+        finally:
+            bank.close()
+
+    def test_real_svg_contours_match_python(self):
+        fixtures = ROOT / 'printflow-data' / 'assets'
+        paths = sorted(fixtures.glob('*/*.svg'), key=lambda p: p.stat().st_size)[:2]
+        if not paths:
+            self.skipTest('Production SVG fixtures are not present')
+        sources = parse_sources(paths)
+        with tempfile.TemporaryDirectory() as directory:
+            bank = native.MaskBank(common.make_masks(sources, Path(directory), 2, [0, 90, 180, 270], 3))
+            try:
+                for mode in ('top', 'bl', 'low'):
+                    self.compare(sources, bank, [4, 5], width=464, height=300, gap=3, margin=2,
+                                 resolution=2, order='mixed', lookahead=2, mode=mode, seed=31)
+            finally:
+                bank.close()
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -20,10 +20,22 @@ pub struct SourceImage {
 pub fn collect(tree: &usvg::Tree, source: &roxmltree::Document<'_>) -> Vec<SourceImage> {
     // usvg moves an <image>'s ID to a generated parent group. Only use IDs
     // that actually belong to source image nodes, never a product group's ID.
-    let image_ids: HashSet<_> = source.descendants().filter(|node| node.has_tag_name("image"))
-        .filter_map(|node| node.attribute("id")).collect();
-    fn visit(group: &usvg::Group, image_ids: &HashSet<&str>, parent_image_id: &str, images: &mut Vec<SourceImage>) {
-        let image_id = if image_ids.contains(group.id()) { group.id() } else { parent_image_id };
+    let image_ids: HashSet<_> = source
+        .descendants()
+        .filter(|node| node.has_tag_name("image"))
+        .filter_map(|node| node.attribute("id"))
+        .collect();
+    fn visit(
+        group: &usvg::Group,
+        image_ids: &HashSet<&str>,
+        parent_image_id: &str,
+        images: &mut Vec<SourceImage>,
+    ) {
+        let image_id = if image_ids.contains(group.id()) {
+            group.id()
+        } else {
+            parent_image_id
+        };
         for node in group.children() {
             match node {
                 usvg::Node::Group(group) => visit(group, image_ids, image_id, images),
@@ -44,15 +56,25 @@ pub fn collect(tree: &usvg::Tree, source: &roxmltree::Document<'_>) -> Vec<Sourc
                         // physical size; treating them as 96-DPI pixels is wrong.
                         let transform = image.abs_transform();
                         let width_mm = image.size().width() as f64
-                            * (transform.sx as f64).hypot(transform.ky as f64) * 25.4 / 96.0;
+                            * (transform.sx as f64).hypot(transform.ky as f64)
+                            * 25.4
+                            / 96.0;
                         let height_mm = image.size().height() as f64
-                            * (transform.kx as f64).hypot(transform.sy as f64) * 25.4 / 96.0;
+                            * (transform.kx as f64).hypot(transform.sy as f64)
+                            * 25.4
+                            / 96.0;
                         images.push(SourceImage {
-                            node_id: if image.id().is_empty() { image_id } else { image.id() }.to_owned(),
+                            node_id: if image.id().is_empty() {
+                                image_id
+                            } else {
+                                image.id()
+                            }
+                            .to_owned(),
                             width_px: image.size().width() as u32,
                             height_px: image.size().height() as u32,
                             width_mm: (width_mm.is_finite() && width_mm > 0.0).then_some(width_mm),
-                            height_mm: (height_mm.is_finite() && height_mm > 0.0).then_some(height_mm),
+                            height_mm: (height_mm.is_finite() && height_mm > 0.0)
+                                .then_some(height_mm),
                             format: format.into(),
                         });
                     }

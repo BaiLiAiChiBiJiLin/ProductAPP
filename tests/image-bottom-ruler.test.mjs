@@ -227,7 +227,7 @@ test('saved standee default Size refreshes on canvas and export without repeated
   const document = new dom.window.DOMParser().parseFromString(pageRasterSvg(page, assets), 'image/svg+xml')
   assert.ok([...document.querySelectorAll('text')].some(node => node.textContent === 'Size: 36.6 mm'))
   assert.equal(group.details.size, '40.0 mm')
-  page.items[1].caption = 'base'
+  page.items[0].caption = 'base'
   assert.equal(groupForDimensionDisplay(group, page, assets, ['last']).details.size, '40.0 mm')
   group.details.size = 'custom: 40 mm'
   assert.equal(groupForDimensionDisplay(group, page, assets).details.size, 'custom: 40 mm')

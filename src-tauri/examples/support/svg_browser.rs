@@ -1,20 +1,43 @@
 //! Test-only browser compatibility experiment for large Corel SVG coordinates.
 //! Keep root units and path geometry intact; only localize image coordinates.
 pub fn localize_images(source: &str) -> Result<String, String> {
-    let doc = roxmltree::Document::parse_with_options(source, roxmltree::ParsingOptions {
-        allow_dtd: true, ..Default::default()
-    }).map_err(|error| error.to_string())?;
+    let doc = roxmltree::Document::parse_with_options(
+        source,
+        roxmltree::ParsingOptions {
+            allow_dtd: true,
+            ..Default::default()
+        },
+    )
+    .map_err(|error| error.to_string())?;
     let mut edits = Vec::new();
     for node in doc.descendants().filter(|node| node.has_tag_name("image")) {
         // CSS geometry and image-local effects need a separate normalization
         // strategy: translating those effects could change their meaning.
-        if ["style", "class", "clip-path", "mask", "filter"].iter().any(|key| node.has_attribute(*key))
-            || node.children().any(|child| child.is_element()) { continue; }
-        let coordinate = |key| node.attribute(key).unwrap_or("0").trim().parse::<f64>().ok().filter(|v| v.is_finite());
-        let (Some(x), Some(y)) = (coordinate("x"), coordinate("y")) else { continue };
-        if x.abs().max(y.abs()) < 16_000_000.0 { continue; }
+        if ["style", "class", "clip-path", "mask", "filter"]
+            .iter()
+            .any(|key| node.has_attribute(*key))
+            || node.children().any(|child| child.is_element())
+        {
+            continue;
+        }
+        let coordinate = |key| {
+            node.attribute(key)
+                .unwrap_or("0")
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|v| v.is_finite())
+        };
+        let (Some(x), Some(y)) = (coordinate("x"), coordinate("y")) else {
+            continue;
+        };
+        if x.abs().max(y.abs()) < 16_000_000.0 {
+            continue;
+        }
         for key in ["x", "y"] {
-            if let Some(attr) = node.attribute_node(key) { edits.push((attr.range_value(), "0".to_owned())); }
+            if let Some(attr) = node.attribute_node(key) {
+                edits.push((attr.range_value(), "0".to_owned()));
+            }
         }
         let translation = format!(" translate({x} {y})");
         if let Some(attr) = node.attribute_node("transform") {
@@ -23,13 +46,18 @@ pub fn localize_images(source: &str) -> Result<String, String> {
             edits.push((end..end, translation));
         } else {
             let start = node.range().start;
-            let end = source[start..].find(|c: char| c.is_ascii_whitespace() || c == '/' || c == '>').unwrap() + start;
+            let end = source[start..]
+                .find(|c: char| c.is_ascii_whitespace() || c == '/' || c == '>')
+                .unwrap()
+                + start;
             edits.push((end..end, format!(" transform=\"{}\"", translation.trim())));
         }
     }
     let mut result = source.to_owned();
     edits.sort_by_key(|(range, _)| range.start);
-    for (range, value) in edits.into_iter().rev() { result.replace_range(range, &value); }
+    for (range, value) in edits.into_iter().rev() {
+        result.replace_range(range, &value);
+    }
     Ok(result)
 }
 
@@ -48,7 +76,11 @@ mod tests {
     }
     #[test]
     fn leaves_small_percentage_and_effect_coordinates_untouched() {
-        for image in [r#"<image x="10" y="20"/>"#, r#"<image x="50%" y="50000000"/>"#, r#"<image x="50000000" clip-path="url(#clip)"/>"#] {
+        for image in [
+            r#"<image x="10" y="20"/>"#,
+            r#"<image x="50%" y="50000000"/>"#,
+            r#"<image x="50000000" clip-path="url(#clip)"/>"#,
+        ] {
             let svg = format!("<svg>{image}</svg>");
             assert_eq!(localize_images(&svg).unwrap(), svg);
         }

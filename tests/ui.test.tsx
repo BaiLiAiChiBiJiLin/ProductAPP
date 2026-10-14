@@ -1,17 +1,66 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Asset, Page } from '../src/model'
-const mocks = vi.hoisted(() => ({ invoke: vi.fn(), open: vi.fn(), listen: vi.fn(), canvas: undefined as Page | undefined }))
+
+const mocks = vi.hoisted(() => ({ invoke: vi.fn(), importAssets: vi.fn(), arrange: vi.fn() }))
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true, invoke: mocks.invoke }))
-vi.mock('@tauri-apps/plugin-dialog', () => ({ open: mocks.open, save: vi.fn() }))
-vi.mock('@tauri-apps/api/event', () => ({ listen: mocks.listen }))
-vi.mock('../src/ArtworkCanvas', () => ({ default: ({ page }: { page: Page }) => { mocks.canvas = page; return <div data-testid="canvas" /> } }))
-import App from '../src/App'
-const asset: Asset = { id: 'real-asset-1', name: '测试图', productId: 'a', width: 200, height: 100, svg: '<svg xmlns="http://www.w3.org/2000/svg"><rect width="200" height="100" fill="red"/></svg>', thumbnailUrl: 'data:image/png;base64,dGh1bWI=', previewUrl: 'data:image/png;base64,cHJldmlldw==' }
-beforeEach(() => { vi.clearAllMocks(); mocks.canvas = undefined; Object.defineProperty(window, 'matchMedia', { writable: true, value: vi.fn().mockImplementation(() => ({ matches: false, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() })) }); mocks.invoke.mockImplementation(async (command: string) => command === 'load_workspace' ? { assets: [], pages: null } : command === 'import_assets' ? [asset, { ...asset, id: 'real-asset-2' }] : undefined); mocks.listen.mockResolvedValue(vi.fn()); mocks.open.mockResolvedValue('C:\\Downloads\\测试.svg') })
+vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }))
+vi.mock('@tauri-apps/api/webview', () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }))
+vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(), save: vi.fn() }))
+vi.mock('../src/modules/schematic/services/uploadService', () => ({ importAssets: mocks.importAssets }))
+vi.mock('../src/modules/schematic/services/productConfigService', async importOriginal => ({ ...await importOriginal<object>(), loadProductConfigs: async () => [] }))
+vi.mock('../src/modules/schematic/services/finishService', () => ({ loadFinishNames: async () => ({}) }))
+vi.mock('../src/modules/schematic/ArrangePage', () => ({ default: ({ pages }: { pages: Page[] }) => {
+  mocks.arrange(pages)
+  return <div>示意图排列页</div>
+} }))
+import SchematicPage from '../src/modules/schematic/SchematicPage'
+
+const asset: Asset = { id: 'real-asset-1', name: '测试图', productId: 'a', width: 200, height: 100,
+  svg: '<svg xmlns="http://www.w3.org/2000/svg"><rect width="200" height="100" fill="red"/></svg>',
+  thumbnailUrl: '', previewUrl: '' }
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  mocks.invoke.mockImplementation(async (command: string, args?: { assets?: Asset[]; id?: string; metadata?: unknown }) => {
+    if (command === 'list_batches') return { records: [], total: 0, page: 1, pageSize: 12 }
+    if (command === 'save_batch') return { assets: args?.assets ?? [], batchId: args?.id, metadata: args?.metadata, duplicate: false }
+    return undefined
+  })
+  mocks.importAssets.mockResolvedValue([asset, { ...asset, id: 'real-asset-2', name: '测试图2' }])
+  Object.defineProperty(window, 'matchMedia', { writable: true, value: vi.fn(() => ({ matches: false, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() })) })
+})
 afterEach(cleanup)
+
 describe('product upload workflow', () => {
-  it('imports through native dialog, reviews the pool, then auto creates preview', async () => { const { container } = render(<App />); await waitFor(() => expect(screen.getByRole('button', { name: /上传 SVG/ }).disabled).toBe(false)); expect(container.querySelector('input[type=file]')).toBeNull(); fireEvent.click(screen.getByRole('button', { name: /上传 SVG/ })); await screen.findByText(/已导入 2 张图片/); expect(mocks.invoke).toHaveBeenCalledWith('import_assets', expect.objectContaining({ mode: 'auto', productId: 'a' })); fireEvent.click(screen.getByRole('button', { name: '生成示意图' })); await screen.findByText('图片池'); fireEvent.click(screen.getByRole('button', { name: '确认并生成' })); await waitFor(() => expect(mocks.canvas?.items).toHaveLength(2)); expect(screen.getByText('产品 A')).toBeTruthy(); expect(screen.getByText('图片池')).toBeTruthy() })
-  it('canceling picker leaves upload page unchanged', async () => { mocks.open.mockResolvedValue(null); render(<App />); await waitFor(() => expect(screen.getByRole('button', { name: /上传 SVG/ }).disabled).toBe(false)); fireEvent.click(screen.getByRole('button', { name: /上传 SVG/ })); await screen.findByText('已取消选择'); expect(screen.getByRole('button', { name: '生成示意图' })).toBeDisabled() })
-  it('failed import is visible and cannot enter preview', async () => { mocks.invoke.mockImplementation(async (command: string) => { if (command === 'load_workspace') return { assets: [], pages: null }; if (command === 'import_assets') throw new Error('SVG 解析失败') }); render(<App />); await waitFor(() => expect(screen.getByRole('button', { name: /上传 SVG/ }).disabled).toBe(false)); fireEvent.click(screen.getByRole('button', { name: /上传 SVG/ })); await waitFor(() => expect(screen.getAllByText(/SVG 解析失败/).length).toBeGreaterThan(0)); expect(screen.getByRole('button', { name: '生成示意图' })).toBeDisabled() })
+  it('imports images, reviews the pool, then opens the arranged preview', async () => {
+    const { container } = render(<SchematicPage />)
+    const upload = screen.getByRole('button', { name: /上传 SVG 文件/ })
+    expect(container.querySelector('input[type=file]')).toBeNull()
+    fireEvent.click(upload)
+    await screen.findByText('当前批次图片')
+    expect(mocks.importAssets).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: '生成示意图' }))
+    await screen.findByRole('list', { name: '图片池' })
+    fireEvent.click(screen.getByRole('button', { name: '确认并生成' }))
+    await screen.findByText('示意图排列页')
+    expect(mocks.arrange.mock.lastCall?.[0]?.[0]?.items).toHaveLength(2)
+  })
+
+  it('canceling the picker leaves the upload page unchanged', async () => {
+    mocks.importAssets.mockResolvedValue([])
+    render(<SchematicPage />)
+    fireEvent.click(screen.getByRole('button', { name: /上传 SVG 文件/ }))
+    await waitFor(() => expect(mocks.importAssets).toHaveBeenCalledOnce())
+    expect((screen.getByRole('button', { name: '生成示意图' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByText('最近使用记录')).toBeTruthy()
+  })
+
+  it('shows an import failure without enabling the preview', async () => {
+    mocks.importAssets.mockRejectedValue(new Error('SVG 解析失败'))
+    render(<SchematicPage />)
+    fireEvent.click(screen.getByRole('button', { name: /上传 SVG 文件/ }))
+    await waitFor(() => expect(screen.getAllByText(/SVG 解析失败/).length).toBeGreaterThan(0))
+    expect((screen.getByRole('button', { name: '生成示意图' }) as HTMLButtonElement).disabled).toBe(true)
+  })
 })

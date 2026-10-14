@@ -51,3 +51,53 @@ test('old pixel-only metadata is not converted using an invented raster DPI', ()
   expect(screen.getByText('未记录毫米尺寸，请重新导入')).toBeTruthy()
   expect(screen.queryByText(/529\.167/)).toBeNull()
 })
+
+test('right-click replacement targets its own card without selecting it or opening details', async () => {
+  const select = vi.fn()
+  const replace = vi.fn().mockResolvedValue(undefined)
+  const other = { ...asset, id: 'two', name: '另一张图' }
+  render(<UploadImageList assets={[asset, other]} allAssets={[asset, other]} selectedIds={new Set(['two'])} onSelectionChange={select} products={[]} disabled={false} onDelete={vi.fn()} onReplace={replace}/>)
+  fireEvent.contextMenu(screen.getByRole('button', { name: '预览 多图资产' }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: '更换图片' }))
+  expect(replace).toHaveBeenCalledExactlyOnceWith(asset)
+  expect(select).not.toHaveBeenCalled()
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+test('replacement cannot start while the batch is busy', async () => {
+  const replace = vi.fn()
+  render(<UploadImageList assets={[asset]} allAssets={[asset]} selectedIds={new Set()} onSelectionChange={vi.fn()} products={[]} disabled onDelete={vi.fn()} onReplace={replace}/>)
+  fireEvent.contextMenu(screen.getByRole('button', { name: '预览 多图资产' }))
+  const menu = await screen.findByRole('menuitem', { name: '更换图片' })
+  expect(menu.getAttribute('aria-disabled')).toBe('true')
+  fireEvent.click(menu)
+  expect(replace).not.toHaveBeenCalled()
+})
+
+test('cards and asset details display every named or unnamed note image and preview the clicked one', async () => {
+  const withNotes: Asset = { ...asset, noteImage: 'legacy.png', noteImages: [
+    { src: 'front.png', name: '正面参考' }, { src: 'back.png', name: '' }, { src: 'detail.png', name: '孔位' },
+  ] }
+  const select = vi.fn()
+  const { unmount } = render(<UploadImageList assets={[withNotes]} allAssets={[withNotes]} selectedIds={new Set()} onSelectionChange={select} products={[]} disabled={false} onDelete={vi.fn()}/>)
+  expect(screen.getByRole('img', { name: '正面参考' }).getAttribute('src')).toBe('front.png')
+  expect(screen.getByRole('img', { name: '备注图片 2' }).getAttribute('src')).toBe('back.png')
+  expect(screen.getByRole('img', { name: '孔位' }).getAttribute('src')).toBe('detail.png')
+  fireEvent.click(screen.getByRole('button', { name: `预览备注 ${asset.name} 2` }))
+  const preview = await screen.findByRole('dialog')
+  expect(within(preview).getByRole('img', { name: `${asset.name} · 备注` }).getAttribute('src')).toBe('back.png')
+  expect(select).not.toHaveBeenCalled()
+  unmount()
+  render(<AssetDetailsModal asset={withNotes} products={[]} onClose={vi.fn()}/>)
+  const notes = screen.getByRole('region', { name: '资产备注' })
+  expect(within(notes).getAllByRole('img')).toHaveLength(3)
+  expect(within(notes).getByText('正面参考')).toBeTruthy()
+  expect(within(notes).getByText('孔位')).toBeTruthy()
+})
+
+test('details keep legacy single note images and respect an explicitly cleared image list', () => {
+  const { rerender } = render(<AssetDetailsModal asset={{ ...asset, noteImage: 'old-note.png' }} products={[]} onClose={vi.fn()}/>)
+  expect(screen.getByRole('img', { name: '备注图片 1' }).getAttribute('src')).toBe('old-note.png')
+  rerender(<AssetDetailsModal asset={{ ...asset, noteImage: 'old-note.png', noteImages: [] }} products={[]} onClose={vi.fn()}/>)
+  expect(screen.queryByRole('region', { name: '资产备注' })).toBeNull()
+})

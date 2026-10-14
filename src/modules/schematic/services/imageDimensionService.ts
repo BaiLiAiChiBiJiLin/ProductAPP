@@ -22,10 +22,9 @@ export type ImageDimension = {
   horizontal: boolean
 }
 
-type DimensionItem = Pick<Item, 'rulerUnit' | 'rulerWidth' | 'rulerHeight' | 'caption'>
+type DimensionItem = Pick<Item, 'rulerUnit' | 'rulerWidth' | 'rulerHeight' | 'sizeAxis' | 'caption'>
 
 export type RulerDimensionAxis = 'width' | 'height' | 'both' | 'none'
-export const AMBIGUOUS_DIMENSION_LABEL = '请选择宽或高'
 
 /** Formatting used for canvas dimension labels; overrides affect display text only. */
 export type DimensionDisplayPrecision = 'default' | 'round' | 'truncate'
@@ -271,7 +270,10 @@ export function rulerDimensionAxis(asset: Asset, item: Pick<Page['items'][number
 /** Return the Size text for the selected ruler axis without changing source dimensions. */
 export function rulerDimensionLabel(asset: Asset, item: DimensionItem, precision: DimensionDisplayPrecision = 'default', decimalPlaces = 1) {
   const axis = rulerDimensionAxis(asset, item)
-  if (axis === 'both') return AMBIGUOUS_DIMENSION_LABEL
+  if (axis === 'both') {
+    const selectedAxis = item.sizeAxis ?? (dimensionForItem(asset, item).horizontal ? 'width' : 'height')
+    return dimensionForItem(asset, item, selectedAxis, precision, decimalPlaces).label
+  }
   if (axis === 'none') return undefined
   return dimensionForItem(asset, item, axis, precision, decimalPlaces).label
 }
@@ -292,8 +294,15 @@ export function dimensionGroups(page: Page): ImageGroup[] {
     const item = page.items.find(item => item.id === group.itemIds[0])
     if (!item || item.suppressRuler) return []
     if (item.rulerWidth === undefined && item.rulerHeight === undefined) return [group]
-    return [item.rulerWidth ? { ...group, id: group.id + '-width' } : undefined,
-      item.rulerHeight ? { ...group, id: group.id + '-height' } : undefined].filter((group): group is ImageGroup => !!group)
+    // Older records may persist only the axis that was changed. Keep the
+    // other axis's implicit default so enabling the second ruler shows both.
+    // Item dimensions retain the source aspect ratio; group dimensions also
+    // include the details column and cannot identify the default axis.
+    const horizontalDefault = item.w >= item.h
+    const showWidth = item.rulerWidth ?? horizontalDefault
+    const showHeight = item.rulerHeight ?? !horizontalDefault
+    return [showWidth ? { ...group, id: group.id + '-width' } : undefined,
+      showHeight ? { ...group, id: group.id + '-height' } : undefined].filter((group): group is ImageGroup => !!group)
   })
 }
 

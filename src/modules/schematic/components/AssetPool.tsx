@@ -4,12 +4,13 @@ import { Modal } from 'antd'
 import { svgDataUrl, type Asset, type Page } from '../../../model'
 import LazySvgImage from './LazySvgImage'
 import useProductConfigs from '../hooks/useProductConfigs'
+import { getNoteImages } from '../services/assetNotesService'
 
 type PoolTab = 'all' | 'unused'
 type Props = { assets: Asset[]; pages?: Page[]; onAddAsset?: (assetId: string) => void; onRemoveAsset?: (assetId: string) => void; mode?: 'upload' | 'arrange'; selectedIds?: Set<string>; onSelectionChange?: (ids: Set<string>) => void }
 
 export default function AssetPool({ assets, pages = [], onAddAsset, mode = 'upload', selectedIds: controlledSelectedIds, onSelectionChange }: Props) {
-  const [preview, setPreview] = useState<Asset | null>(null)
+  const [preview, setPreview] = useState<{ name: string; svg: string; src?: string } | null>(null)
   const [internalSelectedIds, setInternalSelectedIds] = useState<Set<string>>(new Set())
   const selectedIds = controlledSelectedIds ?? internalSelectedIds
   const lastSelectedIndex = useRef<number | null>(null)
@@ -59,7 +60,7 @@ export default function AssetPool({ assets, pages = [], onAddAsset, mode = 'uplo
     if (!onSelectionChange) setInternalSelectedIds(next)
     lastSelectedIndex.current = index
   }
-  if (mode === 'upload') return <><div className="uploaded-assets-list">{assets.map((asset, index) => <div className={`uploaded-asset ${selectedIds.has(asset.id) ? 'is-selected' : ''}`} key={asset.id} onClick={event => { if (!(event.target as HTMLElement).closest('input, img')) handleSelection(index, event) }}><span className="uploaded-asset-number">NO: {index + 1}</span><input type="checkbox" className="uploaded-asset-select" checked={selectedIds.has(asset.id)} aria-label={`选择 ${asset.name}`} onChange={() => undefined} onClick={event => { event.stopPropagation(); handleSelection(index, event) }} /><LazySvgImage svg={asset.svg} alt={asset.name} onClick={() => setPreview(asset)} title="点击预览"/><div className="uploaded-asset-info"><strong>{asset.name}</strong><span className="uploaded-asset-product" title={productLabel(asset)}>产品：{productLabel(asset)}</span>{asset.attributes && Object.entries(asset.attributes).filter(([, value]) => value).map(([key, value]) => <span key={key}>{key}：{value}</span>)}{asset.note && <span className="uploaded-asset-note" title={asset.note}>备注：{asset.note}</span>}{asset.noteImage && <img className="uploaded-asset-note-image" src={asset.noteImage} alt="备注图片" title="备注图片" onClick={event => { event.stopPropagation(); setPreview(asset) }} />}</div></div>)}</div><Modal open={Boolean(preview)} footer={null} title={preview?.name} onCancel={() => setPreview(null)} centered><img className="asset-full-preview" src={preview ? svgDataUrl(preview.svg) : undefined} alt={preview?.name ?? ''}/></Modal></>
+  if (mode === 'upload') return <><div className="uploaded-assets-list">{assets.map((asset, index) => <div className={`uploaded-asset ${selectedIds.has(asset.id) ? 'is-selected' : ''}`} key={asset.id} onClick={event => { if (!(event.target as HTMLElement).closest('input, img')) handleSelection(index, event) }}><span className="uploaded-asset-number">NO: {index + 1}</span><input type="checkbox" className="uploaded-asset-select" checked={selectedIds.has(asset.id)} aria-label={`选择 ${asset.name}`} onChange={() => undefined} onClick={event => { event.stopPropagation(); handleSelection(index, event) }} /><LazySvgImage svg={asset.svg} alt={asset.name} onClick={() => setPreview(asset)} title="点击预览"/><div className="uploaded-asset-info"><strong>{asset.name}</strong><span className="uploaded-asset-product" title={productLabel(asset)}>产品：{productLabel(asset)}</span>{asset.attributes && Object.entries(asset.attributes).filter(([, value]) => value).map(([key, value]) => <span key={key}>{key}：{value}</span>)}{asset.note && <span className="uploaded-asset-note" title={asset.note}>备注：{asset.note}</span>}{getNoteImages(asset).map((image, imageIndex) => <div key={imageIndex}><img className="uploaded-asset-note-image" src={image.src} alt={image.name || `备注图片 ${imageIndex + 1}`} title={image.name || "备注图片"} onClick={event => { event.stopPropagation(); setPreview({ name: image.name || `${asset.name} · 备注`, svg: asset.svg, src: image.src }) }} />{image.name && <span>{image.name}</span>}</div>)}</div></div>)}</div><Modal open={Boolean(preview)} footer={null} title={preview?.name} onCancel={() => setPreview(null)} centered><img className="asset-full-preview" src={preview ? preview.src || svgDataUrl(preview.svg) : undefined} alt={preview?.name ?? ''}/></Modal></>
   return <div className="pool">
     <div className="section-heading"><span>图片池</span><span className="pool-count">{assets.length}</span></div>
     <div ref={productStripRef} className="product-switch product-category-strip" aria-label="产品分类">{products.map(id => {
@@ -72,6 +73,6 @@ export default function AssetPool({ assets, pages = [], onAddAsset, mode = 'uplo
       {visible.map(asset => <PoolAssetCard key={asset.id} asset={asset} used={usedIds.has(asset.id)} onAdd={onAddAsset} onPreview={() => setPreview(asset)}/>)}
       {!visible.length && <div className="pool-empty">当前筛选没有图片</div>}
     </div>
-    <Modal open={Boolean(preview)} footer={null} title={preview?.name} onCancel={() => setPreview(null)} centered><img className="asset-full-preview" src={preview ? svgDataUrl(preview.svg) : undefined} alt={preview?.name ?? ''}/></Modal>
+    <Modal open={Boolean(preview)} footer={null} title={preview?.name} onCancel={() => setPreview(null)} centered><img className="asset-full-preview" src={preview ? preview.src || svgDataUrl(preview.svg) : undefined} alt={preview?.name ?? ''}/></Modal>
   </div>
 }

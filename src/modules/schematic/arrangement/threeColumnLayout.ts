@@ -1,11 +1,11 @@
-import { defaultLayoutBounds, GROUP_GAP, HEADER_BLOCK_HEIGHT, normalizeLayoutBounds, PAPER_HEIGHT, PAPER_WIDTH, type Asset, type Item, type LayoutBounds, type Page } from '../../../model.ts'
+import { defaultLayoutBounds, DETAIL_AREA_RATIO, GROUP_GAP, HEADER_BLOCK_HEIGHT, normalizeLayoutBounds, PAPER_HEIGHT, PAPER_WIDTH, type Asset, type Item, type LayoutBounds, type Page } from '../../../model.ts'
 import { cleanFinishLabel, detailsForAsset } from '../services/assetDetailsService.ts'
 import { dimensionForItem, physicalSourceSize } from '../services/imageDimensionService.ts'
 import { backLayerSvg } from '../services/svgBackLayerService.ts'
 import { backfillPages } from './backfillPages.ts'
 import { fillFreeRegions } from './freeRegionPacking.ts'
 import { applyPhysicalImageScale } from './physicalImageSizing.ts'
-import { imageDetailsLayout, sizeLabelWidth } from '../services/imageDetailsLayoutService.ts'
+import { imageDetailsLayout } from '../services/imageDetailsLayoutService.ts'
 import type { ProductConfig } from '../services/productConfigService.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
 
@@ -114,8 +114,6 @@ export function isProtectedProductKey(key?: string) {
 export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = defaultLayoutBounds, configs: ProductConfig[] = []): Page[] {
   const area = normalizeLayoutBounds(bounds)
   const width = PAPER_WIDTH - area.left - area.right
-  // Reserve Size at the same font size as QT, including after unit switches.
-  const minimumDetailsWidth = Math.max(74, ...assets.flatMap(asset => (['mm', 'cm', 'in'] as const).map(rulerUnit => sizeLabelWidth(dimensionForItem(asset, { rulerUnit }).label) + 8)))
   const bottom = PAPER_HEIGHT - area.bottom
   const contentTop = area.top + HEADER_BLOCK_HEIGHT + GAP
   const available = bottom - contentTop
@@ -172,7 +170,7 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
     }
     const span = standeeRow ? standeeSpan(unit) : 1
     const groupWidth = slotWidth * span + GAP * (span - 1)
-    const detailWidth = Math.max(minimumDetailsWidth, unit.kind === 'holder' ? Math.min(100, width * 0.24) : 0)
+    const detailWidth = groupWidth * DETAIL_AREA_RATIO
     if (groupWidth - detailWidth < 36) throw new Error('排列区域过窄，无法同时容纳图片和完整 Size，请增大排列区域宽度。')
     const imageWidth = groupWidth - detailWidth
     const cells: Cell[] = []
@@ -332,10 +330,15 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       }
       const details = { ...detailsForAsset(leader, configs), sizes: unit.assets.map(asset => ({ itemId: `item-${asset.id}`, label: dimensionForItem(asset, {}).label })) }
       const layout = imageDetailsLayout({ id: 'measure', itemIds: [], x: 0, y: 0, width: groupWidth, height: available, detailsX: imageWidth, detailWidth, details })
-      const textHeight = Math.max(6, layout.fields.length + 2) * 11 + 8
-      const accessoryHeight = details.accessoryImage ? Math.min(72, detailWidth - 12) + (details.accessoryCode ? 14 : 4) : 0
-      const noteHeight = layout.noteLines.length * 11 + (details.noteImage ? Math.min(64, detailWidth - 8) : 0)
-      height = Math.min(available, Math.max(nextY, textHeight + accessoryHeight + noteHeight))
+      const textHeight = Math.max(6, layout.fields.length + 2) * layout.line + 8
+      // Notes now stack title/image blocks in their own column beside the
+      // accessory. Reserve their natural stack, not the entire page-height
+      // measurement panel or the former single horizontal image row.
+      const noteImageHeight = layout.noteImages.reduce((sum, image) => sum + image.size + image.captionHeight, 0)
+        + Math.max(0, layout.noteImages.length - 1) * 4
+      const mediaHeight = Math.max(layout.accessoryHeight, noteImageHeight)
+      const noteHeight = layout.noteLines.length * layout.noteLine + (layout.noteLines.length ? 2 : 0)
+      height = Math.min(available, Math.max(nextY, textHeight + mediaHeight + noteHeight))
     }
     const groupDetails = detailsForAsset(leader, configs)
     groupDetails.finish = [...new Set(unit.assets.map(asset => cleanFinishLabel(detailsForAsset(asset, configs).finish)).filter(value => value && !/^\d+(?:\.\d+)?$/.test(value)))].join(' / ')
@@ -343,7 +346,7 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
     if (pages.length && headerKey !== sectionKey) {
       if (column) { y += rowHeight + GAP; column = 0; rowHeight = 0; rowProductKey = undefined }
       if (y + HEADER_BLOCK_HEIGHT + GAP + requiredHeight <= bottom) {
-        page!.headerBlocks!.push({ id: `header-${pages.length}-${y}`, x: area.left, y, width: sectionWidth, auto: true, detailWidth, columns: spans.map((span,i) => ({ id: `column-${y}-${i}`, span, imageMode, detailLabel: 'Size/QT/Finish/Accessory' })) })
+        page!.headerBlocks!.push({ id: `header-${pages.length}-${y}`, x: area.left, y, width: sectionWidth, auto: true, columns: spans.map((span,i) => ({ id: `column-${y}-${i}`, span, imageMode, detailLabel: 'Size/QT/Finish/Accessory' })) })
         y += HEADER_BLOCK_HEIGHT + GAP; headerKey = sectionKey
       } else y = bottom
     }
@@ -351,7 +354,6 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       newPage(spans, sectionWidth, imageMode, sectionKey)
       rowProductKey = undefined
     }
-    page!.headerBlocks!.at(-1)!.detailWidth = detailWidth
     if (height > available + 1e-7) throw new Error('排列区域太小，无法容纳产品组，请增大排列区域。')
     const x = area.left + spans.slice(0, column).reduce((sum, span) => sum + span, 0) * (slotWidth + GAP)
     const standeeHasBase = unit.kind === 'standee' && unit.assets.length > 1

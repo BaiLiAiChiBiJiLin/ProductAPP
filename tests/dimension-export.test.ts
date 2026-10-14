@@ -1,5 +1,5 @@
 import { beforeEach, expect, test, vi } from 'vitest'
-import type { Asset, Page } from '../src/model'
+import { HEADER_BACKGROUND, type Asset, type Page } from '../src/model'
 import { exportPdf, exportPage } from '../src/modules/schematic/services/exportService'
 import type { DimensionDisplayOverride } from '../src/modules/schematic/services/imageDimensionService'
 import { paginateAssets } from '../src/modules/schematic/services/paginationService'
@@ -24,6 +24,45 @@ function exportedLabels(svg: string) {
     rulers: [...document.querySelectorAll('[data-printflow-dimension] text')].map(node => node.textContent),
   }
 }
+
+test.each(['pdf', 'svg', 'png'])('%s export hides disabled Size and renders saved table headers on white', async format => {
+  const current = page(1)
+  Object.assign(current.items[0], { rulerWidth: false, rulerHeight: false })
+  current.headerBlocks = [{ id: 'saved-header', x: 20, y: 80, width: 240,
+    columns: [{ id: 'col', imageMode: 'front-back', detailLabel: 'Size/QT/Finish' }] }]
+  if (format === 'pdf') await exportPdf([current], [asset], 'test.pdf')
+  else await exportPage(current, [asset], `test.${format}`, format)
+  const [, payload] = mocks.invoke.mock.calls.find(([command]) => command === (format === 'pdf' ? 'stage_pdf_page' : 'export_artwork'))!
+  expect(exportedLabels(payload.svg)).toEqual({ sizes: [], rulers: [] })
+  const document = new DOMParser().parseFromString(payload.svg, 'image/svg+xml')
+  expect(HEADER_BACKGROUND).toBe('#fff')
+  expect(document.querySelector('g[transform="translate(20 80)"] > path')?.getAttribute('fill')).toBe(HEADER_BACKGROUND)
+  expect(current.imageGroups![0].details!.size).toBe('59.7 mm')
+})
+
+test.each(['pdf', 'svg', 'png'])('%s export keeps note titles attached to their saved image move and scale', async format => {
+  const current = page(1)
+  current.imageGroups![0].details!.noteImages = [
+    { src: 'data:image/png;base64,note-front', name: 'Front' },
+    { src: 'data:image/png;base64,note-back', name: 'Back' },
+  ]
+  const visuals = new Map([
+    ['group-1:note', { scale: 1.4, x: 3, y: -2 }],
+    ['group-1:note:1', { scale: .7, x: -1, y: 4 }],
+  ])
+  if (format === 'pdf') await exportPdf([current], [asset], 'test.pdf', {}, undefined, undefined, undefined, visuals)
+  else await exportPage(current, [asset], `test.${format}`, format, {}, 1, undefined, undefined, visuals)
+  const [, payload] = mocks.invoke.mock.calls.find(([command]) => command === (format === 'pdf' ? 'stage_pdf_page' : 'export_artwork'))!
+  const document = new DOMParser().parseFromString(payload.svg, 'image/svg+xml')
+  for (const [key, visual] of visuals) {
+    const group = document.querySelector(`[data-printflow-note-group="${key}"]`)!
+    expect(group.getAttribute('transform')).toContain(`scale(${visual.scale})`)
+    const image = group.querySelector('image')!
+    const name = group.querySelector('text')!
+    expect(name.getAttribute('fill')).toBe('#ff4d4f')
+    expect(Number(name.getAttribute('y'))).toBeLessThan(Number(image.getAttribute('y')))
+  }
+})
 
 test('PDF transfer uses each page\'s display precision, including zero, without changing source values', async () => {
   const pages = [page(1), page(2), page(3), page(4)]

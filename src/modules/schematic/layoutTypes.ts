@@ -1,3 +1,5 @@
+import type { NoteImage } from '../../model.ts'
+
 export type ImageGroup = {
   id: string
   itemIds: string[]
@@ -39,6 +41,7 @@ export type ImageDetails = {
   accessoryCode?: string
   note?: string
   noteImage?: string
+  noteImages?: NoteImage[]
   heading?: string
   fields?: Array<{ key: string; text: string }>
 }

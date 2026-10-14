@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Group, Image as KonvaImage, Rect, Text } from 'react-konva'
-import type { Asset, Page } from '../../../model'
+import type { Asset, DetailImageVisual, Page } from '../../../model'
 import type { ImageGroup } from '../layoutTypes'
 import { imageDetailsLayout } from '../services/imageDetailsLayoutService'
 import { detailPanelsForGroup } from '../arrangement/productGroupDetails'
@@ -12,7 +12,7 @@ import { groupForDimensionDisplay } from '../services/dimensionDisplayService'
 import type { Node as KonvaNode } from 'konva/lib/Node'
 
 const imageCache = new Map<string, HTMLImageElement>()
-export type AccessoryVisual = { scale: number; x: number; y: number }
+export type AccessoryVisual = DetailImageVisual
 export type EditableTextTarget = 'heading' | 'size' | 'qt' | 'finish' | 'note' | 'accessoryCode' | `field:${string}`
 export type EditImageGroupText = (itemIds: string[], target: EditableTextTarget, value: string) => void
 type AccessoryBounds = { x: number; y: number; width: number; height: number }
@@ -44,7 +44,7 @@ function accessoryDragBound(node: KonvaNode, position: { x: number; y: number },
   }
 }
 
-function AccessoryImage({ src, x, y, width, height, code, framed = false, selectionKey, visual = { scale: 1, x: 0, y: 0 }, selected = false, bounds, onSelect, onChange, onEditText, itemIds }: { src: string; x: number; y: number; width: number; height: number; code?: string; framed?: boolean; selectionKey?: string; visual?: AccessoryVisual; selected?: boolean; bounds?: AccessoryBounds; onSelect?: (key: string) => void; onChange?: (key: string, patch: Partial<AccessoryVisual>) => void; onEditText?: EditImageGroupText; itemIds: string[] }) {
+function AccessoryImage({ src, x, y, width, height, code, caption, captionHeight = 0, captionFontSize = 8, framed = false, selectionKey, visual = { scale: 1, x: 0, y: 0 }, selected = false, bounds, onSelect, onChange, onEditText, itemIds }: { src: string; x: number; y: number; width: number; height: number; code?: string; caption?: string; captionHeight?: number; captionFontSize?: number; framed?: boolean; selectionKey?: string; visual?: AccessoryVisual; selected?: boolean; bounds?: AccessoryBounds; onSelect?: (key: string) => void; onChange?: (key: string, patch: Partial<AccessoryVisual>) => void; onEditText?: EditImageGroupText; itemIds: string[] }) {
   const [image, setImage] = useState<HTMLImageElement>()
   useEffect(() => {
     let cancelled = false
@@ -91,14 +91,14 @@ function AccessoryImage({ src, x, y, width, height, code, framed = false, select
   const ratio = Math.min(width / image.naturalWidth, height / image.naturalHeight)
   const fittedWidth = image.naturalWidth * ratio
   const fittedHeight = image.naturalHeight * ratio
-  const centerX = x + width / 2, centerY = y + height / 2
+  const centerX = x + width / 2, centerY = y + (height - captionHeight) / 2
   const dragBoundFunc = bounds ? function (this: KonvaNode, position: { x: number; y: number }) {
-    return accessoryDragBound(this, position, bounds, width, height, safeScale)
+    return accessoryDragBound(this, position, bounds, width, height + captionHeight, safeScale)
   } : undefined
   return <Group name={selectionKey ? `accessory-${selectionKey}` : undefined} x={centerX + visual.x} y={centerY + visual.y} offsetX={centerX} offsetY={centerY} scaleX={safeScale} scaleY={safeScale} draggable={interactive} listening={interactive} dragBoundFunc={dragBoundFunc}
     onClick={event => { if (!selectionKey || !onSelect) return; event.cancelBubble = true; onSelect(selectionKey) }} onTap={event => { if (!selectionKey || !onSelect) return; event.cancelBubble = true; onSelect(selectionKey) }}
     onDragEnd={event => { if (selectionKey && onChange) onChange(selectionKey, { x: event.target.x() - centerX, y: event.target.y() - centerY }) }}>
-    {selected && <Rect x={x - 1} y={y - 1} width={width + 2} height={height + 2} stroke="#2563eb" strokeWidth={1.5} listening={false}/>}<KonvaImage image={image} x={x + (width - fittedWidth) / 2} y={y + (height - fittedHeight) / 2} width={fittedWidth} height={fittedHeight}/>
+    {selected && <Rect x={x - 1} y={y - captionHeight - 1} width={width + 2} height={height + captionHeight + 2} stroke="#2563eb" strokeWidth={1.5} listening={false}/>}<KonvaImage image={image} x={x + (width - fittedWidth) / 2} y={y + (height - fittedHeight) / 2} width={fittedWidth} height={fittedHeight}/>{caption && <Text x={x} y={y - captionHeight} width={width} height={captionHeight} text={caption} align="center" wrap="none" fontSize={captionFontSize} fill="#ff4d4f" listening={false}/>}
   </Group>
 }
 
@@ -111,9 +111,8 @@ export default function ImageGroupDetails({ group, page, assets, selectedItemIds
 function DetailsPanel({ group, selectedAccessoryKey, accessoryVisuals, onSelectAccessory, onChangeAccessory, onEditText }: { group: ImageGroup; selectedAccessoryKey?: string; accessoryVisuals?: ReadonlyMap<string, AccessoryVisual>; onSelectAccessory?: (key: string) => void; onChangeAccessory?: (key: string, patch: Partial<AccessoryVisual>) => void; onEditText?: EditImageGroupText }) {
   const details = group.details
   if (!details) return null
-  const { x, y, width, line, fontSize, fields, bodyY, imageSize, noteX, noteWidth, noteY, noteLines, noteLine, noteFontSize, noteImageSize, noteImageY } = imageDetailsLayout(group)
+  const { x, y, width, line, fontSize, fields, bodyY, imageSize, accessoryX, noteX, noteWidth, noteY, noteLines, noteLine, noteFontSize, noteImages } = imageDetailsLayout(group)
   const accessoryKey = `${group.id}:accessory`
-  const noteKey = `${group.id}:note`
   const bounds = { x: group.x - x, y: group.y - y, width: group.width, height: Math.max(group.height, group.backgroundHeight ?? group.height) }
   const edit = (target: EditableTextTarget, value: string) => {
     const next = window.prompt('编辑文字', value)
@@ -121,6 +120,7 @@ function DetailsPanel({ group, selectedAccessoryKey, accessoryVisuals, onSelectA
   }
   const fieldTarget = (key: string): EditableTextTarget => {
     if (key === 'heading' || key === 'size' || key === 'qt') return key
+    if (key.startsWith('heading-')) return 'heading'
     if (key.startsWith('size-')) {
       const index = Number(key.slice(5))
       return details.sizes?.[index] ? 'size' : key as EditableTextTarget
@@ -129,9 +129,12 @@ function DetailsPanel({ group, selectedAccessoryKey, accessoryVisuals, onSelectA
     return source ? `field:${source.key}` : key as EditableTextTarget
   }
   return <Group x={x} y={y} listening={Boolean(onSelectAccessory || onEditText)}>
-    {fields.map((field, index) => <Text key={field.key} y={index * line} text={field.text} width={width} height={line} fontSize={Math.min(fontSize, field.fontSize ?? fontSize)} wrap="none" fontStyle="bold" fill="#475569" ellipsis={!field.key.startsWith('size')} listening={Boolean(onEditText)} onDblClick={event => { event.cancelBubble = true; edit(fieldTarget(field.key), field.text.replace(/^Size: /, '').replace(/^QT: ?/, '')) }} onDblTap={event => { event.cancelBubble = true; edit(fieldTarget(field.key), field.text.replace(/^Size: /, '').replace(/^QT: ?/, '')) }}/>) }
-    {details.accessoryImage && <AccessoryImage src={details.accessoryImage} x={0} y={bodyY - y} width={imageSize} height={imageSize} code={details.accessoryCode} framed selectionKey={accessoryKey} visual={accessoryVisuals?.get(accessoryKey)} selected={selectedAccessoryKey === accessoryKey} bounds={bounds} onSelect={onSelectAccessory} onChange={onChangeAccessory} onEditText={onEditText} itemIds={group.itemIds}/>}
-    {noteLines.map((value, index) => <Text key={`note-${index}`} x={noteX - x} y={noteY - y + index * noteLine} text={value} width={noteWidth} align="center" height={noteLine} fontSize={noteFontSize} fill="#475569" ellipsis listening={Boolean(onEditText)} onDblClick={event => { event.cancelBubble = true; edit('note', details.note ?? value) }} onDblTap={event => { event.cancelBubble = true; edit('note', details.note ?? value) }}/>) }
-    {details.noteImage && noteImageSize > 0 && <AccessoryImage src={details.noteImage} x={noteX - x + (noteWidth - noteImageSize) / 2} y={noteImageY - y} width={noteImageSize} height={noteImageSize} selectionKey={noteKey} visual={accessoryVisuals?.get(noteKey)} selected={selectedAccessoryKey === noteKey} bounds={bounds} onSelect={onSelectAccessory} onChange={onChangeAccessory} itemIds={group.itemIds}/>}
+    {fields.map((field, index) => <Text key={field.key} y={index * line} text={field.text} width={width} height={line} fontSize={Math.min(fontSize, field.fontSize ?? fontSize)} wrap="none" fontStyle={field.key.startsWith('size') || field.key === 'qt' ? 'normal' : 'bold'} fill="#475569" ellipsis={false} listening={Boolean(onEditText)} onDblClick={event => { event.cancelBubble = true; edit(fieldTarget(field.key), field.text.replace(/^Size: /, '').replace(/^QT: ?/, '')) }} onDblTap={event => { event.cancelBubble = true; edit(fieldTarget(field.key), field.text.replace(/^Size: /, '').replace(/^QT: ?/, '')) }}/>) }
+    {details.accessoryImage && <AccessoryImage src={details.accessoryImage} x={accessoryX - x} y={bodyY - y} width={imageSize} height={imageSize} code={details.accessoryCode} framed selectionKey={accessoryKey} visual={accessoryVisuals?.get(accessoryKey)} selected={selectedAccessoryKey === accessoryKey} bounds={bounds} onSelect={onSelectAccessory} onChange={onChangeAccessory} onEditText={onEditText} itemIds={group.itemIds}/>}
+    {noteLines.map((value, index) => <Text key={`note-${index}`} x={noteX - x} y={noteY - y + index * noteLine} text={value} width={noteWidth} align="center" height={noteLine} fontSize={noteFontSize} fill="#475569" wrap="none" ellipsis={false} listening={Boolean(onEditText)} onDblClick={event => { event.cancelBubble = true; edit('note', details.note ?? value) }} onDblTap={event => { event.cancelBubble = true; edit('note', details.note ?? value) }}/>) }
+    {noteImages.map((image, index) => {
+      const noteKey = index === 0 ? `${group.id}:note` : `${group.id}:note:${index}`
+      return <AccessoryImage key={noteKey} src={image.src} x={image.x - x} y={image.y - y} width={image.size} height={image.size} caption={image.name} captionHeight={image.captionHeight} captionFontSize={image.captionFontSize} selectionKey={noteKey} visual={accessoryVisuals?.get(noteKey)} selected={selectedAccessoryKey === noteKey} bounds={bounds} onSelect={onSelectAccessory} onChange={onChangeAccessory} itemIds={group.itemIds}/>
+    })}
   </Group>
 }

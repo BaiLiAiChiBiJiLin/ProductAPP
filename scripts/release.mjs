@@ -51,7 +51,7 @@ export function updateVersions(files, version) {
 }
 
 function run(command, args, cwd = root, capture = false) {
-  const child = spawnSync(command, args, { cwd, encoding: 'utf8', stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit', windowsHide: true })
+  const child = spawnSync(command, args, { cwd, encoding: 'utf8', stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit', windowsHide: true, maxBuffer: 32 * 1024 * 1024 })
   if (child.error || child.status !== 0) throw new Error(`${command} ${args.join(' ')} 失败：${child.error?.message ?? child.stderr ?? child.status}`)
   return child.stdout?.trim() ?? ''
 }
@@ -81,7 +81,8 @@ export function release(args, projectRoot = root, execute = run) {
   // Refuse to publish over commits made by another checkout. Never force-push.
   git('merge-base', '--is-ancestor', remote, 'HEAD')
   console.log(`发布 ${current} → ${version}；将提交当前所有未忽略的项目更改。`)
-  console.log(git('status', '--short') || '工作区干净')
+  const changes = git('status', '--short').split(/\r?\n/).filter(Boolean)
+  console.log(changes.length ? `${changes.slice(0, 40).join('\n')}${changes.length > 40 ? `\n…另有 ${changes.length - 40} 项改动` : ''}` : '工作区干净')
   console.log(`提交信息：${commitMessage}\n更新说明：\n${notes}`)
   if (options.dryRun) {
     console.log(`预览完成：将同步 5 个版本文件，构建前端、检查 Rust，提交并原子推送 main 和 ${tag}。未修改文件或发布。`)

@@ -1,13 +1,18 @@
 import type { Asset, Page } from '../../../model.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
-import { refreshStandeeDefaultSize, rulerDimensionLabel, type DimensionDisplayOverride, type DimensionDisplayPrecision } from './imageDimensionService.ts'
+import { refreshStandeeDefaultSize, rulerDimensionAxis, rulerDimensionLabel, type DimensionDisplayOverride, type DimensionDisplayPrecision } from './imageDimensionService.ts'
 
 function detailsForDisplay(details: NonNullable<ImageGroup['details']>, page: Page, assets: Map<string, Asset>, itemIds: string[], selected: Set<string>, precision: DimensionDisplayPrecision, decimalPlaces: number, displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>) {
   const labels = new Map<string, string>()
+  const hidden = new Set<string>()
   const firstItem = itemIds.find(id => page.items.some(item => item.id === id && !item.derivedFrom))
   for (const item of page.items) {
     if (!itemIds.includes(item.id)) continue
     const asset = assets.get(item.assetId)
+    if (item.suppressRuler || (asset ? rulerDimensionAxis(asset, item) === 'none' : item.rulerWidth === false && item.rulerHeight === false)) {
+      hidden.add(item.id)
+      continue
+    }
     if (asset) {
       const override = displayOverrides?.get(item.id)
       const explicitDisplay = selected.has(item.id) || Boolean(override)
@@ -19,12 +24,16 @@ function detailsForDisplay(details: NonNullable<ImageGroup['details']>, page: Pa
       if (label && (explicitDisplay || label !== currentLabel)) labels.set(item.id, label)
     }
   }
-  if (!labels.size) return details
+  const sizes = details.sizes?.filter(value => !hidden.has(value.itemId))
+  const hideSize = details.sizes?.length ? !sizes?.length : Boolean(firstItem && hidden.has(firstItem))
+  if (!labels.size && !hideSize && sizes?.length === details.sizes?.length) return details
   const firstLabel = [...labels].find(([id]) => selected.has(id) || displayOverrides?.has(id))?.[1]
     ?? labels.values().next().value
   return { ...details,
-    size: details.sizes?.length ? details.size : firstLabel ?? details.size,
-    sizes: details.sizes?.map(value => labels.has(value.itemId) ? { ...value, label: labels.get(value.itemId)! } : value),
+    // Hide display-only labels without deleting saved text, so re-enabling a
+    // ruler restores its Size. Empty per-image lists must not fall back to Size.
+    size: hideSize ? '' : details.sizes?.length ? details.size : firstLabel ?? details.size,
+    sizes: sizes?.map(value => labels.has(value.itemId) ? { ...value, label: labels.get(value.itemId)! } : value),
   }
 }
 

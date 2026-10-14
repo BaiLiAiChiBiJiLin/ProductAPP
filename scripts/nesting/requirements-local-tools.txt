@@ -1,0 +1,4 @@
+# Runtime dependencies of src-tauri/src/imposition/local_nesting/.
+numpy==2.4.6
+shapely==2.1.2
+opencv-python-headless==5.0.0.93

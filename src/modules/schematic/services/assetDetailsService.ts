@@ -4,6 +4,7 @@ import type { ImageDetails } from '../layoutTypes.ts'
 import type { ProductConfig } from './productConfigService.ts'
 import type { FinishLookup } from './finishService.ts'
 import { finishNameFromLookup } from './finishService.ts'
+import { getNoteImages } from './assetNotesService.ts'
 
 const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase().replace(/[\s_-]+/g, '')
 export const cleanFinishLabel = (value: string) => value.replace(/^\s*\d+\s*\/\s*/, '').trim()
@@ -68,10 +69,10 @@ export function detailsForAsset(asset: Asset, configs: ProductConfig[] = []): Im
   }
   const code = accessoryCode(asset)
   const note = asset.note?.trim() || ''
-  const noteImage = asset.noteImage?.trim() || ''
+  const noteImages = getNoteImages(asset)
   if (code) details.accessoryCode = code
   if (note) details.note = note
-  if (noteImage) details.noteImage = noteImage
+  if (noteImages.length) { details.noteImages = noteImages; details.noteImage = noteImages[0].src }
   return details
 }
 

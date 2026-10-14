@@ -3,12 +3,13 @@ import { Button, InputNumber } from 'antd'
 import { Download, Hand, MousePointer2, Plus, WandSparkles, ZoomIn, ZoomOut, ArrowLeft, Combine } from 'lucide-react'
 import type { Asset, HeaderBlock, Item, LayoutBounds, Page, PageHeader } from '../../model'
 import { rulerAxes, type RulerPatch } from './services/canvasSelectionService'
-import type { DimensionDisplayOverride, DimensionDisplayPrecision } from './services/imageDimensionService'
+import { dimensionForItem, type DimensionDisplayOverride, type DimensionDisplayPrecision } from './services/imageDimensionService'
 import type { RulerChange } from './components/ImageDimensionMarkers'
 import type { EditImageGroupText } from './components/ImageGroupDetails'
 import { CANVAS_DISPLAY_SCALE_STEP, clampCanvasDisplayScale } from './services/canvasDisplayScaleService'
 import './arrange-toolbar.css'
 import ArtworkCanvas from './ArtworkCanvas'
+import ArtworkContextMenu, { type ArtworkMenuTarget } from './components/ArtworkContextMenu'
 import AssetPool from './components/AssetPool'
 import ProductAttributesPanel from './components/ProductAttributesPanel'
 import PageThumbnail from './components/PageThumbnail'
@@ -31,6 +32,8 @@ type Props = {
   onSelectPage: (id: number) => void
   onSelectItem: (id: string | null) => void
   onChangeItem: (item: Item) => void
+  onReplaceArtwork?: (itemId: string) => Promise<void>
+  replacingArtwork?: boolean
   onChangeRulers?: (ids: string[], patch: RulerPatch) => void
   onChangeRuler?: RulerChange
   onEditText?: EditImageGroupText
@@ -55,7 +58,9 @@ type Props = {
   onRemoveHeaderBlock: (id: string) => void
 }
 
-export default function ArrangePage({ displayState, onDisplayStateChange, context, assets, pages, activePage, selectedItem, selectedGroupIds, sortMode, onSelectPage, onSelectItem, onSelectGroup, onChangeItem, onChangeRulers, onChangeRuler = () => {}, onEditText = () => {}, onDropAsset, onDeleteGroups, onConfirmAssetAttributes, onAddPage, onAutoArrange, onCombine, onBack, onBackToHistory, onExport, exporting = false, exportProgress = { phase: 'rendering', completed: 0, total: 1 }, metadata = {}, onMetadataChange, layoutBounds, onBoundsChange, onAddHeaderBlock, onChangeHeaderBlock, onRemoveHeaderBlock }: Props) {
+export default function ArrangePage({ displayState, onDisplayStateChange, context, assets, pages, activePage, selectedItem, selectedGroupIds, sortMode, onSelectPage, onSelectItem, onSelectGroup, onChangeItem, onReplaceArtwork, replacingArtwork = false, onChangeRulers, onChangeRuler = () => {}, onEditText = () => {}, onDropAsset, onDeleteGroups, onConfirmAssetAttributes, onAddPage, onAutoArrange, onCombine, onBack, onBackToHistory, onExport, exporting = false, exportProgress = { phase: 'rendering', completed: 0, total: 1 }, metadata = {}, onMetadataChange, layoutBounds, onBoundsChange, onAddHeaderBlock, onChangeHeaderBlock, onRemoveHeaderBlock }: Props) {
+  const [artworkMenu, setArtworkMenu] = useState<ArtworkMenuTarget | null>(null)
+  useEffect(() => { setArtworkMenu(null) }, [activePage, exporting, replacingArtwork])
   const [exportFormat, setExportFormat] = useState<'jpg' | 'png' | 'svg' | 'pdf'>('pdf')
   const [canvasMode, setCanvasMode] = useState<'select' | 'pan'>('select')
   const [sidePanel, setSidePanel] = useState<'pool' | 'attributes'>('pool')
@@ -82,6 +87,8 @@ export default function ArrangePage({ displayState, onDisplayStateChange, contex
     })
   }
   const page = pages.find(item => item.id === activePage) ?? pages[0]
+  const menuItem = page?.items.find(item => item.id === artworkMenu?.itemId)
+  const menuAsset = assets.find(asset => asset.id === menuItem?.assetId)
   const assetMap = useMemo(() => new Map(assets.map(asset => [asset.id, asset])), [assets])
   const selectedAssetId = useMemo(() => {
     const selected = page?.items.find(item => item.id === selectedItem)
@@ -118,6 +125,12 @@ export default function ArrangePage({ displayState, onDisplayStateChange, contex
   const axes = rulerItems.map(item => rulerAxes(item, assetMap.get(item.assetId)!))
   const widthChecked = axes.length > 0 && axes.every(axis => axis.rulerWidth)
   const heightChecked = axes.length > 0 && axes.every(axis => axis.rulerHeight)
+  const bothRulersChecked = axes.length > 0 && axes.every(axis => axis.rulerWidth && axis.rulerHeight)
+  const sizeAxisValues = rulerItems.map(item => {
+    const asset = assetMap.get(item.assetId)
+    return item.sizeAxis ?? (asset && dimensionForItem(asset, item).horizontal ? 'width' : 'height')
+  }).filter((axis): axis is 'width' | 'height' => Boolean(axis))
+  const sizeAxisValue = sizeAxisValues.length > 0 && sizeAxisValues.every(axis => axis === sizeAxisValues[0]) ? sizeAxisValues[0] : ''
   const setRuler = (patch: RulerPatch) => {
     if (!rulerItems.length) return
     if (onChangeRulers) onChangeRulers(rulerItems.map(item => item.id), patch)
@@ -131,7 +144,7 @@ export default function ArrangePage({ displayState, onDisplayStateChange, contex
   useEffect(() => { setVisualScaleInput(String(Math.round(selectedVisualScale * 100))) }, [selectedVisualScale, visualSelectionKey])
   useEffect(() => {
     const remove = (event: KeyboardEvent) => {
-      if (event.key !== 'Delete' || event.repeat || exporting || canvasMode !== 'select') return
+      if (event.key !== 'Delete' || event.repeat || exporting || replacingArtwork || artworkMenu || canvasMode !== 'select') return
       const target = event.target
       if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [role="dialog"], .ant-modal, .ant-select'))) return
       if (document.querySelector('.ant-modal-wrap:not([style*="display: none"])')) return
@@ -146,7 +159,7 @@ export default function ArrangePage({ displayState, onDisplayStateChange, contex
     }
     window.addEventListener('keydown', remove)
     return () => window.removeEventListener('keydown', remove)
-  }, [page, boxSelection, selectedGroupIds, selectedItem, exporting, canvasMode, onDeleteGroups])
+  }, [page, boxSelection, selectedGroupIds, selectedItem, exporting, replacingArtwork, artworkMenu, canvasMode, onDeleteGroups])
   const updateVisualScale = (value: number) => {
     const scale = clampCanvasDisplayScale(value)
     if (selectedAccessoryKey) {
@@ -197,12 +210,13 @@ export default function ArrangePage({ displayState, onDisplayStateChange, contex
   }
   const progressPercent = exportProgress.total > 0 ? Math.min(100, Math.round(exportProgress.completed / exportProgress.total * 100)) : 0
   return <main className="workspace arrange-page-enter">{context}{exporting && <div className="pdf-export-overlay" role="status" aria-live="polite"><div className="pdf-export-dialog"><Loading size="large"/><strong>正在导出 PDF</strong><div className="pdf-export-progress-track"><div className={`pdf-export-progress-value ${progressPercent === 0 ? 'is-preparing' : ''}`} style={{ width: `${progressPercent}%` }}/></div><span>{pdfProgressText(exportProgress)} {progressPercent}%</span><small>请稍候，导出期间不能重复操作</small></div></div>}
-    <aside className="pages-panel">
+    {replacingArtwork && <div className="pdf-export-overlay" role="status" aria-live="polite"><div className="pdf-export-dialog"><Loading size="large"/><strong>正在更换图片</strong><span>正在读取 SVG 图片…</span></div></div>}
+    <aside className="pages-panel" inert={replacingArtwork}>
       <div className="panel-title"><span>示意图缩略图 <em>{pages.length}</em></span><button className="icon-btn" onClick={onAddPage} title="新建页面"><Plus size={17}/></button></div>
       <div className="pages-list">{pages.map(item => <PageThumbnail key={item.id} page={item} assets={assetMap} active={item.id === activePage} onClick={() => onSelectPage(item.id)} />)}</div>
       <button className="new-page" onClick={onAddPage}><Plus size={15}/>新建页面</button>
     </aside>
-    <section className="canvas-area">
+    <section className="canvas-area" inert={replacingArtwork}>
       <div className="canvas-head"><div className="canvas-back-actions"><Button type="primary" icon={<ArrowLeft size={16}/>} onClick={onBack} disabled={exporting}>返回图片列表</Button><Button onClick={onBackToHistory} disabled={exporting}>回到历史记录</Button></div><div className="canvas-title-center"><h1>示意图打印预览</h1><span className="muted">页面 {page?.id ?? 1} / {pages.length} · {page?.items.filter(item => !item.derivedFrom).length ?? 0} 张图片</span></div><div className="canvas-actions"><select className="export-format" value={exportFormat} disabled={exporting} onChange={event => setExportFormat(event.target.value as typeof exportFormat)}><option value="jpg">JPG</option><option value="png">PNG</option><option value="svg">SVG</option><option value="pdf">PDF</option></select><Button type="primary" icon={exporting ? <Loading size="small" inline /> : <Download size={16}/>} disabled={exporting} onClick={() => onExport(exportFormat, dimensionDisplayOverrides)}>{exporting ? '导出中…' : '导出'}</Button></div></div>
       <div className="toolbar">
         <Button type="text" className={canvasMode === 'select' ? 'toolbar-mode-active' : ''} icon={<MousePointer2 size={15}/>} onClick={() => setCanvasMode('select')}>选择</Button>
@@ -224,13 +238,15 @@ export default function ArrangePage({ displayState, onDisplayStateChange, contex
         <span className="toolbar-divider" role="separator" aria-orientation="vertical"/>
         <label><input type="checkbox" disabled={!rulerItems.length} checked={widthChecked} ref={node => { if (node) node.indeterminate = !widthChecked && axes.some(axis => axis.rulerWidth) }} onChange={event => setRuler({ rulerWidth: event.target.checked })}/>宽标尺</label>
         <label><input type="checkbox" disabled={!rulerItems.length} checked={heightChecked} ref={node => { if (node) node.indeterminate = !heightChecked && axes.some(axis => axis.rulerHeight) }} onChange={event => setRuler({ rulerHeight: event.target.checked })}/>高标尺</label>
-        {axes.some(axis => axis.rulerWidth && axis.rulerHeight) && <span className="ruler-size-warning" role="status">Size 请只保留宽或高标尺</span>}
+        {bothRulersChecked && <select aria-label="Size使用方向" title="选择属性 Size 使用宽度或高度" value={sizeAxisValue} onChange={event => setRuler({ sizeAxis: event.target.value as 'width' | 'height' })}><option value="" disabled>Size 使用方向</option><option value="width">Size 使用宽</option><option value="height">Size 使用高</option></select>}
         <span className="toolbar-divider" role="separator" aria-orientation="vertical"/><span className="toolbar-spacer"/>
         <button className="zoom-btn" title="缩小画布" onClick={() => setZoom(value => Math.max(0.5, Number((value - 0.1).toFixed(2))))}><ZoomOut size={16}/></button><span className="zoom-value">{Math.round(zoom * 100)}%</span><button className="zoom-btn" title="放大画布" onClick={() => setZoom(value => Math.min(2.5, Number((value + 0.1).toFixed(2))))}><ZoomIn size={16}/></button>
       </div>
-      {page && <ArtworkCanvas page={page} assets={assetMap} selected={selectedItem} selectedIds={boxSelection} onBoxSelect={ids => { setSelectedAccessoryKey(null); onSelectItem(null); setBoxSelection(ids) }} selectedGroupIds={selectedGroupIds} onSelect={selectOne} onSelectGroup={selectGroup} onSelectAccessory={selectAccessory} selectedAccessoryKey={selectedAccessoryKey ?? undefined} accessoryVisuals={accessoryVisuals} onChangeAccessory={changeAccessory} onChange={onChangeItem} onDropAsset={onDropAsset} metadata={metadata} totalPages={pages.length} mode={canvasMode} zoom={zoom} onZoomChange={setZoom} layoutBounds={layoutBounds} onHeaderBlockChange={onChangeHeaderBlock} dimensionItemIds={dimensionItemIds} dimensionPrecision={dimensionPrecision} dimensionDecimalPlaces={dimensionDecimalPlaces} dimensionDisplayOverrides={dimensionDisplayOverrides} visualScales={visualScales} onChangeRuler={onChangeRuler} onEditText={onEditText}/>}<div className="canvas-footer"><span>画布尺寸：A4 · 210 × 297 mm</span><span>当前页面 {page?.items.filter(item => !item.derivedFrom).length ?? 0} 张 · 全部页面 {pages.reduce((total, item) => total + item.items.filter(image => !image.derivedFrom).length, 0)} 张</span><span className="saved" title="导出成功后保存当前排列与调整，可在示意图审核中恢复"><i/>导出后保存到审核</span></div>
+      {page && <ArtworkCanvas page={page} assets={assetMap} selected={selectedItem} selectedIds={boxSelection} onBoxSelect={ids => { setSelectedAccessoryKey(null); onSelectItem(null); setBoxSelection(ids) }} selectedGroupIds={selectedGroupIds} onSelect={selectOne} onSelectGroup={selectGroup} onSelectAccessory={selectAccessory} selectedAccessoryKey={selectedAccessoryKey ?? undefined} accessoryVisuals={accessoryVisuals} onChangeAccessory={changeAccessory} onChange={onChangeItem} onDropAsset={onDropAsset} metadata={metadata} totalPages={pages.length} mode={canvasMode} zoom={zoom} onZoomChange={setZoom} layoutBounds={layoutBounds} onHeaderBlockChange={onChangeHeaderBlock} dimensionItemIds={dimensionItemIds} dimensionPrecision={dimensionPrecision} dimensionDecimalPlaces={dimensionDecimalPlaces} dimensionDisplayOverrides={dimensionDisplayOverrides} visualScales={visualScales} onChangeRuler={onChangeRuler} onEditText={onEditText} onArtworkContextMenu={exporting || replacingArtwork ? undefined : (itemId, point) => setArtworkMenu({ itemId, ...point })}/>}
+      {artworkMenu && menuItem && menuAsset && <ArtworkContextMenu target={artworkMenu} item={menuItem} asset={menuAsset} onClose={() => setArtworkMenu(null)} onChange={onChangeItem} onReplace={onReplaceArtwork}/>}
+      <div className="canvas-footer"><span>画布尺寸：A4 · 210 × 297 mm</span><span>当前页面 {page?.items.filter(item => !item.derivedFrom).length ?? 0} 张 · 全部页面 {pages.reduce((total, item) => total + item.items.filter(image => !image.derivedFrom).length, 0)} 张</span><span className="saved" title="导出成功后保存当前排列与调整，可在示意图审核中恢复"><i/>导出后保存到审核</span></div>
     </section>
-    <aside className="assets-panel"><PageConfigPanel metadata={metadata} onMetadataChange={onMetadataChange} bounds={layoutBounds} onBoundsChange={onBoundsChange} pageId={page?.id ?? activePage} headerBlocks={page?.headerBlocks ?? []} selectedHeaderBlock={selectedItem} onSelectHeaderBlock={selectOne} onAddHeaderBlock={onAddHeaderBlock} onChangeHeaderBlock={onChangeHeaderBlock} onRemoveHeaderBlock={onRemoveHeaderBlock}/><div className="asset-section arrange-pool-section"><div className="arrange-pool-shell"><div className="arrange-side-tabs" role="tablist" aria-label="排列页图片面板"><button type="button" role="tab" aria-selected={sidePanel === 'pool'} className={sidePanel === 'pool' ? 'active' : ''} onClick={() => setSidePanel('pool')}>图片池</button><button type="button" role="tab" aria-selected={sidePanel === 'attributes'} className={sidePanel === 'attributes' ? 'active' : ''} disabled={!hasVisualSelection} title={hasVisualSelection ? '调整选中图片的画布显示大小' : '请先在画布中选择图片或图片组'} onClick={() => hasVisualSelection && setSidePanel('attributes')}>图片属性</button></div>{sidePanel === 'attributes' && hasVisualSelection ? <div className="arrange-attributes-content"><div className="visual-scale-controls" aria-label="图片视觉缩放"><span>图片显示</span><button type="button" className="zoom-btn" title="缩小图片" disabled={exporting} onClick={() => updateVisualScale(selectedVisualScale - CANVAS_DISPLAY_SCALE_STEP)}><ZoomOut size={15}/></button><input aria-label="图片显示百分比" type="number" min={25} max={300} step={1} value={visualScaleInput} disabled={exporting} onChange={event => setVisualScaleInput(event.target.value)} onBlur={commitVisualScale} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); commitVisualScale() } }}/><span>%</span><button type="button" className="zoom-btn" title="放大图片" disabled={exporting} onClick={() => updateVisualScale(selectedVisualScale + CANVAS_DISPLAY_SCALE_STEP)}><ZoomIn size={15}/></button><small>仅改变画布显示，不修改真实尺寸；标尺随显示大小调整</small></div>{singleAssetSelection && selectedAssetId ? <ProductAttributesPanel allowGrouping={false} assets={assets} selectedAssetIds={selectedAssetIds} onConfirmAttributes={patch => onConfirmAssetAttributes(selectedAssetId, patch)} showSelectionSummary={false} disabled={exporting}/> : null}</div> : <div className="arrange-pool-content"><AssetPool assets={assets} pages={pages} mode="arrange" onAddAsset={onDropAsset}/></div>}</div></div></aside>
+    <aside className="assets-panel" inert={replacingArtwork}><PageConfigPanel metadata={metadata} onMetadataChange={onMetadataChange} bounds={layoutBounds} onBoundsChange={onBoundsChange} pageId={page?.id ?? activePage} headerBlocks={page?.headerBlocks ?? []} selectedHeaderBlock={selectedItem} onSelectHeaderBlock={selectOne} onAddHeaderBlock={onAddHeaderBlock} onChangeHeaderBlock={onChangeHeaderBlock} onRemoveHeaderBlock={onRemoveHeaderBlock}/><div className="asset-section arrange-pool-section"><div className="arrange-pool-shell"><div className="arrange-side-tabs" role="tablist" aria-label="排列页图片面板"><button type="button" role="tab" aria-selected={sidePanel === 'pool'} className={sidePanel === 'pool' ? 'active' : ''} onClick={() => setSidePanel('pool')}>图片池</button><button type="button" role="tab" aria-selected={sidePanel === 'attributes'} className={sidePanel === 'attributes' ? 'active' : ''} disabled={!hasVisualSelection} title={hasVisualSelection ? '调整选中图片的画布显示大小' : '请先在画布中选择图片或图片组'} onClick={() => hasVisualSelection && setSidePanel('attributes')}>图片属性</button></div>{sidePanel === 'attributes' && hasVisualSelection ? <div className="arrange-attributes-content"><div className="visual-scale-controls" aria-label="图片视觉缩放"><span>图片显示</span><button type="button" className="zoom-btn" title="缩小图片" disabled={exporting} onClick={() => updateVisualScale(selectedVisualScale - CANVAS_DISPLAY_SCALE_STEP)}><ZoomOut size={15}/></button><input aria-label="图片显示百分比" type="number" min={25} max={300} step={1} value={visualScaleInput} disabled={exporting} onChange={event => setVisualScaleInput(event.target.value)} onBlur={commitVisualScale} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); commitVisualScale() } }}/><span>%</span><button type="button" className="zoom-btn" title="放大图片" disabled={exporting} onClick={() => updateVisualScale(selectedVisualScale + CANVAS_DISPLAY_SCALE_STEP)}><ZoomIn size={15}/></button><small>仅改变画布显示，不修改真实尺寸；标尺随显示大小调整</small></div>{singleAssetSelection && selectedAssetId ? <ProductAttributesPanel allowGrouping={false} assets={assets} selectedAssetIds={selectedAssetIds} onConfirmAttributes={patch => onConfirmAssetAttributes(selectedAssetId, patch)} showSelectionSummary={false} disabled={exporting}/> : null}</div> : <div className="arrange-pool-content"><AssetPool assets={assets} pages={pages} mode="arrange" onAddAsset={onDropAsset}/></div>}</div></div></aside>
   </main>
 }
 

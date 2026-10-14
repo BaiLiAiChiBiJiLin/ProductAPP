@@ -4,7 +4,7 @@ import { svgObjectUrl } from '../../../model'
 type Props = Omit<ImgHTMLAttributes<HTMLImageElement>, 'src'> & { svg: string }
 
 /**
- * Defer converting large SVG strings to base64 data URLs until the card is
+ * Defer creating object URLs for large SVG strings until the card is
  * visible. This keeps a large upload batch from creating dozens of decoded
  * SVG documents in the WebView at the same time.
  */
@@ -15,7 +15,7 @@ export default function LazySvgImage({ svg, alt, ...props }: Props) {
   useEffect(() => {
     const element = ref.current
     if (!element) return
-    const load = () => setSrc(current => current ?? svgObjectUrl(svg))
+    const load = () => setSrc(svgObjectUrl(svg))
     if (typeof IntersectionObserver === 'undefined') {
       load()
       return

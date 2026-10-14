@@ -2,7 +2,7 @@ import { expect, test, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), unlisten: vi.fn(), render: vi.fn(() => '<svg/>') }))
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true, invoke: mocks.invoke }))
 vi.mock('@tauri-apps/api/event', () => ({ listen: async () => mocks.unlisten }))
-vi.mock('../src/model', () => ({ pageRasterSvg: mocks.render, pageSvg: mocks.render }))
+vi.mock('../src/model', async importOriginal => ({ ...await importOriginal<object>(), pageRasterSvg: mocks.render, pageSvg: mocks.render }))
 vi.mock('../src/modules/schematic/services/accessoryFrameService.ts', () => ({ prepareAccessoryFrames: async () => {} }))
 import { exportPdf } from '../src/modules/schematic/services/exportService'
 

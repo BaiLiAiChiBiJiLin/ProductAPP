@@ -1,6 +1,6 @@
-import { GROUP_GAP, HEADER_BLOCK_HEIGHT, normalizeLayoutBounds, PAPER_HEIGHT, PAPER_WIDTH, sourceAssetSize, type Asset, type HeaderBlock, type HeaderImageMode, type LayoutBounds, type Page, type Item } from '../../../model.ts'
+import { DETAIL_AREA_RATIO, GROUP_GAP, HEADER_BLOCK_HEIGHT, IMAGE_AREA_RATIO, normalizeLayoutBounds, PAPER_HEIGHT, PAPER_WIDTH, sourceAssetSize, type Asset, type HeaderBlock, type HeaderImageMode, type LayoutBounds, type Page, type Item } from '../../../model.ts'
 import type { ProductConfig } from './productConfigService.ts'
-import { AUTO_DETAIL_LABEL, AUTO_MAX_COLUMNS, AUTO_MIN_DETAIL_WIDTH, detailsForAsset, headerModeForAsset } from './automaticArrangementService.ts'
+import { AUTO_DETAIL_LABEL, AUTO_MAX_COLUMNS, detailsForAsset, headerModeForAsset } from './automaticArrangementService.ts'
 import { AUTO_ROW_HEIGHT } from './pageLayoutService.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
 import { imageCenterWithDimensionGutter } from './imageDimensionService.ts'
@@ -50,12 +50,12 @@ function unitsFromPages(pages: Page[], assets: Map<string, Asset>) {
 }
 
 function placeUnit(unit: ReflowUnit, x: number, y: number, width: number, height: number, assets: Map<string, Asset>, configs: ProductConfig[]) {
-  if (unit.productPlan && unit.group) return placeProductGroup(unit.items, unit.group, x, y, width, height, unit.productPlan.columns, unit.productPlan.detailWidth)
+  if (unit.productPlan && unit.group) return placeProductGroup(unit.items, unit.group, x, y, width, height, unit.productPlan.columns)
   const boxes = unit.items.map(footprint)
   const vertical = unit.group?.stacked === 'vertical'
   const totalHeight = boxes.reduce((sum, box) => sum + box.height, 0) + GROUP_GAP * (boxes.length - 1)
   let top = y + (height - totalHeight) / 2
-  const slotWidth = width / 2 / (vertical ? 1 : unit.items.length)
+  const slotWidth = width * IMAGE_AREA_RATIO / (vertical ? 1 : unit.items.length)
   const items = unit.items.map((item, index) => {
     const asset = assets.get(item.assetId)
     const source = asset ? sourceAssetSize(asset) : undefined
@@ -69,6 +69,7 @@ function placeUnit(unit: ReflowUnit, x: number, y: number, width: number, height
   const group: ImageGroup = {
     ...unit.group, id: unit.group?.id ?? `group-${items[0].id}`, itemIds: items.map(item => item.id), x, y, width, height,
     details: unit.group?.details ?? (asset ? detailsForAsset(asset, configs) : undefined),
+    detailWidth: width * DETAIL_AREA_RATIO, detailsX: x + width * IMAGE_AREA_RATIO,
   }
   return { items, group }
 }
@@ -115,7 +116,7 @@ export function reflowAfterCombination(pages: Page[], startIndex: number, assets
     const plans = packCompactSections([...sections].map(([key, section]) => ({ key, maxColumns: AUTO_MAX_COLUMNS,
       units: section.map(unit => {
         const size = unitSize(unit)
-        const width = unit.productPlan ? size.imageWidth + (size.detailWidth ?? AUTO_MIN_DETAIL_WIDTH) : 2 * Math.max(AUTO_MIN_DETAIL_WIDTH, size.imageWidth)
+        const width = size.imageWidth / IMAGE_AREA_RATIO
         return { value: unit, width, height: size.height }
       }),
     })), { x: area.left, y: area.top, width, height: bottom - area.top }, HEADER_BLOCK_HEIGHT, GROUP_GAP)
@@ -123,9 +124,7 @@ export function reflowAfterCombination(pages: Page[], startIndex: number, assets
       const page = newPage()
       for (const section of sections) {
         const mode = section.key as HeaderImageMode
-        const compactDetailWidth = Math.max(0, ...section.placements.map(placement => placement.value.productPlan?.detailWidth ?? 0)) || undefined
         const header: HeaderBlock = { id: `auto-reflow-${page.id}-${mode}`, x: section.x, y: section.y, width: section.width, auto: true, assetIds: [],
-          detailWidth: compactDetailWidth,
           columns: Array.from({ length: section.columns }, (_, index) => ({ id: `reflow-${page.id}-${mode}-${index}`, imageMode: mode, detailLabel: AUTO_DETAIL_LABEL })) }
         page.headerBlocks!.push(header)
         for (const placement of section.placements) {
@@ -143,7 +142,7 @@ export function reflowAfterCombination(pages: Page[], startIndex: number, assets
   for (const [mode, section] of sections) {
     // Keep the existing table density where possible. Reduce columns only if
     // the current artwork needs wider cells; image dimensions remain untouched.
-    const requiredWidth = 2 * Math.max(AUTO_MIN_DETAIL_WIDTH, ...section.map(unit => unitSize(unit).imageWidth))
+    const requiredWidth = Math.max(...section.map(unit => unitSize(unit).imageWidth)) / IMAGE_AREA_RATIO
     const fittingColumns = Math.floor((width + GROUP_GAP + 1e-7) / (requiredWidth + GROUP_GAP))
     if (fittingColumns < 1) throw new Error('组合后的图片宽度超出排列区域，请扩大排列区域。')
     const preferred = section.map(unit => unit.columns).filter((count): count is number => !!count)

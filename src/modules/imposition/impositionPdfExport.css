@@ -1,0 +1,48 @@
+.imposition-export-modal .ant-modal-body { display: flex; flex-direction: column; gap: 12px; }
+.imposition-export-summary { display: flex; align-items: center; justify-content: space-between; gap: 20px; color: #64748b; font-size: 12px; }
+.imposition-export-grid { display: grid; grid-template-columns: 205px minmax(240px, 1fr) minmax(360px, 440px); min-height: 420px; height: min(67vh, 780px); border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+.imposition-export-grid > section { min-width: 0; padding: 14px; display: flex; flex-direction: column; gap: 10px; overflow: auto; }
+.imposition-export-boards, .imposition-export-preview { border-right: 1px solid #e2e8f0; }
+.imposition-export-board-list { min-height: 95px; overflow: auto; flex: 1; }
+.imposition-export-board { display: flex; align-items: center; gap: 10px; border: 1px solid transparent; border-radius: 6px; padding: 8px; }
+.imposition-export-board.active { background: #eff6ff; border-color: #93c5fd; }
+.imposition-export-board button { flex: 1; border: 0; background: transparent; text-align: left; cursor: pointer; color: #334155; }
+.imposition-export-board small { display: block; margin-top: 3px; color: #64748b; }
+.imposition-export-section-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.imposition-export-section-title .ant-select { min-width: 120px; }
+.imposition-export-preview { background: #f1f5f9; }
+.imposition-export-sheet { flex: 1; min-height: 140px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.imposition-export-sheet img { max-width: 100%; max-height: 100%; background: white; object-fit: contain; box-shadow: 0 4px 15px #0f172a18; }
+.imposition-export-preview > small { color: #64748b; text-align: center; font-size: 11px; }
+.imposition-export-file-list { overflow: auto; max-height: 120px; font-size: 11px; color: #475569; overflow-wrap: anywhere; }
+.imposition-export-file-list summary { cursor: pointer; margin-bottom: 5px; }
+.imposition-export-file-list > div { display: flex; flex-direction: column; gap: 2px; margin: 6px 0; }
+.imposition-export-source-preview { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 14px; flex: 0 0 96px; height: 96px; color: #64748b; font-size: 11px; }
+.imposition-export-source-artwork { width: 96px; height: 96px; overflow: hidden; display: grid; place-items: center; background: #f8fafc; border: 1px solid #e2e8f0; box-sizing: border-box; }
+.imposition-export-source-artwork > img { width: 100%; height: 100%; object-fit: contain; }
+.imposition-export-source-artwork .app-loading { gap: 5px; max-width: 100%; font-size: 10px; }
+.imposition-export-source-caption { min-width: 0; max-height: 96px; overflow: auto; line-height: 1.7; }
+.imposition-export-source-caption > span { display: block; }
+.imposition-export-layer-actions { display: flex; align-items: center; gap: 12px; }
+.imposition-export-layer-list { min-height: 100px; flex: 1; overflow: auto; }
+.imposition-export-layer { padding: 9px 4px; border-bottom: 1px solid #eef2f6; display: grid; grid-template-columns: 18px minmax(60px, 1fr) 115px; align-items: center; gap: 8px; }
+.imposition-export-layer.unassigned { background: #fff7ed; }
+.imposition-export-layer > div:nth-child(2) { overflow: hidden; }
+.imposition-export-layer > div > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.imposition-export-layer small { display: block; color: #94a3b8; font-size: 10px; }
+.imposition-export-warning { color: #b45309; font-size: 11px; }
+.imposition-export-apply-message { color: #2563eb; font-size: 11px; }
+.imposition-export-source-option { display: flex; align-items: center; gap: 10px; min-height: 48px; }
+.imposition-export-source-option > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.imposition-export-source-option .imposition-thumbnail { width: 44px; height: 44px; flex: 0 0 44px; }
+.imposition-export-source-thumbnail { width: 44px; height: 44px; flex: 0 0 44px; background: #f8fafc; border-radius: 4px; }
+.imposition-export-source-thumbnail img { width: 100%; height: 100%; object-fit: contain; }
+.imposition-export-preparing { min-height: 360px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: #64748b; }
+.imposition-export-preparing .ant-progress { width: min(360px, 85%); }
+.imposition-export-preparing small { max-width: 85%; overflow-wrap: anywhere; text-align: center; }
+.imposition-export-footer { display: flex; gap: 8px; align-items: center; }
+.imposition-export-footer > span { margin-right: auto; color: #64748b; font-size: 12px; }
+.imposition-export-progress { padding: 8px 12px; background: #eff6ff; border-radius: 6px; overflow-wrap: anywhere; }
+.imposition-export-progress small { color: #64748b; }
+@media (max-width: 1100px) { .imposition-export-grid { grid-template-columns: 170px minmax(180px, 1fr) 330px; } }
+@media (max-width: 850px) { .imposition-export-grid { display: flex; flex-wrap: wrap; overflow-y: auto; height: 65vh; } .imposition-export-grid > section { width: 100%; overflow: visible; } .imposition-export-sheet { height: 350px; flex: none; } .imposition-export-layer-list { max-height: 300px; } .imposition-export-summary { flex-wrap: wrap; } }

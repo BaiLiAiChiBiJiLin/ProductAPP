@@ -1,11 +1,31 @@
-import { DETAIL_ACCESSORY_SIZE_RATIO, DETAIL_LABEL_FONT_SIZE, DETAIL_LINE_HEIGHT, DETAIL_NOTE_IMAGE_SIZE_RATIO } from '../../../model.ts'
+import { DETAIL_ACCESSORY_SIZE_RATIO, DETAIL_AREA_RATIO, DETAIL_LABEL_FONT_SIZE, DETAIL_LINE_HEIGHT, type NoteImage } from '../../../model.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
 import { accessoryTopGap } from './accessoryFrameService.ts'
+import { getNoteImages } from './assetNotesService.ts'
 
-/** Arial bold advances for the numeric Size label, with a little font fallback slack. */
+/** Stack complete title/image blocks vertically in the available note column. */
+function noteImageBoxes(images: NoteImage[], x: number, y: number, width: number, height: number) {
+  if (!images.length || height <= 0) return []
+  const gap = Math.min(4, height / (images.length * 8))
+  const cellHeight = Math.max(0, (height - gap * (images.length - 1)) / images.length)
+  return images.map((image, index) => {
+    const captionHeight = image.name ? Math.min(10, cellHeight / 4) : 0
+    const size = Math.max(0, Math.min(width, cellHeight - captionHeight))
+    return { ...image, x: x + (width - size) / 2,
+      y: y + index * (cellHeight + gap) + (cellHeight - captionHeight - size) / 2 + captionHeight, size, captionHeight,
+      captionFontSize: image.name ? Math.min(8, captionHeight / 1.25, size / Math.max(1, [...image.name].reduce((total, char) => total + (/[^\u0000-\u00ff]/.test(char) ? 1 : .6), 0))) : 0,
+    }
+  })
+}
+
+/** Conservative normal Arial advances, including font fallback slack. */
+function detailLabelWidth(text: string, fontSize: number) {
+  const advances: Record<string, number> = { S: .667, i: .222, z: .5, e: .556, ':': .278, ' ': .278, '.': .278, m: .833, c: .5, n: .556, Q: .778, T: .611 }
+  return [...text].reduce((sum, char) => sum + (advances[char] ?? (/[^\u0000-\u00ff]/.test(char) ? 1 : .611)), 0) * fontSize + 3
+}
+
 export function sizeLabelWidth(label: string, fontSize = DETAIL_LABEL_FONT_SIZE) {
-  const advances: Record<string, number> = { S: .667, i: .278, z: .5, e: .556, ':': .333, ' ': .278, '.': .278, m: .889, c: .556, n: .611 }
-  return [...`Size: ${label}`].reduce((sum, char) => sum + (advances[char] ?? .611), 0) * fontSize + 3
+  return detailLabelWidth(`Size: ${label}`, fontSize)
 }
 
 export function wrapNote(note: string, width: number, fontSize: number) {
@@ -38,10 +58,11 @@ export function quantityLabel(value?: string) {
   return quantity && Number(quantity) !== 0 ? `QT: ${quantity}` : 'QT:'
 }
 
-/** One geometry calculation for Konva and exported SVG, contained in the details half. */
+/** One geometry calculation for Konva and exported SVG, contained in the details panel. */
 export function imageDetailsLayout(group: ImageGroup, visualScale = 1) {
   const displayScale = Number.isFinite(visualScale) && visualScale > 0 ? visualScale : 1
   const details = group.details
+  const images = getNoteImages(details ?? {})
   const fields: { key: string; text: string; fontSize?: number }[] = []
   if (details) {
     if (details.heading) fields.push({ key: 'heading', text: details.heading })
@@ -55,90 +76,72 @@ export function imageDetailsLayout(group: ImageGroup, visualScale = 1) {
   // groups may retain a stale detailsX or an oversized detailWidth, so clamp
   // both values before laying out text and accessory images.
   const groupRight = group.x + group.width
-  const requestedWidth = group.detailWidth ?? group.width / 2
+  const requestedWidth = group.detailWidth ?? group.width * DETAIL_AREA_RATIO
   const detailPanelWidth = Math.min(Math.max(1, requestedWidth), Math.max(1, group.width - 1))
   const requestedX = group.detailsX ?? groupRight - detailPanelWidth
   const detailsX = Math.max(group.x, Math.min(requestedX, groupRight - detailPanelWidth))
   const x = Math.min(groupRight - 1, detailsX + 4)
   const y = group.y + 4
   const width = Math.max(1, detailPanelWidth - 8)
+  // Standee bases and holder role rows reserve the rest of the group. A
+  // background extended to the row bottom must not enlarge that details slot.
+  const contentHeight = group.detailsHeight === undefined
+    ? Math.max(group.height, group.backgroundHeight ?? group.height)
+    : Math.min(group.height, group.detailsHeight)
   // Product groups may contain longer product names/individual option lists.
   // Wrap those fields instead of truncating them in Canvas or overflowing SVG.
   if (details) {
-    const wrapped = fields.flatMap(field => field.key.startsWith('size')
+    const wrapped = fields.flatMap(field => field.key.startsWith('size') || field.key === 'qt'
       ? [field]
       : wrapNote(field.text, width, DETAIL_LABEL_FONT_SIZE).map((text, index) => ({ key: `${field.key}-${index}`, text })))
     fields.splice(0, fields.length, ...wrapped)
   }
-  const line = Math.max(1, Math.min(DETAIL_LINE_HEIGHT, (group.height - 8) / Math.max(6, fields.length + 2)))
-  const fontSize = Math.max(1, Math.min(DETAIL_LABEL_FONT_SIZE, line - 1))
-  // Size values must remain a complete single line when extra decimal places
-  // make the label wider than the details column. Fit only these labels so
-  // product fields keep their existing typography and wrapping behavior.
-  fields.forEach(field => {
-    if (!field.key.startsWith('size')) return
-    const label = field.text.replace(/^Size:\s*/, '')
-    const measured = sizeLabelWidth(label, fontSize)
-    if (measured > width) field.fontSize = Math.max(1, fontSize * width / measured)
-  })
+  const maximumLine = Math.max(1, Math.min(DETAIL_LINE_HEIGHT, (contentHeight - 8) / Math.max(6, fields.length + 2)))
+  const maximumFont = Math.max(1, Math.min(DETAIL_LABEL_FONT_SIZE, maximumLine - 1))
+  const widestLabel = Math.max(0, ...fields.filter(field => field.key.startsWith('size') || field.key === 'qt').map(field => detailLabelWidth(field.text, maximumFont)))
+  // Size and QT share a font size, stay complete on one line, and retain their
+  // stable edit keys even in a narrow column or with many decimal places.
+  const fontSize = Math.max(0.5, maximumFont * Math.min(1, Math.max(0, width - 3.01) / Math.max(1, widestLabel - 3)))
+  const line = Math.min(maximumLine, fontSize + Math.max(1, DETAIL_LINE_HEIGHT - DETAIL_LABEL_FONT_SIZE))
   const bodyY = y + fields.length * line
   // Finish/process is painted along the bottom edge of the group. Reserve a
   // line for it so wrapped notes always remain above that label.
   const hasFinish = Boolean(group.details?.finish?.trim()) || Boolean(group.detailGroups?.some(panel => panel.details.finish?.trim()))
   const finishReserve = hasFinish ? 18 : 0
-  const contentHeight = Math.max(group.height, group.backgroundHeight ?? group.height)
   const bodyHeight = Math.max(0, contentHeight - 8 - fields.length * line - finishReserve)
-  const hasNote = !!details?.note?.trim() || !!details?.noteImage
-  const accessoryExtra = details?.accessoryImage ? (details.accessoryCode ? 14 : 4) + accessoryTopGap(details.accessoryImage) : 0
+  const accessoryExtra = details?.accessoryImage ? (details.accessoryCode ? 17 : 4) + accessoryTopGap(details.accessoryImage) : 0
   const desiredAccessorySize = details?.accessoryImage ? Math.min(Math.max(1, width - 4), group.height * DETAIL_ACCESSORY_SIZE_RATIO * displayScale) : 0
-  const besideImageSize = Math.max(0, Math.min(desiredAccessorySize, bodyHeight - accessoryExtra))
-  // Leave 4 units between the accessory's white backing and the note column.
-  const besideWidth = width - besideImageSize - 6
-  if (details?.accessoryImage && hasNote && besideWidth >= 24) {
-    const noteX = x + besideImageSize + 6
-    let noteFontSize = Math.min(8, fontSize)
-    let noteLine = Math.min(noteFontSize + 2, line)
-    let noteLines = details.note?.trim() ? wrapNote(details.note, besideWidth, noteFontSize) : []
-    const noteImageGap = details.noteImage && noteLines.length ? 2 : 0
-    const desiredNoteImageSize = details.noteImage ? Math.min(besideWidth, contentHeight * DETAIL_NOTE_IMAGE_SIZE_RATIO * displayScale, bodyHeight) : 0
-    const textRoom = Math.max(1, bodyHeight - desiredNoteImageSize - noteImageGap)
-    while (noteLines.length * noteLine > textRoom && noteFontSize > 0.5) {
-      noteFontSize = Math.max(0.5, noteFontSize - 0.25)
-      noteLine = noteFontSize * 1.25
-      noteLines = wrapNote(details.note!, besideWidth, noteFontSize)
-    }
-    const noteBlockHeight = noteLines.length * noteLine + noteImageGap + desiredNoteImageSize
-    // Keep the note immediately above the process/finish label. This also
-    // prevents a short note from floating at the top while the process sits
-    // at the bottom of the group.
-    const noteY = bodyY + Math.max(0, bodyHeight - noteBlockHeight)
-    const noteImageY = noteY + noteLines.length * noteLine + noteImageGap
-    const noteImageSize = Math.max(0, Math.min(desiredNoteImageSize, group.y + contentHeight - 4 - noteImageY))
-    return { x, y, width, line, fontSize, fields, bodyY, imageSize: besideImageSize, accessoryHeight: besideImageSize + accessoryExtra,
-      noteX, noteWidth: besideWidth, noteY, noteLines, noteFontSize, noteLine, noteImageSize, noteImageY }
-  }
   let noteFontSize = Math.min(8, fontSize)
-  let noteLine = Math.min(noteFontSize + 2, line)
+  let noteLine = noteFontSize * 1.25
   let noteLines = details?.note?.trim() ? wrapNote(details.note, width, noteFontSize) : []
-  // Retain the full note. Long notes reduce their own type size to fit the
-  // remaining area, without shrinking artwork or cutting off production text.
-  const reservedImages = (details?.accessoryImage ? 8 + (details.accessoryCode ? 14 : 4) : 0) + (details?.noteImage ? 10 : 0)
-  const textRoom = Math.max(1, bodyHeight - reservedImages - 2)
+  const minimumMedia = images.length ? Math.min(bodyHeight * 0.65, images.length * 24)
+    : details?.accessoryImage ? Math.min(bodyHeight * 0.55, desiredAccessorySize + accessoryExtra) : 0
+  const textRoom = Math.max(1, bodyHeight - minimumMedia - 2)
   while (noteLines.length * noteLine > textRoom && noteFontSize > 0.5) {
     noteFontSize = Math.max(0.5, noteFontSize - 0.25)
     noteLine = noteFontSize * 1.25
     noteLines = wrapNote(details!.note!, width, noteFontSize)
   }
-  const desiredNoteImageSize = details?.noteImage ? Math.min(width, contentHeight * DETAIL_NOTE_IMAGE_SIZE_RATIO * displayScale) : 0
-  const gap = hasNote ? 2 : 0
-  const noteImageGap = details?.noteImage && noteLines.length ? 2 : 0
-  const available = Math.max(0, bodyHeight - noteLines.length * noteLine - accessoryExtra - gap - noteImageGap)
-  const scale = Math.min(1, available / Math.max(1, desiredAccessorySize + desiredNoteImageSize))
-  const imageSize = desiredAccessorySize * scale
-  const noteImageSize = desiredNoteImageSize * scale
+  // Long unbroken codes also stay intact: shrink the note itself rather than
+  // clipping or truncating any characters in the canvas or exported SVG.
+  const longestNote = Math.max(1, ...noteLines.map(value => [...value].reduce((sum, char) => sum + (/[^\u0000-\u00ff]/.test(char) ? 1 : .6), 0) * noteFontSize))
+  const noteFit = Math.min(1, width / longestNote, textRoom / Math.max(1, noteLines.length * noteLine))
+  noteFontSize *= noteFit
+  noteLine *= noteFit
+  const noteY = bodyY + Math.max(0, bodyHeight - noteLines.length * noteLine)
+  const mediaHeight = Math.max(0, noteY - bodyY - (noteLines.length ? 2 : 0))
+  const mediaGap = details?.accessoryImage && images.length ? Math.min(6, width / 10) : 0
+  const accessoryColumnWidth = details?.accessoryImage && images.length
+    ? Math.min(width / 2, Math.max(width * .32, (details.accessoryCode?.length ?? 0) * 5 + 4)) : width
+  const imageSize = Math.max(0, Math.min(desiredAccessorySize, mediaHeight - accessoryExtra,
+    images.length ? Math.max(0, accessoryColumnWidth - 4) / .4 : Infinity))
   const accessoryHeight = imageSize + accessoryExtra
-  const noteBlockHeight = noteLines.length * noteLine + noteImageGap + noteImageSize
-  const noteY = bodyY + Math.max(0, bodyHeight - noteBlockHeight)
-  return { x, y, width, line, fontSize, fields, bodyY, imageSize, accessoryHeight, noteX: x, noteWidth: width, noteY, noteLines, noteFontSize, noteLine, noteImageSize, noteImageY: noteY + noteLines.length * noteLine + noteImageGap }
+  const accessoryX = images.length ? x + (accessoryColumnWidth - imageSize) / 2 : x
+  const pictureX = details?.accessoryImage ? x + accessoryColumnWidth + mediaGap : x
+  const pictureWidth = details?.accessoryImage ? Math.max(0, width - accessoryColumnWidth - mediaGap) : width
+  const noteImages = noteImageBoxes(images, pictureX, bodyY, pictureWidth, mediaHeight)
+  return { x, y, width, line, fontSize, fields, bodyY, imageSize, accessoryHeight, accessoryX,
+    noteX: x, noteWidth: width, noteY, noteLines, noteFontSize, noteLine,
+    noteImageSize: noteImages[0]?.size ?? 0, noteImageY: noteImages[0]?.y ?? bodyY, noteImages }
 }
 

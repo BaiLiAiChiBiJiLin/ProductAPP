@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "PrintFlow",
-  "version": "0.1.24",
+  "version": "0.1.26",
   "identifier": "com.printflow.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "title": "PrintFlow",
-        "visible": false,
+        "visible": true,
         "backgroundColor": "#f5f7fb",
         "width": 1280,
         "height": 800,
