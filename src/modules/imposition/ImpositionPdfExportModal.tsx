@@ -5,7 +5,7 @@ import Loading from '../../components/Loading'
 import ImpositionThumbnail from './ImpositionThumbnail'
 import { loadImpositionImage } from './impositionRecords'
 import type { PackedItem } from './packingAlgorithms'
-import { applySourceAssignmentsToSameName, buildImpositionTemplatePreview, buildSourceLayerPreview, createImpositionExportModel, enumerateImpositionSvgExports, parseImpositionSvgSource, renderImpositionSvgExport } from './impositionSvgExport'
+import { applySourceAssignmentsToSameName, buildImpositionTemplatePreview, buildSourceLayerPreview, createImpositionExportModel, enumerateImpositionPdfExports, parseImpositionSvgSource, renderImpositionSvgExport } from './impositionSvgExport'
 import type { ExportSvgSource } from './impositionSvgExport'
 import { chooseImpositionPdfDirectory, exportImpositionPdfs, type ImpositionPdfExportProgress } from './impositionPdfExportService'
 import './impositionPdfExport.css'
@@ -16,6 +16,14 @@ const OMIT = '__omit__'
 const CATEGORIES = { paths: '轮廓 / 路径', images: '图片', fills: '彩窗', white: '白墨', unknown: '待确认' }
 const TYPE_OPTIONS = [{ value: 'paths', label: '轮廓 / 路径' }, { value: 'images', label: '图片' }, { value: 'fills', label: '彩窗' }, { value: 'white', label: '白墨' }, { value: OMIT, label: '不导出' }]
 const PHASES: Record<ImpositionPdfExportProgress['phase'], string> = { prepare: '组合图层', transfer: '传输 SVG', resources: '读取图片资源', flatten: '处理渐变和透明度', fonts: '加载字体', parse: '解析 SVG', convert: '生成 PDF', write: '写入文件', complete: '已完成' }
+
+function layerDisplayName(name: string) {
+  const normalized = name.toLowerCase()
+  if (normalized.includes('h_xbxb')) return `轮廓 ${name}`
+  if (normalized.includes('circle')) return `孔 ${name}`
+  if (normalized.includes('path')) return `路径 ${name}`
+  return name
+}
 
 // Give the modal and its common loading animation a frame before parsing each
 // original SVG. QT instances reuse these originals instead of parsing again.
@@ -151,7 +159,7 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
   const selectedModel = model
   const exportPlan = useMemo(() => {
     if (!selectedModel || !templateIds.length) return { entries: [], issue: '' }
-    try { return { entries: enumerateImpositionSvgExports(selectedModel, { date, templateIds }), issue: '' } }
+    try { return { entries: enumerateImpositionPdfExports(selectedModel, { date, templateIds }), issue: '' } }
     catch (reason) { return { entries: [], issue: String(reason instanceof Error ? reason.message : reason) } }
   }, [selectedModel, date, templateIds])
   const pendingCount = model ? model.templates.filter(board => templateIds.includes(board.id)).reduce((count, board) => count + board.sourceIds.reduce((n, id) => n + model.sources[id].layers.filter(layer => assignmentsFor(model, board.id, id)[layer.id] === undefined).length, 0), 0) : 0
@@ -183,8 +191,8 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
       if (!directory) return
       const exportedAt = new Date()
       setDate(exportedAt)
-      const entries = enumerateImpositionSvgExports(selectedModel, { date: exportedAt, templateIds })
-      const result = await exportImpositionPdfs(directory, entries.map(entry => ({ ...entry, renderSvg: () => renderImpositionSvgExport(selectedModel, entry) })), setProgress)
+      const entries = enumerateImpositionPdfExports(selectedModel, { date: exportedAt, templateIds })
+      const result = await exportImpositionPdfs(directory, entries.map(entry => ({ ...entry, pages: entry.pages.map(page => ({ label: page.groupName, renderSvg: () => renderImpositionSvgExport(selectedModel, page) })) })), setProgress)
       setCompletedFiles(result.completedFiles)
       setCleanupWarnings(result.cleanupWarnings)
       if (result.error) setError(`${result.failedFile ? `导出 ${result.failedFile} 失败：` : ''}${result.error}`)
@@ -201,8 +209,8 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
           <div className="imposition-export-board-list">{model.templates.map((board, index) => <div className={`imposition-export-board ${board.id === activeTemplateId ? 'active' : ''}`} key={board.id}><Checkbox aria-label={`导出版式 ${index + 1}`} checked={templateIds.includes(board.id)} disabled={busy} onChange={event => setTemplateIds(current => event.target.checked ? [...current, board.id] : current.filter(id => id !== board.id))}/><button disabled={busy} onClick={() => { setActiveTemplateId(board.id); setActiveSourceId(board.sourceIds[0] ?? ''); setLayerIds([]); setAppliedMessage('') }}><strong>版式 {index + 1}</strong><small>{board.placements.length} 张图片 · {board.productionCopies}F</small></button></div>)}</div>
 
         </section>
-        <section className="imposition-export-preview"><div className="imposition-export-section-title"><strong>板材预览</strong><Select aria-label="预览类型" disabled={busy} value={previewType} onChange={setPreviewType} options={[{ value: 'all', label: '完整原图' }, { value: 'images', label: '全部图片图层' }, ...Array.from({ length: imageChannelCount }, (_, index) => ({ value: `image-channel-${index}`, label: `图片 ${index + 1}（全板）` })), ...TYPE_OPTIONS.filter(value => value.value !== OMIT && value.value !== 'images')]}/></div><div className="imposition-export-sheet" aria-busy={preview.loading}>{preview.loading ? <Loading text="生成板材预览…"/> : preview.error ? <span role="alert">板材预览失败：{preview.error}</span> : previewUrl ? <img src={previewUrl} alt="当前版式的导出位置预览"/> : <span>该类型没有图层</span>}</div><small>保留版面孔；不包含画布红框、利用率和选中框</small>
-          <details className="imposition-export-file-list"><summary>待导出文件（{exportPlan.entries.length}）</summary>{exportPlan.entries.map(entry => <div key={entry.fileName}><strong>{entry.groupName}</strong><span>{entry.fileName}</span></div>)}</details>
+        <section className="imposition-export-preview"><div className="imposition-export-section-title"><strong>板材预览</strong><Select aria-label="预览类型" disabled={busy} value={previewType} onChange={setPreviewType} options={[{ value: 'all', label: '完整原图' }, { value: 'images', label: '全部图片图层' }, ...Array.from({ length: imageChannelCount }, (_, index) => ({ value: `image-channel-${index}`, label: `图片 ${index + 1}（全板）` })), ...TYPE_OPTIONS.filter(value => value.value !== OMIT && value.value !== 'images')]}/></div><div className="imposition-export-sheet" aria-busy={preview.loading}>{preview.loading ? <Loading text="生成板材预览…"/> : preview.error ? <span role="alert">板材预览失败：{preview.error}</span> : previewUrl ? <img src={previewUrl} alt="当前版式的导出位置预览"/> : <span>该类型没有图层</span>}</div>
+          <details className="imposition-export-file-list"><summary>待导出文件（{exportPlan.entries.length}）</summary>{exportPlan.entries.map(entry => <div key={entry.fileName}><strong>版式 {entry.templateNumber} · {entry.pages.length} 页</strong><span>{entry.fileName}</span><span>{entry.pages.map(page => page.groupName).join(' → ')}</span></div>)}</details>
         </section>
         <section className="imposition-export-layers"><strong>SVG 图层</strong><Select aria-label="选择 SVG" showSearch optionFilterProp="label" value={activeSourceId || undefined} disabled={busy} virtual listHeight={280} listItemHeight={56} options={template?.sourceIds.map(id => ({ value: id, label: model.sources[id].fileName }))} optionRender={option => <div className="imposition-export-source-option">{sourcePaths.get(String(option.value)) ? <ImpositionThumbnail path={sourcePaths.get(String(option.value))!} name={model.sources[String(option.value)].fileName}/> : <SourceBlobThumbnail source={model.sources[String(option.value)]}/>}<span>{option.label}</span></div>} onChange={id => { setActiveSourceId(id); setLayerIds([]); setAppliedMessage('') }}/>
           {source && <><div className="imposition-export-source-preview" aria-busy={layerPreview.loading}>
@@ -210,7 +218,10 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
             <div className="imposition-export-source-caption"><span>{layerIds.length ? `选中 ${layerIds.length} 个图层` : '勾选图层可单独预览'}</span><span>同一 SVG 在本版式中的所有副本同步修改</span>{layerPreview.error && <small role="alert">图层预览失败：{layerPreview.error}</small>}</div>
           </div>
             <div className="imposition-export-layer-actions"><Checkbox aria-label="选择全部图层" checked={layerIds.length === source.layers.length} indeterminate={!!layerIds.length && layerIds.length !== source.layers.length} disabled={busy} onChange={event => setLayerIds(event.target.checked ? source.layers.map(layer => layer.id) : [])}>全选</Checkbox></div>
-            <div className="imposition-export-layer-list">{source.layers.map(layer => <div key={layer.id} className={`imposition-export-layer ${assignments[layer.id] === undefined ? 'unassigned' : ''}`}><Checkbox aria-label={`选择图层 ${layer.label}`} checked={layerIds.includes(layer.id)} disabled={busy} onChange={event => setLayerIds(current => event.target.checked ? [...current, layer.id] : current.filter(id => id !== layer.id))}/><div title={layer.label}><span>{layer.label}</span><small>{layer.tagName} · {CATEGORIES[layer.category]}{sourceImageChannels.has(layer.id) ? ` · 全板图片 ${sourceImageChannels.get(layer.id)}` : ''}</small></div><Select aria-label={`图层 ${layer.label} 类型`} placeholder="待确认" value={assignments[layer.id] === null ? OMIT : assignments[layer.id]} disabled={busy} options={TYPE_OPTIONS} onChange={value => assignLayer(layer.id, value)}/></div>)}</div>
+            <div className="imposition-export-layer-list">{source.layers.map(layer => {
+              const displayName = layerDisplayName(layer.label)
+              return <div key={layer.id} className={`imposition-export-layer ${assignments[layer.id] === undefined ? 'unassigned' : ''}`}><Checkbox aria-label={`选择图层 ${displayName}`} checked={layerIds.includes(layer.id)} disabled={busy} onChange={event => setLayerIds(current => event.target.checked ? [...current, layer.id] : current.filter(id => id !== layer.id))}/><div title={displayName}><span>{displayName}</span><small>{layer.tagName} · {CATEGORIES[layer.category]}{sourceImageChannels.has(layer.id) ? ` · 全板图片 ${sourceImageChannels.get(layer.id)}` : ''}</small></div><Select aria-label={`图层 ${displayName} 类型`} placeholder="待确认" value={assignments[layer.id] === null ? OMIT : assignments[layer.id]} disabled={busy} options={TYPE_OPTIONS} onChange={value => assignLayer(layer.id, value)}/></div>
+            })}</div>
             <Button type="primary" disabled={busy} onClick={applyToSameName}>应用到同名svg</Button>
             {appliedMessage && <small className="imposition-export-apply-message" role="status">{appliedMessage}</small>}
             {source.warnings?.map((warning, index) => <small className="imposition-export-warning" key={index}>{warning}</small>)}
@@ -219,7 +230,7 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
       </div>
       {pendingCount > 0 && <Alert type="warning" showIcon message={`所选版式还有 ${pendingCount} 个待确认图层，请指定类型或选择“不导出”。`}/>}
       {exportPlan.issue && pendingCount === 0 && <Alert type="warning" showIcon message={exportPlan.issue}/>}
-      {busy && <div className="imposition-export-progress" role="status"><Loading size="small" inline text={progress ? `${PHASES[progress.phase]}：${progress.fileName}` : '请选择导出文件夹…'}/><Progress percent={progress ? Math.round(progress.completed / Math.max(1, progress.total) * 100) : 0}/><small>已完成 {progress?.completed ?? 0}/{progress?.total ?? exportPlan.entries.length} 个文件</small></div>}
+      {busy && <div className="imposition-export-progress" role="status"><Loading size="small" inline text={progress ? `${PHASES[progress.phase]}：${progress.fileName}${progress.pageNumber ? ` · 第 ${progress.pageNumber}/${progress.pageCount} 页${progress.pageName ? ` ${progress.pageName}` : ''}` : ''}` : '请选择导出文件夹…'}/><Progress percent={progress ? Math.round(progress.completed / Math.max(1, progress.total) * 100) : 0}/><small>已完成 {progress?.completed ?? 0}/{progress?.total ?? exportPlan.entries.length} 个文件</small></div>}
       {completedFiles.length > 0 && <Alert type={error ? 'warning' : 'success'} showIcon message={`已导出 ${completedFiles.length} 个 PDF`} description={<details><summary>查看保存路径</summary>{completedFiles.map(path => <div key={path}>{path}</div>)}</details>}/>}
       {cleanupWarnings.map(warning => <Tag color="warning" key={warning}>{warning}</Tag>)}
     </>}

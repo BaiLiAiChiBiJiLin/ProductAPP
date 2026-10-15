@@ -1,4 +1,5 @@
 import type { PackedItem } from './packingAlgorithms'
+import { BOARD_HOLE_COLOR, BOARD_HOLE_STROKE_MM, boardHolePath } from './impositionHoles'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const RESOURCE_TAGS = new Set(['defs', 'clippath', 'mask', 'pattern', 'marker', 'symbol', 'lineargradient', 'radialgradient', 'filter'])
@@ -26,6 +27,10 @@ export type ImpositionSvgExportMetadata = {
   imageLayerIndex?: number; imageLayerMembers?: Record<string, string>
 }
 export type ImpositionSvgExportPage = ImpositionSvgExportMetadata & { svg: string }
+export type ImpositionPdfExportMetadata = {
+  fileName: string; widthMm: number; heightMm: number; templateId: string; templateNumber: number
+  productionCopies: number; pages: ImpositionSvgExportMetadata[]
+}
 type ExportOptions = { date?: Date; templateIds?: string[]; groupIds?: string[] }
 type CssRule = { selectors: string[]; declarations: string; order: number }
 
@@ -33,6 +38,10 @@ const tag = (element: Element) => element.localName.toLowerCase()
 const children = (element: Element) => Array.from(element.children)
 const sourceIdOf = (item: PackedItem) => item.image.sourceImageId ?? item.image.id.replace(/#qt-\d+$/, '')
 const number = (value: number) => String(Number(value.toFixed(9)))
+function exportTimestamp(date: Date) {
+  if (!Number.isFinite(date.getTime())) throw new Error('导出日期无效')
+  return `${date.getFullYear()}${[date.getMonth() + 1, date.getDate(), date.getHours(), date.getMinutes()].map(value => String(value).padStart(2, '0')).join('')}`
+}
 const parse = (text: string) => {
   const doc = new DOMParser().parseFromString(text, 'image/svg+xml')
   if (doc.querySelector('parsererror') || tag(doc.documentElement) !== 'svg') throw new Error('SVG 文件无法解析，请检查原图')
@@ -382,9 +391,7 @@ export function applySourceAssignmentsToSameName(model: ImpositionExportModel, t
 
 /** Metadata is small; render each SVG only immediately before its PDF write. */
 export function enumerateImpositionSvgExports(model: ImpositionExportModel, options: ExportOptions = {}): ImpositionSvgExportMetadata[] {
-  const date = options.date ?? new Date()
-  if (!Number.isFinite(date.getTime())) throw new Error('导出日期无效')
-  const timestamp = `${date.getFullYear()}${[date.getMonth() + 1, date.getDate(), date.getHours(), date.getMinutes()].map(value => String(value).padStart(2, '0')).join('')}`
+  const timestamp = exportTimestamp(options.date ?? new Date())
   const result: Omit<ImpositionSvgExportMetadata, 'fileName'>[] = []
   const groupIds = new Set(IMPOSITION_EXPORT_TYPES.map(group => group.id))
   // Channels are ordinal within each source's currently assigned image layers,
@@ -431,6 +438,26 @@ export function enumerateImpositionSvgExports(model: ImpositionExportModel, opti
     // One exported set represents all production copies; image channels never
     // increment F, which always records 1 of the requested production quantity.
     return { ...entry, fileName: `${typeName}_${timestamp}_${boardNumber}B-${boardNumbers.size}B_1F-${entry.productionCopies}F.pdf` }
+  })
+}
+
+/** One PDF per physical layout. Keep only the small page metadata in memory;
+ * each full-board SVG is rendered when its page is transferred for conversion. */
+export function enumerateImpositionPdfExports(model: ImpositionExportModel, options: ExportOptions = {}): ImpositionPdfExportMetadata[] {
+  const date = options.date ?? new Date()
+  const timestamp = exportTimestamp(date)
+  const pages = enumerateImpositionSvgExports(model, { ...options, date })
+  const boards = new Map<string, ImpositionSvgExportMetadata[]>()
+  for (const page of pages) {
+    const board = boards.get(page.templateId)
+    if (board) board.push(page)
+    else boards.set(page.templateId, [page])
+  }
+  const digits = String(boards.size).length
+  return [...boards.values()].map((pages, index) => {
+    const { widthMm, heightMm, templateId, templateNumber, productionCopies } = pages[0]
+    const fileName = `${timestamp}_${String(index + 1).padStart(digits, '0')}B-${boards.size}B_1F-${productionCopies}F.pdf`
+    return { fileName, widthMm, heightMm, templateId, templateNumber, productionCopies, pages: pages.map(page => ({ ...page, fileName })) }
   })
 }
 
@@ -507,14 +534,13 @@ function renderBoardLayers(model: ImpositionExportModel, templateId: string, pre
   if (holes && holes.count > 0 && holes.sizeMm > 0) {
     const holeGroup = root.ownerDocument.createElementNS(SVG_NS, 'g')
     holeGroup.setAttribute('data-board-holes', 'true')
-    holeGroup.setAttribute('fill', '#2563eb')
-    const radius = holes.sizeMm / 2
+    holeGroup.setAttribute('fill', 'none')
+    holeGroup.setAttribute('stroke', BOARD_HOLE_COLOR)
+    holeGroup.setAttribute('stroke-width', number(BOARD_HOLE_STROKE_MM))
     const start = (model.plateHeightMm - ((holes.count - 1) * holes.gapMm + holes.sizeMm)) / 2
     for (let index = 0; index < holes.count; index++) {
-      const hole = root.ownerDocument.createElementNS(SVG_NS, 'circle')
-      hole.setAttribute('cx', number(holes.leftMm + radius))
-      hole.setAttribute('cy', number(start + index * holes.gapMm + radius))
-      hole.setAttribute('r', number(radius))
+      const hole = root.ownerDocument.createElementNS(SVG_NS, 'path')
+      hole.setAttribute('d', boardHolePath(holes.leftMm, start + index * holes.gapMm, holes.sizeMm))
       holeGroup.append(hole)
     }
     root.append(holeGroup)

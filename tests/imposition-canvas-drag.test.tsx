@@ -37,6 +37,28 @@ function begin(node: Konva.Image) { act(() => { node.fire('dragstart') }) }
 function move(node: Konva.Image, x: number, y: number) { act(() => { node.absolutePosition({ x, y }); node.fire('dragmove') }) }
 function end(node: Konva.Image) { act(() => { node.fire('dragend') }) }
 
+it('draws unfilled board hole paths at the configured millimetre size after canvas scaling', () => {
+  const canvas = (diameter: number) => <ImpositionKonvaCanvas pages={[[item('art', 20, 20)]]} imageSources={{}} boardWidth={100} boardHeight={100} boardScale={2} effectiveX={5} effectiveY={5} effectiveWidth={90} effectiveHeight={90} spacing={3} holeCount={2} holeSize={diameter} holeLeft={4} holeStart={10} holeGap={20} zoom={1.5} panOffset={{ x: 0, y: 0 }} panMode={false} onSelectImage={() => {}}/>
+  const view = render(canvas(3))
+  const stage = Konva.stages.at(-1)!
+  for (const diameter of [3, 5]) {
+    view.rerender(canvas(diameter))
+    const holes = stage.find<Konva.Path>('Path')
+    expect(holes).toHaveLength(2)
+    holes.forEach((hole, index) => {
+      expect(hole.fillEnabled()).toBe(false)
+      expect(hole.stroke()).toBe('#2563eb')
+      const bounds = hole.getClientRect({ skipStroke: true, relativeTo: hole.getParent()! })
+      expect(bounds.width).toBeCloseTo(diameter * 2, 3)
+      expect(bounds.height).toBeCloseTo(diameter * 2, 3)
+      expect(bounds.x).toBeCloseTo(8, 3)
+      expect(bounds.y).toBeCloseTo((10 + index * 20) * 2, 3)
+    })
+  }
+  view.rerender(canvas(0))
+  expect(stage.find('Path')).toHaveLength(0)
+})
+
 it('follows the pointer near the effective edge and neighboring art without snapping', () => {
   const { image, origin } = mount([[item('moving', 10, 20), item('neighbor', 50, 20)]])
   begin(image)

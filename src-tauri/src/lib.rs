@@ -16,6 +16,7 @@ mod product_config_cache;
 mod production_imposition;
 mod schematic_review;
 mod settings;
+mod shared_transfers;
 mod staged_artwork;
 pub mod svg_measure;
 use assets::Asset;
@@ -55,6 +56,7 @@ fn database(app: &tauri::AppHandle) -> Result<Connection, String> {
         "ALTER TABLE batches ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'",
         [],
     );
+    shared_transfers::store::ensure_store(&conn)?;
     Ok(conn)
 }
 
@@ -977,7 +979,9 @@ async fn delete_asset(
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let mut conn = database(&app)?;
-        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e| e.to_string())?;
+        shared_transfers::store::ensure_editable(&tx,"asset",&id)?;
+        if let Some(batch) = &batch_id { shared_transfers::store::ensure_editable(&tx,"batch",batch)?; }
 
         if let Some(batch_id) = batch_id {
             let payload: Option<String> = tx
@@ -1220,23 +1224,30 @@ async fn save_batch(
     metadata: Option<BatchMetadata>,
 ) -> Result<SaveBatchResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let conn = database(&app)?;
+        shared_transfers::store::ensure_editable(&conn,"batch",&id)?;
+        for asset in &assets { shared_transfers::store::ensure_editable(&conn,"asset",&asset.id)?; }
         let mut assets = assets;
         finish_matching::fill(&mut assets, &finish_catalog_path(&app)?)?;
         let metadata = metadata.unwrap_or_default();
         let signature_started = Instant::now();
         let incoming_signature = batch_signature(&assets, &metadata)?;
         log::info!("save_batch phase=signature assets={} elapsed_ms={}", assets.len(), signature_started.elapsed().as_millis());
-        let conn = database(&app)?;
+        // Recheck after hashing while holding the write reservation: a transfer
+        // may have frozen this batch since the initial fast check.
+        let tx = rusqlite::Transaction::new_unchecked(&conn, rusqlite::TransactionBehavior::Immediate).map_err(|e| e.to_string())?;
+        shared_transfers::store::ensure_editable(&tx,"batch",&id)?;
+        for asset in &assets { shared_transfers::store::ensure_editable(&tx,"asset",&asset.id)?; }
         // An opened/current batch is an edit session. Its stable id must win
         // over content-based duplicate detection, otherwise changing one
         // product/attribute could redirect the save to another history row.
-        let current_exists = conn.query_row(
+        let current_exists = tx.query_row(
             "SELECT 1 FROM batches WHERE id = ?1 LIMIT 1",
             params![id],
             |_| Ok(()),
         ).optional().map_err(|e| e.to_string())?.is_some();
         if !current_exists {
-            let mut stmt = conn.prepare("SELECT id,saved_at,payload,metadata FROM batches ORDER BY saved_at DESC LIMIT 20").map_err(|e| e.to_string())?;
+            let mut stmt = tx.prepare("SELECT id,saved_at,payload,metadata FROM batches b WHERE NOT EXISTS(SELECT 1 FROM shared_transfer_outbox o WHERE o.batch_id=b.id AND o.status IN ('preparing','publishing','published','received','complete')) ORDER BY saved_at DESC LIMIT 20").map_err(|e| e.to_string())?;
             let rows = stmt.query_map([], |row| {
                 let payload: String = row.get(2)?;
                 let metadata: String = row.get(3)?;
@@ -1256,7 +1267,6 @@ async fn save_batch(
         }
         let persist_started = Instant::now();
         let temporary_paths: Vec<_> = assets.iter().map(|asset| asset.storage_path.clone()).collect();
-        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         let directory = asset_storage::batch_directory(&tx, &project_data_dir().join("assets"), &id, &metadata.customer_name)?;
         let persisted = asset_storage::persist(assets, &directory)?;
         log::info!("save_batch phase=persist assets={} elapsed_ms={}", persisted.len(), persist_started.elapsed().as_millis());
@@ -1575,6 +1585,12 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            shared_transfers::initialize_shared_user,
+            shared_transfers::shared_transfer_directory,
+            shared_transfers::list_shared_transfer_users,
+            shared_transfers::preview_shared_batch_transfer,
+            shared_transfers::send_shared_batch,
+            shared_transfers::refresh_shared_transfers,
             settings::load_storage_settings,
             settings::save_storage_settings,
             staged_artwork::write_export_resource_chunk,

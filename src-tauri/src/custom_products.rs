@@ -5,6 +5,21 @@ use storage::connect;
 pub use storage::CustomProduct;
 use tauri::Manager;
 
+pub(super) fn register_transferred_names(names: &[String]) -> Result<std::collections::HashMap<String,String>,String> {
+    let mut conn = connect(&crate::project_data_dir().join("custom-products.sqlite"))?;
+    let mut products: std::collections::HashMap<_,_> = names::list(&conn)?.into_iter().map(|product| (product.name,product.id)).collect();
+    let mut result = std::collections::HashMap::new();
+    for name in names {
+        let id = if let Some(id) = products.get(name) { *id } else {
+            let added = names::add(&mut conn,name)?;
+            products.insert(added.name.clone(),added.id);
+            added.id
+        };
+        result.insert(name.clone(),format!("custom:{id}"));
+    }
+    Ok(result)
+}
+
 #[tauri::command]
 pub async fn load_custom_product_config(app: tauri::AppHandle) -> Result<String, String> {
     let local = crate::project_data_dir().join("cache/custom-clear-acrylic.json");

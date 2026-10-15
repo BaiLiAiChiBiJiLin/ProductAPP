@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -121,10 +121,18 @@ fn externalize(
 
 pub(super) fn save_record(conn: &Connection, mut record: Value) -> Result<(), String> {
     ensure_store(conn)?;
-    let id = required_text(&record, "id")?;
-    let transaction = conn
-        .unchecked_transaction()
+    let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)
         .map_err(|error| error.to_string())?;
+    for asset in record["assets"].as_array().into_iter().flatten() {
+        if let Some(id) = asset["id"].as_str() { crate::shared_transfers::store::ensure_editable(&transaction,"asset",id)?; }
+    }
+    for (field, kind) in [("sourceBatchId", "batch"), ("sourceRecordId", "review")] {
+        if let Some(id) = record[field].as_str().filter(|id| !id.is_empty()) {
+            crate::shared_transfers::store::ensure_editable(&transaction,kind,id)?;
+        }
+    }
+    let id = required_text(&record, "id")?;
+    crate::shared_transfers::store::ensure_editable(&transaction,"review",&id)?;
     let exists: bool = transaction
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM schematic_reviews WHERE id = ?1)",
@@ -236,14 +244,15 @@ pub(super) fn list_records(
     }
     // All filtering and LIMIT/OFFSET happen in SQLite. Never read snapshot payloads
     // or artwork for a list request; COUNT and rows share a consistent read transaction.
-    let condition = "WHERE (?1 = '' OR instr(lower(COALESCE(json_extract(summary, '$.customerName'), '') || ' ' || COALESCE(json_extract(summary, '$.output'), '')), lower(?1)) > 0)
+    crate::shared_transfers::store::ensure_store(conn)?;
+    let condition = "WHERE NOT EXISTS(SELECT 1 FROM shared_transfer_outbox o,json_each(o.record_ids,'$.reviews') x WHERE x.value=r.id AND o.status IN ('preparing','publishing','published','received','complete')) AND (?1 = '' OR instr(lower(COALESCE(json_extract(summary, '$.customerName'), '') || ' ' || COALESCE(json_extract(summary, '$.output'), '')), lower(?1)) > 0)
         AND (?2 IS NULL OR saved_at >= ?2) AND (?3 IS NULL OR saved_at < ?3)";
     let transaction = conn
         .unchecked_transaction()
         .map_err(|error| error.to_string())?;
     let total = transaction
         .query_row(
-            &format!("SELECT COUNT(*) FROM schematic_reviews {condition}"),
+            &format!("SELECT COUNT(*) FROM schematic_reviews r {condition}"),
             params![search, date_from, date_to],
             |row| row.get::<_, usize>(0),
         )
@@ -297,8 +306,7 @@ pub(super) fn list_records(
 
 pub(super) fn delete_record(conn: &Connection, id: &str) -> Result<(), String> {
     ensure_store(conn)?;
-    let transaction = conn
-        .unchecked_transaction()
+    let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)
         .map_err(|error| error.to_string())?;
     crate::production_imposition::ensure_review_editable(&transaction, id)?;
     transaction.execute("DELETE FROM production_imposition_jobs WHERE source_review_id = ?1 AND status = 'returned'", [id]).map_err(|error| error.to_string())?;
@@ -326,8 +334,7 @@ fn update_payment_status(
     payment_status: PaymentStatus,
 ) -> Result<(), String> {
     ensure_store(conn)?;
-    let transaction = conn
-        .unchecked_transaction()
+    let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)
         .map_err(|error| error.to_string())?;
     crate::production_imposition::ensure_review_editable(&transaction, id)?;
     // Mutable payment metadata stays separate from the immutable artwork snapshot.
@@ -348,8 +355,10 @@ fn update_payment_status(
 
 pub(super) fn load_record(conn: &Connection, id: &str) -> Result<Value, String> {
     ensure_store(conn)?;
-    crate::production_imposition::ensure_review_editable(conn, id)?;
-    let (payload, payment_status): (String, String) = conn
+    let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    crate::production_imposition::ensure_review_editable(&transaction, id)?;
+    let (payload, payment_status): (String, String) = transaction
         .query_row(
             "SELECT r.payload, COALESCE(p.payment_status, 'unpaid') FROM schematic_reviews r
         LEFT JOIN schematic_review_payment_states p ON p.record_id = r.id WHERE r.id = ?1",
@@ -362,9 +371,6 @@ pub(super) fn load_record(conn: &Connection, id: &str) -> Result<Value, String> 
     let mut record: Value = serde_json::from_str(&payload).map_err(|error| error.to_string())?;
     drop(payload);
     // Migrate older inline snapshots without changing their artwork or layout.
-    let transaction = conn
-        .unchecked_transaction()
-        .map_err(|error| error.to_string())?;
     let mut count = transaction
         .query_row(
             "SELECT COUNT(*) FROM schematic_review_resources WHERE record_id = ?1",

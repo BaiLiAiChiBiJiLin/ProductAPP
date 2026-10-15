@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Circle, Group, Image as KonvaImage, Layer, Rect, Stage, Text, Transformer } from 'react-konva'
+import { Group, Image as KonvaImage, Layer, Path, Rect, Stage, Text, Transformer } from 'react-konva'
 import type Konva from 'konva'
 import type { ProductionImage } from './impositionRecords'
 import { groupRepeatedPackingPages } from './packingAlgorithms'
+import { BOARD_HOLE_COLOR, BOARD_HOLE_STROKE_MM, boardHolePath } from './impositionHoles'
 
 type Point = { x: number; y: number }
 type Polygon = Array<[number, number]>
@@ -270,7 +271,7 @@ export default function ImpositionKonvaCanvas(props: Props) {
     {visiblePages.map(({ pageIndex, x: pageX, y: pageY }) => <Group key={pageIndex} x={pageX} y={pageY}>
       <Rect width={pageWidth} height={pageHeight} fill="#fff" stroke="#cbd5e1" strokeWidth={1}/>
       <Rect x={effectiveX * boardScale} y={effectiveY * boardScale} width={effectiveWidth * boardScale} height={effectiveHeight * boardScale} stroke="#ef4444" dash={[2 * boardScale, 2 * boardScale]} strokeWidth={.8} listening={false}/>
-      {Array.from({ length: Math.max(0, holeCount) }).map((_, index) => <Circle key={index} x={(holeLeft + holeSize / 2) * boardScale} y={(holeStart + index * holeGap + holeSize / 2) * boardScale} radius={holeSize * boardScale / 2} fill="#2563eb" listening={false}/>) }
+      {holeSize > 0 && Array.from({ length: Math.max(0, holeCount) }).map((_, index) => <Path key={index} data={boardHolePath(holeLeft, holeStart + index * holeGap, holeSize)} scaleX={boardScale} scaleY={boardScale} fillEnabled={false} stroke={BOARD_HOLE_COLOR} strokeWidth={BOARD_HOLE_STROKE_MM} listening={false}/>) }
     </Group>)}
     {visiblePages.map(({ pageIndex, displayIndex, repeatCount, x: pageX, y: pageY }) => <Text key={`utilization-${pageIndex}`} x={pageX + pageWidth / 2} y={pageY - 18} width={pageWidth} align="center" offsetX={pageWidth / 2} text={`${collapseRepeatedLayouts ? `方案 ${displayIndex + 1} · 需生产 ${repeatCount} 块 · ` : ''}利用率 ${Math.round(pageUtilizations[pageIndex] ?? 0)}%`} fontSize={11} fill="#dc2626" listening={false}/>) }
     {visiblePages.flatMap(({ page, pageIndex, x: pageX, y: pageY }) => page.map(item => <Group key={`page-${pageIndex}-image-${item.image.id}`} x={pageX} y={pageY}><CanvasImage item={{ ...item, polygon: item.polygon ?? polygons[item.image.id] ?? polygons[item.image.sourceImageId ?? ''] }} source={imageSources[item.image.sourceImageId ?? item.image.id]} scale={boardScale} editable={!collapseRepeatedLayouts} onSelect={() => onSelectImage(item.image.id)} onDragStart={node => beginTransaction(pageIndex, item, node)} onDragMove={node => moveTransaction(pageIndex, item, node)} onDragEnd={endTransaction} onTransformEnd={node => commitTransform(pageIndex, item, node)} nodeRef={node => { nodeRefs.current[item.image.id] = node }}/></Group>))}

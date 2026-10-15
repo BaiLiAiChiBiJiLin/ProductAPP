@@ -84,7 +84,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "app"
-version = "0.1.26"
+version = "0.1.27"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -99,6 +99,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "svg2pdf 0.13.0",
  "tauri",
  "tauri-build",

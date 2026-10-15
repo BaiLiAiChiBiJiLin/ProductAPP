@@ -77,7 +77,7 @@ it('shows the common loading animation before parsing and exports repeated board
   await ready()
   expect(mocks.loadImage).toHaveBeenCalledExactlyOnceWith(image.filePath)
   expect(screen.getByText('1 张图片 · 5F')).toBeTruthy()
-  expect(screen.getByText(/1 种版式 · 3 个 PDF/)).toBeTruthy()
+  expect(screen.getByText(/1 种版式 · 1 个 PDF/)).toBeTruthy()
   expect(screen.queryByText('导出分组')).toBeNull()
   expect(screen.getByText('板材 300 × 464 mm、版面孔与图片当前位置；相同版式只导出一份。')).toBeTruthy()
   expect(screen.queryByText(/整块板材上的 SVG 按图片图层顺序合并/)).toBeNull()
@@ -85,21 +85,24 @@ it('shows the common loading animation before parsing and exports repeated board
   expect(screen.queryByRole('combobox', { name: '批量归组' })).toBeNull()
   fireEvent.click(exportButton())
   await waitFor(() => expect(mocks.exportPdfs).toHaveBeenCalledOnce())
-  expect(entries()).toHaveLength(3)
-  const rendered = await Promise.all(entries().map(entry => entry.renderSvg()))
-  for (const [index, entry] of entries().entries()) {
-    expect(entry.fileName).toMatch(/^(轮廓|图片1|彩窗)_\d{12}_1B-1B_1F-5F\.pdf$/)
-    expect(entry).toMatchObject({ widthMm: 300, heightMm: 464 })
+  expect(entries()).toHaveLength(1)
+  expect(entries()[0].fileName).toMatch(/^\d{12}_1B-1B_1F-5F\.pdf$/)
+  expect(entries()[0]).toMatchObject({ widthMm: 300, heightMm: 464 })
+  expect(entries()[0].pages.map(page => page.label)).toEqual(['轮廓 / 路径', '图片 1（全板）', '彩窗'])
+  const rendered = await Promise.all(entries()[0].pages.map(page => page.renderSvg()))
+  for (const [index] of entries()[0].pages.entries()) {
     const root = new DOMParser().parseFromString(rendered[index], 'image/svg+xml').documentElement
     expect(root.getAttribute('width')).toBe('300mm')
     expect(root.getAttribute('height')).toBe('464mm')
     expect(root.querySelectorAll('g[data-placement-id]')).toHaveLength(1)
     expect(root.querySelector('g[data-placement-id]')?.getAttribute('transform')).toBe('translate(15 22) rotate(90) translate(-10 -5)')
-    const circles = Array.from(root.querySelectorAll('circle'))
-    expect(circles).toHaveLength(2)
-    expect(circles.map(circle => Number(circle.getAttribute('cx')))).toEqual([5.5, 5.5])
-    expect(circles.map(circle => Number(circle.getAttribute('cy')))).toEqual([130.266, 333.734])
-    expect(circles.map(circle => Number(circle.getAttribute('r')))).toEqual([1.5, 1.5])
+    const holes = root.querySelector('[data-board-holes]')!
+    expect(holes.getAttribute('fill')).toBe('none')
+    expect(holes.querySelectorAll('path')).toHaveLength(2)
+    expect(Array.from(holes.querySelectorAll('path'), path => path.getAttribute('d'))).toEqual([
+      'M 4 130.266 A 1.5 1.5 0 1 0 7 130.266 A 1.5 1.5 0 1 0 4 130.266 Z',
+      'M 4 333.734 A 1.5 1.5 0 1 0 7 333.734 A 1.5 1.5 0 1 0 4 333.734 Z',
+    ])
   }
   expect(rendered[0]).toContain('magenta')
   expect(rendered[0]).not.toContain('<image')
@@ -125,8 +128,8 @@ it('applies layer types to same-name SVGs across distinct source IDs without cha
   await waitFor(() => expect(exportButton().disabled).toBe(false))
   fireEvent.click(exportButton())
   await waitFor(() => expect(mocks.exportPdfs).toHaveBeenCalledOnce())
-  expect(entries()).toHaveLength(6)
-  for (const entry of entries().filter(value => value.groupId === 'paths')) expect(await entry.renderSvg()).toContain('订单备注')
+  expect(entries()).toHaveLength(2)
+  for (const entry of entries()) expect(await entry.pages[0].renderSvg()).toContain('订单备注')
 })
 
 it('offers fixed layer types including white ink and omit, and merges layers with the same non-image type', async () => {
@@ -141,21 +144,23 @@ it('offers fixed layer types including white ink and omit, and merges layers wit
   fireEvent.click(exportButton())
   await waitFor(() => expect(mocks.exportPdfs).toHaveBeenCalledOnce())
   expect(entries()).toHaveLength(1)
-  const svg = await entries()[0].renderSvg()
-  expect(entries()[0].groupName).toBe('白墨')
+  expect(entries()[0].pages).toHaveLength(1)
+  const svg = await entries()[0].pages[0].renderSvg()
+  expect(entries()[0].pages[0].label).toBe('白墨')
   expect(svg).toContain('magenta')
   expect(svg).toContain('fill="white"')
   expect(svg).not.toContain('<image')
 })
 
-it('combines corresponding image layers from every SVG into whole-board PDFs and previews each channel independently', async () => {
+it('combines corresponding image layers into separate pages of one whole-board PDF and previews each channel independently', async () => {
   const multipleImages = knownSvg.replace('</svg>', '<image id="back" width="20" height="10" href="data:image/png;base64,QkFDSw=="/></svg>')
   const otherSvg = knownSvg.replace('iVBORw0KGgo=', 'T1RIRVI=')
   const other = { ...piece(2, 70), image: { ...image, id: 'other', sourceImageId: 'other', filePath: 'D:/assets/other.svg' } }
   const otherCopy = { ...other, x: 100, image: { ...other.image, id: 'other#qt-2' } }
   mount([[piece(), piece(1, 40), other, otherCopy]], multipleImages, { sources: { art: multipleImages, other: otherSvg } })
   await ready()
-  expect(screen.getByText(/1 种版式 · 4 个 PDF/)).toBeTruthy()
+  expect(screen.getByText(/1 种版式 · 1 个 PDF/)).toBeTruthy()
+  expect(screen.getByText('版式 1 · 4 页')).toBeTruthy()
   await screen.findByRole('img', { name: '当前版式的导出位置预览' })
   await choose('预览类型', '全部图片图层')
   expect(screen.getByText('生成板材预览…')).toBeTruthy()
@@ -178,9 +183,10 @@ it('combines corresponding image layers from every SVG into whole-board PDFs and
   expect(document.querySelector('.imposition-export-file-list')?.textContent).toContain('图片 2（全板）')
   fireEvent.click(exportButton())
   await waitFor(() => expect(mocks.exportPdfs).toHaveBeenCalledOnce())
-  const imageEntries = entries().filter(value => value.groupId === 'images')
+  expect(entries()).toHaveLength(1)
+  const imageEntries = entries()[0].pages.filter(value => value.label.startsWith('图片'))
   expect(imageEntries).toHaveLength(2)
-  expect(imageEntries.map(value => value.groupName)).toEqual(['图片 1（全板）', '图片 2（全板）'])
+  expect(imageEntries.map(value => value.label)).toEqual(['图片 1（全板）', '图片 2（全板）'])
   const outputs = await Promise.all(imageEntries.map(entry => entry.renderSvg()))
   for (const [index, svg] of outputs.entries()) {
     const root = new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement
@@ -237,6 +243,30 @@ it('defers layer preview changes and never labels a previous SVG as the newly se
   const svg = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsText(blob) })
   expect(svg).toContain('magenta')
   expect(svg).not.toContain('<image')
+})
+
+it('prefixes recognizable layer names in display and accessible controls while preserving SVG identifiers', async () => {
+  const svg = knownSvg.replace('</svg>', `
+    <path id="H_xBxB_Circle_Path_1" d="M1 1H2V2H1Z" fill="none" stroke="magenta"/>
+    <circle id="Circle_Path_2" cx="5" cy="5" r="1" fill="none" stroke="magenta"/>
+    <path id="Path_3" d="M7 1H8V2H7Z" fill="none" stroke="magenta"/>
+  </svg>`)
+  mount([[piece()]], svg)
+  await ready()
+  for (const name of ['轮廓 H_xBxB_Circle_Path_1', '孔 Circle_Path_2', '路径 Path_3', 'artwork']) {
+    expect(screen.getByText(name)).toBeTruthy()
+    expect(screen.getByTitle(name)).toBeTruthy()
+    expect(screen.getByRole('checkbox', { name: `选择图层 ${name}` })).toBeTruthy()
+    expect(screen.getByRole('combobox', { name: `图层 ${name} 类型` })).toBeTruthy()
+  }
+  fireEvent.click(screen.getByRole('checkbox', { name: '选择图层 轮廓 H_xBxB_Circle_Path_1' }))
+  const preview = await screen.findByRole('img', { name: '选中图层预览' }) as HTMLImageElement
+  const blob = blobs.get(preview.src)!
+  const selectedSvg = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsText(blob) })
+  const root = new DOMParser().parseFromString(selectedSvg, 'image/svg+xml').documentElement
+  expect(root.querySelector('[id="H_xBxB_Circle_Path_1"]')).toBeTruthy()
+  expect(root.querySelector('[id="Circle_Path_2"]')).toBeNull()
+  expect(root.querySelector('[id="Path_3"]')).toBeNull()
 })
 
 it('uses the SVG Blob fallback only for an in-memory source without a file path', async () => {
@@ -296,8 +326,8 @@ it('keeps the modal locked while exporting, reports progress and prevents a seco
   expect(onClose).not.toHaveBeenCalled()
   expect(mocks.chooseDirectory).toHaveBeenCalledOnce()
   expect((screen.getByRole('checkbox', { name: '导出版式 1' }) as HTMLInputElement).disabled).toBe(true)
-  act(() => updateProgress({ phase: 'convert', completed: 1, total: 3, fileName: 'current.pdf' }))
-  expect(screen.getByText('生成 PDF：current.pdf')).toBeTruthy()
+  act(() => updateProgress({ phase: 'convert', completed: 1, total: 3, fileName: 'current.pdf', pageNumber: 2, pageCount: 4, pageName: '图片 1（全板）' }))
+  expect(screen.getByText('生成 PDF：current.pdf · 第 2/4 页 图片 1（全板）')).toBeTruthy()
   expect(screen.getByText('已完成 1/3 个文件')).toBeTruthy()
   await act(async () => result.resolve({ completedFiles: ['D:/exports/done.pdf'], cancelled: false, cleanupWarnings: [] }))
   await screen.findByText('已导出 1 个 PDF')
@@ -330,6 +360,6 @@ it('names files with the time of confirmed export rather than the older modal op
   vi.setSystemTime(new Date(2026, 9, 14, 10, 5))
   await act(async () => directory.resolve('D:/exports'))
   await waitFor(() => expect(mocks.exportPdfs).toHaveBeenCalledOnce())
-  expect(entries().map(entry => entry.fileName)).toEqual(['轮廓', '图片1', '彩窗'].map(type => `${type}_202610141005_1B-1B_1F-1F.pdf`))
-  expect(document.querySelector('.imposition-export-file-list')!.textContent).toContain('轮廓_202610141005_1B-1B_1F-1F.pdf')
+  expect(entries().map(entry => entry.fileName)).toEqual(['202610141005_1B-1B_1F-1F.pdf'])
+  expect(document.querySelector('.imposition-export-file-list')!.textContent).toContain('202610141005_1B-1B_1F-1F.pdf')
 })

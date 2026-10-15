@@ -51,3 +51,8 @@ measurement-output/
 # Python runtime and test bytecode
 __pycache__/
 *.py[cod]
+
+# Generated self-contained installer nesting runtime
+src-tauri/resources/imposition-runtime/*
+!src-tauri/resources/imposition-runtime/.gitkeep
+src-tauri/resources/.imposition-runtime-*/

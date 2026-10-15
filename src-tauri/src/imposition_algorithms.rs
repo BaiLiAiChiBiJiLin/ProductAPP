@@ -9,7 +9,7 @@ use std::{
     thread,
     time::Duration,
 };
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use tiny_skia::{PathSegment, Point};
 use usvg::Node;
 
@@ -326,9 +326,18 @@ pub fn pack_irregular(request: NestRequest) -> Result<NestResult, String> {
     pack_irregular_with_progress(request, None)
 }
 
+#[cfg(test)]
 fn pack_irregular_with_progress(
     request: NestRequest,
     progress: Option<&dyn Fn(IrregularProgressEvent)>,
+) -> Result<NestResult, String> {
+    pack_irregular_at_resource(request, progress, None)
+}
+
+fn pack_irregular_at_resource(
+    request: NestRequest,
+    progress: Option<&dyn Fn(IrregularProgressEvent)>,
+    resource_dir: Option<&Path>,
 ) -> Result<NestResult, String> {
     let _solver_guard = IRREGULAR_SOLVER_LOCK
         .get_or_init(|| Mutex::new(()))
@@ -417,7 +426,7 @@ fn pack_irregular_with_progress(
             warnings: Vec::new(),
         }
     } else {
-        pack_local_irregular(valid_request, progress)?
+        pack_local_irregular(valid_request, progress, resource_dir)?
     };
     if let Some(report) = progress {
         report(progress_event(
@@ -465,35 +474,53 @@ fn pack_irregular_with_progress(
 
 const LOCAL_NESTING_ADAPTER: &str = "src-tauri/src/imposition/local_nesting/local_tools_engine.py";
 
-fn local_tool_root() -> Option<std::path::PathBuf> {
+fn local_tool_root(resource_dir: Option<&Path>) -> Option<std::path::PathBuf> {
     let mut candidates = Vec::new();
-    if let Ok(root) = std::env::var("PRINTFLOW_NESTING_ROOT") {
-        candidates.push(std::path::PathBuf::from(root));
+    if let Some(directory) = resource_dir {
+        candidates.push(directory.join("imposition-runtime"));
     }
-    if let Ok(cwd) = std::env::current_dir() {
-        candidates.push(cwd);
-        if let Some(parent) = candidates.last().and_then(|path| path.parent()) {
-            candidates.push(parent.to_path_buf());
+    if cfg!(debug_assertions) {
+        if let Ok(root) = std::env::var("PRINTFLOW_NESTING_ROOT") {
+            candidates.push(std::path::PathBuf::from(root));
+        }
+        if let Ok(cwd) = std::env::current_dir() {
+            candidates.push(cwd.clone());
+            if let Some(parent) = cwd.parent() {
+                candidates.push(parent.to_path_buf());
+            }
         }
     }
     if let Ok(executable) = std::env::current_exe() {
         if let Some(parent) = executable.parent() {
-            candidates.push(parent.to_path_buf());
-            candidates.push(parent.join("resources"));
-            candidates.push(parent.join("..\resources"));
+            candidates.push(parent.join("imposition-runtime"));
+            candidates.push(parent.join("resources/imposition-runtime"));
         }
     }
+    find_local_tool_root(&candidates)
+}
+
+fn find_local_tool_root(candidates: &[std::path::PathBuf]) -> Option<std::path::PathBuf> {
     candidates
-        .into_iter()
+        .iter()
         .find(|root| root.join(LOCAL_NESTING_ADAPTER).is_file())
+        .cloned()
 }
 
 fn local_python(root: &Path) -> Option<std::path::PathBuf> {
-    if let Ok(value) = std::env::var("PRINTFLOW_NESTING_PYTHON") {
-        let path = std::path::PathBuf::from(value);
-        if path.is_file() {
-            return Some(path);
+    let portable = root.join(".tools/nesting/python/python.exe");
+    if portable.is_file() {
+        return Some(portable);
+    }
+    if cfg!(debug_assertions) {
+        if let Ok(value) = std::env::var("PRINTFLOW_NESTING_PYTHON") {
+            let path = std::path::PathBuf::from(value);
+            if path.is_file() {
+                return Some(path);
+            }
         }
+    }
+    if !cfg!(debug_assertions) {
+        return None;
     }
     let candidates = [
         root.join(".tools/nesting/.venv/Scripts/python.exe"),
@@ -540,12 +567,11 @@ fn parse_local_result(stdout: &[u8], algorithm: &str) -> Result<NestResult, Stri
 fn pack_local_irregular(
     request: NestRequest,
     progress: Option<&dyn Fn(IrregularProgressEvent)>,
+    resource_dir: Option<&Path>,
 ) -> Result<NestResult, String> {
     let algorithm = request.irregular_algorithm.clone();
-    let root = local_tool_root().ok_or_else(|| {
-        format!(
-            "{algorithm} 适配器未找到：请保留 src-tauri/src/imposition/local_nesting 源码与 .tools/nesting 运行时"
-        )
+    let root = local_tool_root(resource_dir).ok_or_else(|| {
+        format!("{algorithm} 安装包缺少本地拼版运行组件，请使用包含拼版运行时的安装包重新安装")
     })?;
     let python =
         local_python(&root).ok_or_else(|| format!("{algorithm} 适配器未找到 Python 运行时"))?;
@@ -563,6 +589,9 @@ fn pack_local_irregular(
     .map_err(|error| error.to_string())?;
     let mut command = Command::new(python);
     command
+        .arg("-X")
+        .arg("utf8")
+        .arg("-B")
         .arg(script)
         .current_dir(&root)
         .stdin(Stdio::piped())
@@ -844,7 +873,12 @@ pub async fn pack_imposition_irregular(
     let calculation_app = app.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         let reporter = |event| emit_progress(Some(&calculation_app), event);
-        pack_irregular_with_progress(request, Some(&reporter))
+        let resources = calculation_app
+            .path()
+            .resource_dir()
+            .map_err(|error| format!("读取拼版资源目录失败：{error}"))?;
+        let installed_resources = (!cfg!(debug_assertions)).then_some(resources.as_path());
+        pack_irregular_at_resource(request, Some(&reporter), installed_resources)
     })
     .await
     .map_err(|error| error.to_string())?;
@@ -926,6 +960,76 @@ mod tests {
         assert!((min_y - 3.0).abs() < 1e-5);
         assert!((max_x - 18.0).abs() < 1e-5);
         assert!((max_y - 9.0).abs() < 1e-5);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn development_uses_current_checkout_instead_of_old_packaged_resources() {
+        let project = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        assert_eq!(local_tool_root(None), Some(project.to_path_buf()));
+    }
+
+    #[test]
+    fn installed_resources_take_priority_over_the_development_checkout() {
+        let directory = std::env::temp_dir().join(format!(
+            "printflow installed 资源-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let runtime = directory.join("imposition-runtime");
+        let script = runtime.join(LOCAL_NESTING_ADAPTER);
+        let python = runtime.join(".tools/nesting/python/python.exe");
+        fs::create_dir_all(script.parent().unwrap()).unwrap();
+        fs::create_dir_all(python.parent().unwrap()).unwrap();
+        fs::write(script, "# packaged adapter").unwrap();
+        fs::write(&python, "packaged interpreter").unwrap();
+        assert_eq!(local_tool_root(Some(&directory)), Some(runtime.clone()));
+        assert_eq!(local_python(&runtime), Some(python));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    #[ignore = "requires the generated self-contained installer runtime"]
+    fn installed_runtime_executes_both_strategies_with_the_native_core() {
+        let resource = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources");
+        assert_eq!(
+            local_tool_root(Some(&resource)),
+            Some(resource.join("imposition-runtime"))
+        );
+        for objective in ["least-material", "least-cutting"] {
+            let result = pack_irregular_at_resource(
+                NestRequest {
+                    plate_width_mm: 100.0,
+                    plate_height_mm: 80.0,
+                    effective_width_mm: 85.0,
+                    effective_height_mm: 60.0,
+                    effective_right_mm: 5.0,
+                    spacing_mm: 3.0,
+                    objective: objective.into(),
+                    irregular_algorithm: "local-tools".into(),
+                    items: vec![NestItem {
+                        id: "安装测试".into(),
+                        width_mm: 10.0,
+                        height_mm: 8.0,
+                        quantity: 4,
+                        polygon: Some(vec![[1.0, 1.0], [9.0, 1.0], [5.0, 7.0]]),
+                    }],
+                },
+                None,
+                Some(&resource),
+            )
+            .unwrap();
+            assert_eq!(result.placements.len(), 4);
+            assert_eq!(result.sheets_used, 1);
+            assert!(result.unplaced.is_empty());
+            assert!(
+                result.algorithm.contains("Rust 位图"),
+                "{}",
+                result.algorithm
+            );
+        }
     }
 
     #[test]

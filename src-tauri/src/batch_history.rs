@@ -33,6 +33,7 @@ pub struct BatchListResult {
 /// SQL filters and pages summaries only. Never send asset arrays or SVG content
 /// while browsing history; artwork is fetched only when opening a batch.
 pub fn list(conn: &Connection, query: &BatchListQuery) -> Result<BatchListResult, String> {
+    crate::shared_transfers::store::ensure_store(conn)?;
     let page_size = query.page_size.unwrap_or(12).clamp(1, 100);
     let search = query.search.as_deref().unwrap_or("").trim();
     let parse = |value: &Option<String>| {
@@ -54,7 +55,7 @@ pub fn list(conn: &Connection, query: &BatchListQuery) -> Result<BatchListResult
     let to = to.map(|date| date.to_rfc3339());
     let customer =
         "COALESCE(NULLIF(trim(json_extract(metadata, '$.customerName')), ''), '图片批次')";
-    let condition = format!("WHERE (?1 = '' OR instr(lower({customer}), lower(?1)) > 0)
+    let condition = format!("WHERE NOT EXISTS(SELECT 1 FROM shared_transfer_outbox o WHERE o.batch_id=batches.id AND o.status IN ('preparing','publishing','published','received','complete')) AND (?1 = '' OR instr(lower({customer}), lower(?1)) > 0)
         AND (?2 IS NULL OR julianday(saved_at) >= julianday(?2)) AND (?3 IS NULL OR julianday(saved_at) < julianday(?3))");
     let tx = conn
         .unchecked_transaction()
@@ -164,7 +165,10 @@ pub(super) fn artwork(
 /// Delete saved history and its unreferenced artwork. Review snapshots alone
 /// do not prevent deletion; later production submission can report missing files.
 pub fn delete(conn: &Connection, id: &str) -> Result<(), String> {
-    let payload: Option<String> = conn
+    let transaction = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    crate::shared_transfers::store::ensure_editable(&transaction,"batch",id)?;
+    let payload: Option<String> = transaction
         .query_row("SELECT payload FROM batches WHERE id=?1", [id], |row| {
             row.get(0)
         })
@@ -175,7 +179,7 @@ pub fn delete(conn: &Connection, id: &str) -> Result<(), String> {
     };
     let assets: Vec<Asset> = serde_json::from_str(&payload).unwrap_or_default();
     let mut referenced = std::collections::HashSet::new();
-    let mut stmt = conn
+    let mut stmt = transaction
         .prepare("SELECT payload FROM batches WHERE id<>?1")
         .map_err(|e| e.to_string())?;
     let rows = stmt
@@ -191,20 +195,27 @@ pub fn delete(conn: &Connection, id: &str) -> Result<(), String> {
             }
         }
     }
-    conn.execute("DELETE FROM batches WHERE id=?1", [id])
+    drop(stmt);
+    transaction.execute("DELETE FROM batches WHERE id=?1", [id])
         .map_err(|e| e.to_string())?;
-    crate::batch_thumbnails::remove(conn, id)?;
+    crate::batch_thumbnails::remove(&transaction, id)?;
+    let mut cleanup_paths = Vec::new();
     for asset in assets {
         if referenced.contains(&asset.id) {
             continue;
         }
-        if crate::production_imposition::asset_referenced(conn, &asset.id)? {
+        if crate::production_imposition::asset_referenced(&transaction, &asset.id)? {
             continue;
         }
-        conn.execute("DELETE FROM assets WHERE id=?1", [&asset.id])
+        crate::shared_transfers::store::ensure_editable(&transaction,"asset",&asset.id)?;
+        transaction.execute("DELETE FROM assets WHERE id=?1", [&asset.id])
             .map_err(|e| e.to_string())?;
+        cleanup_paths.push(asset.storage_path);
+    }
+    transaction.commit().map_err(|error| error.to_string())?;
+    for path in cleanup_paths {
         if let Err(error) =
-            crate::asset_storage::remove_saved_file(conn, std::path::Path::new(&asset.storage_path))
+            crate::asset_storage::remove_saved_file(conn, std::path::Path::new(&path))
         {
             log::warn!("删除批次资源文件失败：{error}");
         }

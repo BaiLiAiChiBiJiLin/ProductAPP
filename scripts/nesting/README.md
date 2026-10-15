@@ -46,3 +46,12 @@
 - 独立 benchmark CLI 使用真实 4 种 SVG、每种 QT 1 完成计算、几何检查及 SVG 预览输出。临时对照报告保存在系统临时目录，不再写入项目根目录。
 
 此次只整理运行模块并移除独立工具闲置代码，不改变拼版搜索策略。旧源码快照与测试报告为临时验收数据，不属于运行依赖。
+
+
+## Windows 安装包中的拼版运行时
+
+正式打包前自动执行 `node scripts/bundle-nesting-runtime.mjs`。构建机需要 Windows x64、Python 3.13（可由 `PRINTFLOW_NESTING_BUILD_PYTHON` 指定）和 Rust MSVC 工具链；GitHub 发布流程已配置 Python。构建脚本固定安装生产依赖、编译 release 搜索 DLL，并把四个 Python 适配模块、独立解释器、标准库和依赖写入 `src-tauri/resources/imposition-runtime/`，通过 Tauri 资源映射随安装包发布。生成目录不提交 Git，不包含虚拟环境绝对路径、开发测试或订单数据。
+
+每次打包都会从项目目录外验证两种策略使用内置 Rust 核心；运行时还会被复制到含空格和中文的临时安装目录验证搬迁。正式版优先使用 Tauri `resource_dir()/imposition-runtime`，不从当前工作目录查找源码，也不依赖目标电脑的系统 Python。Python 使用相对 `._pth` 隔离模块路径，缓存写入用户数据目录。
+
+打包：`npm run tauri -- build --bundles nsis`。重新生成并安装新版安装包后生效；已经生成的旧安装包不会自动补齐资源。

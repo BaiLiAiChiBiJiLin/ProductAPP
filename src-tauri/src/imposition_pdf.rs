@@ -1,4 +1,4 @@
-//! Board-sized, one-layer-group-per-file PDF export. The original SVG coordinate
+//! Board-sized, one-layout-per-file, ordered multi-page PDF export. The SVG coordinate
 //! system is retained; unlike schematic exports, no A4 page transform is applied.
 use pdf_writer::Finish;
 use serde::Serialize;
@@ -7,18 +7,27 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    sync::{atomic::{AtomicU64, AtomicUsize, Ordering}, Arc, Mutex},
+    sync::{
+        atomic::{AtomicU64, AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
 };
 use tauri::Emitter;
 
 fn page_size(width_mm: f64, height_mm: f64) -> Result<(f32, f32), String> {
-    if !width_mm.is_finite() || !height_mm.is_finite()
-        || width_mm <= 0.0 || height_mm <= 0.0
-        || width_mm > 10_000.0 || height_mm > 10_000.0
+    if !width_mm.is_finite()
+        || !height_mm.is_finite()
+        || width_mm <= 0.0
+        || height_mm <= 0.0
+        || width_mm > 10_000.0
+        || height_mm > 10_000.0
     {
         return Err("板材宽高必须为 0 至 10000 mm 之间的有效数字".into());
     }
-    Ok(((width_mm * 72.0 / 25.4) as f32, (height_mm * 72.0 / 25.4) as f32))
+    Ok((
+        (width_mm * 72.0 / 25.4) as f32,
+        (height_mm * 72.0 / 25.4) as f32,
+    ))
 }
 
 fn checked_output(output: &str) -> Result<PathBuf, String> {
@@ -26,9 +35,14 @@ fn checked_output(output: &str) -> Result<PathBuf, String> {
     if !path.is_absolute() || !path.parent().is_some_and(Path::is_dir) {
         return Err("请选择已存在的 PDF 导出文件夹".into());
     }
-    let name = path.file_name().and_then(|name| name.to_str()).ok_or("PDF 文件名无效")?;
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or("PDF 文件名无效")?;
     if !name.to_ascii_lowercase().ends_with(".pdf")
-        || name.chars().any(|c| c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'))
+        || name.chars().any(|c| {
+            c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*')
+        })
         || name.ends_with([' ', '.'])
     {
         return Err(format!("PDF 文件名无效：{name}"));
@@ -42,50 +56,154 @@ fn checked_output(output: &str) -> Result<PathBuf, String> {
 #[tauri::command]
 pub async fn check_imposition_pdf_outputs(outputs: Vec<String>) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        if outputs.is_empty() { return Err("没有可导出的拼版图层组".into()); }
+        if outputs.is_empty() {
+            return Err("没有可导出的拼版版式".into());
+        }
         let mut names = HashSet::new();
         for output in outputs {
             let path = checked_output(&output)?;
             let key = path.to_string_lossy().to_lowercase();
-            if !names.insert(key) { return Err("导出文件名重复，请调整版式或图层组文件名".into()); }
+            if !names.insert(key) {
+                return Err("导出文件名重复，请调整版式文件名".into());
+            }
         }
         Ok(())
-    }).await.map_err(|error| error.to_string())?
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct Progress<'a> { id: &'a str, phase: &'a str }
+struct Progress<'a> {
+    id: &'a str,
+    phase: &'a str,
+    page_index: usize,
+    page_count: usize,
+}
 
 #[tauri::command]
 pub async fn export_imposition_pdf(
     app: tauri::AppHandle,
     output: String,
     id: String,
+    page_ids: Vec<String>,
     width_mm: f64,
     height_mm: f64,
 ) -> Result<(), String> {
-    // Validate the id before dispatching work; it may never designate a path.
-    let staged = crate::staged_artwork::path(&id)?;
+    // The file id is only a progress key. Each page resource must independently
+    // pass the stage identifier allowlist before any filesystem reads happen.
+    if page_ids.is_empty() {
+        return Err("没有可导出的拼版页面".into());
+    }
+    let staged: Vec<PathBuf> = page_ids
+        .iter()
+        .map(|id| crate::staged_artwork::path(id))
+        .collect::<Result<_, _>>()?;
     let size = page_size(width_mm, height_mm)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let output = checked_output(&output)?;
-        let report = |phase: &str| {
-            let _ = app.emit("imposition-pdf-export-progress", Progress { id: &id, phase });
+        let report = |page_index: usize, phase: &str| {
+            let _ = app.emit(
+                "imposition-pdf-export-progress",
+                Progress {
+                    id: &id,
+                    phase,
+                    page_index,
+                    page_count: staged.len(),
+                },
+            );
         };
-        let source = fs::read_to_string(staged).map_err(|error| format!("读取拼版导出页面失败：{error}"))?;
-        let bytes = render_pdf(source, size, report)?;
-        report("write");
-        commit_pdf(&output, &bytes)
-    }).await.map_err(|error| error.to_string())?
+        export_staged_pdf(&output, &staged, size, report)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
-fn render_pdf(svg: String, size: (f32, f32), report: impl Fn(&str)) -> Result<Vec<u8>, String> {
-    report("resources");
+fn export_staged_pdf(
+    output: &str,
+    staged: &[PathBuf],
+    size: (f32, f32),
+    report: impl Fn(usize, &str),
+) -> Result<(), String> {
+    let output = checked_output(output)?;
+    let bytes = render_pdf_pages(
+        staged.len(),
+        |index| {
+            fs::read_to_string(&staged[index])
+                .map_err(|error| format!("读取拼版导出页面失败：{error}"))
+        },
+        size,
+        &report,
+    )?;
+    report(staged.len(), "write");
+    commit_pdf(&output, &bytes)
+}
+
+/// Only the current page's SVG tree and decoded images are retained. Encoded
+/// PDF objects accumulate until all pages succeed and can be published atomically.
+fn render_pdf_pages(
+    page_count: usize,
+    mut load_page: impl FnMut(usize) -> Result<String, String>,
+    size: (f32, f32),
+    report: impl Fn(usize, &str),
+) -> Result<Vec<u8>, String> {
+    if page_count == 0 {
+        return Err("没有可导出的拼版页面".into());
+    }
+    let count = i32::try_from(page_count).map_err(|_| "拼版 PDF 页面数量过多")?;
     let client = reqwest::blocking::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(4))
-        .timeout(std::time::Duration::from_secs(20)).build().map_err(|error| error.to_string())?;
-    let embedded = crate::embed_external_raster_images(svg, &client, &mut Default::default())?;
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+        .map_err(|error| error.to_string())?;
+    let mut pdf = pdf_writer::Pdf::new();
+    let catalog = pdf_writer::Ref::new(1);
+    let pages = pdf_writer::Ref::new(2);
+    let mut next_ref = 3;
+    let mut page_refs = Vec::with_capacity(page_count);
+    pdf.catalog(catalog).pages(pages);
+    for index in 0..page_count {
+        let page = load_page(index)
+            .and_then(|svg| {
+                append_pdf_page(
+                    &mut pdf,
+                    pages,
+                    &mut next_ref,
+                    svg,
+                    size,
+                    &client,
+                    |phase| report(index + 1, phase),
+                )
+            })
+            .map_err(|error| format!("第 {} / {page_count} 页导出失败：{error}", index + 1))?;
+        page_refs.push(page);
+    }
+    pdf.pages(pages).kids(page_refs).count(count);
+    Ok(pdf.finish())
+}
+
+#[cfg(test)]
+fn render_pdf(svg: String, size: (f32, f32), report: impl Fn(&str)) -> Result<Vec<u8>, String> {
+    let mut source = Some(svg);
+    render_pdf_pages(
+        1,
+        |_| Ok(source.take().unwrap()),
+        size,
+        |_, phase| report(phase),
+    )
+}
+
+fn append_pdf_page(
+    pdf: &mut pdf_writer::Pdf,
+    pages: pdf_writer::Ref,
+    next_ref: &mut i32,
+    svg: String,
+    size: (f32, f32),
+    client: &reqwest::blocking::Client,
+    report: impl Fn(&str),
+) -> Result<pdf_writer::Ref, String> {
+    report("resources");
+    let embedded = crate::embed_external_raster_images(svg, client, &mut Default::default())?;
     report("flatten");
     // Keep <image> intact. Replacing it with <g> loses image-local clipping,
     // opacity, masks and viewport/preserveAspectRatio semantics.
@@ -101,32 +219,55 @@ fn render_pdf(svg: String, size: (f32, f32), report: impl Fn(&str)) -> Result<Ve
     report("convert");
     let (chunk, svg_ref) = svg2pdf::to_chunk(&tree, Default::default())
         .map_err(|error| format!("拼版矢量 PDF 转换失败：{error}"))?;
-    let mut next_ref = 100;
+    // Every page, content stream and converted SVG object shares one allocator.
+    // SVG chunks restart their local ids, so each needs a fresh local mapping.
+    let page_ref = pdf_writer::Ref::new(*next_ref);
+    *next_ref += 1;
+    let content_ref = pdf_writer::Ref::new(*next_ref);
+    *next_ref += 1;
     let mut refs = std::collections::HashMap::new();
-    let chunk = chunk.renumber(|old| *refs.entry(old).or_insert_with(|| {
-        let allocated = pdf_writer::Ref::new(next_ref); next_ref += 1; allocated
-    }));
+    let chunk = chunk.renumber(|old| {
+        *refs.entry(old).or_insert_with(|| {
+            let allocated = pdf_writer::Ref::new(*next_ref);
+            *next_ref += 1;
+            allocated
+        })
+    });
     let svg_ref = *refs.get(&svg_ref).ok_or("拼版 PDF 图层资源引用丢失")?;
-    let mut pdf = pdf_writer::Pdf::new();
-    let catalog = pdf_writer::Ref::new(1);
-    let pages = pdf_writer::Ref::new(2);
-    let page = pdf_writer::Ref::new(3);
-    let content_ref = pdf_writer::Ref::new(4);
-    pdf.catalog(catalog).pages(pages);
-    pdf.pages(pages).kids([page]).count(1);
     pdf.extend(&chunk);
     // svg2pdf::to_chunk returns a normalized form. Scaling to physical points
     // once preserves the SVG viewBox (including transformed/rotated products).
     let mut content = pdf_writer::Content::new();
-    content.transform([size.0, 0.0, 0.0, size.1, 0.0, 0.0]).x_object(pdf_writer::Name(b"BoardSvg"));
+    content
+        .save_state()
+        .transform([size.0, 0.0, 0.0, size.1, 0.0, 0.0])
+        .x_object(pdf_writer::Name(b"BoardSvg"))
+        .restore_state();
+    // Draw the board outline in physical points after restoring the SVG scale.
+    // Half-width inset keeps the complete 0.2 mm stroke inside the media box.
+    let border_width = (0.2 * 72.0 / 25.4) as f32;
+    content
+        .set_stroke_rgb(0.0, 0.0, 0.0)
+        .set_line_width(border_width)
+        .rect(
+            border_width / 2.0,
+            border_width / 2.0,
+            size.0 - border_width,
+            size.1 - border_width,
+        )
+        .stroke();
     pdf.stream(content_ref, &content.finish());
-    let mut page = pdf.page(page);
-    page.parent(pages).media_box(pdf_writer::Rect::new(0.0, 0.0, size.0, size.1)).contents(content_ref);
+    let mut page = pdf.page(page_ref);
+    page.parent(pages)
+        .media_box(pdf_writer::Rect::new(0.0, 0.0, size.0, size.1))
+        .contents(content_ref);
     let mut resources = page.resources();
-    resources.x_objects().pair(pdf_writer::Name(b"BoardSvg"), svg_ref);
+    resources
+        .x_objects()
+        .pair(pdf_writer::Name(b"BoardSvg"), svg_ref);
     resources.finish();
     page.finish();
-    Ok(pdf.finish())
+    Ok(page_ref)
 }
 
 #[derive(Default)]
@@ -141,7 +282,9 @@ struct ImageResolverState {
 impl ImageResolverState {
     fn fail(&self, message: String) {
         let mut error = self.error.lock().unwrap();
-        if error.is_none() { *error = Some(message); }
+        if error.is_none() {
+            *error = Some(message);
+        }
     }
     fn svg(&self, data: &[u8], options: &usvg::Options) -> Option<usvg::ImageKind> {
         // Staged resources may reference one another. Bound nesting depth so a
@@ -153,7 +296,10 @@ impl ImageResolverState {
         } else {
             match usvg::Tree::from_data(data, options) {
                 Ok(tree) => Some(usvg::ImageKind::SVG(tree)),
-                Err(error) => { self.fail(format!("嵌入 SVG 图片解析失败：{error}")); None }
+                Err(error) => {
+                    self.fail(format!("嵌入 SVG 图片解析失败：{error}"));
+                    None
+                }
             }
         };
         self.depth.fetch_sub(1, Ordering::Relaxed);
@@ -169,15 +315,27 @@ fn parse_board_svg(svg: &str) -> Result<usvg::Tree, String> {
     options.image_href_resolver.resolve_data = Box::new(move |mime, bytes, options| {
         let key = (mime.to_string(), bytes.clone());
         let cached = data_state.images.lock().unwrap().get(&key).cloned();
-        if let Some(image) = cached { return Some(image); }
+        if let Some(image) = cached {
+            return Some(image);
+        }
         // usvg's default SVG-image loader discards *all* nested images. Parse
         // with these same bounded resolvers instead, retaining embedded PNGs.
-        let is_svg = mime == "image/svg+xml" || mime == "text/plain"
-            && String::from_utf8_lossy(&bytes).trim_start_matches('\u{feff}').trim_start().starts_with('<');
-        let image = if is_svg { data_state.svg(&bytes, options) }
-            else { default_data(mime, bytes, options) };
-        if let Some(image) = image.as_ref() { data_state.images.lock().unwrap().insert(key, image.clone()); }
-        else { data_state.fail(format!("无法解析嵌入的 {mime} 图片，已停止导出以避免缺图")); }
+        let is_svg = mime == "image/svg+xml"
+            || mime == "text/plain"
+                && String::from_utf8_lossy(&bytes)
+                    .trim_start_matches('\u{feff}')
+                    .trim_start()
+                    .starts_with('<');
+        let image = if is_svg {
+            data_state.svg(&bytes, options)
+        } else {
+            default_data(mime, bytes, options)
+        };
+        if let Some(image) = image.as_ref() {
+            data_state.images.lock().unwrap().insert(key, image.clone());
+        } else {
+            data_state.fail(format!("无法解析嵌入的 {mime} 图片，已停止导出以避免缺图"));
+        }
         image
     });
     let staged_state = state.clone();
@@ -190,18 +348,25 @@ fn parse_board_svg(svg: &str) -> Result<usvg::Tree, String> {
         }
         match crate::staged_artwork::read(reference) {
             Ok(svg) => staged_state.svg(svg.as_bytes(), options),
-            Err(error) => { staged_state.fail(error); None }
+            Err(error) => {
+                staged_state.fail(error);
+                None
+            }
         }
     });
     let tree = usvg::Tree::from_str(svg, &options)
         .map_err(|error| format!("拼版 SVG 解析失败：{error}"))?;
-    if let Some(error) = state.error.lock().unwrap().take() { return Err(error); }
+    if let Some(error) = state.error.lock().unwrap().take() {
+        return Err(error);
+    }
     Ok(tree)
 }
 
 struct PendingFile(PathBuf);
 impl Drop for PendingFile {
-    fn drop(&mut self) { let _ = fs::remove_file(&self.0); }
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
 }
 
 /// Build a complete file in the same directory, then publish it without ever
@@ -209,13 +374,23 @@ impl Drop for PendingFile {
 fn commit_pdf(output: &Path, bytes: &[u8]) -> Result<(), String> {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let parent = output.parent().ok_or("PDF 导出目录无效")?;
-    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
-        .map_err(|error| error.to_string())?.as_nanos();
-    let temp = parent.join(format!(".printflow-pdf-{}-{stamp}-{}.tmp", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
-    let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&temp)
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_nanos();
+    let temp = parent.join(format!(
+        ".printflow-pdf-{}-{stamp}-{}.tmp",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temp)
         .map_err(|error| format!("创建 PDF 临时文件失败：{error}"))?;
     let pending = PendingFile(temp);
-    file.write_all(bytes).and_then(|_| file.sync_all())
+    file.write_all(bytes)
+        .and_then(|_| file.sync_all())
         .map_err(|error| format!("写入 PDF 失败：{error}"))?;
     drop(file);
     // std::fs::rename also replaces an existing Windows destination. Invoke
@@ -225,8 +400,11 @@ fn commit_pdf(output: &Path, bytes: &[u8]) -> Result<(), String> {
     #[cfg(not(windows))]
     let result = fs::hard_link(&pending.0, output);
     result.map_err(|error| {
-        if output.exists() { format!("文件已存在，未覆盖：{}", output.display()) }
-        else { format!("提交 PDF 文件失败：{error}") }
+        if output.exists() {
+            format!("文件已存在，未覆盖：{}", output.display())
+        } else {
+            format!("提交 PDF 文件失败：{error}")
+        }
     })
 }
 
@@ -242,7 +420,9 @@ fn move_without_replace(source: &Path, target: &Path) -> std::io::Result<()> {
     // Both UTF-16 buffers are NUL terminated and remain alive throughout the call.
     if unsafe { MoveFileExW(source.as_ptr(), target.as_ptr(), 0) } == 0 {
         Err(std::io::Error::last_os_error())
-    } else { Ok(()) }
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -253,9 +433,13 @@ mod tests {
         let mut png = tiny_skia::Pixmap::new(2, 2).unwrap();
         png.fill(tiny_skia::Color::from_rgba8(0, 255, 0, 255));
         let png = base64::engine::general_purpose::STANDARD.encode(png.encode_png().unwrap());
-        let inner = format!(r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="20" viewBox="0 0 10 20"><rect width="10" height="20" fill="red"/><image x="0" y="10" width="10" height="10" href="data:image/png;base64,{png}"/></svg>"#);
+        let inner = format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="20" viewBox="0 0 10 20"><rect width="10" height="20" fill="red"/><image x="0" y="10" width="10" height="10" href="data:image/png;base64,{png}"/></svg>"#
+        );
         let inner = base64::engine::general_purpose::STANDARD.encode(inner);
-        format!(r##"<svg xmlns="http://www.w3.org/2000/svg" width="300mm" height="464mm" viewBox="0 0 300 464"><defs><clipPath id="clip"><rect x="10" y="10" width="12" height="30"/></clipPath><mask id="mask" maskUnits="userSpaceOnUse" x="50" y="10" width="30" height="30"><rect x="50" y="10" width="15" height="30" fill="white"/></mask><g id="source"><image x="10" y="10" width="30" height="30" preserveAspectRatio="none" opacity="0.5" clip-path="url(#clip)" href="data:image/svg+xml;base64,{inner}"/><image x="50" y="10" width="30" height="30" preserveAspectRatio="xMidYMid meet" mask="url(#mask)" href="data:image/svg+xml;base64,{inner}"/><image x="90" y="10" width="30" height="30" preserveAspectRatio="none" style="opacity:0.25" href="data:image/svg+xml;base64,{inner}"/></g></defs><use href="#source" transform="translate(0 100)"/><use href="#source" transform="translate(180 200) rotate(90)"/></svg>"##)
+        format!(
+            r##"<svg xmlns="http://www.w3.org/2000/svg" width="300mm" height="464mm" viewBox="0 0 300 464"><defs><clipPath id="clip"><rect x="10" y="10" width="12" height="30"/></clipPath><mask id="mask" maskUnits="userSpaceOnUse" x="50" y="10" width="30" height="30"><rect x="50" y="10" width="15" height="30" fill="white"/></mask><g id="source"><image x="10" y="10" width="30" height="30" preserveAspectRatio="none" opacity="0.5" clip-path="url(#clip)" href="data:image/svg+xml;base64,{inner}"/><image x="50" y="10" width="30" height="30" preserveAspectRatio="xMidYMid meet" mask="url(#mask)" href="data:image/svg+xml;base64,{inner}"/><image x="90" y="10" width="30" height="30" preserveAspectRatio="none" style="opacity:0.25" href="data:image/svg+xml;base64,{inner}"/></g></defs><use href="#source" transform="translate(0 100)"/><use href="#source" transform="translate(180 200) rotate(90)"/></svg>"##
+        )
     }
     #[test]
     fn shared_nested_svg_images_preserve_clip_opacity_mask_viewports_and_raster_children() {
@@ -263,35 +447,82 @@ mod tests {
         let tree = parse_board_svg(&svg).unwrap();
         let mut pixels = tiny_skia::Pixmap::new(300, 464).unwrap();
         pixels.fill(tiny_skia::Color::WHITE);
-        resvg::render(&tree, tiny_skia::Transform::from_scale(300.0 / tree.size().width(), 464.0 / tree.size().height()), &mut pixels.as_mut());
-        let color = |x, y| { let p = pixels.pixel(x, y).unwrap(); [p.red(), p.green(), p.blue()] };
-        assert_eq!(color(17, 115), [255, 128, 128], "image opacity must survive a defs/use placement");
+        resvg::render(
+            &tree,
+            tiny_skia::Transform::from_scale(
+                300.0 / tree.size().width(),
+                464.0 / tree.size().height(),
+            ),
+            &mut pixels.as_mut(),
+        );
+        let color = |x, y| {
+            let p = pixels.pixel(x, y).unwrap();
+            [p.red(), p.green(), p.blue()]
+        };
+        assert_eq!(
+            color(17, 115),
+            [255, 128, 128],
+            "image opacity must survive a defs/use placement"
+        );
         assert_eq!(color(25, 115), [255, 255, 255], "image clip must survive");
-        assert_eq!(color(17, 130), [128, 255, 128], "nested PNG must not be discarded");
-        assert_eq!(color(52, 115), [255, 255, 255], "meet centers the narrow SVG in the image viewport");
+        assert_eq!(
+            color(17, 130),
+            [128, 255, 128],
+            "nested PNG must not be discarded"
+        );
+        assert_eq!(
+            color(52, 115),
+            [255, 255, 255],
+            "meet centers the narrow SVG in the image viewport"
+        );
         assert_eq!(color(60, 115), [255, 0, 0]);
         assert_eq!(color(70, 115), [255, 255, 255], "image mask must survive");
-        assert_eq!(color(100, 115), [255, 191, 191], "none stretches and image-local style remains");
-        assert_eq!(color(165, 217), [255, 128, 128], "second use rotation preserves the same layers");
+        assert_eq!(
+            color(100, 115),
+            [255, 191, 191],
+            "none stretches and image-local style remains"
+        );
+        assert_eq!(
+            color(165, 217),
+            [255, 128, 128],
+            "second use rotation preserves the same layers"
+        );
         let pdf = render_pdf(svg, page_size(300.0, 464.0).unwrap(), |_| {}).unwrap();
-        assert!(String::from_utf8_lossy(&pdf).contains("/Subtype /Image"), "nested PNG must reach PDF conversion");
+        assert!(
+            String::from_utf8_lossy(&pdf).contains("/Subtype /Image"),
+            "nested PNG must reach PDF conversion"
+        );
     }
     #[test]
     fn invalid_embedded_svg_fails_instead_of_silently_dropping_an_image() {
         let encoded = base64::engine::general_purpose::STANDARD.encode("<svg broken");
-        let svg = format!(r#"<svg xmlns="http://www.w3.org/2000/svg" width="300mm" height="464mm"><image width="20" height="20" href="data:image/svg+xml;base64,{encoded}"/></svg>"#);
-        assert!(parse_board_svg(&svg).unwrap_err().contains("嵌入 SVG 图片解析失败"));
+        let svg = format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="300mm" height="464mm"><image width="20" height="20" href="data:image/svg+xml;base64,{encoded}"/></svg>"#
+        );
+        assert!(parse_board_svg(&svg)
+            .unwrap_err()
+            .contains("嵌入 SVG 图片解析失败"));
     }
     fn scratch() -> PathBuf {
-        let path = std::env::temp_dir().join(format!("printflow-imposition-pdf-test-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
-        fs::create_dir(&path).unwrap(); path
+        let path = std::env::temp_dir().join(format!(
+            "printflow-imposition-pdf-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&path).unwrap();
+        path
     }
     #[test]
     fn board_dimensions_are_mm_not_a4() {
         let (w, h) = page_size(300.0, 464.0).unwrap();
         assert!((w - 850.3937).abs() < 0.001);
         assert!((h - 1315.2756).abs() < 0.001);
-        for invalid in [0.0, -1.0, f64::NAN, f64::INFINITY, 10_001.0] { assert!(page_size(invalid, 464.0).is_err()); }
+        for invalid in [0.0, -1.0, f64::NAN, f64::INFINITY, 10_001.0] {
+            assert!(page_size(invalid, 464.0).is_err());
+        }
         assert!(crate::staged_artwork::path("../secret").is_err());
     }
     #[test]
@@ -299,7 +530,10 @@ mod tests {
         let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="300mm" height="464mm" viewBox="0 0 300 464"><defs><linearGradient id="g"><stop stop-color="red"/><stop offset="1" stop-color="blue"/></linearGradient><clipPath id="c"><rect width="20" height="30"/></clipPath></defs><g transform="translate(70 120) rotate(90)"><rect width="40" height="40" fill="url(#g)" clip-path="url(#c)"/></g><path d="M 15 20 L 45 20 L 45 60 Z" fill="none" stroke="magenta" stroke-width="0.1"/></svg>"##;
         let pdf = render_pdf(svg.into(), page_size(300.0, 464.0).unwrap(), |_| {}).unwrap();
         let text = String::from_utf8_lossy(&pdf);
-        assert!(text.contains("/MediaBox [0 0 850.3937 1315.2756]"), "{text}");
+        assert!(
+            text.contains("/MediaBox [0 0 850.3937 1315.2756]"),
+            "{text}"
+        );
         assert!(text.contains("850.3937 0 0 1315.2756 0 0 cm"));
         assert!(text.contains("/ShadingType"), "gradient must stay vector");
         assert!(!text.contains("595.2756"));
@@ -307,11 +541,198 @@ mod tests {
     #[test]
     fn board_pdf_rejects_mismatched_svg_page_instead_of_distorting() {
         let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"210mm\" height=\"297mm\"><path d=\"M0 0L1 1\"/></svg>";
-        assert!(render_pdf(svg.into(), page_size(300.0, 464.0).unwrap(), |_| {}).unwrap_err().contains("比例"));
+        assert!(
+            render_pdf(svg.into(), page_size(300.0, 464.0).unwrap(), |_| {})
+                .unwrap_err()
+                .contains("比例")
+        );
+    }
+    #[test]
+    fn ordered_pages_keep_independent_resources_and_identical_physical_board_sizes() {
+        use std::cell::RefCell;
+        let colored_page = |color: &str| {
+            format!(
+                r##"<svg xmlns="http://www.w3.org/2000/svg" width="300mm" height="464mm" viewBox="0 0 300 464"><defs><linearGradient id="g"><stop stop-color="{color}"/><stop offset="1" stop-color="white"/></linearGradient></defs><path d="M20 20H80V80H20Z" fill="url(#g)"/></svg>"##
+            )
+        };
+        let mut sources = [
+            colored_page("red"),
+            nested_svg_fixture(),
+            colored_page("blue"),
+        ]
+        .into_iter();
+        let events = RefCell::new(Vec::new());
+        let bytes = render_pdf_pages(
+            3,
+            |index| {
+                events.borrow_mut().push(format!("load:{index}"));
+                Ok(sources.next().unwrap())
+            },
+            page_size(300.0, 464.0).unwrap(),
+            |index, phase| events.borrow_mut().push(format!("{phase}:{index}")),
+        )
+        .unwrap();
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("/Count 3"));
+        assert_eq!(
+            text.matches("/MediaBox [0 0 850.3937 1315.2756]").count(),
+            3
+        );
+        let mut object_ids = HashSet::new();
+        let mut object_references = Vec::new();
+        for object in text.split("endobj") {
+            // Only scan object dictionaries, not binary image/compressed streams.
+            let header = object.split("\nstream\n").next().unwrap();
+            for line in header.lines() {
+                if let Some(id) = line
+                    .strip_suffix(" 0 obj")
+                    .and_then(|id| id.parse::<i32>().ok())
+                {
+                    assert!(
+                        object_ids.insert(id),
+                        "PDF object {id} was reused across pages"
+                    );
+                }
+            }
+            let tokens: Vec<_> = header.split_whitespace().collect();
+            for reference in tokens
+                .windows(3)
+                .filter(|tokens| tokens[1] == "0" && tokens[2] == "R")
+            {
+                if let Ok(id) = reference[0].trim_start_matches('[').parse::<i32>() {
+                    object_references.push(id);
+                }
+            }
+        }
+        assert!(
+            object_ids.len() > 15,
+            "fixture must include real per-page image/gradient resources"
+        );
+        for id in object_references {
+            assert!(
+                object_ids.contains(&id),
+                "PDF refers to missing object {id}"
+            );
+        }
+        let board_refs: Vec<_> = text
+            .lines()
+            .filter_map(|line| {
+                line.trim()
+                    .strip_prefix("/BoardSvg ")
+                    .and_then(|value| value.strip_suffix(" 0 R"))
+            })
+            .collect();
+        assert_eq!(board_refs.len(), 3);
+        assert_eq!(
+            board_refs.iter().collect::<HashSet<_>>().len(),
+            3,
+            "each page must refer to its own converted SVG"
+        );
+        let events = events.borrow();
+        for index in 1..3 {
+            let converted = events
+                .iter()
+                .position(|event| event == &format!("convert:{index}"))
+                .unwrap();
+            let next_load = events
+                .iter()
+                .position(|event| event == &format!("load:{index}"))
+                .unwrap();
+            assert!(
+                converted < next_load,
+                "load only the next SVG after converting the current page"
+            );
+        }
+    }
+    #[test]
+    fn every_pdf_page_has_an_inset_point_two_mm_black_vector_board_border() {
+        let size = page_size(300.0, 464.0).unwrap();
+        let bytes = render_pdf_pages(2, |_| Ok(nested_svg_fixture()), size, |_, _| {}).unwrap();
+        let text = String::from_utf8_lossy(&bytes);
+        let streams: Vec<_> = text
+            .split("\nstream\n")
+            .skip(1)
+            .filter_map(|part| {
+                let content = part.split("\nendstream").next().unwrap();
+                content.contains("/BoardSvg Do").then_some(content)
+            })
+            .collect();
+        assert_eq!(streams.len(), 2);
+        for stream in streams {
+            assert!(
+                stream.contains("/BoardSvg Do\nQ\n"),
+                "restore the SVG scale before stroking the physical border"
+            );
+            assert!(stream.contains("0 0 0 RG"), "border must be black");
+            let width = stream
+                .lines()
+                .find_map(|line| line.strip_suffix(" w"))
+                .unwrap()
+                .parse::<f32>()
+                .unwrap();
+            assert!((width * 25.4 / 72.0 - 0.2).abs() < 0.00001);
+            let rect: Vec<f32> = stream
+                .lines()
+                .find_map(|line| line.strip_suffix(" re"))
+                .unwrap()
+                .split_whitespace()
+                .map(|value| value.parse().unwrap())
+                .collect();
+            assert_eq!(rect.len(), 4);
+            assert!((rect[0] - width / 2.0).abs() < 0.00001);
+            assert!((rect[1] - width / 2.0).abs() < 0.00001);
+            assert!((rect[2] + width - size.0).abs() < 0.0001);
+            assert!((rect[3] + width - size.1).abs() < 0.0002);
+            assert!(
+                stream.trim_end().ends_with('S'),
+                "border is an unfilled stroke"
+            );
+        }
+    }
+    #[test]
+    fn later_page_failure_never_publishes_a_partial_layout_pdf() {
+        let dir = scratch();
+        let first = dir.join("first.svg");
+        let second = dir.join("second.svg");
+        let output = dir.join("整版.pdf");
+        fs::write(&first, nested_svg_fixture()).unwrap();
+        fs::write(&second, "<svg broken").unwrap();
+        let error = export_staged_pdf(
+            output.to_str().unwrap(),
+            &[first, second],
+            page_size(300.0, 464.0).unwrap(),
+            |_, phase| {
+                assert_ne!(
+                    phase, "write",
+                    "no publish phase before every page is valid"
+                );
+            },
+        )
+        .unwrap_err();
+        assert!(error.contains("第 2 / 2 页"), "{error}");
+        assert!(!output.exists());
+        assert_eq!(
+            fs::read_dir(&dir).unwrap().count(),
+            2,
+            "no incomplete PDF or temporary file should remain"
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn empty_pdf_page_list_is_rejected_before_loading() {
+        assert!(render_pdf_pages(
+            0,
+            |_| panic!("empty page list must not load a resource"),
+            page_size(300.0, 464.0).unwrap(),
+            |_, _| {}
+        )
+        .unwrap_err()
+        .contains("没有可导出"));
     }
     #[test]
     fn atomic_commit_never_overwrites_and_cleans_temporary_file() {
-        let dir = scratch(); let output = dir.join("图层_01.pdf");
+        let dir = scratch();
+        let output = dir.join("图层_01.pdf");
         commit_pdf(&output, b"first").unwrap();
         assert!(commit_pdf(&output, b"second").is_err());
         assert_eq!(fs::read(&output).unwrap(), b"first");
@@ -324,14 +745,39 @@ mod tests {
     fn export_board_fixture() {
         let input = std::env::var("PRINTFLOW_IMPOSITION_PDF_FIXTURE").unwrap();
         let output = PathBuf::from(std::env::var("PRINTFLOW_IMPOSITION_PDF_OUTPUT").unwrap());
-        let pdf = render_pdf(fs::read_to_string(input).unwrap(), page_size(300.0, 464.0).unwrap(), |_| {}).unwrap();
+        let pdf = render_pdf(
+            fs::read_to_string(input).unwrap(),
+            page_size(300.0, 464.0).unwrap(),
+            |_| {},
+        )
+        .unwrap();
         commit_pdf(&output, &pdf).unwrap();
+    }
+    #[test]
+    #[ignore = "Set PRINTFLOW_IMPOSITION_PDF_FIXTURES to a JSON array of SVG paths and PRINTFLOW_IMPOSITION_PDF_OUTPUT for a real multi-page export"]
+    fn export_multi_page_board_fixture() {
+        let inputs: Vec<PathBuf> =
+            serde_json::from_str(&std::env::var("PRINTFLOW_IMPOSITION_PDF_FIXTURES").unwrap())
+                .unwrap();
+        let output = std::env::var("PRINTFLOW_IMPOSITION_PDF_OUTPUT").unwrap();
+        export_staged_pdf(
+            &output,
+            &inputs,
+            page_size(300.0, 464.0).unwrap(),
+            |_, _| {},
+        )
+        .unwrap();
     }
     #[test]
     #[ignore = "Set PRINTFLOW_IMPOSITION_PDF_OUTPUT for Poppler verification of nested SVG image semantics"]
     fn export_nested_svg_fixture() {
         let output = PathBuf::from(std::env::var("PRINTFLOW_IMPOSITION_PDF_OUTPUT").unwrap());
-        let pdf = render_pdf(nested_svg_fixture(), page_size(300.0, 464.0).unwrap(), |_| {}).unwrap();
+        let pdf = render_pdf(
+            nested_svg_fixture(),
+            page_size(300.0, 464.0).unwrap(),
+            |_| {},
+        )
+        .unwrap();
         commit_pdf(&output, &pdf).unwrap();
     }
 }

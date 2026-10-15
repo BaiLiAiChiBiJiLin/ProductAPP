@@ -71,6 +71,7 @@ pub(super) fn ensure_store(conn: &Connection) -> Result<(), String> {
 }
 
 pub(super) fn ensure_review_editable(conn: &Connection, id: &str) -> Result<(), String> {
+    crate::shared_transfers::store::ensure_editable(conn,"review",id)?;
     let submitted: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM production_imposition_jobs WHERE source_review_id = ?1 AND status != 'returned')", [id], |row| row.get(0)).map_err(|error| error.to_string())?;
     if submitted {
         return Err("该记录已进入生产拼版，不能再编辑或删除".into());
@@ -331,6 +332,7 @@ fn submit_review(
     // Serialize stage transitions, including retries from different windows.
     let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)
         .map_err(|error| error.to_string())?;
+    crate::shared_transfers::store::ensure_editable(&transaction,"review",id)?;
     if let Some(existing) = transaction.query_row(&format!("SELECT {SUMMARY_COLUMNS} FROM production_imposition_jobs WHERE source_review_id = ?1 AND status != 'returned'"), [id], summary_row).optional().map_err(|error| error.to_string())? {
         return Ok(existing); // Active submissions are idempotent; returned reviews can submit again.
     }
@@ -388,6 +390,7 @@ fn return_job(conn: &Connection, id: &str) -> Result<(), String> {
     crate::schematic_review::ensure_store(conn)?;
     let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)
         .map_err(|error| error.to_string())?;
+    crate::shared_transfers::store::ensure_editable(&transaction,"job",id)?;
     let status: String = transaction.query_row("SELECT j.status FROM production_imposition_jobs j JOIN schematic_reviews r ON r.id = j.source_review_id WHERE j.id = ?1", [id], |row| row.get(0))
         .optional().map_err(|error| error.to_string())?.ok_or("生产拼版记录不存在")?;
     if status != "pending" && status != "returned" {
@@ -457,7 +460,8 @@ fn list_jobs(
     ensure_store(conn)?;
     let page_size = query.page_size.unwrap_or(20).clamp(1, 100);
     let search = query.search.as_deref().unwrap_or("").trim();
-    let condition = "WHERE status = 'pending' AND (?1 = '' OR instr(lower(customer_name || ' ' || output), lower(?1)) > 0)";
+    crate::shared_transfers::store::ensure_store(conn)?;
+    let condition = "WHERE status = 'pending' AND NOT EXISTS(SELECT 1 FROM shared_transfer_outbox o,json_each(o.record_ids,'$.jobs') x WHERE x.value=production_imposition_jobs.id AND o.status IN ('preparing','publishing','published','received','complete')) AND (?1 = '' OR instr(lower(customer_name || ' ' || output), lower(?1)) > 0)";
     let transaction = conn
         .unchecked_transaction()
         .map_err(|error| error.to_string())?;
@@ -520,6 +524,7 @@ fn update_image_quantity(
     ensure_store(conn)?;
     let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)
         .map_err(|error| error.to_string())?;
+    crate::shared_transfers::store::ensure_editable(&transaction,"job",job_id)?;
     let status: String = transaction
         .query_row(
             "SELECT status FROM production_imposition_jobs WHERE id = ?1",

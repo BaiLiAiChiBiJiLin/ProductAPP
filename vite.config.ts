@@ -10,7 +10,17 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 5173,
     strictPort: true,
-    watch: { ignored: ['**/src-tauri/**', '**/.cargo-target/**', '**/.test-output/**', '**/.npm-cache/**'] },
+    watch: {
+      // Windows native notifications can miss editor/agent file replacements,
+      // leaving a new component connected to an old cached service module.
+      usePolling: process.platform === 'win32',
+      interval: 500,
+      ignored: [
+        '**/src-tauri/**', '**/.cargo-target*/**', '**/.cargo-test-target/**',
+        '**/.tools/**', '**/printflow-data/**', '**/.source-backups/**',
+        '**/.test-output/**', '**/.npm-cache/**', '**/artifacts/**', '**/logs/**',
+      ],
+    },
     proxy: {
       '/__printflow_remote': {
         target: 'https://fakestar-oss.oss-us-west-1.aliyuncs.com',

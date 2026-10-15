@@ -13,7 +13,6 @@
 .imposition-export-preview { background: #f1f5f9; }
 .imposition-export-sheet { flex: 1; min-height: 140px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .imposition-export-sheet img { max-width: 100%; max-height: 100%; background: white; object-fit: contain; box-shadow: 0 4px 15px #0f172a18; }
-.imposition-export-preview > small { color: #64748b; text-align: center; font-size: 11px; }
 .imposition-export-file-list { overflow: auto; max-height: 120px; font-size: 11px; color: #475569; overflow-wrap: anywhere; }
 .imposition-export-file-list summary { cursor: pointer; margin-bottom: 5px; }
 .imposition-export-file-list > div { display: flex; flex-direction: column; gap: 2px; margin: 6px 0; }

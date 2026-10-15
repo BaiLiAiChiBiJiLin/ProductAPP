@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { applySourceAssignmentsToSameName, buildImpositionSvgExports, buildImpositionTemplatePreview, buildSourceLayerPreview, createImpositionExportModel, enumerateImpositionSvgExports, impositionPlacementTransform, parseImpositionSvgSource, renderImpositionSvgExport } from '../src/modules/imposition/impositionSvgExport'
+import { applySourceAssignmentsToSameName, buildImpositionSvgExports, buildImpositionTemplatePreview, buildSourceLayerPreview, createImpositionExportModel, enumerateImpositionPdfExports, enumerateImpositionSvgExports, impositionPlacementTransform, parseImpositionSvgSource, renderImpositionSvgExport } from '../src/modules/imposition/impositionSvgExport'
 import type { PackedItem } from '../src/modules/imposition/packingAlgorithms'
 import type { ProductionImage } from '../src/modules/imposition/impositionRecords'
 
@@ -62,8 +62,8 @@ describe('imposition export SVG layers', () => {
     for (const entry of imageEntries) {
       const doc = read(entry.svg)
       expect(doc.querySelectorAll('image')).toHaveLength(entry.imageLayerIndex === 0 ? 2 : 1)
-      expect(doc.querySelector('path')).toBeNull()
-      expect(doc.querySelectorAll('[data-board-holes] circle')).toHaveLength(2)
+      expect(doc.querySelector('defs path')).toBeNull()
+      expect(doc.querySelectorAll('[data-board-holes] path')).toHaveLength(2)
       const nodes = Array.from(doc.querySelectorAll('[data-placement-id]'))
       const expected = placements.filter(placement => Object.hasOwn(entry.imageLayerMembers!, placement.image.sourceImageId ?? placement.image.id))
       expect(nodes).toHaveLength(expected.length)
@@ -77,7 +77,7 @@ describe('imposition export SVG layers', () => {
     expect(full.querySelector('path')).not.toBeNull()
     const pictures = read(buildImpositionTemplatePreview(current, current.templates[0].id, 'images'))
     expect(pictures.querySelectorAll('image')).toHaveLength(3)
-    expect(pictures.querySelector('path')).toBeNull()
+    expect(pictures.querySelector('defs path')).toBeNull()
     const secondChannel = read(buildImpositionTemplatePreview(current, current.templates[0].id, 'images', 1))
     expect(secondChannel.querySelectorAll('image')).toHaveLength(1)
     expect(secondChannel.querySelectorAll('[data-placement-id]')).toHaveLength(2)
@@ -235,19 +235,25 @@ describe('imposition export SVG layers', () => {
 })
 
 describe('imposition export physical board identity and positioning', () => {
-  test('every export and board preview retains circular plate holes at the same centered millimetre positions as Konva', () => {
+  test('every export and preview retains unfilled circular paths with the configured diameter and centered millimetre positions', () => {
     const current = createImpositionExportModel({ pages: [[item()]], sources: { art: source }, plateWidthMm: 300, plateHeightMm: 464, holes: { count: 2, sizeMm: 3, gapMm: 203.468, leftMm: 4 } })
     const entries = buildImpositionSvgExports(current)
     const preview = buildImpositionTemplatePreview(current, current.templates[0].id)
     for (const svg of [...entries.map(entry => entry.svg), preview]) {
-      const circles = Array.from(read(svg).querySelectorAll('[data-board-holes] circle'))
-      expect(circles).toHaveLength(2)
-      expect(circles.map(circle => Number(circle.getAttribute('cx')))).toEqual([5.5, 5.5])
-      expect(circles.map(circle => Number(circle.getAttribute('r')))).toEqual([1.5, 1.5])
-      expect(circles.map(circle => Number(circle.getAttribute('cy')))).toEqual([130.266, 333.734])
+      const group = read(svg).querySelector('[data-board-holes]')!
+      expect(group.getAttribute('fill')).toBe('none')
+      expect(group.getAttribute('stroke')).toBe('#2563eb')
+      expect(Number(group.getAttribute('stroke-width'))).toBeGreaterThan(0)
+      const paths = Array.from(group.querySelectorAll('path'))
+      expect(paths).toHaveLength(2)
+      expect(group.querySelector('circle')).toBeNull()
+      expect(paths.map(path => path.getAttribute('d'))).toEqual([
+        'M 4 130.266 A 1.5 1.5 0 1 0 7 130.266 A 1.5 1.5 0 1 0 4 130.266 Z',
+        'M 4 333.734 A 1.5 1.5 0 1 0 7 333.734 A 1.5 1.5 0 1 0 4 333.734 Z',
+      ])
     }
     current.holes!.count = 1
-    expect(read(buildImpositionSvgExports(current)[0].svg).querySelector('[data-board-holes] circle')!.getAttribute('cy')).toBe('232')
+    expect(read(buildImpositionSvgExports(current)[0].svg).querySelector('[data-board-holes] path')!.getAttribute('d')).toBe('M 4 232 A 1.5 1.5 0 1 0 7 232 A 1.5 1.5 0 1 0 4 232 Z')
     current.holes!.count = 0
     expect(read(buildImpositionSvgExports(current)[0].svg).querySelector('[data-board-holes]')).toBeNull()
   })
@@ -354,6 +360,40 @@ describe('imposition export physical board identity and positioning', () => {
     ]))
     expect(entries.map(entry => entry.productionCopies)).toEqual([5, 5, 5, 5, 5, 2, 2, 2, 2, 2])
     expect(new Set(entries.map(entry => entry.fileName)).size).toBe(10)
+  })
+
+  test('combines each template into one PDF with ordered pages and keeps production quantity independent of page count', () => {
+    const art = parseSource('<image href="data:image/png;base64,AQ=="/><rect id="color" fill="red" width="4" height="4"/><path fill="none" stroke="red" d="M0 0h40v20z"/><image href="data:image/png;base64,Ag=="/><rect id="ink" fill="white" width="4" height="4"/>')
+    const first = [item()]; const second = [item('art', { x: 80 })]
+    const current = model([...Array.from({ length: 7 }, () => first), second, second], { art })
+    current.assignments.art[art.layers.find(layer => layer.label === 'ink')!.id] = 'white'
+    const entries = enumerateImpositionPdfExports(current, { date, templateIds: ['template-2', 'template-1'] })
+    expect(entries.map(entry => entry.fileName)).toEqual(['202610140930_1B-2B_1F-7F.pdf', '202610140930_2B-2B_1F-2F.pdf'])
+    expect(entries.map(entry => entry.productionCopies)).toEqual([7, 2])
+    expect(entries.map(entry => entry.templateNumber)).toEqual([1, 2])
+    for (const entry of entries) {
+      expect(entry).toMatchObject({ widthMm: 300, heightMm: 464 })
+      expect(entry.pages.map(page => [page.groupId, page.imageLayerIndex])).toEqual([['paths', undefined], ['images', 0], ['images', 1], ['fills', undefined], ['white', undefined]])
+      expect(entry.pages.every(page => page.fileName === entry.fileName)).toBe(true)
+      expect(entry.pages.every(page => page.templateId === entry.templateId)).toBe(true)
+    }
+    const secondOnly = enumerateImpositionPdfExports(current, { date, templateIds: ['template-2'] })
+    expect(secondOnly[0]).toMatchObject({ fileName: '202610140930_1B-1B_1F-2F.pdf', templateNumber: 2 })
+  })
+
+  test('does not add empty PDF pages or files for omitted types and retains selected-board numbering', () => {
+    const current = model(Array.from({ length: 5 }, (_, index) => [item('art', { x: index * 20 })]))
+    current.templateAssignments = {
+      'template-2': { art: Object.fromEntries(source.layers.map(layer => [layer.id, null])) },
+      'template-3': { art: Object.fromEntries(source.layers.map(layer => [layer.id, 'white'])) },
+    }
+    const entries = enumerateImpositionPdfExports(current, { date, templateIds: ['template-5', 'template-3', 'template-2'] })
+    expect(entries.map(entry => [entry.templateNumber, entry.fileName])).toEqual([[3, '202610140930_1B-2B_1F-1F.pdf'], [5, '202610140930_2B-2B_1F-1F.pdf']])
+    expect(entries.map(entry => entry.pages.map(page => page.groupId))).toEqual([['white'], ['paths', 'images', 'fills']])
+    expect(enumerateImpositionPdfExports(current, { date, templateIds: ['template-2'] })).toEqual([])
+    expect(enumerateImpositionPdfExports(current, { date, templateIds: [] })).toEqual([])
+    expect(enumerateImpositionPdfExports(current, { date, groupIds: [] })).toEqual([])
+    expect(() => enumerateImpositionPdfExports(current, { date: new Date(NaN) })).toThrow('导出日期无效')
   })
 
   test('B numbers count only selected boards that produce files, while metadata retains canvas numbers', () => {

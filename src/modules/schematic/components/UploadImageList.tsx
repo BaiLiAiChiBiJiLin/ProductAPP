@@ -9,11 +9,11 @@ import { canSelectGroupAsset } from '../grouping/productGroupSelection'
 import { orderAssetsByProductGroup } from '../services/productGroupOrdering'
 import UploadImageGrid from './UploadImageGrid'
 import AssetDetailsModal from './AssetDetailsModal'
-import { ImageUp, Info, Trash2 } from 'lucide-react'
+import { ImageUp, Info, Trash2, Send } from 'lucide-react'
 import { getNoteImages } from '../services/assetNotesService'
 
-export default function UploadImageList({ assets, allAssets, selectedIds, onSelectionChange, products, disabled, onDelete, onReplace }: {
-  assets: Asset[]; allAssets: Asset[]; selectedIds: Set<string>; onSelectionChange: (ids: Set<string>) => void; products: ProductConfig[]; disabled: boolean; onDelete: (asset: Asset) => Promise<void>; onReplace?: (asset: Asset) => Promise<void>
+export default function UploadImageList({ assets, allAssets, selectedIds, onSelectionChange, products, disabled, onDelete, onReplace, onTransfer }: {
+  assets: Asset[]; allAssets: Asset[]; selectedIds: Set<string>; onSelectionChange: (ids: Set<string>) => void; products: ProductConfig[]; disabled: boolean; onDelete: (asset: Asset) => Promise<void>; onReplace?: (asset: Asset) => Promise<void>; onTransfer?: () => void
 }) {
   const anchor = useRef<string | null>(null)
   const grouping = useProductGroup()
@@ -45,8 +45,8 @@ export default function UploadImageList({ assets, allAssets, selectedIds, onSele
       const member = session?.memberIds.includes(asset.id)
       const blocked = Boolean(session && !member && !canSelectGroupAsset(asset, session.memberIds, 'list', session.trigger.kind === 'free'))
       return <Dropdown key={asset.id} trigger={['contextMenu']} menu={{
-        items: [{ key: 'details', label: '详情', icon: <Info size={14}/> }, { key: 'replace', label: '更换图片', icon: <ImageUp size={14}/>, disabled: disabled || Boolean(session) || !onReplace }],
-        onClick: ({ key, domEvent }) => { domEvent.stopPropagation(); if (key === 'details') setDetailsId(asset.id); else if (key === 'replace' && !disabled && !session) void onReplace?.(asset) },
+        items: [{ key: 'details', label: '详情', icon: <Info size={14}/> }, { key: 'replace', label: '更换图片', icon: <ImageUp size={14}/>, disabled: disabled || Boolean(session) || !onReplace }, { key: 'transfer', label: '转移', icon: <Send size={14}/>, disabled: disabled || Boolean(session) || !onTransfer }],
+        onClick: ({ key, domEvent }) => { domEvent.stopPropagation(); if (key === 'details') setDetailsId(asset.id); else if (key === 'replace' && !disabled && !session) void onReplace?.(asset); else if (key === 'transfer' && !disabled && !session) onTransfer?.() },
       }}><article data-asset-id={asset.id} data-product-group={asset.productGroupId || undefined} style={{ backgroundColor: member ? '#e6f4ff' : blocked ? undefined : asset.productGroupId ? asset.productGroupColor : undefined }} className={`upload-image-card ${(session ? Boolean(member) : selectedIds.has(asset.id)) ? 'is-selected' : ''} ${session ? blocked ? 'is-guide-blocked' : member ? 'is-guide-member' : 'is-guide-dimmed' : ''}`} onMouseDown={event => { if (event.shiftKey) event.preventDefault() }} onClick={event => select(asset, event)}>
       <div className="upload-image-card-head"><label onClick={event => event.stopPropagation()}><input type="checkbox" checked={session ? Boolean(member) : selectedIds.has(asset.id)} disabled={disabled || blocked} aria-label={`选择 ${asset.name}`} onChange={() => {}} onClick={event => select(asset, event)}/><span>NO: {orderedAllAssets.indexOf(asset) + 1}</span></label><span className="upload-image-card-actions" onClick={event => event.stopPropagation()} onMouseDown={event => event.stopPropagation()}><Tag color={member ? 'blue' : asset.attributesConfirmed ? blocked ? 'red' : 'blue' : 'default'} title={blocked ? '已选产品，不能加入当前组' : undefined}>{asset.attributesConfirmed ? '已选产品' : '未选产品'}</Tag><Popconfirm title="删除这张图片？" description="删除后将从当前批次中移除，无法在列表中恢复。" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => onDelete(asset)}><Button type="text" danger size="small" icon={<Trash2 size={14}/>} aria-label={`删除 ${asset.name}`} title="删除图片" disabled={disabled || Boolean(session)} onClick={event => event.stopPropagation()}/></Popconfirm></span></div>
       <div className="upload-image-card-media">

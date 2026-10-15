@@ -7,6 +7,7 @@ import { saveArrangementDisplay, type ArrangementDisplayState, type SavedArrange
 export type ExportFormat = 'pdf' | 'svg' | 'png' | 'jpg'
 export type PaymentStatus = 'unpaid' | 'paid'
 export type ReviewWorkspace = {
+  sourceBatchId?: string
   assets: Asset[]
   pages: Page[]
   activePage: number

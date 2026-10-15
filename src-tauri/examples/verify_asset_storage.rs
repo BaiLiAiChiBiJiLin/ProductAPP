@@ -23,6 +23,12 @@ mod schematic_review;
 #[allow(dead_code)]
 #[path = "../src/staged_artwork.rs"]
 mod staged_artwork;
+// Exercise the real transfer guards without loading the native bridge.
+#[allow(dead_code)]
+mod shared_transfers {
+    mod files { include!("../src/shared_transfers/files.rs"); }
+    pub(crate) mod store { include!("../src/shared_transfers/store.rs"); }
+}
 // Native commands are compiled but never called by these isolated DB/file tests.
 fn database(_: &tauri::AppHandle) -> Result<rusqlite::Connection, String> {
     Err("测试禁止访问用户数据库".into())
