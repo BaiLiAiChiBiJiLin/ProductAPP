@@ -3,7 +3,7 @@ import type { Asset } from '../../../model'
 import type { AttributeDraft } from '../services/attributeDraftService'
 import { catalogConfirmationPatch } from '../services/attributeDraftService.ts'
 import type { CustomProduct } from '../services/customProductService'
-import { customProductPatch, customAttributes, customImages } from '../services/customProductService.ts'
+import { customProductPatch, customAttributes, customImages, emptyCustomProduct } from '../services/customProductService.ts'
 import type { ProductConfig, ProductOptionValue } from '../services/productConfigService'
 import { applyProductAttributePatch, availableOptionValues } from '../services/productOptionRules.ts'
 
@@ -12,6 +12,7 @@ export type GroupTrigger = { kind: 'standees' | 'shaker' | 'photo-holder' | 'pro
 export type ProductGroupSession = {
   id: string; color: string; leaderId: string; activeId: string; memberIds: string[]
   editors: Record<string, GroupEditor>; trigger: GroupTrigger; orderDirty?: boolean; emptyFirstSlot?: boolean
+  editingSavedGroup?: boolean
 }
 
 export const quantityOptionName = (name: string, label: string) => `${name} ${label}`.includes('立牌数量')
@@ -127,11 +128,34 @@ export function copyEpoxy(editor: GroupEditor, source: GroupEditor): GroupEditor
 }
 
 export function updateGroupEditor(session: ProductGroupSession, editor: GroupEditor, products: ProductConfig[]): ProductGroupSession {
+  const previous = session.editors[session.activeId]
+  const productChanged = previous.mode !== editor.mode || (editor.mode === 'custom'
+    ? previous.custom.name !== editor.custom.name : previous.draft.productId !== editor.draft.productId)
+  if (session.editingSavedGroup && session.trigger.kind !== 'free' && productChanged) {
+    const editors = Object.fromEntries(session.memberIds.map(id => [id, replaceGroupProduct(session.editors[id], editor)]))
+    const trigger = groupingTrigger(editors[session.leaderId], products) ?? { kind: 'product' as const, label: '产品组' }
+    return { ...session, editors, trigger, emptyFirstSlot: Boolean(fixedGroupSlotLabels(trigger.kind) && session.emptyFirstSlot) }
+  }
   const before = epoxyValues(session.editors[session.activeId])
   const after = epoxyValues(editor)
   const next = updateGroupEditorLocal(session, editor, products)
   if (before[0] === after[0] && before[1] === after[1]) return next
   return { ...next, editors: Object.fromEntries(next.memberIds.map(id => [id, copyEpoxy(next.editors[id], editor)])) }
+}
+
+/** Changing a saved group's product clears old options, preserving each image's independent fields. */
+function replaceGroupProduct(previous: GroupEditor, target: GroupEditor): GroupEditor {
+  const qt = previous.mode === 'custom'
+    ? previous.custom.qt == null ? '' : String(previous.custom.qt)
+    : previous.draft.attributes.QT ?? ''
+  return {
+    mode: target.mode,
+    draft: { ...previous.draft,
+      productId: target.mode === 'custom' ? target.custom.id == null ? '' : `custom:${target.custom.id}` : target.draft.productId,
+      attributes: { QT: qt }, images: {}, finishMatchDisabled: false },
+    custom: { ...emptyCustomProduct(), id: target.custom.id, name: target.custom.name,
+      qt: qt.trim() ? Number(qt) : null, attributeImages: {}, finishMatchDisabled: false },
+  }
 }
 
 function updateGroupEditorLocal(session: ProductGroupSession, editor: GroupEditor, products: ProductConfig[]): ProductGroupSession {

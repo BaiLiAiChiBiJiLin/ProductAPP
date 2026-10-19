@@ -1,7 +1,7 @@
-import { constrainHeaderBlock, HEADER_BLOCK_HEIGHT, normalizeLayoutBounds, PAPER_HEIGHT, PAPER_WIDTH, type HeaderBlock, type HeaderColumn, type LayoutBounds } from '../../../model.ts'
+import { constrainHeaderBlock, GROUP_GAP, HEADER_BLOCK_HEIGHT, artworkBounds, PAPER_HEIGHT, PAPER_WIDTH, type HeaderBlock, type HeaderColumn, type LayoutBounds } from '../../../model.ts'
 
 export function newHeaderColumn(): HeaderColumn {
-  return { id: crypto.randomUUID(), imageMode: 'front-back', detailLabel: 'Size/QT/Finish' }
+  return { id: crypto.randomUUID(), imageMode: 'front-back', detailLabel: 'Size/QT' }
 }
 
 export function resizeHeaderColumns(block: HeaderBlock, count: number): HeaderBlock {
@@ -10,12 +10,13 @@ export function resizeHeaderColumns(block: HeaderBlock, count: number): HeaderBl
 }
 
 export function createHeaderBlock(bounds: LayoutBounds, existing: HeaderBlock[]): HeaderBlock {
-  const area = normalizeLayoutBounds(bounds)
-  let y = area.top
+  const area = artworkBounds(bounds)
+  const headerTop = area.top + GROUP_GAP
+  let y = headerTop
   if (existing.length) {
     const sorted = [...existing].sort((a, b) => a.y - b.y)
     const gaps = sorted.map((block, index) => ({ from: block.y + HEADER_BLOCK_HEIGHT, to: sorted[index + 1]?.y ?? PAPER_HEIGHT - area.bottom }))
-    gaps.unshift({ from: area.top, to: sorted[0].y })
+    gaps.unshift({ from: headerTop, to: sorted[0].y })
     const largest = gaps.sort((a, b) => (b.to - b.from) - (a.to - a.from))[0]
     y = largest.from + Math.max(0, (largest.to - largest.from - HEADER_BLOCK_HEIGHT) / 2)
   }

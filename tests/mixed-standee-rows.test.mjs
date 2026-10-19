@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { defaultLayoutBounds, GROUP_GAP, HEADER_BLOCK_HEIGHT, PAPER_HEIGHT, PAPER_WIDTH, headerCells, headerColumnBounds, pageSvg } from '../src/model.ts'
+import { artworkBounds, defaultLayoutBounds, GROUP_GAP, HEADER_BLOCK_HEIGHT, PAPER_HEIGHT, PAPER_WIDTH, headerCells, headerColumnBounds, pageSvg } from '../src/model.ts'
 import { paginateAssets, autoArrangePages } from '../src/modules/schematic/services/paginationService.ts'
 import { headerFor } from '../src/modules/schematic/arrangement/pageSections.ts'
 import { compactPageSections, backfillPages } from '../src/modules/schematic/arrangement/backfillPages.ts'
@@ -19,8 +19,9 @@ const groupsInOrder = page => [...page.imageGroups].sort((a, b) => a.y - b.y || 
 
 function checkPages(pages, sources, bounds = defaultLayoutBounds) {
   assert.deepEqual(pages.flatMap(page => page.items.filter(item => !item.derivedFrom).map(item => item.assetId)).sort(), sources.map(asset => asset.id).sort())
+  const area = artworkBounds(bounds)
   for (const page of pages) for (const group of page.imageGroups) {
-    assert.ok(group.x >= bounds.left - 1e-6 && group.x + group.width <= PAPER_WIDTH - bounds.right + 1e-6)
+    assert.ok(group.x >= area.left - 1e-6 && group.x + group.width <= PAPER_WIDTH - area.right + 1e-6)
     assert.ok(group.y >= bounds.top + HEADER_BLOCK_HEIGHT + GROUP_GAP - 1e-6 && group.y + group.height <= PAPER_HEIGHT - bounds.bottom + 1e-6)
     const header = headerFor(page, group)
     assert.ok(header, `missing header for ${group.id}`)
@@ -46,7 +47,7 @@ test('same-product one- and two-slot standees share a row and matching header in
     close(second.x, first.x + first.width + GROUP_GAP)
     assert.equal(page.headerBlocks.length, 1)
     assert.deepEqual(page.headerBlocks[0].columns.map(column => column.span), spans)
-    close(first.width + second.width + GROUP_GAP, PAPER_WIDTH - defaultLayoutBounds.left - defaultLayoutBounds.right)
+    close(first.width + second.width + GROUP_GAP, PAPER_WIDTH - artworkBounds(defaultLayoutBounds).left - artworkBounds(defaultLayoutBounds).right)
     const main = page.items.filter(item => !item.derivedFrom && item.caption !== 'base')
     close(main[0].w, main[1].w); close(main[0].h, main[1].h)
     const svg = pageSvg(page, new Map(sources.map(asset => [asset.id, asset])))
@@ -108,7 +109,7 @@ test('mixed standee headers and relative sizes survive repeated reordering acros
       for (const y of new Set(page.imageGroups.map(group => group.y))) {
         const row = page.imageGroups.filter(group => group.y === y)
         assert.equal(row.length, 2)
-        close(row[0].width + row[1].width + GROUP_GAP, PAPER_WIDTH - bounds.left - bounds.right)
+        close(row[0].width + row[1].width + GROUP_GAP, PAPER_WIDTH - artworkBounds(bounds).left - artworkBounds(bounds).right)
       }
     }
   }

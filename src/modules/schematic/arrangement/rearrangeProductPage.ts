@@ -1,4 +1,4 @@
-import { DETAIL_AREA_RATIO, GROUP_GAP, HEADER_BLOCK_HEIGHT, IMAGE_AREA_RATIO, normalizeLayoutBounds, PAPER_HEIGHT, PAPER_WIDTH, type Page, type LayoutBounds, type Item } from '../../../model.ts'
+import { constrainHeaderBlock, DETAIL_AREA_RATIO, GROUP_GAP, HEADER_BLOCK_HEIGHT, IMAGE_AREA_RATIO, artworkBounds, PAPER_HEIGHT, PAPER_WIDTH, type Page, type LayoutBounds, type Item } from '../../../model.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
 import { imageGroupsForPage } from '../services/groupBackgroundService.ts'
 import { placeProductGroup, productGroupFootprint } from './productGroupLayout.ts'
@@ -7,8 +7,9 @@ import { packGroupColumns } from './compactSectionPacking.ts'
 
 /** Header editing keeps product groups atomic; pagination is handled by the batch arranger. */
 export function rearrangeProductPage(page: Page, bounds: LayoutBounds): Page {
-  const area = normalizeLayoutBounds(bounds)
-  const blocks = [...page.headerBlocks ?? []].sort((a, b) => a.y - b.y)
+  const area = artworkBounds(bounds)
+  const constrainedBlocks = page.headerBlocks?.map(block => constrainHeaderBlock(block, area))
+  const blocks = [...constrainedBlocks ?? []].sort((a, b) => a.y - b.y)
   const byItem = new Map(page.items.map(item => [item.id, item]))
   const groups = imageGroupsForPage(page)
   const units = groups.map(group => ({ group, items: group.itemIds.map(id => byItem.get(id)).filter((item): item is Item => !!item) }))
@@ -58,5 +59,5 @@ export function rearrangeProductPage(page: Page, bounds: LayoutBounds): Page {
     }
   }
   if (items.length !== page.items.length) throw new Error('部分图片没有对应的表头区域，请使用自动排列重新分页。')
-  return { ...page, items, imageGroups, headerBlocks: page.headerBlocks?.map(block => ({ ...block, detailWidth: undefined })) }
+  return { ...page, items, imageGroups, headerBlocks: constrainedBlocks?.map(block => ({ ...block, detailWidth: undefined })) }
 }

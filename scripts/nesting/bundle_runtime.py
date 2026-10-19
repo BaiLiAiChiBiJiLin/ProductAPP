@@ -17,11 +17,11 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / 'src-tauri/src/imposition/local_nesting'
 DESTINATION = ROOT / 'src-tauri/resources/imposition-runtime'
 ADAPTER = Path('src-tauri/src/imposition/local_nesting/local_tools_engine.py')
-MODULES = ['local_tools_engine.py', 'nesting_common.py', 'nest_uniform.py', 'nesting_rust.py']
+MODULES = ['local_tools_engine.py', 'nesting_common.py', 'nest_uniform.py', 'nest_combined.py', 'nesting_rust.py', 'nest_replan.py']
 
 
 def verify_runtime(runtime: Path):
-    """Exercise the shipped interpreter, native library and both actual strategies."""
+    """Exercise all strategies and occupied-board replanning after relocation."""
     runtime = runtime.resolve()
     python = runtime / '.tools/nesting/python/python.exe'
     env = dict(os.environ)
@@ -35,12 +35,23 @@ def verify_runtime(runtime: Path):
     evidence = []
     with tempfile.TemporaryDirectory(prefix='printflow-installed-nesting-') as cwd:
         env['LOCALAPPDATA'] = str(Path(cwd) / 'user-data')
-        for objective in ['least-material', 'least-cutting']:
+        for objective in ['least-material', 'least-cutting', 'combined', 'template-repack', 'template-repack-combined']:
+            replan = objective.startswith('template-repack')
             request = dict(plateWidthMm=100, plateHeightMm=80, effectiveWidthMm=85,
                            effectiveHeightMm=60, effectiveRightMm=5, spacingMm=3,
                            objective=objective, irregularAlgorithm='local-tools',
                            items=[dict(id='安装验证', widthMm=10, heightMm=8, quantity=4,
                                        polygon=[[1, 1], [9, 1], [5, 7]])])
+            if replan:
+                request['objective'] = 'combined' if objective.endswith('-combined') else 'least-cutting'
+                request['items'].append(dict(id='背景', widthMm=10, heightMm=8, quantity=2,
+                                             polygon=[[0, 0], [10, 0], [10, 8], [0, 8]]))
+                position = lambda ident, x: dict(sourceId=ident, xMm=x, yMm=10, rotationDeg=0)
+                request['templateRepack'] = dict(
+                    templates=[dict(id='source', repeatCount=4, placements=[position('安装验证', 10)]),
+                               dict(id='target', repeatCount=2, placements=[position('背景', 10)])],
+                    sourceTemplateId='source', targetTemplateId='target', sourceSlotIndex=0,
+                    targetPlacement=position('安装验证', 25))
             child = subprocess.run([str(python), '-X', 'utf8', '-B', str(runtime / ADAPTER)],
                                    input=json.dumps(dict(engine='local-tools', request=request), ensure_ascii=False),
                                    encoding='utf-8', capture_output=True, cwd=cwd, env=env,
@@ -51,10 +62,16 @@ def verify_runtime(runtime: Path):
             if payload.get('ok') is False:
                 raise RuntimeError(f'Installed adapter failed: {payload}')
             result = payload.get('result', payload)
-            assert len(result['placements']) == 4 and not result['unplaced'], result
+            expected = 6 if replan else 4
+            assert len(result['placements']) == expected and not result['unplaced'], result
             assert result['searchCore']['backend'] == 'rust', result['searchCore']
             assert result['sheetsUsed'] == 1, result
-            evidence.append(dict(objective=objective, placements=4, sheets=1,
+            if replan:
+                assert any(p['id'].split('#qt-')[0] == '安装验证' and p['xMm'] == 25 and p['yMm'] == 10
+                           for p in result['placements']), result
+            if objective == 'combined':
+                assert result['algorithm'].startswith('tools/combined'), result['algorithm']
+            evidence.append(dict(objective=objective, placements=expected, sheets=1,
                                  core=result['searchCore']['backend']))
     print('Installed runtime verified: ' + json.dumps(evidence), flush=True)
 

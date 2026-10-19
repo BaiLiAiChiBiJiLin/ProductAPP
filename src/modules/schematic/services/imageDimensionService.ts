@@ -4,6 +4,7 @@ import type { Page } from '../../../model.ts'
 import { pictureRulerBottomRatio } from './pictureRulerBoundsService.ts'
 
 const GROUP_GAP = 1.8 * 500 / 210
+export const RULER_STROKE_WIDTH = 0.3
 // Baseline anchor before the requested leftward visual adjustment.
 const VERTICAL_MARKER_INSET = 8
 const VERTICAL_MARKER_GAP = 2
@@ -233,7 +234,7 @@ export function imageDimensionMarkersSvg(page: Page, assets: Map<string, Asset>,
       ? `<line x1="${marker.x1}" y1="${marker.y1}" x2="${marker.textX - marker.gap}" y2="${marker.y1}"/><line x1="${marker.textX + marker.gap}" y1="${marker.y1}" x2="${marker.x2}" y2="${marker.y1}"/><path d="M${marker.x1} ${marker.y1}l5 -2v4Z" fill="#2f6fa3"/><path d="M${marker.x2} ${marker.y1}l-5 -2v4Z" fill="#2f6fa3"/>`
       : `<line x1="${marker.x1}" y1="${marker.y1}" x2="${marker.x1}" y2="${marker.textY - marker.gap}"/><line x1="${marker.x1}" y1="${marker.textY + marker.gap}" x2="${marker.x1}" y2="${marker.y2}"/><path d="M${marker.x1} ${marker.y1}l-2 5h4Z" fill="#2f6fa3"/><path d="M${marker.x1} ${marker.y2}l-2 -5h4Z" fill="#2f6fa3"/>`
     const extensions = marker.extension.map(([x1, y1, x2, y2]) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`).join('')
-    return [`<g data-printflow-dimension="true" data-item-id="${escape(group.itemIds[0])}" fill="none" stroke="#2f6fa3" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round">${extensions}${line}<text x="${marker.textX}" y="${marker.textY}" text-anchor="middle" stroke="none" fill="#2f6fa3" font-family="Arial, Microsoft YaHei, sans-serif" font-size="7" transform="${marker.textRotation ? `rotate(${marker.textRotation} ${marker.textX} ${marker.textY})` : ''}">${escape(marker.label)}</text></g>`]
+    return [`<g data-printflow-dimension="true" data-item-id="${escape(group.itemIds[0])}" fill="none" stroke="#2f6fa3" stroke-width="${RULER_STROKE_WIDTH}" stroke-linecap="round" stroke-linejoin="round">${extensions}${line}<text x="${marker.textX}" y="${marker.textY}" text-anchor="middle" stroke="none" fill="#2f6fa3" font-family="Arial, Microsoft YaHei, sans-serif" font-size="7" transform="${marker.textRotation ? `rotate(${marker.textRotation} ${marker.textX} ${marker.textY})` : ''}">${escape(marker.label)}</text></g>`]
   }).join('')
 }
 

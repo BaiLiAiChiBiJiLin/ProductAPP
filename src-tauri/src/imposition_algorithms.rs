@@ -104,7 +104,36 @@ pub struct NestRequest {
     pub objective: String,
     #[serde(default = "default_irregular_algorithm")]
     pub irregular_algorithm: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template_repack: Option<TemplateRepackRequest>,
     pub items: Vec<NestItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateRepackPlacement {
+    pub source_id: String,
+    pub x_mm: f64,
+    pub y_mm: f64,
+    pub rotation_deg: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateRepackSeed {
+    pub id: String,
+    pub repeat_count: u32,
+    pub placements: Vec<TemplateRepackPlacement>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateRepackRequest {
+    pub templates: Vec<TemplateRepackSeed>,
+    pub source_template_id: String,
+    pub target_template_id: String,
+    pub source_slot_index: usize,
+    pub target_placement: TemplateRepackPlacement,
 }
 
 fn default_irregular_algorithm() -> String {
@@ -405,6 +434,18 @@ fn pack_irregular_at_resource(
             false
         }
     });
+    // A normal job may exclude an invalid asset. An edit transaction must be
+    // all-or-nothing: filtering a source here would violate its complete QT.
+    if request.template_repack.is_some() && !invalid_excluded.is_empty() {
+        return Err(format!(
+            "跨方案重排包含无效图片，原方案保持不变：{}",
+            invalid_excluded
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>()
+                .join("、")
+        ));
+    }
     if let Some(report) = progress {
         report(progress_event(
             "nesting",
@@ -923,6 +964,35 @@ pub async fn load_imposition_polygon(
 mod tests {
     use super::*;
 
+    #[test]
+    fn template_repack_protocol_survives_tauri_deserialization_and_worker_serialization() {
+        let payload = serde_json::json!({
+            "plateWidthMm": 100, "plateHeightMm": 80, "effectiveWidthMm": 100,
+            "effectiveHeightMm": 80, "effectiveRightMm": 0, "spacingMm": 3,
+            "objective": "least-cutting", "items": [],
+            "templateRepack": {
+                "templates": [{ "id": "A", "repeatCount": 10, "placements": [
+                    { "sourceId": "cat", "xMm": 3.127, "yMm": 4.891, "rotationDeg": 37.25 }
+                ] }],
+                "sourceTemplateId": "A", "targetTemplateId": "B", "sourceSlotIndex": 0,
+                "targetPlacement": { "sourceId": "cat", "xMm": 19.237, "yMm": 17.891, "rotationDeg": 37.25 }
+            }
+        });
+        let request: NestRequest = serde_json::from_value(payload.clone()).unwrap();
+        let forwarded = serde_json::to_value(request).unwrap();
+        assert_eq!(forwarded["templateRepack"], payload["templateRepack"]);
+        let mut combined = payload.clone();
+        combined["objective"] = serde_json::json!("combined");
+        let request: NestRequest = serde_json::from_value(combined.clone()).unwrap();
+        let forwarded = serde_json::to_value(request).unwrap();
+        assert_eq!(forwarded["objective"], "combined");
+        assert_eq!(forwarded["templateRepack"], combined["templateRepack"]);
+        let mut normal = payload;
+        normal.as_object_mut().unwrap().remove("templateRepack");
+        let request: NestRequest = serde_json::from_value(normal).unwrap();
+        assert!(request.template_repack.is_none());
+    }
+
     fn rotated_polygon_bounds(polygon: &[[f64; 2]], rotation_deg: f64) -> (f64, f64, f64, f64) {
         let angle = rotation_deg.to_radians();
         let (sin, cos) = angle.sin_cos();
@@ -992,13 +1062,13 @@ mod tests {
 
     #[test]
     #[ignore = "requires the generated self-contained installer runtime"]
-    fn installed_runtime_executes_both_strategies_with_the_native_core() {
+    fn installed_runtime_executes_all_strategies_with_the_native_core() {
         let resource = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources");
         assert_eq!(
             local_tool_root(Some(&resource)),
             Some(resource.join("imposition-runtime"))
         );
-        for objective in ["least-material", "least-cutting"] {
+        for objective in ["least-material", "least-cutting", "combined"] {
             let result = pack_irregular_at_resource(
                 NestRequest {
                     plate_width_mm: 100.0,
@@ -1009,6 +1079,7 @@ mod tests {
                     spacing_mm: 3.0,
                     objective: objective.into(),
                     irregular_algorithm: "local-tools".into(),
+                    template_repack: None,
                     items: vec![NestItem {
                         id: "安装测试".into(),
                         width_mm: 10.0,
@@ -1034,6 +1105,79 @@ mod tests {
 
     #[test]
     #[ignore = "requires the local tools Python runtime"]
+    fn combined_adapter_roundtrip_preserves_objective_and_cross_template_quantities() {
+        let mut payload = serde_json::json!({
+            "plateWidthMm": 25, "plateHeightMm": 10, "effectiveWidthMm": 25,
+            "effectiveHeightMm": 10, "effectiveRightMm": 0, "spacingMm": 3,
+            "objective": "combined", "irregularAlgorithm": "local-tools",
+            "items": [
+                { "id": "cat", "widthMm": 10, "heightMm": 8, "quantity": 5,
+                  "polygon": [[0,0], [10,0], [10,8], [0,8]] },
+                { "id": "flower", "widthMm": 10, "heightMm": 8, "quantity": 2,
+                  "polygon": [[0,0], [10,0], [10,8], [0,8]] }
+            ]
+        });
+        let result = pack_irregular(serde_json::from_value(payload.clone()).unwrap()).unwrap();
+        assert!(
+            result.algorithm.starts_with("tools/combined"),
+            "{}",
+            result.algorithm
+        );
+        assert_eq!(result.placements.len(), 7);
+        assert!(result.unplaced.is_empty());
+
+        // The target can accept two cat copies (one per flower board); the
+        // remaining three must take the combined strategy's new-board branch.
+        payload["templateRepack"] = serde_json::json!({
+            "templates": [
+                { "id": "A", "repeatCount": 5, "placements": [
+                    { "sourceId": "cat", "xMm": 0, "yMm": 0, "rotationDeg": 0 }
+                ] },
+                { "id": "B", "repeatCount": 2, "placements": [
+                    { "sourceId": "flower", "xMm": 0, "yMm": 0, "rotationDeg": 0 }
+                ] }
+            ],
+            "sourceTemplateId": "A", "targetTemplateId": "B", "sourceSlotIndex": 0,
+            "targetPlacement": { "sourceId": "cat", "xMm": 15, "yMm": 0, "rotationDeg": 0 }
+        });
+        let result = pack_irregular(serde_json::from_value(payload).unwrap()).unwrap();
+        assert!(
+            result.algorithm.contains("template-repack"),
+            "{}",
+            result.algorithm
+        );
+        assert_eq!(result.placements.len(), 7);
+        assert_eq!(result.sheets_used, 4);
+        assert!(result.unplaced.is_empty());
+        let base = |id: &str| id.split("#qt-").next().unwrap().to_owned();
+        assert_eq!(
+            result
+                .placements
+                .iter()
+                .filter(|p| base(&p.id) == "cat")
+                .count(),
+            5
+        );
+        assert_eq!(
+            result
+                .placements
+                .iter()
+                .filter(|p| base(&p.id) == "flower")
+                .count(),
+            2
+        );
+        assert_eq!(
+            result
+                .placements
+                .iter()
+                .filter(|p| base(&p.id) == "cat" && p.x_mm == 15.0 && p.y_mm == 0.0)
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    #[ignore = "requires the local tools Python runtime"]
     fn local_tools_adapter_roundtrip_reports_progress_and_real_placements() {
         let events = std::cell::RefCell::new(Vec::new());
         let reporter = |event: IrregularProgressEvent| events.borrow_mut().push(event);
@@ -1047,6 +1191,7 @@ mod tests {
                 spacing_mm: 3.0,
                 objective: "least-material".into(),
                 irregular_algorithm: "local-tools".into(),
+                template_repack: None,
                 items: vec![NestItem {
                     id: "tools-probe".into(),
                     width_mm: 10.0,
@@ -1088,6 +1233,7 @@ mod tests {
             spacing_mm: 3.0,
             objective: "combined".into(),
             irregular_algorithm: "local-tools".into(),
+            template_repack: None,
             items: vec![
                 NestItem {
                     id: "valid".into(),
@@ -1128,6 +1274,7 @@ mod tests {
             spacing_mm: 3.0,
             objective: "least-sheets".into(),
             irregular_algorithm: "local-tools".into(),
+            template_repack: None,
             items: vec![
                 NestItem {
                     id: "valid-dimension".into(),
@@ -1162,6 +1309,7 @@ mod tests {
             spacing_mm: 3.0,
             objective: "least-material".into(),
             irregular_algorithm: "not-a-real-engine".into(),
+            template_repack: None,
             items: vec![NestItem {
                 id: "external-tool-probe".into(),
                 width_mm: 20.0,

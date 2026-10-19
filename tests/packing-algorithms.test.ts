@@ -71,6 +71,28 @@ describe('irregular solver result display', () => {
     expect(plan.cuttingLines).toBe(2)
   })
 
+  it('shares cutting layouts across artwork and equivalent negative rotations, but preserves print groups', () => {
+    const images = [image('a', 20, 20), image('b', 20, 20), image('c', 20, 20)]
+    const triangle: Array<[number, number]> = [[0, 0], [20, 0], [0, 20]]
+    const plan = summarizePackingResult(result([
+      { ...placement('a', 0), rotationDeg: -90 },
+      { ...placement('b', 1), rotationDeg: 270 },
+      { ...placement('c', 2), rotationDeg: 630 },
+    ]), images, { a: triangle, b: triangle, c: triangle })
+    expect(plan.cuttingLines).toBe(1)
+    expect(groupRepeatedPackingPages(plan.pages)).toHaveLength(3)
+  })
+
+  it('includes frame dimensions in the cutting-layout identity used by the combined objective', () => {
+    const images = expandImpositionImages([image('a', 20, 20, 3)])
+    const plan = summarizePackingResult(result([
+      placement('a', 0),
+      { ...placement('a#qt-2', 1), widthMm: 21 },
+      { ...placement('a#qt-3', 2), heightMm: 21 },
+    ]), images, { a: [[0, 0], [20, 0], [0, 20]] })
+    expect(plan.cuttingLines).toBe(3)
+  })
+
   it('leaves the canvas empty when the solver has no placements', () => {
     const images = expandImpositionImages([image('a', 20, 20, 1300)])
     const plan = summarizePackingResult(result([]), images, {})

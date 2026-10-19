@@ -105,21 +105,35 @@ function revealTag(tag: string): string {
  * Image selection retains vector cutlines, matching the existing Back behavior.
  */
 export function selectSvgLayer(svg: string, id: string): string {
+  return selectSvgLayers(svg, [id])
+}
+
+/** Select several layers from one source while preserving their original paint order. */
+export function selectSvgLayers(svg: string, ids: readonly string[]): string {
   const nodes = parseNodes(svg)
   const layers = layerNodes(nodes)
-  const selected = layers.find((_node, index) => layerId(index) === id)
-  if (!selected) return svg
+  const requestedIds = new Set(ids)
+  const selected = layers.filter((_node, index) => requestedIds.has(layerId(index)))
+  if (!selected.length) return svg
+  const hasSelectedGroup = selected.some(node => node.tag === 'g')
+  const layerSet = new Set(layers)
 
   const omitted = nodes.filter(node => {
-    if (node.resource || contains(node, selected) || contains(selected, node)) return false
+    if (node.resource || selected.some(layer => contains(node, layer) || contains(layer, node))) return false
     if (node.tag === 'image') return true
-    return selected.tag === 'g' && layers.includes(node) && !containsCutline(node)
+    return hasSelectedGroup && layerSet.has(node) && !containsCutline(node)
   })
   // Removing a complete sibling group also removes its image children. Avoid
   // overlapping replacements so offsets always refer to the unmodified source.
   const removals = omitted.filter(node => !omitted.some(parent => parent !== node && contains(parent, node)))
   const patches = removals.map(node => ({ start: node.start, end: node.end, text: '' }))
-  for (let node: SvgNode | undefined = selected; node; node = node.parent) {
+  // Several selected layers can share ancestors (or be nested in each other).
+  // Rewrite each opening tag once so source offsets remain valid.
+  const revealed = new Set<SvgNode>()
+  for (const layer of selected) {
+    for (let node: SvgNode | undefined = layer; node; node = node.parent) revealed.add(node)
+  }
+  for (const node of revealed) {
     patches.push({ start: node.start, end: node.openEnd, text: revealTag(svg.slice(node.start, node.openEnd)) })
   }
   let result = svg

@@ -41,6 +41,14 @@ int32_t nc_pack(NcContext *, const NcPackConfig *,
                 const uint32_t *order, size_t order_count,
                 uint64_t *quantities, size_t quantity_count,
                 NcProgress progress, void *user);
+int32_t nc_pack_seeded(NcContext *, const NcPackConfig *,
+                const NcSource *, size_t source_count,
+                const uint32_t *mask_indexes, size_t mask_index_count,
+                const NcLimit *, size_t limit_count,
+                const uint32_t *order, size_t order_count,
+                uint64_t *quantities, size_t quantity_count,
+                const uint8_t *initial_occupancy, size_t occupancy_len,
+                NcProgress progress, void *user);
 size_t nc_placement_count(const NcContext *);
 int32_t nc_copy_placements(NcContext *, NcPlacement *out, size_t capacity);
 uint64_t nc_memory_used(const NcContext *);
@@ -64,6 +72,19 @@ limit means that orientation cannot fit. Rust additionally clips these maxima
 to the physical raster. `reserved` must be zero; `lookahead` is positive.
 Python passes its already-generated `weight` and the score height coefficient
 1.0 (`top`), 0.65 (`bl`) or 0.35 (other). No random numbers are generated here.
+
+`nc_pack_seeded` is an optional ABI 1 extension; the original `nc_pack` symbol
+and structures are unchanged. The seed is a row-major, binary uint8 array with
+exactly `cols * rows` entries. It stays borrowed and unmodified until the call
+returns. Its bytes count toward the context memory budget; native search stores
+one bit-packed board and returns only newly placed pieces. Fixed pieces must
+already be represented by the seed and excluded from the remaining quantities.
+A null seed with length zero starts an empty board. Invalid lengths, nonbinary
+values and memory-budget failures leave quantities unchanged. The Python bridge
+accepts `pack_one(..., initial_occupancy=grid)`, copies the grid for its Python
+fallback, and preserves fixed occupancy if an older DLL lacks the new symbol.
+`nesting_rust.collision_grid` exposes the shared origin, columns and rows used
+by both implementations so arbitrary fixed positions can be rasterized once.
 
 The returned placement indexes allow Python to recover angle, bx/by and source
 ID without duplicating geometry metadata in Rust. Placement coordinates are

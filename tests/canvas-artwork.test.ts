@@ -5,6 +5,7 @@ import { replaceCanvasItemArtwork } from '../src/modules/schematic/services/canv
 import { autoArrangePages, paginateAssets } from '../src/modules/schematic/services/paginationService'
 import { groupForDimensionDisplay } from '../src/modules/schematic/services/dimensionDisplayService'
 import type { DimensionDisplayOverride } from '../src/modules/schematic/services/imageDimensionService'
+import { backLayerSvg } from '../src/modules/schematic/services/svgBackLayerService'
 
 const asset = (id: string, fields: Partial<Asset> = {}): Asset => ({
   id, name: `${id}.svg`, productId: 'standee', width: 40, height: 80,
@@ -15,7 +16,7 @@ const item = (id: string, fields: Partial<Item> = {}): Item => ({
   id, assetId: 'old', x: 125, y: 180, w: 50, h: 100, rotation: 0, ...fields,
 })
 
-test('replacing Back keeps Front and shared source assets, groups and other pages untouched', () => {
+test('replacing Back replaces the list entry and all shared Front/Back references across pages', () => {
   const source = asset('old', {
     productName: 'Clear Acrylic Standees', attributes: { QT: '2', Finish: 'Epoxy' },
     attributeImages: { Accessory: 'accessory.png' }, note: '保留备注', noteImage: 'note.png',
@@ -27,7 +28,7 @@ test('replacing Back keeps Front and shared source assets, groups and other page
   const front = item('front', { caption: 'Front' })
   const back = item('back', {
     caption: 'Back', captionAlign: 'left', captionFontSize: 9, derivedFrom: front.id,
-    backSvg: '<svg>old back layer</svg>', svgLayerId: 'old-layer', mirrorX: true, rotation: 25, note: '画布备注',
+    backSvg: '<svg>old back layer</svg>', svgLayerId: 'old-layer', svgLayerIds: ['old-layer', 'second-old-layer'], mirrorX: true, rotation: 25, note: '画布备注',
     rulerUnit: 'cm', rulerWidth: true, rulerHeight: true, sizeAxis: 'height',
     rulerWidthRange: [0.1, 0.9], rulerHeightRange: [0.2, 0.8], suppressRuler: false,
   })
@@ -36,39 +37,90 @@ test('replacing Back keeps Front and shared source assets, groups and other page
     imageGroups: [{ id: 'group', itemIds: [front.id, back.id], x: 10, y: 120, width: 300, height: 150 }],
     headerBlocks: [{ id: 'header', x: 10, y: 95, width: 300, columns: [{ id: 'column', imageMode: 'separate', detailLabel: 'Size/QT/Finish/Accessory' }], assetIds: [source.id] }],
   }
-  const otherPage: Page = { id: 2, name: '页面 2', items: [item('copy')] }
+  const otherPage: Page = { id: 2, name: '页面 2', items: [item('copy', { w: 60, h: 80 })] }
+  const unrelated = asset('unrelated')
+  const unrelatedPage: Page = { id: 3, name: '页面 3', items: [item('unrelated-item', { assetId: unrelated.id })] }
+  const follower = asset('follower', { productGroupId: 'product-group', productGroupLeaderId: source.id, productGroupPosition: 2 })
   const replacement = asset('new', {
     width: 200, height: 100, sourceGroupWidthMm: 60, sourceGroupHeightMm: 30,
     sourceFileName: 'new.svg', sourceGroupId: 'artwork-layer', sourceGroupBounds: [0, 0, 200, 100],
     sourceImages: [{ nodeId: 'image', widthPx: 200, heightPx: 100, format: 'png' }],
     attributes: { QT: '99' }, note: '不采用新资源业务属性',
   })
-  const output = replaceCanvasItemArtwork([source], [page, otherPage], back.id, replacement)
+  const output = replaceCanvasItemArtwork([unrelated, source, follower], [page, otherPage, unrelatedPage], back.id, replacement)
 
-  expect(output.assets).toHaveLength(2)
-  expect(output.assets[0]).toBe(source)
-  expect(output.assets[1]).toEqual({
-    ...source, ...replacement, productId: source.productId, productName: source.productName,
-    attributes: source.attributes, note: source.note,
+  expect(output.assets.map(value => value.id)).toEqual(['unrelated', 'new', 'follower'])
+  expect(output.assets[0]).toBe(unrelated)
+  expect(output.assets[1]).toMatchObject({
+    id: 'new', width: 200, height: 100, productId: source.productId, productName: source.productName,
+    attributes: source.attributes, note: source.note, attributeImages: source.attributeImages,
+    noteImages: source.noteImages, productGroupLeaderId: 'new', productGroupId: 'product-group', productGroupPosition: 1,
   })
-  expect(output.pages[1]).toBe(otherPage)
-  expect(output.pages[0].items[0]).toBe(front)
-  expect(output.pages[0].items[1]).toEqual({ ...back, assetId: 'new', arrangementSourceAssetId: 'old', w: 50, h: 25, backSvg: undefined, svgLayerId: undefined })
+  expect(output.assets[2]).toMatchObject({ productGroupLeaderId: 'new', productGroupPosition: 2 })
+  expect(output.pages[2]).toBe(unrelatedPage)
+  expect(output.pages[1].items[0]).toEqual({ ...otherPage.items[0], assetId: 'new', arrangementSourceAssetId: undefined, w: 60, h: 30, backSvg: undefined, svgLayerId: undefined, svgLayerIds: undefined })
+  expect(output.pages[0].items[0]).toEqual({ ...front, assetId: 'new', arrangementSourceAssetId: undefined, w: 50, h: 25, backSvg: undefined, svgLayerId: undefined, svgLayerIds: undefined })
+  expect(output.pages[0].items[1]).toEqual({ ...back, assetId: 'new', arrangementSourceAssetId: undefined, w: 50, h: 25, backSvg: backLayerSvg(replacement.svg, true), svgLayerId: undefined, svgLayerIds: undefined })
   expect(output.pages[0].imageGroups).toBe(page.imageGroups)
-  expect(output.pages[0].headerBlocks).toBe(page.headerBlocks)
+  expect(output.pages[0].headerBlocks![0].assetIds).toEqual(['new'])
+  expect(page.headerBlocks![0].assetIds).toEqual(['old'])
   expect(page.items[1]).toBe(back)
   expect(back.backSvg).toBe('<svg>old back layer</svg>')
+  expect(back.svgLayerIds).toEqual(['old-layer', 'second-old-layer'])
 })
 
-test('replacing Front affects only that item and contains a tall image in its original frame', () => {
+test('replacing Front contains the new art in each original frame and regenerates derived Back', () => {
   const source = asset('old')
   const front = item('front', { caption: 'Front', backSvg: '<svg>selected layer</svg>' })
   const back = item('back', { caption: 'Back', derivedFrom: 'front', backSvg: '<svg>back</svg>' })
   const page: Page = { id: 1, name: 'page', items: [front, back] }
   const output = replaceCanvasItemArtwork([source], [page], front.id, asset('new', { width: 10, height: 100 }))
-  expect(output.pages[0].items[0]).toEqual({ ...front, assetId: 'new', arrangementSourceAssetId: 'old', w: 10, h: 100, backSvg: undefined, svgLayerId: undefined })
-  expect(output.pages[0].items[1]).toBe(back)
-  expect(output.assets[0]).toBe(source)
+  expect(output.pages[0].items[0]).toEqual({ ...front, assetId: 'new', arrangementSourceAssetId: undefined, w: 10, h: 100, backSvg: undefined, svgLayerId: undefined, svgLayerIds: undefined })
+  expect(output.pages[0].items[1]).toEqual({ ...back, assetId: 'new', arrangementSourceAssetId: undefined, w: 10, h: 100, backSvg: '<svg id="new"/>', svgLayerId: undefined, svgLayerIds: undefined })
+  expect(output.assets).toHaveLength(1)
+  expect(output.assets[0].id).toBe('new')
+})
+
+test('legacy arrangement sources are remapped without overwriting independently replaced artwork', () => {
+  const original = asset('old')
+  const independent = asset('independent')
+  const previousSource = asset('legacy-source')
+  const target = item('target', { arrangementSourceAssetId: 'old', svgLayerIds: ['layer'] })
+  const retainedSource = item('retained-source', { arrangementSourceAssetId: 'legacy-source' })
+  const independentItem = item('independent', {
+    assetId: independent.id, arrangementSourceAssetId: 'old', svgLayerIds: ['selected'], backSvg: '<svg>independent artwork</svg>',
+  })
+  const sourceOnlyPage: Page = { id: 2, name: 'source-only', items: [independentItem] }
+  const output = replaceCanvasItemArtwork([original, independent, previousSource], [
+    { id: 1, name: 'page', items: [target, retainedSource] }, sourceOnlyPage,
+  ], target.id, asset('new'))
+  expect(output.assets.map(value => value.id)).toEqual(['new', 'independent', 'legacy-source'])
+  expect(output.pages[0].items[0].arrangementSourceAssetId).toBeUndefined()
+  expect(output.pages[0].items[1]).toMatchObject({ assetId: 'new', arrangementSourceAssetId: 'legacy-source' })
+  expect(output.pages[1].items[0]).toEqual({ ...independentItem, arrangementSourceAssetId: 'new' })
+  expect(independentItem.arrangementSourceAssetId).toBe('old')
+  expect(output.assets[1]).toBe(independent)
+})
+
+test.each([
+  { productName: 'Keychains', productId: 'keychain', fit: false },
+  { productName: undefined, productId: 'clear-acrylic-standees', fit: true },
+])('derived Back is rebuilt from the new SVG using the product layout rule $productId', ({ productName, productId, fit }) => {
+  const source = asset('old', { productName, productId })
+  const front = item('front', { svgLayerId: 'selected', backSvg: '<svg>old front layer</svg>' })
+  const back = item('back', { derivedFrom: front.id, mirrorX: true, svgLayerIds: ['old-layer'], backSvg: '<svg>old back layer</svg>' })
+  const artwork = asset('new', {
+    svg: '<svg viewBox="0 0 200 100"><image id="first" x="10" y="20" width="40" height="60" href="first.png"/><image id="second" x="80" y="20" width="40" height="60" href="second.png"/></svg>',
+  })
+  const result = replaceCanvasItemArtwork([source], [{ id: 1, name: 'page', items: [front, back] }], back.id, artwork)
+  expect(result.pages[0].items[0].backSvg).toBeUndefined()
+  expect(result.pages[0].items[1]).toMatchObject({ derivedFrom: front.id, mirrorX: true, backSvg: backLayerSvg(artwork.svg, fit) })
+  expect(result.pages[0].items[1].backSvg).not.toContain('id="second"')
+  expect(result.pages[0].items[1].backSvg).toContain(fit ? 'viewBox="10 20 40 60"' : 'viewBox="0 0 200 100"')
+  for (const changed of result.pages[0].items) {
+    expect(changed.svgLayerId).toBeUndefined()
+    expect(changed.svgLayerIds).toBeUndefined()
+  }
 })
 
 test('new artwork clears stale source measurement metadata while retaining business properties', () => {
@@ -79,9 +131,9 @@ test('new artwork clears stale source measurement metadata while retaining busin
   })
   const page: Page = { id: 1, name: 'page', items: [item('target')] }
   const result = replaceCanvasItemArtwork([source], [page], 'target', asset('new'))
-  expect(result.assets[1].attributes).toBe(source.attributes)
+  expect(result.assets[0].attributes).toBe(source.attributes)
   for (const field of ['sourceGroupWidthMm', 'sourceGroupHeightMm', 'sourceGroupBounds', 'sourceImages', 'sourceGroupId', 'sourceFileName'] as const) {
-    expect(result.assets[1][field]).toBeUndefined()
+    expect(result.assets[0][field]).toBeUndefined()
   }
 })
 
@@ -106,7 +158,7 @@ test('a missing canvas item, missing asset, ID conflict or invalid dimensions le
 
 const pairedSource = () => asset('old', { productId: 'keychain', productName: 'Keychains', attributes: { 'Print Option': 'Double Sided Different Design' } })
 
-test('repeated rearrangement retains independent Front and Back replacements and their ruler settings', () => {
+test('repeated replacement and rearrangement retain stable Front/Back identities and ruler settings', () => {
   const source = pairedSource()
   const initial = paginateAssets([source])
   const front = initial[0].items.find(value => !value.derivedFrom)!
@@ -126,12 +178,17 @@ test('repeated rearrangement retains independent Front and Back replacements and
     expect(items).toHaveLength(2)
     const arrangedFront = items.find(value => value.id === front.id)!
     const arrangedBack = items.find(value => value.id === back.id)!
-    expect(arrangedFront).toMatchObject({ assetId: 'new-front', arrangementSourceAssetId: source.id, rulerUnit: 'cm', rulerWidth: true, rulerHeight: false, rulerWidthRange: [0.1, 0.9] })
-    expect(arrangedBack).toMatchObject({ assetId: 'newer-back', arrangementSourceAssetId: source.id, derivedFrom: front.id, rulerUnit: 'in', rulerHeightRange: [0.2, 0.8] })
-    expect(arrangedFront.w / arrangedFront.h).toBeCloseTo(0.5)
+    expect(state.assets.map(value => value.id)).toEqual(['newer-back'])
+    expect(arrangedFront).toMatchObject({ assetId: 'newer-back', rulerUnit: 'cm', rulerWidth: true, rulerHeight: false, rulerWidthRange: [0.1, 0.9] })
+    expect(arrangedBack).toMatchObject({ assetId: 'newer-back', derivedFrom: front.id, rulerUnit: 'in', rulerHeightRange: [0.2, 0.8] })
+    expect(arrangedFront.arrangementSourceAssetId).toBeUndefined()
+    expect(arrangedBack.arrangementSourceAssetId).toBeUndefined()
+    expect(arrangedFront.w / arrangedFront.h).toBeCloseTo(3)
     expect(arrangedBack.w / arrangedBack.h).toBeCloseTo(3)
     expect(arrangedFront.backSvg).toBeUndefined()
-    expect(arrangedBack.backSvg).toBeUndefined()
+    expect(arrangedBack.backSvg).toBe(backLayerSvg(state.assets[0].svg))
+    const ids = new Set(items.map(value => value.id))
+    expect(state.pages.flatMap(page => page.imageGroups ?? []).flatMap(group => group.itemIds).every(id => ids.has(id))).toBe(true)
   }
 })
 
@@ -159,7 +216,36 @@ test('rearrangement keeps a chosen layer on its own role while regenerating an u
   expect(again[0].items.find(value => !value.derivedFrom)).toMatchObject({ svgLayerId: 'selected-front-layer', backSvg: '<svg>chosen front layer</svg>' })
 })
 
-test('adding a pool image preserves independent Front and Back replacements and layers without duplicate products', () => {
+test('rearrangement and both export paths retain multiple layers independently for Front and Back', () => {
+  const source = pairedSource()
+  const pages = paginateAssets([source])
+  const front = pages[0].items.find(value => !value.derivedFrom)!
+  const back = pages[0].items.find(value => value.derivedFrom)!
+  Object.assign(front, { svgLayerIds: ['svg-layer-0', 'svg-layer-1'], backSvg: '<svg><rect fill="red"/><circle fill="blue"/></svg>' })
+  Object.assign(back, { svgLayerIds: ['svg-layer-2', 'svg-layer-3'], backSvg: '<svg><rect fill="green"/><circle fill="yellow"/></svg>' })
+  expect(front.arrangementSourceAssetId).toBeUndefined()
+  expect(back.arrangementSourceAssetId).toBeUndefined()
+  expect(front.svgLayerId).toBeUndefined()
+  expect(back.svgLayerId).toBeUndefined()
+
+  let arranged = pages
+  for (let iteration = 0; iteration < 2; iteration++) {
+    arranged = autoArrangePages(arranged, 1, [source], defaultLayoutBounds)
+    for (const original of [front, back]) {
+      expect(arranged[0].items.find(value => value.id === original.id)).toMatchObject({
+        svgLayerIds: original.svgLayerIds, backSvg: original.backSvg,
+      })
+    }
+  }
+  const assets = new Map([[source.id, source]])
+  for (const svg of [pageSvg(arranged[0], assets), pageRasterSvg(arranged[0], assets)]) {
+    const images = new DOMParser().parseFromString(svg, 'image/svg+xml').querySelectorAll('image')
+    const artworks = [...images].map(image => atob(image.getAttribute('href')!.split(',')[1]))
+    expect(artworks).toEqual([front.backSvg, back.backSvg])
+  }
+})
+
+test('adding a pool image after replacement preserves separate Front/Back layers without duplicating products', () => {
   const source = pairedSource()
   const initial = paginateAssets([source])
   const front = initial[0].items.find(value => !value.derivedFrom)!
@@ -170,11 +256,11 @@ test('adding a pool image preserves independent Front and Back replacements and 
   Object.assign(state.pages[0].items.find(value => value.id === back.id)!, { svgLayerId: 'back-layer', backSvg: '<svg>chosen Back</svg>' })
   const extra = asset('extra', { productId: 'keychain', productName: 'Keychains' })
   const assets = [...state.assets, extra]
-  const pages = autoArrangePages(state.pages, 1, assets, defaultLayoutBounds, [], [extra.id, extra.id, source.id])
+  const pages = autoArrangePages(state.pages, 1, assets, defaultLayoutBounds, [], [extra.id, extra.id, 'new-back'])
   const items = pages.flatMap(page => page.items)
   expect(items).toHaveLength(3)
-  expect(items.filter(value => !value.derivedFrom).map(value => value.arrangementSourceAssetId ?? value.assetId)).toEqual([source.id, extra.id])
-  expect(items.find(value => value.id === front.id)).toMatchObject({ assetId: 'new-front', svgLayerId: 'front-layer', backSvg: '<svg>chosen Front</svg>', rulerHeightRange: [0.2, 0.8] })
+  expect(items.filter(value => !value.derivedFrom).map(value => value.arrangementSourceAssetId ?? value.assetId)).toEqual(['new-back', extra.id])
+  expect(items.find(value => value.id === front.id)).toMatchObject({ assetId: 'new-back', svgLayerId: 'front-layer', backSvg: '<svg>chosen Front</svg>', rulerHeightRange: [0.2, 0.8] })
   expect(items.find(value => value.id === back.id)).toMatchObject({ assetId: 'new-back', svgLayerId: 'back-layer', backSvg: '<svg>chosen Back</svg>', derivedFrom: front.id })
   expect(items.filter(value => value.assetId === extra.id)).toHaveLength(1)
   expect(items.some(value => value.assetId === source.id)).toBe(false)
@@ -209,14 +295,15 @@ test.each([
   expect(overrides.get(front.id)).toEqual(override)
 })
 
-test('replacing Back or a standee base keeps the main Size and its saved text unchanged', () => {
+test('replacing Back refreshes its shared main Size while a standee base replacement keeps main Size unchanged', () => {
   const source = pairedSource()
   const paired = paginateAssets([source])
   const back = paired[0].items.find(value => value.derivedFrom)!
   const initialDetails = paired[0].imageGroups![0].details!
   const next = replaceCanvasItemArtwork([source], paired, back.id, asset('new-back', { width: 100, height: 300 }))
-  expect(next.pages[0].imageGroups![0].details).toBe(initialDetails)
-  expect(exportedSizes(pageSvg(next.pages[0], new Map(next.assets.map(value => [value.id, value]))))).toEqual([`Size: ${initialDetails.size}`])
+  expect(next.pages[0].imageGroups![0].details!.size).toBe('79.3 mm')
+  expect(next.pages[0].imageGroups![0].details!.size).not.toBe(initialDetails.size)
+  expect(exportedSizes(pageSvg(next.pages[0], new Map(next.assets.map(value => [value.id, value]))))).toEqual(['Size: 79.3 mm'])
 
   const standee = [asset('main', { productGroupId: 'g', productName: 'Acrylic Standees' }),
     asset('base', { productGroupId: 'g', productName: 'Acrylic Standees' })]
@@ -230,7 +317,7 @@ test('replacing Back or a standee base keeps the main Size and its saved text un
 test('replacement refreshes only its own Size entries including combined panels and keeps hidden Size available', () => {
   const source = asset('old', { productId: 'keychain', productName: 'Keychains' })
   const target = item('target', { rulerWidth: false, rulerHeight: false, sizeAxis: 'height' })
-  const other = item('other')
+  const other = item('other', { assetId: 'unrelated' })
   const page: Page = { id: 1, name: 'page', items: [target, other], imageGroups: [{
     id: 'group', itemIds: [target.id, other.id], x: 10, y: 100, width: 300, height: 200,
     details: { size: 'old-main', sizes: [{ itemId: target.id, label: 'old-target' }, { itemId: other.id, label: 'keep-other' }], qt: '2', finish: 'Epoxy' },
@@ -240,7 +327,7 @@ test('replacement refreshes only its own Size entries including combined panels 
     ],
   }] }
   const overrides = new Map<string, DimensionDisplayOverride>([[target.id, { precision: 'truncate', decimalPlaces: 2 }]])
-  const next = replaceCanvasItemArtwork([source], [page], target.id,
+  const next = replaceCanvasItemArtwork([source, asset('unrelated')], [page], target.id,
     asset('new', { width: 100, height: 200, sourceGroupWidthMm: 15, sourceGroupHeightMm: 30 }), overrides)
   const updated = next.pages[0].imageGroups![0]
   expect(updated.details!.size).toBe('old-main')
@@ -253,4 +340,48 @@ test('replacement refreshes only its own Size entries including combined panels 
   next.pages[0].items[0] = { ...next.pages[0].items[0], rulerHeight: true }
   expect(exportedSizes(pageSvg(next.pages[0], byId, {}, 1, overrides))).toContain('Size: 30.00 mm')
   expect(page.imageGroups![0].detailGroups![0].details.size).toBe('old-target')
+})
+
+test('all shared main Size labels and panels use their own precision and ruler axis across pages', () => {
+  const source = asset('old', { productId: 'keychain', productName: 'Keychains' })
+  const front = item('front', { rulerHeight: true, rulerWidth: false })
+  const copy = item('copy', { rulerHeight: true, rulerWidth: false })
+  const widthCopy = item('width-copy', { rulerWidth: true, rulerHeight: false })
+  const first: Page = { id: 1, name: 'page1', items: [front, copy], imageGroups: [{
+    id: 'g1', itemIds: [front.id, copy.id], x: 10, y: 100, width: 300, height: 200,
+    details: { size: 'unused', sizes: [{ itemId: front.id, label: 'old-front' }, { itemId: copy.id, label: 'old-copy' }], qt: '2', finish: '' },
+    detailGroups: [front, copy].map(value => ({ itemIds: [value.id], details: { size: 'old', qt: '2', finish: '' } })),
+  }] }
+  const second: Page = { id: 2, name: 'page2', items: [widthCopy], imageGroups: [{
+    id: 'g2', itemIds: [widthCopy.id], x: 10, y: 100, width: 300, height: 200,
+    details: { size: 'old-width', qt: '3', finish: '' },
+  }] }
+  const overrides = new Map<string, DimensionDisplayOverride>([
+    [front.id, { precision: 'truncate', decimalPlaces: 2 }],
+    [copy.id, { precision: 'round', decimalPlaces: 0 }],
+    [widthCopy.id, { precision: 'default', decimalPlaces: 2 }],
+  ])
+  const next = replaceCanvasItemArtwork([source], [first, second], front.id, asset('new', {
+    width: 100, height: 200, sourceGroupWidthMm: 12.348, sourceGroupHeightMm: 24.696,
+  }), overrides)
+  expect(next.pages[0].imageGroups![0].details!.sizes).toEqual([
+    { itemId: front.id, label: '24.69 mm' }, { itemId: copy.id, label: '25 mm' },
+  ])
+  expect(next.pages[0].imageGroups![0].detailGroups!.map(panel => panel.details.size)).toEqual(['24.69 mm', '25 mm'])
+  expect(next.pages[1].imageGroups![0].details!.size).toBe('12.34 mm')
+  expect(first.imageGroups![0].details!.sizes![0].label).toBe('old-front')
+  expect(second.imageGroups![0].details!.size).toBe('old-width')
+})
+
+test('a header-only reference is updated while unrelated headers and pages retain their identity', () => {
+  const source = asset('old')
+  const header = { id: 'header', x: 10, y: 80, width: 300, columns: [], assetIds: ['old', 'unrelated'] }
+  const unrelatedHeader = { ...header, id: 'unrelated-header', assetIds: ['unrelated'] }
+  const headerPage: Page = { id: 2, name: 'headers', items: [], headerBlocks: [header, unrelatedHeader] }
+  const unrelatedPage: Page = { id: 3, name: 'unrelated', items: [] }
+  const result = replaceCanvasItemArtwork([source], [{ id: 1, name: 'page', items: [item('target')] }, headerPage, unrelatedPage], 'target', asset('new'))
+  expect(result.pages[1].items).toBe(headerPage.items)
+  expect(result.pages[1].headerBlocks![0].assetIds).toEqual(['new', 'unrelated'])
+  expect(result.pages[1].headerBlocks![1]).toBe(unrelatedHeader)
+  expect(result.pages[2]).toBe(unrelatedPage)
 })

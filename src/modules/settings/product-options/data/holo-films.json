@@ -1,0 +1,120 @@
+{
+  "name": "Holo Film",
+  "label": " Holo Film",
+  "labelZh": "全息膜",
+  "values": [
+    {
+      "name": "No Additional Technique",
+      "labelZh": "无附加工艺",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1779689605207-1778662569890-_-_.png",
+      "isDefault": false,
+      "sortOrder": 1,
+      "id": "M1"
+    },
+    {
+      "name": "Holo Heart",
+      "labelZh": "爱心镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778672940632-_.png",
+      "isDefault": false,
+      "sortOrder": 2,
+      "id": "M2"
+    },
+    {
+      "name": "Double-Sided Star Holo",
+      "labelZh": "双面星星镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778739887358-_.png",
+      "isDefault": false,
+      "sortOrder": 3,
+      "id": "M3"
+    },
+    {
+      "name": "Holo Broken Glass",
+      "labelZh": "碎玻璃镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778662323967-_.png",
+      "isDefault": false,
+      "sortOrder": 4,
+      "id": "M4"
+    },
+    {
+      "name": "Double-Sided Broken Glass",
+      "labelZh": "双面碎玻璃镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778662328554-_.png",
+      "isDefault": false,
+      "sortOrder": 5,
+      "id": "M5"
+    },
+    {
+      "name": "Holo Star",
+      "labelZh": "星星镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778669523119-_.png",
+      "isDefault": false,
+      "sortOrder": 6,
+      "id": "M6"
+    },
+    {
+      "name": "Double-Sided Rainbow Holo",
+      "labelZh": "双面彩虹镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778836512787-_02.png",
+      "isDefault": false,
+      "sortOrder": 7,
+      "id": "M7"
+    },
+    {
+      "name": "Double-Sided Heart Holo",
+      "labelZh": "双面爱心镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778668940325-_-02.png",
+      "isDefault": false,
+      "sortOrder": 8,
+      "id": "M8"
+    },
+    {
+      "name": "Heart Holo ",
+      "labelZh": "爱心镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1779787005673-_-02.png",
+      "isDefault": false,
+      "sortOrder": 9,
+      "id": "M9"
+    },
+    {
+      "name": "Star Holo ",
+      "labelZh": "星星镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1779786994245-_.png",
+      "isDefault": false,
+      "sortOrder": 10,
+      "id": "M10"
+    },
+    {
+      "name": "Broken Glass Holo ",
+      "labelZh": "碎玻璃镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1779787021223-1778662328554-_.png",
+      "isDefault": false,
+      "sortOrder": 11,
+      "id": "M11"
+    },
+    {
+      "name": "Holo Heart",
+      "labelZh": "爱心镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1780380004981-_-02.png",
+      "isDefault": false,
+      "sortOrder": 12,
+      "id": "M12"
+    },
+    {
+      "name": "Holo Star",
+      "labelZh": "星星镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1780380010714-_.png",
+      "isDefault": false,
+      "sortOrder": 13,
+      "id": "M13"
+    },
+    {
+      "name": "Holo Broken Glass",
+      "labelZh": "碎玻璃镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1780380014268-1778662328554-_.png",
+      "isDefault": false,
+      "sortOrder": 14,
+      "id": "M14"
+    }
+  ],
+  "nextId": 15
+}

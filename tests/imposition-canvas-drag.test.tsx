@@ -25,12 +25,13 @@ function item(id: string, x: number, y: number, width = 10, height = 10, polygon
 function mount(pages: PackedImpositionItem[][], polygons: Record<string, Array<[number, number]>> = {}, collapseRepeatedLayouts = false) {
   const onSelect = vi.fn()
   const onPagesChange = vi.fn()
-  const canvas = (collapsed: boolean) => <ImpositionKonvaCanvas pages={pages} imageSources={{}} polygons={polygons} collapseRepeatedLayouts={collapsed} boardWidth={100} boardHeight={100} boardScale={1} effectiveX={5} effectiveY={5} effectiveWidth={90} effectiveHeight={90} spacing={3} holeCount={0} holeSize={3} holeLeft={2} holeStart={10} holeGap={20} zoom={1} panOffset={{ x: 0, y: 0 }} panMode={false} onSelectImage={onSelect} onPagesChange={onPagesChange}/>
+  const onEdit = vi.fn()
+  const canvas = (collapsed: boolean) => <ImpositionKonvaCanvas pages={pages} imageSources={{}} polygons={polygons} collapseRepeatedLayouts={collapsed} boardWidth={100} boardHeight={100} boardScale={1} effectiveX={5} effectiveY={5} effectiveWidth={90} effectiveHeight={90} spacing={3} holeCount={0} holeSize={3} holeLeft={2} holeStart={10} holeGap={20} zoom={1} panOffset={{ x: 0, y: 0 }} panMode={false} onSelectImage={onSelect} onPagesChange={onPagesChange} onEdit={onEdit}/>
   const view = render(canvas(collapseRepeatedLayouts))
   const stage = Konva.stages.at(-1)!
   const image = stage.find<Konva.Image>('Image')[0]
   const origin = { x: image.absolutePosition().x - image.x(), y: image.absolutePosition().y - image.y() }
-  return { stage, image, origin, onSelect, onPagesChange, setCollapsed: (collapsed: boolean) => view.rerender(canvas(collapsed)) }
+  return { stage, image, origin, onSelect, onPagesChange, onEdit, setCollapsed: (collapsed: boolean) => view.rerender(canvas(collapsed)) }
 }
 
 function begin(node: Konva.Image) { act(() => { node.fire('dragstart') }) }
@@ -83,8 +84,8 @@ it('allows exactly 3 mm clearance and keeps the last valid position below that c
   expect(image.x()).toBeCloseTo(42)
 })
 
-it('commits a move to another board and still blocks leaving its effective area', () => {
-  const { image, origin, stage, onPagesChange } = mount([[item('moving', 10, 20)], [item('neighbor', 50, 20, 12)]])
+it('previews a cross-board move within bounds and requests reflow without committing one QT', () => {
+  const { image, origin, stage, onPagesChange, onEdit } = mount([[item('moving', 10, 20)], [item('neighbor', 50, 20, 12)]])
   begin(image)
   move(image, origin.x + 124 + 15, origin.y + 25)
   move(image, origin.x + 124 + 15, origin.y + 99)
@@ -92,22 +93,54 @@ it('commits a move to another board and still blocks leaving its effective area'
   end(image)
   const moved = stage.find<Konva.Image>('Image').find(node => node.width() === 10)!
   expect(stage.find('Image')).toHaveLength(2)
-  expect(moved.getParent()!.x()).toBe(124)
-  expect(moved.absolutePosition()).toEqual({ x: origin.x + 139, y: origin.y + 25 })
+  expect(moved.getParent()!.x()).toBe(0)
+  expect(moved.absolutePosition()).toEqual({ x: origin.x + 15, y: origin.y + 25 })
   const committed = onPagesChange.mock.calls.at(-1)![0] as PackedImpositionItem[][]
-  expect(committed[0]).toEqual([])
-  expect(committed[1].find(value => value.image.id === 'moving')).toMatchObject({ x: 10, y: 20 })
+  expect(committed[0][0].image.id).toBe('moving')
+  expect(committed[1]).toHaveLength(1)
+  expect(onEdit.mock.calls.at(-1)![1].templateRepack.targetPlacement).toEqual({ sourceId: 'moving', xMm: 10, yMm: 20, rotationDeg: 0 })
 })
 
-it('keeps valid rotations and restores both angle and position for an out-of-bounds rotation', () => {
+it('keeps valid rotations and stops at the effective-area angular boundary', () => {
   const { image, stage } = mount([[item('valid', 40, 40, 20, 10), item('edge', 60, 82, 20, 10)]])
   act(() => { image.rotation(90); image.fire('transformend') })
   expect(image.rotation()).toBe(90)
   const edge = stage.find<Konva.Image>('Image').find(node => node.y() > 80)!
   const originalPosition = edge.absolutePosition()
   act(() => { edge.rotation(90); edge.fire('transformend') })
-  expect(edge.rotation()).toBe(0)
+  expect(edge.rotation()).toBeGreaterThan(19)
+  expect(edge.rotation()).toBeLessThan(20)
   expect(edge.absolutePosition()).toEqual(originalPosition)
+})
+
+it('keeps rotation previews 3 mm from neighboring outlines and preserves that limit on release', () => {
+  const { image, stage } = mount([[item('moving', 40, 40, 20, 10), item('neighbor', 64, 40, 10, 20)]])
+  const neighbor = stage.find<Konva.Image>('Image')[1]
+  act(() => { image.fire('transformstart'); image.rotation(30); image.fire('transform') })
+  expect(image.rotation()).toBeGreaterThan(0)
+  expect(image.rotation()).toBeLessThan(30)
+  const clearance = neighbor.getClientRect().x - (image.getClientRect().x + image.getClientRect().width)
+  expect(clearance).toBeGreaterThanOrEqual(3 - 1e-7)
+  const accepted = image.rotation()
+  act(() => { image.fire('transformend') })
+  expect(image.rotation()).toBe(accepted)
+})
+
+it('constrains rotation while the pointer is held and commits the latest legal angle on release', () => {
+  const { image, onPagesChange } = mount([[item('edge', 60, 82, 20, 10)]])
+  act(() => { image.fire('transformstart'); image.rotation(10); image.fire('transform') })
+  expect(image.rotation()).toBe(10)
+  act(() => { image.rotation(90); image.fire('transform') })
+  // The invalid preview must already be constrained before mouse release.
+  expect(image.rotation()).toBeGreaterThanOrEqual(10)
+  expect(image.rotation()).toBeLessThan(90)
+  const acceptedAngle = image.rotation()
+  const acceptedPosition = image.absolutePosition()
+  act(() => { image.fire('transformend') })
+  expect(image.rotation()).toBe(acceptedAngle)
+  expect(image.absolutePosition()).toEqual(acceptedPosition)
+  const committed = onPagesChange.mock.calls.at(-1)![0] as PackedImpositionItem[][]
+  expect(committed[0][0].rotation).toBe(acceptedAngle)
 })
 
 it('checks every contour edge when adjacent outlines have different vertex counts', () => {
@@ -145,14 +178,14 @@ it('uses the shared source contour for neighboring QT copies instead of their tr
   end(image)
 })
 
-it('draws one representative per repeated plan, with production count and selection but no editing', () => {
+it('draws one representative per repeated plan, with production count, selection and direct editing', () => {
   const pages = [[item('same', 10, 20)], [item('same#qt-2', 10, 20)], [item('different', 10, 20)]]
   const original = JSON.stringify(pages)
   const { stage, image, onSelect } = mount(pages, {}, true)
   expect(stage.find('Image')).toHaveLength(2)
   expect(stage.find<Konva.Text>('Text').map(node => node.text())).toEqual(['方案 1 · 需生产 2 块 · 利用率 1%', '方案 2 · 需生产 1 块 · 利用率 1%'])
-  expect(stage.find<Konva.Image>('Image').every(node => !node.draggable())).toBe(true)
-  expect(stage.findOne<Konva.Transformer>('Transformer')!.rotateEnabled()).toBe(false)
+  expect(stage.find<Konva.Image>('Image').every(node => node.draggable())).toBe(true)
+  expect(stage.findOne<Konva.Transformer>('Transformer')!.rotateEnabled()).toBe(true)
   act(() => { image.fire('click') })
   expect(onSelect).toHaveBeenCalledWith('same')
   expect(JSON.stringify(pages)).toBe(original)
@@ -177,6 +210,50 @@ it('expands every physical board before editing, preserving every repeated QT co
   expect([second.absolutePosition(), third.absolutePosition()]).toEqual(untouched)
   expect(stage.find('Image')).toHaveLength(3)
   expect(JSON.stringify(pages)).toBe(original)
+})
+
+it('moves and rotates the matching slot on all folded copies while keeping their unique QT ids', () => {
+  const pages = [[item('same', 20, 20, 20)], [item('same#qt-2', 20, 20, 20)], [item('same#qt-3', 20, 20, 20)]]
+  const { image, origin, stage, onPagesChange, onEdit } = mount(pages, {}, true)
+  begin(image)
+  move(image, origin.x + 40, origin.y + 35)
+  end(image)
+  let committed = onPagesChange.mock.calls.at(-1)![0] as PackedImpositionItem[][]
+  expect(committed.map(page => page[0].x)).toEqual([30, 30, 30])
+  expect(committed.map(page => page[0].y)).toEqual([30, 30, 30])
+  act(() => { image.fire('transformstart'); image.rotation(90); image.fire('transform'); image.fire('transformend') })
+  committed = onPagesChange.mock.calls.at(-1)![0]
+  expect(committed.map(page => page[0].rotation)).toEqual([90, 90, 90])
+  expect(committed.flat().map(value => value.image.id)).toEqual(['same', 'same#qt-2', 'same#qt-3'])
+  expect(stage.find('Image')).toHaveLength(1)
+  expect(onEdit.mock.calls.at(-1)![1]).toMatchObject({ crossBoard: false, repeatedBoards: 3 })
+})
+
+it('maps a folded destination to its template and keeps the previous plan until reflow finishes', () => {
+  const pages = [[item('same', 10, 20)], [item('same#qt-2', 10, 20)], [item('other', 50, 20, 12)], [item('other#qt-2', 50, 20, 12)]]
+  const { image, origin, stage, onPagesChange, onEdit } = mount(pages, {}, true)
+  begin(image)
+  // Folded destination is display index 1, but physical board index 2.
+  move(image, origin.x + 124 + 15, origin.y + 25)
+  end(image)
+  const committed = onPagesChange.mock.calls.at(-1)![0] as PackedImpositionItem[][]
+  expect(committed).toEqual(pages)
+  expect(committed.flat()).toHaveLength(4)
+  expect(onEdit.mock.calls.at(-1)![1]).toMatchObject({ crossBoard: true, targetPageIndex: 2 })
+  expect(onEdit.mock.calls.at(-1)![1].templateRepack.templates.map((value: { repeatCount: number }) => value.repeatCount)).toEqual([2, 2])
+  expect(stage.find('Image')).toHaveLength(2)
+})
+
+it('enforces the same 3 mm clearance on folded plans', () => {
+  const pages = [[item('same', 10, 20), item('neighbor', 50, 20)], [item('same#qt-2', 10, 20), item('neighbor#qt-2', 50, 20)]]
+  const { image, origin, onPagesChange } = mount(pages, {}, true)
+  begin(image)
+  move(image, origin.x + 42, origin.y + 25)
+  move(image, origin.x + 43, origin.y + 25)
+  expect(image.absolutePosition().x).toBeCloseTo(origin.x + 42)
+  end(image)
+  const committed = onPagesChange.mock.calls.at(-1)![0] as PackedImpositionItem[][]
+  expect(committed.map(page => page.find(value => value.image.id.startsWith('same'))!.x)).toEqual([37, 37])
 })
 
 it('shows true outline area for QT copies in both folded and expanded board labels', () => {

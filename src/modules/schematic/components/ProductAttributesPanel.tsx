@@ -29,9 +29,10 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
   }, [assets, selectedAssetIds])
   const savedGroup = !session && selected.some(asset => asset.productGroupId)
     ? restoreProductGroup(assets, selected.find(asset => asset.productGroupId)!.id, products) : null
-  const locked = Boolean(session
+  const quantityLocked = Boolean(session
     ? session.trigger.kind !== 'free' && session.activeId !== session.leaderId
     : savedGroup && savedGroup.trigger.kind !== 'free')
+  const productLocked = quantityLocked && !session?.editingSavedGroup
   const lockGroup = session ?? savedGroup
   const lockedOptions = lockGroup ? sharedOptionNames(lockGroup.editors[lockGroup.leaderId], products) : new Set<string>()
   const [notice, noticeContext] = message.useMessage()
@@ -119,20 +120,21 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
     {showSelectionSummary && <><div className="upload-panel-hint"><p>{selectionHint ?? '选择左侧图片修改属性，可多选可单选'}</p><p>{selectionHint ? '修改后点击确认保存。' : '点击单选，Ctrl 多选，Shift 连选；填写后点击确认保存。'}</p></div><div className="product-config-selected-count">{selectionLabel}</div></>}
     {allowGrouping && savedGroup && <div className="product-group-edit-entry"><span>{savedGroup.trigger.kind === 'free' ? '已加入自由图片组，可单独修改这组中的任意图片。' : '已加入产品组，可单独修改此图属性。产品和立牌数量请在组内修改。'}</span><Button disabled={disabled || confirming || selected.length !== 1} onClick={() => grouping?.resumeGroup(selected[0].id)}>编辑组合</Button></div>}
     {allowGrouping && !savedGroup && !session && selected.length > 0 && <div className="product-group-edit-entry"><span>{groupGuideTrigger ? `当前${groupGuideTrigger.label}支持多图分组引导。` : '组合时先选完图片再选产品'}</span><Button disabled={disabled || confirming || grouping?.saving} onClick={() => grouping?.start(editor, selected.map(asset => asset.id), !groupGuideTrigger, selected.some(asset => asset.attributesConfirmed))}>图片组合</Button></div>}
+    {session?.editingSavedGroup && session.trigger.kind !== 'free' && <p className="upload-panel-hint">更换产品会应用到整组并清空旧产品选项，QT 和备注保留。</p>}
     <fieldset className="attribute-edit-fields" disabled={disabled || confirming || grouping?.saving} inert={disabled || confirming || grouping?.saving}>
-      <Tabs activeKey={mode} className="product-attribute-mode-tabs" onChange={key => { const nextMode = key as 'existing' | 'custom'; const nextEditor = { ...editor, mode: nextMode }; changeEditor(nextEditor, nextMode === 'custom' && Boolean(groupingTrigger(nextEditor, products))) }} items={[{ key: 'existing', label: '已有产品', disabled: locked }, { key: 'custom', label: '自定义', disabled: locked }]}/>
+      <Tabs activeKey={mode} className="product-attribute-mode-tabs" onChange={key => { const nextMode = key as 'existing' | 'custom'; const nextEditor = { ...editor, mode: nextMode }; changeEditor(nextEditor, nextMode === 'custom' && Boolean(groupingTrigger(nextEditor, products))) }} items={[{ key: 'existing', label: '已有产品', disabled: productLocked }, { key: 'custom', label: '自定义', disabled: productLocked }]}/>
       <div hidden={mode !== 'existing'}>
         {loading && <Loading size="small" text="正在加载产品选项…"/>}
         {(configError || (!loading && !products.length)) && <Alert type="warning" showIcon
           message={products.length ? '产品配置更新失败，当前使用本地缓存' : '产品配置不可用'}
           description={<><div>{configError || '本地没有可用的产品配置，请刷新从接口重新获取。'}</div><Button style={{ marginTop: 8 }} disabled={refreshing || loading} icon={refreshing ? <Loading size="small" inline/> : undefined} onClick={() => void refresh()}>{refreshing ? '正在刷新…' : '刷新产品配置'}</Button></>}/>} 
         <div className="product-config-form">
-          <label className="product-config-field"><span>产品</span><Select aria-label="产品" showSearch optionFilterProp="label" disabled={!selected.length || loading || locked} placeholder="请选择产品" value={product?.id} options={products.map(item => ({ value: item.id, label: item.title }))} onChange={id => changeEditor({ ...editor, draft: { ...draft, productId: id, attributes: {}, images: {}, finishMatchDisabled: false } }, true)}/></label>
-          {product?.options.map(option => { const values = availableOptionValues(option, draft.attributes); const value = draft.attributes[option.name] ?? (option.name.trim().toLowerCase() === 'finish' ? draft.attributes['工艺'] : undefined); const image = draft.images[option.name] ?? (option.name.trim().toLowerCase() === 'finish' ? draft.images['工艺'] : undefined); return values.length ? <ProductOptionField key={`${product.id}:${option.name}`} option={option} values={values} value={value} imageOverride={image} disabled={!selected.length || (locked && lockedOptions.has(option.name))} onChange={(nextValue, nextImage) => changeOption(option.name, nextValue, nextImage)}/> : null })}
+          <label className="product-config-field"><span>产品</span><Select aria-label="产品" showSearch optionFilterProp="label" disabled={!selected.length || loading || productLocked} placeholder="请选择产品" value={product?.id} options={products.map(item => ({ value: item.id, label: item.title }))} onChange={id => changeEditor({ ...editor, draft: { ...draft, productId: id, attributes: {}, images: {}, finishMatchDisabled: false } }, true)}/></label>
+          {product?.options.map(option => { const values = availableOptionValues(option, draft.attributes); const value = draft.attributes[option.name] ?? (option.name.trim().toLowerCase() === 'finish' ? draft.attributes['工艺'] : undefined); const image = draft.images[option.name] ?? (option.name.trim().toLowerCase() === 'finish' ? draft.images['工艺'] : undefined); return values.length ? <ProductOptionField key={`${product.id}:${option.name}`} option={option} values={values} value={value} imageOverride={image} disabled={!selected.length || (quantityLocked && lockedOptions.has(option.name))} onChange={(nextValue, nextImage) => changeOption(option.name, nextValue, nextImage)}/> : null })}
           <label className="product-config-field"><span>QT（数量）</span><InputNumber aria-label="QT（数量）" disabled={!selected.length} min={0} max={2147483647} precision={0} value={draft.attributes.QT ? Number(draft.attributes.QT) : undefined} onChange={value => changeOption('QT', value == null ? '' : String(value))}/></label>
         </div>
       </div>
-      <div hidden={mode !== 'custom'}><CustomProductForm draft={custom} onDraftChange={changeCustom} productLocked={locked}/></div>
+      <div hidden={mode !== 'custom'}><CustomProductForm draft={custom} onDraftChange={changeCustom} productLocked={productLocked}/></div>
       <AssetNotesEditor assets={selected.map(asset => ({ ...asset, note: draft.note, ...noteImagesPatch(getNoteImages(draft)) }))} onUploadingChange={setUploadingNote} onAssign={patch => changeEditor({ ...editor, draft: { ...draft, ...(patch.note !== undefined ? { note: patch.note } : {}), ...(patch.noteImages !== undefined || patch.noteImage !== undefined ? noteImagesPatch(getNoteImages(patch)) : {}) } })}/>
     </fieldset>
     {error && <div role="alert" className="product-config-error">{error}</div>}

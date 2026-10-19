@@ -81,6 +81,7 @@ fn request(items: Vec<NestItem>, algorithm: &str) -> NestRequest {
         objective: std::env::var("PRINTFLOW_REAL_OBJECTIVE")
             .unwrap_or_else(|_| "least-material".into()),
         irregular_algorithm: algorithm.into(),
+        template_repack: None,
         items,
     }
 }

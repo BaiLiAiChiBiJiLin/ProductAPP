@@ -36,6 +36,8 @@ function fixture() {
   const pages = paginateAssets([asset])
   const item = pages[0].items[0]
   item.x = 77; item.y = 203; item.rulerHeightRange = [0.2, 0.85]; item.rulerUnit = 'cm'
+  item.svgLayerIds = ['svg-layer-0', 'svg-layer-1']
+  item.backSvg = '<svg><rect fill="red"/><circle fill="blue"/></svg>'
   if (pages[0].imageGroups?.[0].details) pages[0].imageGroups[0].details.note = '双击编辑后的备注'
   const display = emptyArrangementDisplayState()
   display.zoom = 1.4
@@ -49,8 +51,11 @@ function fixture() {
 }
 const summary = (record: SchematicReviewRecord) => ({ id: record.id, savedAt: record.savedAt, output: record.output, format: record.format, paymentStatus: record.paymentStatus, customerName: record.metadata.customerName, pageCount: record.pages.length, imageCount: 1 })
 const latestArrange = () => mocks.arrange.mock.calls.at(-1)![0] as ComponentProps<typeof ArrangePage>
+const layoutPreferenceKey = 'printflow-schematic-layout-bounds'
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.removeItem(layoutPreferenceKey)
+  mocks.autoArrange.mockReset().mockImplementation(pages => pages)
   mocks.save.mockResolvedValue('C:\\new-proof.pdf')
   mocks.exportPdf.mockResolvedValue(undefined)
   mocks.exportPage.mockResolvedValue(undefined)
@@ -60,12 +65,107 @@ beforeEach(() => {
   const getStyle = window.getComputedStyle.bind(window)
   vi.spyOn(window, 'getComputedStyle').mockImplementation(element => getStyle(element))
 })
-afterEach(() => { cleanup(); vi.restoreAllMocks() })
+afterEach(() => { cleanup(); vi.restoreAllMocks(); localStorage.removeItem(layoutPreferenceKey) })
+
+function mockPreferenceBatch() {
+  const previous = mocks.invoke.getMockImplementation()!
+  mocks.invoke.mockImplementation(async (command, args) => {
+    if (command === 'list_batches') return { records: [{ id: 'preference-batch', savedAt: '2026-10-15T00:00:00Z', customerName: '边距测试批次', assetCount: 1 }], total: 1, page: 1, pageSize: 12 }
+    if (command === 'load_batch') return { id: 'preference-batch', savedAt: '2026-10-15T00:00:00Z', assets: [asset] }
+    if (command === 'load_batch_asset_svg') return new TextEncoder().encode(asset.svg).buffer
+    if (command === 'save_batch') return { batchId: 'preference-batch', assets: [asset], metadata: args.metadata }
+    return previous(command, args)
+  })
+}
+
+async function openPreferenceBatch() {
+  fireEvent.click(await screen.findByRole('button', { name: '打开批次 边距测试批次' }))
+  await screen.findByRole('heading', { name: '当前批次图片' })
+  fireEvent.click(screen.getByRole('button', { name: '生成示意图' }))
+  fireEvent.click(await screen.findByRole('button', { name: '确认并生成' }))
+  await screen.findByText('恢复的排列页')
+}
+
+it('persists all applied page margins and inner padding after returning to history and reopening a batch', async () => {
+  const record = fixture()
+  const bounds = { top: 102, left: 21, right: 28, bottom: 33, paddingLeft: 5, paddingRight: 7 }
+  mockPreferenceBatch()
+  render(<SchematicPage initialRecord={record}/> )
+  await screen.findByText('恢复的排列页')
+  act(() => latestArrange().onBoundsChange(bounds))
+  expect(latestArrange().layoutBounds).toEqual(bounds)
+  expect(mocks.autoArrange.mock.calls[0][3]).toEqual(bounds)
+  expect(JSON.parse(localStorage.getItem(layoutPreferenceKey)!)).toEqual(bounds)
+  act(() => latestArrange().onBackToHistory?.())
+  await openPreferenceBatch()
+  expect(latestArrange().layoutBounds).toEqual({ ...defaultLayoutBounds, ...bounds })
+  expect(JSON.parse(localStorage.getItem(layoutPreferenceKey)!)).toEqual(bounds)
+})
+
+it('opening an unchanged review uses its own margins without replacing the preference for the next batch', async () => {
+  const bounds = { top: 110, left: 22, right: 31, bottom: 29 }
+  localStorage.setItem(layoutPreferenceKey, JSON.stringify(bounds))
+  const record = fixture()
+  mockPreferenceBatch()
+  render(<SchematicPage initialRecord={record}/> )
+  await screen.findByText('恢复的排列页')
+  expect(latestArrange().layoutBounds).toEqual(record.layoutBounds)
+  expect(JSON.parse(localStorage.getItem(layoutPreferenceKey)!)).toEqual(bounds)
+  act(() => latestArrange().onBackToHistory?.())
+  await openPreferenceBatch()
+  expect(latestArrange().layoutBounds).toEqual({ ...defaultLayoutBounds, ...bounds })
+  expect(JSON.parse(localStorage.getItem(layoutPreferenceKey)!)).toEqual(bounds)
+})
+
+it('keeps a valid active page and allows export when changed bounds reduce the page count', async () => {
+  const record = fixture()
+  record.activePage = 2
+  mocks.autoArrange.mockImplementationOnce(pages => pages.slice(0, 1))
+  render(<SchematicPage initialRecord={record}/> )
+  await screen.findByText('恢复的排列页')
+  act(() => latestArrange().onSelectItem(record.pages[0].items[0].id))
+  act(() => latestArrange().onBoundsChange({ ...record.layoutBounds, paddingLeft: 0, paddingRight: 0 }))
+  expect(latestArrange().pages).toHaveLength(1)
+  expect(latestArrange().activePage).toBe(1)
+  expect(latestArrange().selectedItem).toBeNull()
+  expect(latestArrange().selectedGroupIds).toEqual([])
+  fireEvent.click(screen.getByRole('button', { name: '导出测试 PDF' }))
+  await waitFor(() => expect(mocks.exportPdf).toHaveBeenCalledOnce())
+})
+
+it('a failed rearrangement leaves both the current layout and saved margins intact', async () => {
+  const record = fixture()
+  const saved = { top: 110, left: 22, right: 31, bottom: 29 }
+  localStorage.setItem(layoutPreferenceKey, JSON.stringify(saved))
+  mocks.autoArrange.mockImplementationOnce(() => { throw new Error('排列区域不足') })
+  render(<SchematicPage initialRecord={record}/> )
+  await screen.findByText('恢复的排列页')
+  act(() => latestArrange().onBoundsChange({ top: 500, left: 210, right: 210, bottom: 100 }))
+  await screen.findByText('Error: 排列区域不足')
+  expect(latestArrange().layoutBounds).toEqual(record.layoutBounds)
+  expect(latestArrange().pages).toEqual(record.pages)
+  expect(JSON.parse(localStorage.getItem(layoutPreferenceKey)!)).toEqual(saved)
+})
+
+it('a storage write failure keeps the applied arrangement and tells the user persistence failed', async () => {
+  const record = fixture()
+  const bounds = { top: 102, left: 21, right: 28, bottom: 33, paddingLeft: 5, paddingRight: 7 }
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('存储空间不足') })
+  render(<SchematicPage initialRecord={record}/> )
+  await screen.findByText('恢复的排列页')
+  act(() => latestArrange().onBoundsChange(bounds))
+  await screen.findByText(/排列区域已应用，但未能保存到本机/)
+  expect(latestArrange().layoutBounds).toEqual(bounds)
+  expect(localStorage.getItem(layoutPreferenceKey)).toBeNull()
+})
 
 it('freezes every page and map without changing source dimensions or sharing edits', () => {
   const record = fixture()
   const saved = JSON.parse(JSON.stringify(record)) as SchematicReviewRecord
   expect(saved.pages).toEqual(record.pages)
+  expect(saved.pages[0].items[0].svgLayerIds).toEqual(['svg-layer-0', 'svg-layer-1'])
+  saved.pages[0].items[0].svgLayerIds!.pop()
+  expect(record.pages[0].items[0].svgLayerIds).toEqual(['svg-layer-0', 'svg-layer-1'])
   expect(saved.assets[0].width).toBe(42.756)
   const display = restoreArrangementDisplay(saved.display)
   expect([...display.dimensionDisplayOverrides.values()][0].decimalPlaces).toBe(0)
@@ -80,6 +180,7 @@ it('restores exact arrangement, text, rulers and independent visuals without aut
   await screen.findByText('恢复的排列页')
   const props = latestArrange()
   expect(props.pages).toEqual(record.pages)
+  expect(props.pages[0].items[0]).toMatchObject({ svgLayerIds: ['svg-layer-0', 'svg-layer-1'], backSvg: record.pages[0].items[0].backSvg })
   expect(props.assets).toEqual(record.assets)
   expect(props.metadata).toEqual(record.metadata)
   expect(props.layoutBounds).toEqual(record.layoutBounds)
@@ -93,7 +194,7 @@ it('moving or switching either artwork preserves custom Size text and the other 
   const page = record.pages[0]
   const main = page.items[0]
   const group = page.imageGroups![0]
-  const back = { ...main, id: `${main.id}-back`, derivedFrom: main.id, suppressRuler: true, backSvg: '<svg>back</svg>' }
+  const back = { ...main, id: `${main.id}-back`, derivedFrom: main.id, suppressRuler: true, svgLayerIds: undefined, backSvg: '<svg>back</svg>' }
   page.items.push(back)
   group.itemIds.push(back.id)
   group.details!.size = 'custom Size'
@@ -102,12 +203,14 @@ it('moving or switching either artwork preserves custom Size text and the other 
   render(<SchematicPage initialRecord={record}/> )
   await screen.findByText('恢复的排列页')
   act(() => latestArrange().onChangeItem({ ...latestArrange().pages[0].items[0], x: 124 }))
-  act(() => latestArrange().onChangeItem({ ...latestArrange().pages[0].items[0], svgLayerId: 'front-layer', backSvg: '<svg>front</svg>' }))
+  act(() => latestArrange().onChangeItem({ ...latestArrange().pages[0].items[0], svgLayerId: undefined, svgLayerIds: ['front-layer', 'front-overlay'], backSvg: '<svg>front and overlay</svg>' }))
   act(() => latestArrange().onChangeItem({ ...latestArrange().pages[0].items[1], svgLayerId: 'back-layer', backSvg: '<svg>new back</svg>', rulerWidth: true }))
   expect(latestArrange().pages[0].imageGroups).toEqual(originalDetails)
   expect(latestArrange().pages[0].items[0].x).toBe(124)
-  expect(latestArrange().pages[0].items[0].backSvg).toBe('<svg>front</svg>')
+  expect(latestArrange().pages[0].items[0].backSvg).toBe('<svg>front and overlay</svg>')
+  expect(latestArrange().pages[0].items[0].svgLayerIds).toEqual(['front-layer', 'front-overlay'])
   expect(latestArrange().pages[0].items[1].backSvg).toBe('<svg>new back</svg>')
+  expect(latestArrange().pages[0].items[1].svgLayerIds).toBeUndefined()
 })
 
 it('only ruler changes update their own Size using the saved precision and panel ownership', async () => {
@@ -149,24 +252,31 @@ it('records the exported revision only after successful export, and saves later 
   render(<SchematicPage initialRecord={record} onRecordSaved={saved}/> )
   fireEvent.click(await screen.findByText('导出测试 PDF'))
   await waitFor(() => expect(mocks.exportPdf).toHaveBeenCalledOnce())
+  expect(mocks.exportPdf.mock.calls[0][0][0].items[0]).toMatchObject({ svgLayerIds: ['svg-layer-0', 'svg-layer-1'], backSvg: record.pages[0].items[0].backSvg })
   expect(mocks.exportPdf.mock.calls[0][7]).toEqual(restoreArrangementDisplay(record.display).accessoryVisuals)
   expect(mocks.invoke.mock.calls.filter(call => call[0] === 'save_schematic_review')).toHaveLength(0)
   await act(async () => complete())
   await waitFor(() => expect(saved).toHaveBeenCalledOnce())
   const first = mocks.invoke.mock.calls.find(call => call[0] === 'save_schematic_review')![1].record as SchematicReviewRecord
   expect(first.pages).toEqual(record.pages)
+  expect(first.pages[0].items[0].svgLayerIds).toEqual(['svg-layer-0', 'svg-layer-1'])
   expect(first.display).toEqual(record.display)
   expect(first.sourceRecordId).toBe(record.id)
   expect(first.id).not.toBe(record.id)
   fireEvent.click(screen.getByText('移动主图'))
   fireEvent.click(screen.getByText('放大主图'))
+  act(() => latestArrange().onChangeItem({ ...latestArrange().pages[0].items[0], svgLayerIds: ['svg-layer-1', 'svg-layer-2'], backSvg: '<svg><circle fill="blue"/><path fill="green"/></svg>' }))
   fireEvent.click(screen.getByText('导出测试 PNG'))
   await waitFor(() => expect(saved).toHaveBeenCalledTimes(2))
   expect(mocks.exportPage.mock.calls[0][8]).toEqual(latestArrange().displayState.accessoryVisuals)
+  expect(mocks.exportPage.mock.calls[0][0].items[0].svgLayerIds).toEqual(['svg-layer-1', 'svg-layer-2'])
   const second = mocks.invoke.mock.calls.filter(call => call[0] === 'save_schematic_review')[1][1].record as SchematicReviewRecord
   expect(second.pages[0].items[0].x).toBe(123)
+  expect(second.pages[0].items[0].svgLayerIds).toEqual(['svg-layer-1', 'svg-layer-2'])
+  expect(second.pages[0].items[0].backSvg).toBe('<svg><circle fill="blue"/><path fill="green"/></svg>')
   expect(second.display.visualScales[0][1]).toBe(2)
   expect(first.pages[0].items[0].x).toBe(77)
+  expect(first.pages[0].items[0].svgLayerIds).toEqual(['svg-layer-0', 'svg-layer-1'])
   expect(second.id).not.toBe(first.id)
   expect(second.assets[0].width).toBe(42.756)
 })

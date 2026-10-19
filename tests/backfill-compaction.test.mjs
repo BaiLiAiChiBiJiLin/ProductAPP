@@ -9,7 +9,7 @@ test('vacated page top, middle row and first column close without scaling images
  const page={id:1,name:'page',headerBlocks:[header],imageGroups:groups,items:[{id:'a',assetId:'a',x:200,y:300,w:40,h:50,rotation:0},{id:'b',assetId:'b',x:50,y:530,w:30,h:60,rotation:0}]}
  const offset=page.items[0].x-groups[0].x
  compactPageSections(page,defaultLayoutBounds)
- assert.equal(header.y,defaultLayoutBounds.top)
+ assert.equal(header.y,defaultLayoutBounds.top+GROUP_GAP)
  assert.equal(groups[0].x,10)
  assert.ok(Math.abs(groups[0].y-header.y-HEADER_BLOCK_HEIGHT-GROUP_GAP)<1e-7)
  assert.ok(Math.abs(groups[1].y-groups[0].y-100-GROUP_GAP)<1e-7)

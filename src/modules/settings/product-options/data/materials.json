@@ -1,0 +1,86 @@
+{
+  "name": "Material",
+  "label": "Material",
+  "labelZh": "材质",
+  "values": [
+    {
+      "name": "Vinyl",
+      "labelZh": "乙烯基",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1780713020602-v.png",
+      "isDefault": false,
+      "sortOrder": 1,
+      "id": "C1"
+    },
+    {
+      "name": "Holographic",
+      "labelZh": "镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1780713024875-_.png",
+      "isDefault": false,
+      "sortOrder": 2,
+      "id": "C2"
+    },
+    {
+      "name": "Transparent",
+      "labelZh": "透明",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1780713029430-_1_13.png",
+      "isDefault": false,
+      "sortOrder": 3,
+      "id": "C3"
+    },
+    {
+      "name": "Glitter",
+      "labelZh": "闪粉",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1780713034917-_.png",
+      "isDefault": false,
+      "sortOrder": 4,
+      "id": "C4"
+    },
+    {
+      "name": "Prismatic",
+      "labelZh": "炫彩",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1780713038984-_.png",
+      "isDefault": false,
+      "sortOrder": 5,
+      "id": "C5"
+    },
+    {
+      "name": "Brushed Gold",
+      "labelZh": "拉丝金",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1780713196646-_.png",
+      "isDefault": false,
+      "sortOrder": 6,
+      "id": "C6"
+    },
+    {
+      "name": "Brushed Silve",
+      "labelZh": "拉丝银",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1780713209556-_.png",
+      "isDefault": false,
+      "sortOrder": 7,
+      "id": "C7"
+    },
+    {
+      "name": "Mirror",
+      "labelZh": "镜面",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1780713286929-_.png",
+      "isDefault": false,
+      "sortOrder": 8,
+      "id": "C8"
+    },
+    {
+      "name": "新值",
+      "labelZh": "新值",
+      "isDefault": false,
+      "sortOrder": 9,
+      "id": "C9"
+    },
+    {
+      "name": "新值",
+      "labelZh": "新值",
+      "isDefault": false,
+      "sortOrder": 10,
+      "id": "C10"
+    }
+  ],
+  "nextId": 11
+}

@@ -1096,7 +1096,7 @@ mod tests {
     }
 
     #[test]
-    fn cropped_imports_keep_source_root_dimensions() {
+    fn cropped_imports_use_cropped_physical_dimensions() {
         let assets = import(
             Path::new(concat!(
                 env!("CARGO_MANIFEST_DIR"),
@@ -1109,8 +1109,23 @@ mod tests {
         )
         .unwrap();
         assert_eq!(assets.len(), 2);
-        assert!(assets[0].svg.contains("width=\"200\""));
-        assert!(assets[0].svg.contains("height=\"100\""));
+        let root = roxmltree::Document::parse(&assets[0].svg).unwrap();
+        let width_mm: f64 = root
+            .root_element()
+            .attribute("width")
+            .unwrap()
+            .trim_end_matches("mm")
+            .parse()
+            .unwrap();
+        let height_mm: f64 = root
+            .root_element()
+            .attribute("height")
+            .unwrap()
+            .trim_end_matches("mm")
+            .parse()
+            .unwrap();
+        assert!((width_mm - 30.0 * 25.4 / 96.0).abs() < 0.001);
+        assert!((height_mm - 40.0 * 25.4 / 96.0).abs() < 0.001);
         assert!(assets[0]
             .svg
             .contains("viewBox=\"20.000000000 10.000000000 30.000000000 40.000000000\""));

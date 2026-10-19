@@ -1,4 +1,4 @@
-import { DETAIL_AREA_RATIO, GROUP_GAP, HEADER_BLOCK_HEIGHT, IMAGE_AREA_RATIO, normalizeLayoutBounds, PAPER_HEIGHT, PAPER_WIDTH, sourceAssetSize, type Asset, type HeaderBlock, type HeaderImageMode, type LayoutBounds, type Page, type Item } from '../../../model.ts'
+import { DETAIL_AREA_RATIO, GROUP_GAP, HEADER_BLOCK_HEIGHT, IMAGE_AREA_RATIO, artworkBounds, PAPER_HEIGHT, PAPER_WIDTH, sourceAssetSize, type Asset, type HeaderBlock, type HeaderImageMode, type LayoutBounds, type Page, type Item } from '../../../model.ts'
 import type { ProductConfig } from './productConfigService.ts'
 import { AUTO_DETAIL_LABEL, AUTO_MAX_COLUMNS, detailsForAsset, headerModeForAsset } from './automaticArrangementService.ts'
 import { AUTO_ROW_HEIGHT } from './pageLayoutService.ts'
@@ -81,9 +81,10 @@ export function reflowAfterCombination(pages: Page[], startIndex: number, assets
   const byAsset = new Map(assets.map(asset => [asset.id, asset]))
   const units = unitsFromPages(source, byAsset)
   if (!units.length) return prefix
-  const area = normalizeLayoutBounds(bounds)
+  const area = artworkBounds(bounds)
   const width = PAPER_WIDTH - area.left - area.right
   const bottom = PAPER_HEIGHT - area.bottom
+  const headerTop = area.top + GROUP_GAP
   for (const unit of units) if (unit.group?.productGroupId) {
     // Product groups are complete image-plus-details units. When a mode has
     // multiple groups, first try the width of two row slots so two groups can
@@ -92,10 +93,10 @@ export function reflowAfterCombination(pages: Page[], startIndex: number, assets
     const sameModeCount = units.filter(candidate => candidate.mode === unit.mode).length
     const sharedRowWidth = sameModeCount > 1 ? (width - GROUP_GAP) / 2 : width
     try {
-      unit.productPlan = productGroupFootprint(unit.items, bottom - area.top - HEADER_BLOCK_HEIGHT - GROUP_GAP, unit.group, sharedRowWidth, unit.group.imageColumns)
+      unit.productPlan = productGroupFootprint(unit.items, bottom - headerTop - HEADER_BLOCK_HEIGHT - GROUP_GAP, unit.group, sharedRowWidth, unit.group.imageColumns)
     } catch (error) {
       if (sharedRowWidth >= width - 1e-7) throw error
-      unit.productPlan = productGroupFootprint(unit.items, bottom - area.top - HEADER_BLOCK_HEIGHT - GROUP_GAP, unit.group, width, unit.group.imageColumns)
+      unit.productPlan = productGroupFootprint(unit.items, bottom - headerTop - HEADER_BLOCK_HEIGHT - GROUP_GAP, unit.group, width, unit.group.imageColumns)
     }
   }
   const sections = new Map<HeaderImageMode, ReflowUnit[]>()
@@ -119,7 +120,7 @@ export function reflowAfterCombination(pages: Page[], startIndex: number, assets
         const width = size.imageWidth / IMAGE_AREA_RATIO
         return { value: unit, width, height: size.height }
       }),
-    })), { x: area.left, y: area.top, width, height: bottom - area.top }, HEADER_BLOCK_HEIGHT, GROUP_GAP)
+    })), { x: area.left, y: headerTop, width, height: bottom - headerTop }, HEADER_BLOCK_HEIGHT, GROUP_GAP)
     for (const sections of plans) {
       const page = newPage()
       for (const section of sections) {
@@ -138,7 +139,7 @@ export function reflowAfterCombination(pages: Page[], startIndex: number, assets
     return [...prefix, ...output]
   }
   let page = newPage()
-  let y = area.top
+  let y = headerTop
   for (const [mode, section] of sections) {
     // Keep the existing table density where possible. Reduce columns only if
     // the current artwork needs wider cells; image dimensions remain untouched.
@@ -183,7 +184,7 @@ export function reflowAfterCombination(pages: Page[], startIndex: number, assets
       if (!pending.length) break
       if (!page.items.length) throw new Error('组合后的图片高度超出整页排列区域，请扩大排列区域或减少组合图片。')
       page = newPage()
-      y = area.top
+      y = headerTop
     }
   }
   return [...prefix, ...output]

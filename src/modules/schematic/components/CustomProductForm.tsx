@@ -55,8 +55,7 @@ export default function CustomProductForm({ draft, onDraftChange: setDraft, prod
         <label className="product-config-field"><span>产品</span><AutoComplete aria-label="自定义产品" placeholder="选择或输入产品名称" disabled={saving || productLocked}
           value={draft.name} options={presets.map(item => ({ value: item.name }))}
           filterOption={(input, option) => String(option?.value ?? '').toLowerCase().includes(input.toLowerCase())}
-          onChange={name => { setDraft(current => ({ ...current, name, id: name === current.name ? current.id : null })); setNotice('') }}
-          onSelect={name => { const item = presets.find(preset => preset.name === name); if (item) { setDraft(current => ({ ...current, id: item.id, name: item.name })); setError(''); setNotice('') } }}/></label>
+          onChange={name => { const item = presets.find(preset => preset.name === name); setDraft(current => ({ ...current, name, id: item?.id ?? (name === current.name ? current.id : null) })); setError(''); setNotice('') }}/></label>
         <Button loading={saving} disabled={loading || saving || productLocked || nameExists || !draft.name.trim()} onClick={() => void save()}>新增</Button>
       </div>
       <div className="product-config-form custom-product-fields">

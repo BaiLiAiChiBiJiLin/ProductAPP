@@ -1,0 +1,160 @@
+{
+  "name": "Technique",
+  "label": "Technique",
+  "labelZh": "工艺",
+  "values": [
+    {
+      "name": "No Additional Technique",
+      "labelZh": "无附加工艺",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1779689605207-1778662569890-_-_.png",
+      "isDefault": false,
+      "sortOrder": 1,
+      "id": "G1"
+    },
+    {
+      "name": "Single-Sided Star Holo",
+      "labelZh": "单面星星镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778672940632-_.png",
+      "isDefault": false,
+      "sortOrder": 2,
+      "id": "G2"
+    },
+    {
+      "name": "Double-Sided Star Holo",
+      "labelZh": "双面星星镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778739887358-_.png",
+      "isDefault": false,
+      "sortOrder": 3,
+      "id": "G3"
+    },
+    {
+      "name": "Single-Sided Broken Glass",
+      "labelZh": "单面碎玻璃镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778662323967-_.png",
+      "isDefault": false,
+      "sortOrder": 4,
+      "id": "G4"
+    },
+    {
+      "name": "Double-Sided Broken Glass",
+      "labelZh": "双面碎玻璃镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778662328554-_.png",
+      "isDefault": false,
+      "sortOrder": 5,
+      "id": "G5"
+    },
+    {
+      "name": "Single-Sided Heart Holo",
+      "labelZh": "单面爱心镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778669523119-_.png",
+      "isDefault": false,
+      "sortOrder": 6,
+      "id": "G6"
+    },
+    {
+      "name": "Double-Sided Rainbow Holo",
+      "labelZh": "双面彩虹镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778836512787-_02.png",
+      "isDefault": false,
+      "sortOrder": 7,
+      "id": "G7"
+    },
+    {
+      "name": "Heart Holo",
+      "labelZh": "爱心镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1779787005673-_-02.png",
+      "isDefault": false,
+      "sortOrder": 8,
+      "id": "G8"
+    },
+    {
+      "name": "Star Holo",
+      "labelZh": "星星镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1779786994245-_.png",
+      "isDefault": false,
+      "sortOrder": 9,
+      "id": "G9"
+    },
+    {
+      "name": "Broken Glass Holo",
+      "labelZh": "碎玻璃镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1779787021223-1778662328554-_.png",
+      "isDefault": false,
+      "sortOrder": 10,
+      "id": "G10"
+    },
+    {
+      "name": "Front side epoxy",
+      "labelZh": "正面滴胶",
+      "isDefault": false,
+      "sortOrder": 11,
+      "id": "G11"
+    },
+    {
+      "name": "Front side glitter epoxy",
+      "labelZh": "正面闪粉滴胶",
+      "isDefault": false,
+      "sortOrder": 12,
+      "id": "G12"
+    },
+    {
+      "name": "Front side holographic",
+      "labelZh": "正面镭射",
+      "isDefault": false,
+      "sortOrder": 13,
+      "id": "G13"
+    },
+    {
+      "name": "Double Side Holographic",
+      "labelZh": "双面镭射",
+      "isDefault": false,
+      "sortOrder": 14,
+      "id": "G14"
+    },
+    {
+      "name": "Double Side Epoxy",
+      "labelZh": "双面滴胶",
+      "isDefault": false,
+      "sortOrder": 15,
+      "id": "G15"
+    },
+    {
+      "name": "Double Side Glitter Epoxy",
+      "labelZh": "双面闪粉滴胶",
+      "isDefault": false,
+      "sortOrder": 16,
+      "id": "G16"
+    },
+    {
+      "name": "Double-Sided Heart Holo",
+      "labelZh": "双面爱心镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778668940325-_-02.png",
+      "isDefault": false,
+      "sortOrder": 17,
+      "id": "G17"
+    },
+    {
+      "name": "新值",
+      "labelZh": "新值",
+      "isDefault": false,
+      "sortOrder": 18,
+      "id": "G18"
+    },
+    {
+      "name": "Holo Star",
+      "labelZh": "星星镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1779786184978-_.png",
+      "isDefault": false,
+      "sortOrder": 19,
+      "id": "G19"
+    },
+    {
+      "name": "Double-sided rainbow",
+      "labelZh": "无附加工艺",
+      "isDefault": false,
+      "sortOrder": 20,
+      "id": "G20"
+    }
+  ],
+  "nextId": 21
+}

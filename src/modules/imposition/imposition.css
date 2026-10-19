@@ -36,6 +36,7 @@
 .imposition-packing-results { display: flex; gap: 10px; color: #64748b; font-size: 11px; white-space: nowrap; }
 .imposition-packing-results strong { color: #2563eb; font-weight: 600; }
 .imposition-packing-settings > small { width: 100%; color: #94a3b8; font-size: 10px; }
+.imposition-interaction-hint { position: absolute; top: 0; left: 0; z-index: 2; max-width: 100%; padding: 5px 12px; background: #eff6ff; color: #2563eb; font-size: 11px; pointer-events: none; }
 
 .imposition-workspace-actions, .imposition-mode { display: flex; align-items: center; gap: 6px; }
 .imposition-workspace-actions > span { min-width: 48px; text-align: center; color: #64748b; font-size: 12px; }

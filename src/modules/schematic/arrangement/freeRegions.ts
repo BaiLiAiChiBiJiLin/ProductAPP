@@ -1,4 +1,4 @@
-import { GROUP_GAP, HEADER_BLOCK_HEIGHT, normalizeLayoutBounds, PAPER_HEIGHT, PAPER_WIDTH, type LayoutBounds, type Page } from '../../../model.ts'
+import { GROUP_GAP, HEADER_BLOCK_HEIGHT, artworkBounds, PAPER_HEIGHT, PAPER_WIDTH, type LayoutBounds, type Page } from '../../../model.ts'
 
 export type FreeRegion = { x: number; y: number; width: number; height: number }
 const EPS = 1e-7
@@ -15,7 +15,7 @@ function contains(a: FreeRegion, b: FreeRegion) {
  * Recompute after each placement; these are alternative choices, not disjoint slots.
  */
 export function findFreeRegions(page: Page, bounds: LayoutBounds): FreeRegion[] {
-  const area = normalizeLayoutBounds(bounds)
+  const area = artworkBounds(bounds)
   let free: FreeRegion[] = [{ x: area.left, y: area.top,
     width: PAPER_WIDTH - area.left - area.right, height: PAPER_HEIGHT - area.top - area.bottom }]
   const grouped = new Set(page.imageGroups?.flatMap(group => group.itemIds))

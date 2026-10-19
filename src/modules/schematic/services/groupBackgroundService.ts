@@ -61,7 +61,7 @@ export function groupBackgroundsSvg(page: Page, accessoryVisuals?: ReadonlyMap<s
     const group = panel
     const details = group.details
     const { x, y, line, fontSize, fields, bodyY, imageSize, accessoryX, noteX, noteWidth, noteY, noteLines, noteLine, noteFontSize, noteImages } = imageDetailsLayout(group)
-    const fieldText = fields.map((field, index) => `<text x="${x}" y="${y + line * index + Math.min(fontSize, field.fontSize ?? fontSize)}" font-family="Arial, Microsoft YaHei, sans-serif" font-size="${Math.min(fontSize, field.fontSize ?? fontSize)}" font-weight="${field.key.startsWith('size') || field.key === 'qt' ? 400 : 700}" fill="#475569">${escape(field.text)}</text>`).join('')
+    const fieldText = fields.map((field, index) => `<text x="${x}" y="${y + line * index + Math.min(fontSize, field.fontSize ?? fontSize)}" font-family="Arial, Microsoft YaHei, sans-serif" font-size="${Math.min(fontSize, field.fontSize ?? fontSize)}" font-weight="${field.key.startsWith('size') || field.key === 'qt' ? 400 : 700}" fill="${field.key.startsWith('size') || field.key === 'qt' ? '#000' : '#475569'}">${escape(field.text)}</text>`).join('')
     const noteText = noteLines.map((value, index) => `<text text-anchor="middle" x="${noteX + noteWidth / 2}" y="${noteY + index * noteLine + noteLine - 2}" font-family="Arial, Microsoft YaHei, sans-serif" font-size="${noteFontSize}" fill="#475569">${escape(value)}</text>`).join('')
     const notePictures = noteImages.map((image, index) => {
       const key = index === 0 ? `${group.id}:note` : `${group.id}:note:${index}`

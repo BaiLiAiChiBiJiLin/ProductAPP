@@ -503,6 +503,7 @@ struct PackInput<'a> {
     limits: &'a [NcLimit],
     order: &'a [u32],
     quantities: &'a [u64],
+    initial_occupancy: Option<&'a [u8]>,
     progress: NcProgress,
     user: *mut c_void,
 }
@@ -520,6 +521,13 @@ fn pack_inner(ctx: &mut NcContext, input: PackInput<'_>) -> Result<Vec<u64>> {
         || input.quantities.len() != input.sources.len()
         || input.order.len() != input.sources.len()
         || input.limits.len() != ctx.masks.len()
+    {
+        return Err(INVALID);
+    }
+    let pixels = checked_bytes(config.cols as usize, config.rows as usize)?;
+    if input
+        .initial_occupancy
+        .is_some_and(|seed| seed.len() != pixels)
     {
         return Err(INVALID);
     }
@@ -550,6 +558,8 @@ fn pack_inner(ctx: &mut NcContext, input: PackInput<'_>) -> Result<Vec<u64>> {
         total.checked_add(*count).ok_or(INVALID)
     })?;
     let extra_bytes = checked_bytes(board_words, 8)?
+        .checked_add(input.initial_occupancy.map_or(0, |seed| seed.len()))
+        .ok_or(INVALID)?
         .checked_add(checked_bytes(ctx.masks.len(), size_of::<Origin>())?)
         .ok_or(INVALID)?
         .checked_add(checked_bytes(input.sources.len(), 10)?)
@@ -560,13 +570,27 @@ fn pack_inner(ctx: &mut NcContext, input: PackInput<'_>) -> Result<Vec<u64>> {
         )?)
         .ok_or(INVALID)?;
     guard(ctx.retained_bytes(), extra_bytes, ctx.budget)?;
-    let board = RwLock::new(Board {
+    let mut initial_board = Board {
         width: config.cols as usize,
         height: config.rows as usize,
         stride,
         words: zeros(board_words)?,
         occupied: false,
-    });
+    };
+    if let Some(seed) = input.initial_occupancy {
+        for (index, &pixel) in seed.iter().enumerate() {
+            if pixel > 1 {
+                return Err(INVALID);
+            }
+            if pixel != 0 {
+                let x = index % initial_board.width;
+                let y = index / initial_board.width;
+                initial_board.words[y * stride + x / 64] |= 1_u64 << (x % 64);
+                initial_board.occupied = true;
+            }
+        }
+    }
+    let board = RwLock::new(initial_board);
     let mut origins = zeros::<Origin>(ctx.masks.len())?;
     let mut failed = zeros::<bool>(input.sources.len())?;
     let mut seen = zeros::<bool>(input.sources.len())?;
@@ -767,6 +791,87 @@ pub unsafe extern "C" fn nc_pack(
     progress: NcProgress,
     user: *mut c_void,
 ) -> i32 {
+    pack_with_seed(
+        ctx,
+        config,
+        sources,
+        source_count,
+        mask_indexes,
+        mask_index_count,
+        limits,
+        limit_count,
+        order,
+        order_count,
+        quantities,
+        quantity_count,
+        None,
+        progress,
+        user,
+    )
+}
+
+/// ABI 1 extension: a row-major binary uint8 occupancy grid, borrowed for this call.
+/// A null pointer and zero length retain the original empty-sheet behavior.
+#[no_mangle]
+pub unsafe extern "C" fn nc_pack_seeded(
+    ctx: *mut NcContext,
+    config: *const NcPackConfig,
+    sources: *const NcSource,
+    source_count: usize,
+    mask_indexes: *const u32,
+    mask_index_count: usize,
+    limits: *const NcLimit,
+    limit_count: usize,
+    order: *const u32,
+    order_count: usize,
+    quantities: *mut u64,
+    quantity_count: usize,
+    initial_occupancy: *const u8,
+    occupancy_len: usize,
+    progress: NcProgress,
+    user: *mut c_void,
+) -> i32 {
+    let seed = if initial_occupancy.is_null() && occupancy_len == 0 {
+        None
+    } else {
+        Some((initial_occupancy, occupancy_len))
+    };
+    pack_with_seed(
+        ctx,
+        config,
+        sources,
+        source_count,
+        mask_indexes,
+        mask_index_count,
+        limits,
+        limit_count,
+        order,
+        order_count,
+        quantities,
+        quantity_count,
+        seed,
+        progress,
+        user,
+    )
+}
+
+unsafe fn pack_with_seed(
+    ctx: *mut NcContext,
+    config: *const NcPackConfig,
+    sources: *const NcSource,
+    source_count: usize,
+    mask_indexes: *const u32,
+    mask_index_count: usize,
+    limits: *const NcLimit,
+    limit_count: usize,
+    order: *const u32,
+    order_count: usize,
+    quantities: *mut u64,
+    quantity_count: usize,
+    initial_occupancy: Option<(*const u8, usize)>,
+    progress: NcProgress,
+    user: *mut c_void,
+) -> i32 {
     let ctx = match context(ctx) {
         Ok(ctx) => ctx,
         Err(error) => return finish(None, Err(error)),
@@ -783,6 +888,9 @@ pub unsafe extern "C" fn nc_pack(
                 limits: input_slice(limits, limit_count)?,
                 order: input_slice(order, order_count)?,
                 quantities: input_slice(quantities, quantity_count)?,
+                initial_occupancy: initial_occupancy
+                    .map(|(data, length)| input_slice(data, length))
+                    .transpose()?,
                 progress,
                 user,
             },
@@ -1085,6 +1193,99 @@ mod tests {
             );
             assert_eq!(qty, [3]);
             assert_eq!(nc_placement_count(ctx), 4);
+            nc_destroy(ctx);
+        }
+    }
+
+    #[test]
+    fn seeded_occupancy_is_respected_and_invalid_inputs_are_transactional() {
+        unsafe {
+            let mut ctx = ptr::null_mut();
+            assert_eq!(nc_create(2, 65536, &mut ctx), 0);
+            let mut index = 0;
+            assert_eq!(nc_add_mask(ctx, [1_u8; 4].as_ptr(), 4, 2, 2, &mut index), 0);
+            let config = NcPackConfig {
+                cols: 66,
+                rows: 3,
+                lookahead: 1,
+                reserved: 0,
+                weight: 0.01,
+                height_weight: 1.0,
+            };
+            let sources = [NcSource {
+                first_mask: 0,
+                mask_count: 1,
+            }];
+            let limits = [NcLimit {
+                max_x: 64,
+                max_y: 1,
+            }];
+            let indexes = [0_u32];
+            let mut qty = [5_u64];
+            let mut seed = vec![1_u8; 66 * 3];
+            // The only available 2x2 slot straddles the 64-bit word boundary.
+            for y in 0..2 {
+                for x in 63..65 {
+                    seed[y * 66 + x] = 0;
+                }
+            }
+            let snapshot = seed.clone();
+            let call = move |seed: *const u8, len: usize, qty: &mut [u64; 1]| {
+                nc_pack_seeded(
+                    ctx,
+                    &config,
+                    sources.as_ptr(),
+                    1,
+                    indexes.as_ptr(),
+                    1,
+                    limits.as_ptr(),
+                    1,
+                    indexes.as_ptr(),
+                    1,
+                    qty.as_mut_ptr(),
+                    1,
+                    seed,
+                    len,
+                    None,
+                    ptr::null_mut(),
+                )
+            };
+            assert_eq!(call(seed.as_ptr(), seed.len(), &mut qty), 0);
+            assert_eq!(qty, [4]);
+            assert_eq!(nc_placement_count(ctx), 1);
+            let mut placed = [NcPlacement::default()];
+            assert_eq!(nc_copy_placements(ctx, placed.as_mut_ptr(), 1), 0);
+            assert_eq!((placed[0].x, placed[0].y), (63, 0));
+            assert_eq!(
+                seed, snapshot,
+                "Borrowed caller occupancy must not be modified"
+            );
+            for length in [0, seed.len() - 1] {
+                // Only the declared length is inspected before rejecting a mismatch.
+                assert_eq!(call(seed.as_ptr(), length, &mut qty), 1);
+                assert_eq!(qty, [4]);
+                assert_eq!(nc_placement_count(ctx), 0);
+            }
+            let oversized = vec![0_u8; seed.len() + 1];
+            assert_eq!(call(oversized.as_ptr(), oversized.len(), &mut qty), 1);
+            assert_eq!(call(ptr::null(), seed.len(), &mut qty), 1);
+            seed[0] = 2;
+            assert_eq!(call(seed.as_ptr(), seed.len(), &mut qty), 1);
+            assert_eq!(qty, [4]);
+            seed.fill(1);
+            assert_eq!(call(seed.as_ptr(), seed.len(), &mut qty), 0);
+            assert_eq!(qty, [4]);
+            assert_eq!(nc_placement_count(ctx), 0);
+            assert_eq!(call(ptr::null(), 0, &mut qty), 0);
+            assert_eq!(qty, [0], "Null seed retains ABI 1 empty-board behavior");
+            (*ctx).budget = (*ctx).retained_bytes() + 240;
+            qty = [4];
+            assert_eq!(call(seed.as_ptr(), seed.len(), &mut qty), 2);
+            assert_eq!(
+                qty,
+                [4],
+                "Seeded memory budget failure must not consume quantity"
+            );
             nc_destroy(ctx);
         }
     }

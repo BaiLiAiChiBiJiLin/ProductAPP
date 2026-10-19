@@ -1,9 +1,11 @@
-import type { Asset, Page } from '../../../model'
+import type { Asset, Item, Page } from '../../../model'
 import type { ImageDetails, ImageGroup } from '../layoutTypes'
+import { productLayoutKind } from '../arrangement/threeColumnLayout'
 import { replaceAssetArtwork } from './assetReplacementService'
 import { rulerDimensionLabel, type DimensionDisplayOverride } from './imageDimensionService'
+import { backLayerSvg } from './svgBackLayerService'
 
-/** Replace one canvas instance without changing other instances of its source asset. */
+/** Replace the list artwork and every canvas reference to that resource together. */
 export function replaceCanvasItemArtwork(assets: Asset[], pages: Page[], itemId: string, artwork: Asset, displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>): { assets: Asset[]; pages: Page[] } {
   const pageIndex = pages.findIndex(page => page.items.some(item => item.id === itemId))
   if (pageIndex < 0) throw new Error('需要更换的图片已不在当前示意图中')
@@ -16,48 +18,71 @@ export function replaceCanvasItemArtwork(assets: Asset[], pages: Page[], itemId:
     throw new Error('新图片尺寸无效，请重新选择文件')
   }
 
-  // Reuse the list replacement's artwork/property merge and resource-ID checks.
-  // The old asset and its group leader remain available to the other canvas items.
-  const replacement = replaceAssetArtwork(assets, original.id, artwork).find(asset => asset.id === artwork.id)!
-  const canvasAsset = { ...replacement, productGroupLeaderId: original.productGroupLeaderId }
-  const scale = Math.min(item.w / artwork.width, item.h / artwork.height)
-  const nextItem = {
-    ...item, assetId: artwork.id, arrangementSourceAssetId: item.arrangementSourceAssetId ?? item.assetId,
-    w: artwork.width * scale, h: artwork.height * scale, backSvg: undefined, svgLayerId: undefined,
-  }
-  const override = displayOverrides?.get(itemId)
-  const label = rulerDimensionLabel(canvasAsset, nextItem, override?.precision, override?.decimalPlaces)
-    // Disabled rulers hide Size at render time. Keep its replacement value in
-    // saved details so turning the ruler back on cannot restore the old size.
-    ?? rulerDimensionLabel(canvasAsset, {
-      ...nextItem, rulerWidth: nextItem.sizeAxis ? nextItem.sizeAxis === 'width' : undefined,
-      rulerHeight: nextItem.sizeAxis ? nextItem.sizeAxis === 'height' : undefined,
-    }, override?.precision, override?.decimalPlaces)!
-  const refreshDetails = (details: ImageDetails, itemIds: string[]): ImageDetails => {
-    if (!itemIds.includes(itemId)) return details
-    if (details.sizes) {
-      if (!details.sizes.some(value => value.itemId === itemId)) return details
-      return { ...details, sizes: details.sizes.map(value => value.itemId === itemId ? { ...value, label } : value) }
-    }
-    const mainId = itemIds.find(id => page.items.some(candidate => candidate.id === id
-      && !candidate.derivedFrom && candidate.caption?.trim().toLowerCase() !== 'base'))
-    return mainId === itemId ? { ...details, size: label } : details
-  }
-  const refreshGroup = (group: ImageGroup): ImageGroup => {
-    const details = group.details && refreshDetails(group.details, group.itemIds)
-    const detailGroups = group.detailGroups?.map(panel => {
-      const details = refreshDetails(panel.details, panel.itemIds)
-      return details === panel.details ? panel : { ...panel, details }
-    })
-    const panelsChanged = detailGroups?.some((panel, index) => panel !== group.detailGroups?.[index])
-    return details === group.details && !panelsChanged ? group : { ...group, details, detailGroups }
-  }
-  const imageGroups = page.imageGroups?.map(refreshGroup)
+  const nextAssets = replaceAssetArtwork(assets, original.id, artwork)
+  const replacement = nextAssets.find(asset => asset.id === artwork.id)!
+  const isMain = (candidate: Item) => !candidate.derivedFrom && candidate.caption?.trim().toLowerCase() !== 'base'
+  let replacementBack: string | undefined
   return {
-    assets: [...assets, canvasAsset],
-    pages: pages.map((candidate, index) => index === pageIndex
-      ? { ...candidate, items: candidate.items.map((value, index) => index === itemIndex ? nextItem : value),
-        ...(imageGroups?.some((group, index) => group !== page.imageGroups?.[index]) ? { imageGroups } : {}) }
-      : candidate),
+    assets: nextAssets,
+    pages: pages.map(candidate => {
+      const labels = new Map<string, string>()
+      const items = candidate.items.map(value => {
+        const sourceId = value.arrangementSourceAssetId === original.id ? artwork.id : value.arrangementSourceAssetId
+        if (value.assetId !== original.id) {
+          return sourceId === value.arrangementSourceAssetId ? value : { ...value, arrangementSourceAssetId: sourceId }
+        }
+        const scale = Math.min(value.w / artwork.width, value.h / artwork.height)
+        const nextItem: Item = {
+          ...value, assetId: artwork.id, arrangementSourceAssetId: sourceId === artwork.id ? undefined : sourceId,
+          w: artwork.width * scale, h: artwork.height * scale,
+          backSvg: value.derivedFrom
+            ? replacementBack ??= backLayerSvg(replacement.svg, productLayoutKind(replacement) === 'standee')
+            : undefined,
+          svgLayerId: undefined, svgLayerIds: undefined,
+        }
+        if (isMain(nextItem)) {
+          const override = displayOverrides?.get(value.id)
+          // Hidden rulers still need the replacement Size for when they are enabled again.
+          const label = rulerDimensionLabel(replacement, nextItem, override?.precision, override?.decimalPlaces)
+            ?? rulerDimensionLabel(replacement, {
+              ...nextItem, rulerWidth: nextItem.sizeAxis ? nextItem.sizeAxis === 'width' : undefined,
+              rulerHeight: nextItem.sizeAxis ? nextItem.sizeAxis === 'height' : undefined,
+            }, override?.precision, override?.decimalPlaces)!
+          labels.set(value.id, label)
+        }
+        return nextItem
+      })
+      const refreshDetails = (details: ImageDetails, itemIds: string[]): ImageDetails => {
+        if (details.sizes) {
+          if (!details.sizes.some(value => labels.has(value.itemId))) return details
+          return { ...details, sizes: details.sizes.map(value => labels.has(value.itemId)
+            ? { ...value, label: labels.get(value.itemId)! } : value) }
+        }
+        const mainId = itemIds.find(id => items.some(value => value.id === id && isMain(value)))
+        const label = mainId && labels.get(mainId)
+        return label === undefined ? details : { ...details, size: label }
+      }
+      const refreshGroup = (group: ImageGroup): ImageGroup => {
+        const details = group.details && refreshDetails(group.details, group.itemIds)
+        const detailGroups = group.detailGroups?.map(panel => {
+          const details = refreshDetails(panel.details, panel.itemIds)
+          return details === panel.details ? panel : { ...panel, details }
+        })
+        const panelsChanged = detailGroups?.some((panel, index) => panel !== group.detailGroups?.[index])
+        return details === group.details && !panelsChanged ? group : { ...group, details, detailGroups }
+      }
+      const imageGroups = candidate.imageGroups?.map(refreshGroup)
+      const headerBlocks = candidate.headerBlocks?.map(header => header.assetIds?.includes(original.id)
+        ? { ...header, assetIds: header.assetIds.map(id => id === original.id ? artwork.id : id) } : header)
+      const itemsChanged = items.some((value, index) => value !== candidate.items[index])
+      const groupsChanged = imageGroups?.some((value, index) => value !== candidate.imageGroups?.[index])
+      const headersChanged = headerBlocks?.some((value, index) => value !== candidate.headerBlocks?.[index])
+      if (!itemsChanged && !groupsChanged && !headersChanged) return candidate
+      return { ...candidate,
+        ...(itemsChanged ? { items } : {}),
+        ...(groupsChanged ? { imageGroups } : {}),
+        ...(headersChanged ? { headerBlocks } : {}),
+      }
+    }),
   }
 }

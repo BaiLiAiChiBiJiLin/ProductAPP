@@ -1,4 +1,6 @@
-.storage-settings{display:flex;flex-direction:column;gap:12px;padding:16px 0}
+.storage-settings{display:flex;flex-direction:column;gap:12px;height:100%;min-height:0;overflow-y:auto;overscroll-behavior-y:contain;padding:0 4px 16px 0}
+.storage-settings-header{position:sticky;top:0;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff;padding-bottom:8px}
+.storage-settings-header h3{margin:0;font-size:16px}
 .storage-settings>label{font-weight:600;color:#1f2937}
 .storage-settings-path{display:flex;gap:8px}
 .storage-settings-path .ant-input{min-width:0}
@@ -8,3 +10,17 @@
 .storage-settings-default>.ant-btn{flex-shrink:0}
 .storage-settings>p{margin:0;color:#64748b;font-size:13px;line-height:1.7}
 .account-popover>.account-settings-button{grid-column:1 / -1;width:100%;justify-content:center}
+.app-settings-modal{max-width:96vw;top:4vh;top:4dvh;padding-bottom:0}
+.app-settings-modal .ant-modal-content{height:92vh;height:92dvh;display:flex;flex-direction:column;overflow:hidden}
+.app-settings-modal .ant-modal-header{flex-shrink:0;padding-right:32px}
+.app-settings-modal .ant-modal-body{flex:1;min-height:0;overflow:hidden}
+.app-settings-shell{display:flex;align-items:stretch;gap:24px;height:100%;min-height:0;overflow:hidden}
+.app-settings-nav{display:flex;flex-direction:column;gap:8px;width:170px;flex-shrink:0;overflow-y:auto;overscroll-behavior-y:contain;border-right:1px solid #e2e8f0;padding-right:16px}
+.app-settings-nav>button{flex-shrink:0;border:0;background:transparent;color:#475569;text-align:left;padding:12px;border-radius:6px;cursor:pointer}
+.app-settings-nav>button[aria-current=page]{color:#1677ff;background:#eff6ff;font-weight:600}
+.app-settings-nav>button:disabled{cursor:wait;opacity:.6}
+.app-settings-content{flex:1;min-width:0;min-height:0;overflow:hidden}
+.app-settings-page{height:100%;min-height:0;overflow:hidden}
+.app-settings-modal [hidden]{display:none!important}
+@media(max-width:1200px){.app-settings-nav{width:150px;padding-right:12px}.app-settings-shell{gap:16px}}
+@media(max-width:800px){.app-settings-shell{flex-direction:column;gap:12px}.app-settings-nav{width:100%;max-height:96px;border-right:0;border-bottom:1px solid #e2e8f0;flex-direction:row;overflow:auto;padding:0 0 8px}.app-settings-nav>button{white-space:nowrap}.storage-settings-path{flex-wrap:wrap}}

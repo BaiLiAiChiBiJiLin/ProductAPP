@@ -106,7 +106,7 @@ export function useProductGrouping({ assets, products, save, activate, revealAll
       const persisted = applyProductGroup(assets, prepared, products)
       await save(persisted)
       for (const id of prepared.memberIds) { dirty.current.delete(id); delete drafts.current[id]; delete clearedEditors.current[id] }
-      commit(finish ? null : { ...prepared, editors: Object.fromEntries(prepared.memberIds.map(id => [id, readGroupAssetEditor(persisted.find(asset => asset.id === id)!)])) })
+      commit(finish ? null : { ...prepared, editingSavedGroup: true, editors: Object.fromEntries(prepared.memberIds.map(id => [id, readGroupAssetEditor(persisted.find(asset => asset.id === id)!)])) })
     } catch (reason) { setError(`保存失败：${String(reason)}`) }
     finally { savingRef.current = false; setSaving(false) }
   }

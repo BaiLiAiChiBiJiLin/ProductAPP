@@ -26,26 +26,41 @@ export function autoArrangePages(pages: Page[], _activePage: number, assets: Ass
   }
   const chosen = assets.filter(asset => used.has(asset.id)).map(asset => groupByAsset.has(asset.id) ? { ...asset, productGroupId: groupByAsset.get(asset.id) } : asset)
   const result = paginateThreeColumns(chosen, bounds, configs)
+  const restoredIds = new Map<string, string>()
   for (const page of result) {
     page.items = page.items.map(item => {
       const candidates = previousByRole.get(roleKey(item))
       if (!candidates?.length) return item
       const exactIndex = candidates.findIndex(candidate => candidate.id === item.id)
       const [previous] = candidates.splice(exactIndex < 0 ? 0 : exactIndex, 1)
-      const restored = { ...item, rulerUnit: previous.rulerUnit, rulerWidth: previous.rulerWidth, rulerHeight: previous.rulerHeight, sizeAxis: previous.sizeAxis, rulerWidthRange: previous.rulerWidthRange, rulerHeightRange: previous.rulerHeightRange }
+      // Replacing a source resource must not invalidate display settings keyed
+      // by canvas item ID. Remap generated group references after all pages.
+      restoredIds.set(item.id, previous.id)
+      const restored = { ...item, id: previous.id, rulerUnit: previous.rulerUnit, rulerWidth: previous.rulerWidth, rulerHeight: previous.rulerHeight, sizeAxis: previous.sizeAxis, rulerWidthRange: previous.rulerWidthRange, rulerHeightRange: previous.rulerHeightRange }
       // Front and Back are independent canvas instances. Restore only explicit
       // artwork edits; unedited backs retain the newly generated default layer.
-      if (!previous.arrangementSourceAssetId && previous.svgLayerId === undefined) return restored
+      if (!previous.arrangementSourceAssetId && previous.svgLayerId === undefined && previous.svgLayerIds === undefined) return restored
       const artwork = assetsById.get(previous.assetId)
       if (!artwork) return restored
       const scale = Math.min(item.w / artwork.width, item.h / artwork.height)
       return {
         ...restored, assetId: previous.assetId, arrangementSourceAssetId: previous.arrangementSourceAssetId,
-        backSvg: previous.backSvg, svgLayerId: previous.svgLayerId, mirrorX: previous.mirrorX,
+        backSvg: previous.backSvg, svgLayerId: previous.svgLayerId, svgLayerIds: previous.svgLayerIds, mirrorX: previous.mirrorX,
         ...(previous.arrangementSourceAssetId ? { w: artwork.width * scale, h: artwork.height * scale } : {}),
       }
     })
+  }
+  const restoreId = (id: string) => restoredIds.get(id) ?? id
+  for (const page of result) {
+    page.items = page.items.map(item => item.derivedFrom ? { ...item, derivedFrom: restoreId(item.derivedFrom) } : item)
     for (const group of page.imageGroups ?? []) {
+      group.itemIds = group.itemIds.map(restoreId)
+      if (group.imageCells) group.imageCells = group.imageCells.map(cell => ({ ...cell, itemId: restoreId(cell.itemId) }))
+      for (const panel of group.detailGroups ?? []) {
+        panel.itemIds = panel.itemIds.map(restoreId)
+        if (panel.details.sizes) panel.details.sizes = panel.details.sizes.map(value => ({ ...value, itemId: restoreId(value.itemId) }))
+      }
+      if (group.details?.sizes) group.details.sizes = group.details.sizes.map(value => ({ ...value, itemId: restoreId(value.itemId) }))
       const firstMember = page.items.find(item => group.itemIds.includes(item.id))
       if (firstMember && groupByAsset.has(sourceId(firstMember))) group.stacked = 'vertical'
       const item = page.items.find(item => group.itemIds.includes(item.id) && !item.derivedFrom)

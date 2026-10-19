@@ -1,4 +1,4 @@
-import { constrain, defaultLayoutBounds, GROUP_GAP, headerCells, HEADER_BLOCK_HEIGHT, normalizeLayoutBounds, PAPER_HEIGHT, PAPER_WIDTH, type HeaderBlock, type Item, type LayoutBounds, type Page } from '../../../model.ts'
+import { constrain, constrainHeaderBlock, defaultLayoutBounds, GROUP_GAP, headerCells, HEADER_BLOCK_HEIGHT, artworkBounds, PAPER_HEIGHT, PAPER_WIDTH, type HeaderBlock, type Item, type LayoutBounds, type Page } from '../../../model.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
 import { imageCenterWithDimensionGutter } from './imageDimensionService.ts'
 import { rearrangeProductPage } from '../arrangement/rearrangeProductPage.ts'
@@ -14,7 +14,7 @@ export const AUTO_ROW_HEIGHT = 110
 
 function layout(items: Item[], bounds: LayoutBounds, blocks: HeaderBlock[], stacks: ImageGroup[] = []): { items: Item[]; imageGroups: ImageGroup[] } {
   if (!items.length) return { items: [], imageGroups: [] }
-  const area = normalizeLayoutBounds(bounds)
+  const area = artworkBounds(bounds)
   const width = PAPER_WIDTH - area.left - area.right
   const bottom = PAPER_HEIGHT - area.bottom
   const columnWidth = (width - GROUP_GAP * 3) / 4
@@ -22,7 +22,7 @@ function layout(items: Item[], bounds: LayoutBounds, blocks: HeaderBlock[], stac
     const x = area.left + index * (columnWidth + GROUP_GAP)
     return { x, width: columnWidth, images: [{ x, width: columnWidth }] }
   })
-  const sorted = [...blocks].filter(block => block.columns.length).sort((a, b) => a.y - b.y)
+  const sorted = blocks.filter(block => block.columns.length).map(block => constrainHeaderBlock(block, area)).sort((a, b) => a.y - b.y)
   const sections: Section[] = []
   if (!sorted.length || sorted[0].y - area.top > 40) sections.push({ top: area.top, bottom: sorted[0] ? sorted[0].y - GROUP_GAP : bottom, columns: defaultColumns })
   sorted.forEach((block, index) => {
@@ -110,9 +110,11 @@ function layout(items: Item[], bounds: LayoutBounds, blocks: HeaderBlock[], stac
 /** Images and details share one rectangular background; separate Front/Back images share that group. */
 export function arrangePage(page: Page, bounds: LayoutBounds = defaultLayoutBounds): Page {
   if (page.imageGroups?.some(group => group.productGroupId)) return rearrangeProductPage(page, bounds)
-  const result = layout(page.items, bounds, page.headerBlocks ?? [], page.imageGroups ?? [])
+  const area = artworkBounds(bounds)
+  const headerBlocks = page.headerBlocks?.map(block => constrainHeaderBlock(block, area))
+  const result = layout(page.items, area, headerBlocks ?? [], page.imageGroups ?? [])
   const previous = page.imageGroups ?? []
-  return { ...page, ...result, imageGroups: result.imageGroups.map(group => {
+  return { ...page, ...result, headerBlocks, imageGroups: result.imageGroups.map(group => {
     const old = previous.find(candidate => candidate.itemIds.some(id => group.itemIds.includes(id)))
     return old?.details ? { ...group, details: old.details, stacked: old.stacked } : group
   }) }

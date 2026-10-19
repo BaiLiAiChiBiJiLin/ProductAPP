@@ -1,0 +1,58 @@
+.artwork-layer-submenu .ant-dropdown-menu {
+  max-height: min(420px, calc(100vh - 32px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.artwork-layer-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 250px;
+  max-width: calc(100vw - 48px);
+  min-height: 48px;
+}
+
+.artwork-layer-thumbnail {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  object-fit: contain;
+  border: 1px solid #d9dfe7;
+  border-radius: 4px;
+  background-color: #fff;
+  background-image: conic-gradient(#edf0f3 25%, transparent 0 50%, #edf0f3 0 75%, transparent 0);
+  background-size: 10px 10px;
+}
+
+.artwork-layer-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artwork-layer-selected {
+  flex: 0 0 16px;
+  color: #1677ff;
+}
+
+.artwork-layer-actions {
+  position: sticky;
+  bottom: -4px;
+  z-index: 1;
+  margin-top: 4px;
+  background: #fff;
+  border-top: 1px solid #eef0f3;
+}
+
+.artwork-layer-actions > .ant-dropdown-menu-item-group-title {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 8px 6px;
+}
+
+.artwork-layer-actions > .ant-dropdown-menu-item-group-list {
+  display: none;
+}

@@ -1,4 +1,4 @@
-import { GROUP_GAP, headerColumnBounds, HEADER_BLOCK_HEIGHT, type HeaderBlock, type HeaderColumn, type LayoutBounds, type Page } from '../../../model.ts'
+import { headerDetailLabel, artworkBounds, GROUP_GAP, headerColumnBounds, HEADER_BLOCK_HEIGHT, type HeaderBlock, type HeaderColumn, type LayoutBounds, type Page } from '../../../model.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
 import { findFreeRegions, type FreeRegion } from './freeRegions.ts'
 import { headerFor, sharesMixedWidthRow, SECTION_EPS as EPS } from './pageSections.ts'
@@ -34,7 +34,7 @@ function placementFor(target: Page, free: FreeRegion, candidate: Candidate): Pla
   if (existing) {
     for (const { column: destination, x: offset, width } of headerColumnBounds(existing)) {
       const x = existing.x + offset
-      if (destination.imageMode === column.imageMode && destination.detailLabel === column.detailLabel
+      if (destination.imageMode === column.imageMode && headerDetailLabel(destination.detailLabel) === headerDetailLabel(column.detailLabel)
         && existing.detailWidth === header.detailWidth && Math.abs(width - group.width) < EPS
         && x >= free.x - EPS && x + group.width <= free.x + free.width + EPS
         && (source !== target || before(x, free.y, group))) return { x, y: free.y, reuse: existing }
@@ -65,13 +65,15 @@ function placementFor(target: Page, free: FreeRegion, candidate: Candidate): Pla
 
 /** Final post-layout pass. Only move forward in reading order; never resize or split a group. */
 export function fillFreeRegions(pages: Page[], bounds: LayoutBounds): Page[] {
+  const area = artworkBounds(bounds)
+  const packingBounds = { ...area, top: area.top + GROUP_GAP }
   for (let targetIndex = 0; targetIndex < pages.length; targetIndex++) {
     const target = pages[targetIndex]
     if (target.imageGroups?.some(group => group.protectPageFill)) continue
     for (;;) {
       const pending = candidates(pages, targetIndex)
       let match: { candidate: Candidate; placement: Placement } | undefined
-      for (const region of findFreeRegions(target, bounds)) {
+      for (const region of findFreeRegions(target, packingBounds)) {
         for (const candidate of pending) {
           const placement = placementFor(target, region, candidate)
           if (placement) { match = { candidate, placement }; break }

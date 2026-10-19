@@ -72,7 +72,7 @@ export default function ProductGroupGuide({ assets }: { assets: Asset[] }) {
         <Tooltip title="移出当前组并清空产品属性"><Button danger size="small" className="product-group-thumbnail-remove" aria-label={`移除组内图片 ${asset.name}`} disabled={grouping.saving || draggingId !== null} icon={grouping.removingId === id ? <Loading size="small" inline/> : <Trash2 size={14}/>} onClick={event => { event.stopPropagation(); void grouping.removeMember(id) }}/></Tooltip>
       </div> })}
     </div>
-    {session.trigger.kind !== 'free' && session.activeId !== session.leaderId && <p>仅产品和立牌数量沿用主图，其他选项可独立修改。</p>}
+    {session.trigger.kind !== 'free' && session.activeId !== session.leaderId && <p>{session.editingSavedGroup ? '立牌数量沿用主图，其他选项可独立修改。' : '仅产品和立牌数量沿用主图，其他选项可独立修改。'}</p>}
     {grouping.error && <div role="alert">{grouping.error}</div>}
   </section>
 }

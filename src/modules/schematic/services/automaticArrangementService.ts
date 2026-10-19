@@ -1,4 +1,4 @@
-import { defaultLayoutBounds, GROUP_GAP, HEADER_BLOCK_HEIGHT, normalizeLayoutBounds, PAPER_HEIGHT, PAPER_WIDTH, proportionalAssetSizeForAsset, type Asset, type HeaderBlock, type HeaderImageMode, type LayoutBounds, type Page } from '../../../model.ts'
+import { constrainHeaderBlock, defaultLayoutBounds, GROUP_GAP, HEADER_BLOCK_HEIGHT, artworkBounds, PAPER_HEIGHT, PAPER_WIDTH, proportionalAssetSizeForAsset, type Asset, type HeaderBlock, type HeaderImageMode, type LayoutBounds, type Page } from '../../../model.ts'
 import { detailsForAsset } from './assetDetailsService.ts'
 import { buildProductGroupDetails } from '../arrangement/productGroupDetails.ts'
 export { detailsForAsset } from './assetDetailsService.ts'
@@ -10,7 +10,7 @@ export const AUTO_MIN_IMAGE_SCALE = 0.45
 export const AUTO_MAX_COLUMNS = 8
 // Includes padding; a smaller details cell makes the fixed labels hard to read.
 export const AUTO_MIN_DETAIL_WIDTH = 70
-export const AUTO_DETAIL_LABEL = 'Size/QT/Finish/Accessory'
+export const AUTO_DETAIL_LABEL = 'Size/QT/Accessory'
 
 type Section = { key: string; productId: string; productLabel: string; printOption: string; mode: HeaderImageMode; assets: Asset[] }
 
@@ -60,8 +60,8 @@ export function groupAssetsByArrangement(assets: Asset[], configs: ProductConfig
   return sections
 }
 
-function columnsForSection(section: Section, bounds: LayoutBounds) {
-  const areaWidth = PAPER_WIDTH - bounds.left - bounds.right
+function columnsForSection(section: Section, area: LayoutBounds) {
+  const areaWidth = PAPER_WIDTH - area.left - area.right
   // Use the same proportional reference size as the items placed on the canvas.
   // SVG coordinate units are not millimetres and must not limit column count.
   const maxWidth = Math.max(1, ...section.assets.map(asset => proportionalAssetSizeForAsset(asset).w))
@@ -80,13 +80,13 @@ function estimatedSectionHeight(section: Section, bounds: LayoutBounds) {
   return HEADER_BLOCK_HEIGHT + GROUP_GAP + rows * AUTO_ROW_HEIGHT + rows * GROUP_GAP
 }
 
-function headerBlockForSection(section: Section, y: number, bounds: LayoutBounds): HeaderBlock {
-  const columns = columnsForSection(section, bounds)
+function headerBlockForSection(section: Section, y: number, area: LayoutBounds): HeaderBlock {
+  const columns = columnsForSection(section, area)
   return {
     id: `auto-header-${section.key.replace(/[^a-z0-9]+/gi, '-')}-${y}`,
-    x: bounds.left,
+    x: area.left,
     y,
-    width: PAPER_WIDTH - bounds.left - bounds.right,
+    width: PAPER_WIDTH - area.left - area.right,
     auto: true,
     productId: section.productId,
     productLabel: section.productLabel,
@@ -98,8 +98,10 @@ function headerBlockForSection(section: Section, y: number, bounds: LayoutBounds
 
 /** Recompute generated columns on an existing page; user-edited headers keep their settings. */
 export function refreshAutomaticHeaders(page: Page, assets: Asset[], bounds: LayoutBounds): Page {
+  const area = artworkBounds(bounds)
   const pageAssets = new Set(page.items.map(item => item.assetId))
-  const refreshed = page.headerBlocks?.map(block => {
+  const refreshed = page.headerBlocks?.map(source => {
+    const block = constrainHeaderBlock(source, area)
     if (!block.auto) return block
     const matching = assets.filter(asset => pageAssets.has(asset.id) && (block.assetIds
       ? block.assetIds.includes(asset.id)
@@ -107,7 +109,7 @@ export function refreshAutomaticHeaders(page: Page, assets: Asset[], bounds: Lay
     if (!matching.length) return block
     const mode = block.columns[0]?.imageMode ?? headerModeForAsset(matching[0])
     const section = groupAssetsByArrangement(matching).find(candidate => candidate.mode === mode) ?? groupAssetsByArrangement(matching)[0]
-    const count = columnsForSection(section, { ...bounds, left: block.x, right: PAPER_WIDTH - block.x - block.width })
+    const count = columnsForSection(section, { ...area, left: block.x, right: PAPER_WIDTH - block.x - block.width })
     return { ...block, assetIds: matching.map(asset => asset.id), columns: Array.from({ length: count }, (_, index) => ({
       id: `${block.id}-column-${index}`, imageMode: section.mode, detailLabel: AUTO_DETAIL_LABEL,
     })) }
@@ -161,9 +163,10 @@ export function refreshPageAssetDetails(page: Page, assets: Asset[], configs: Pr
 /** Fill available cells in order using the same row height as canvas placement. */
 export function paginateAutomaticAssets(assets: Asset[], pageSize = 12, bounds: LayoutBounds = defaultLayoutBounds, configs: ProductConfig[] = []): Page[] {
   if (!assets.length) return []
-  const area = normalizeLayoutBounds(bounds)
+  const area = artworkBounds(bounds)
   const sections = groupAssetsByArrangement(assets, configs)
-  const availableHeight = PAPER_HEIGHT - area.top - area.bottom
+  const headerTop = area.top + GROUP_GAP
+  const availableHeight = PAPER_HEIGHT - headerTop - area.bottom
   const itemLimit = Math.max(1, Math.floor(pageSize) || 1)
   const pages: Page[] = []
   let sectionIndex = 0
@@ -208,7 +211,7 @@ export function paginateAutomaticAssets(assets: Asset[], pageSize = 12, bounds: 
     }
     const pageAssets = pageSections.flatMap(section => section.assets)
     const items = pageAssets.map((asset, index) => ({ id: `${asset.id}-${index}`, assetId: asset.id, x: 0, y: 0, rotation: 0, ...proportionalAssetSizeForAsset(asset) }))
-    let y = area.top
+    let y = headerTop
     const headerBlocks = pageSections.map(section => {
       const block = headerBlockForSection(section, y, area)
       y += estimatedSectionHeight(section, area)

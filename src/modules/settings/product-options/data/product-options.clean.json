@@ -1,0 +1,3117 @@
+{
+  "categories": [
+    {
+      "name": "stickers",
+      "title": "Stickers",
+      "titleZh": "贴纸",
+      "products": [
+        {
+          "title": "Brushed Gold Stickers",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": false,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Brushed Silver Stickers",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": false,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Circle Stickers",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": false,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Clear Stickers",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": false,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Custom Sticker Sheets",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Die-Cut Stickers",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": false,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Glitter Stickers",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": false,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Holo Heart Stickers",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": false,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Holo Star Stickers",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": false,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Holo broken Glasses Stickers",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": false,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Holographic Stickers",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": false,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Prismatic Stickers",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": false,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Square Stickers",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": false,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Star lllusion Film stickers",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": false,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Stickers Collections",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Vinyl Stickers",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": false,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "acrylic",
+      "title": "Acrylic Products",
+      "titleZh": "亚克力",
+      "products": [
+        {
+          "title": "Acrylic See-Through Cards - Lightweight, Sleek, and Customizable",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Anime Acrylic Rotating Ballpoint Pen",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Custom Acrylic Earrings - Unique and Stylish Designs",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Custom Acrylic Hair Clips – Stylish and Personalized",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Custom Acrylic Mirror - Stylish and Durable Design",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Custom Acrylic Rulers",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "standees",
+      "title": "Standees",
+      "titleZh": "立牌",
+      "products": [
+        {
+          "title": "Broken Glass Acrylic Standees",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": false
+            },
+            {
+              "name": "Technique",
+              "deleted": false,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": false,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Clear Acrylic Standees",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": false
+            },
+            {
+              "name": "Technique",
+              "deleted": false,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": false,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Custom Colored Acrylic Standees",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": false
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Custom Rainbow Acrylic Standees",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": false
+            },
+            {
+              "name": "Technique",
+              "deleted": false,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Full Bleed Acrylic Standees",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": false
+            },
+            {
+              "name": "Technique",
+              "deleted": false,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": false,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Holo Heart Acrylic Standees",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": false
+            },
+            {
+              "name": "Technique",
+              "deleted": false,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": false,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Holo Star Acrylic Standees",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": false
+            },
+            {
+              "name": "Technique",
+              "deleted": false,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": false,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Rotating Acrylic Standees",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": false
+            },
+            {
+              "name": "Technique",
+              "deleted": false,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": false,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "keychains",
+      "title": "Keychains",
+      "titleZh": "钥匙扣",
+      "products": [
+        {
+          "title": "Clear Acrylic Keychains",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": false
+            },
+            {
+              "name": "Technique",
+              "deleted": false,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": false
+            }
+          ]
+        },
+        {
+          "title": "Color Edge Acrylic Keychains",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": false
+            },
+            {
+              "name": "Technique",
+              "deleted": false,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": false
+            }
+          ]
+        },
+        {
+          "title": "Custom Acrylic Photocard Holders Keychains",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Custom Shaker Keychain",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Custom Synthetic Wooden Keychains",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Epoxy Acrylic Keychains",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": false
+            },
+            {
+              "name": "Technique",
+              "deleted": false,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": false
+            }
+          ]
+        },
+        {
+          "title": "Epoxy Holographic Keychains",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": false
+            },
+            {
+              "name": "Technique",
+              "deleted": false,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": false
+            }
+          ]
+        },
+        {
+          "title": "Full Bleed Acrylic Keychains",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": false
+            },
+            {
+              "name": "Technique",
+              "deleted": false,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": false
+            }
+          ]
+        },
+        {
+          "title": "Glitter Epoxy Holographic Keychains",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": false
+            },
+            {
+              "name": "Technique",
+              "deleted": false,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": false
+            }
+          ]
+        },
+        {
+          "title": "Holographic Acrylic Keychains",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": false
+            },
+            {
+              "name": "Technique",
+              "deleted": false,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": false
+            }
+          ]
+        },
+        {
+          "title": "Rainbow Acrylic Keychains",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": false
+            },
+            {
+              "name": "Technique",
+              "deleted": false,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": false
+            }
+          ]
+        },
+        {
+          "title": "Rainbow Epoxy Keychains",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": false
+            },
+            {
+              "name": "Technique",
+              "deleted": false,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": false
+            }
+          ]
+        },
+        {
+          "title": "Rounding Clear Acrylic Keychains",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Rounding Clear Acrylic Keychains",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": false
+            },
+            {
+              "name": "Technique",
+              "deleted": false,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "carabiners",
+      "title": "Carabiners",
+      "titleZh": "登山扣",
+      "products": [
+        {
+          "title": "Custom Acrylic Carabiner",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": false
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "pins",
+      "title": "Pins",
+      "titleZh": "别针",
+      "products": [
+        {
+          "title": "Custom Clear Acrylic Pins",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": false
+            }
+          ]
+        },
+        {
+          "title": "Custom Colored Acrylic Pins",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": false
+            }
+          ]
+        },
+        {
+          "title": "Custom Frosted Acrylic Pins",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": false
+            }
+          ]
+        },
+        {
+          "title": "Custom Full Bleed Acrylic Pin",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": false
+            }
+          ]
+        },
+        {
+          "title": "Custom Holographic Acrylic Pins",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Custom Rainbow Acrylic Pins",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "badges",
+      "title": "Button Badges",
+      "titleZh": "徽章",
+      "products": [
+        {
+          "title": "Custom 3D Glitter Holographic Button Pins",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Custom Bottle Opener Fridge MagnetsButton Pins",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Custom Fridge Magnets Button Pins",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Custom Raised Foil Printing Cold FoilStamping Glitter Holographic Button Pins",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Custom Round Button Pins",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Custom Round Glitter Holographic Button Pins",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "bookmarks",
+      "title": "Bookmarks",
+      "titleZh": "书签",
+      "products": [
+        {
+          "title": "Custom Bookmark Printing With Tassels",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        },
+        {
+          "title": "Personalized Custom Clear PET Bookmarks",
+          "titleZh": "",
+          "productOptions": [
+            {
+              "name": "Print Option",
+              "deleted": true
+            },
+            {
+              "name": "Technique",
+              "deleted": true,
+              "disabledValues": [
+                "G18",
+                "G19"
+              ]
+            },
+            {
+              "name": "Holo Film",
+              "deleted": true,
+              "disabledValues": [
+                "M1",
+                "M2",
+                "M3",
+                "M4",
+                "M5",
+                "M6",
+                "M7",
+                "M8",
+                "M9",
+                "M10",
+                "M11"
+              ]
+            },
+            {
+              "name": "Material",
+              "deleted": true,
+              "disabledValues": [
+                "C9",
+                "C10"
+              ]
+            },
+            {
+              "name": "Accessories Style",
+              "deleted": true
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "uncategorizedProducts": [
+    {
+      "title": "Custom Art Print Printing",
+      "titleZh": "",
+      "productOptions": [
+        {
+          "name": "Print Option",
+          "deleted": true
+        },
+        {
+          "name": "Technique",
+          "deleted": true,
+          "disabledValues": [
+            "G18",
+            "G19"
+          ]
+        },
+        {
+          "name": "Holo Film",
+          "deleted": true,
+          "disabledValues": [
+            "M1",
+            "M2",
+            "M3",
+            "M4",
+            "M5",
+            "M6",
+            "M7",
+            "M8",
+            "M9",
+            "M10",
+            "M11"
+          ]
+        },
+        {
+          "name": "Material",
+          "deleted": true,
+          "disabledValues": [
+            "C9",
+            "C10"
+          ]
+        },
+        {
+          "name": "Accessories Style",
+          "deleted": true
+        }
+      ]
+    },
+    {
+      "title": "Custom Business Card",
+      "titleZh": "",
+      "productOptions": [
+        {
+          "name": "Print Option",
+          "deleted": true
+        },
+        {
+          "name": "Technique",
+          "deleted": true,
+          "disabledValues": [
+            "G18",
+            "G19"
+          ]
+        },
+        {
+          "name": "Holo Film",
+          "deleted": true,
+          "disabledValues": [
+            "M1",
+            "M2",
+            "M3",
+            "M4",
+            "M5",
+            "M6",
+            "M7",
+            "M8",
+            "M9",
+            "M10",
+            "M11"
+          ]
+        },
+        {
+          "name": "Material",
+          "deleted": true,
+          "disabledValues": [
+            "C9",
+            "C10"
+          ]
+        },
+        {
+          "name": "Accessories Style",
+          "deleted": true
+        }
+      ]
+    },
+    {
+      "title": "Custom Game Cards Printable Tarot Cards",
+      "titleZh": "",
+      "productOptions": [
+        {
+          "name": "Print Option",
+          "deleted": true
+        },
+        {
+          "name": "Technique",
+          "deleted": true,
+          "disabledValues": [
+            "G18",
+            "G19"
+          ]
+        },
+        {
+          "name": "Holo Film",
+          "deleted": true,
+          "disabledValues": [
+            "M1",
+            "M2",
+            "M3",
+            "M4",
+            "M5",
+            "M6",
+            "M7",
+            "M8",
+            "M9",
+            "M10",
+            "M11"
+          ]
+        },
+        {
+          "name": "Material",
+          "deleted": true,
+          "disabledValues": [
+            "C9",
+            "C10"
+          ]
+        },
+        {
+          "name": "Accessories Style",
+          "deleted": true
+        }
+      ]
+    },
+    {
+      "title": "Custom Packaging Backing Cards",
+      "titleZh": "",
+      "productOptions": [
+        {
+          "name": "Print Option",
+          "deleted": true
+        },
+        {
+          "name": "Technique",
+          "deleted": true,
+          "disabledValues": [
+            "G18",
+            "G19"
+          ]
+        },
+        {
+          "name": "Holo Film",
+          "deleted": true,
+          "disabledValues": [
+            "M1",
+            "M2",
+            "M3",
+            "M4",
+            "M5",
+            "M6",
+            "M7",
+            "M8",
+            "M9",
+            "M10",
+            "M11"
+          ]
+        },
+        {
+          "name": "Material",
+          "deleted": true,
+          "disabledValues": [
+            "C9",
+            "C10"
+          ]
+        },
+        {
+          "name": "Accessories Style",
+          "deleted": true
+        }
+      ]
+    },
+    {
+      "title": "Custom Poster Printing",
+      "titleZh": "",
+      "productOptions": [
+        {
+          "name": "Print Option",
+          "deleted": true
+        },
+        {
+          "name": "Technique",
+          "deleted": true,
+          "disabledValues": [
+            "G18",
+            "G19"
+          ]
+        },
+        {
+          "name": "Holo Film",
+          "deleted": true,
+          "disabledValues": [
+            "M1",
+            "M2",
+            "M3",
+            "M4",
+            "M5",
+            "M6",
+            "M7",
+            "M8",
+            "M9",
+            "M10",
+            "M11"
+          ]
+        },
+        {
+          "name": "Material",
+          "deleted": true,
+          "disabledValues": [
+            "C9",
+            "C10"
+          ]
+        },
+        {
+          "name": "Accessories Style",
+          "deleted": true
+        }
+      ]
+    },
+    {
+      "title": "Custom Thank You Cards Greeting Cards Post Card Printing",
+      "titleZh": "",
+      "productOptions": [
+        {
+          "name": "Print Option",
+          "deleted": true
+        },
+        {
+          "name": "Technique",
+          "deleted": true,
+          "disabledValues": [
+            "G18",
+            "G19"
+          ]
+        },
+        {
+          "name": "Holo Film",
+          "deleted": true,
+          "disabledValues": [
+            "M1",
+            "M2",
+            "M3",
+            "M4",
+            "M5",
+            "M6",
+            "M7",
+            "M8",
+            "M9",
+            "M10",
+            "M11"
+          ]
+        },
+        {
+          "name": "Material",
+          "deleted": true,
+          "disabledValues": [
+            "C9",
+            "C10"
+          ]
+        },
+        {
+          "name": "Accessories Style",
+          "deleted": true
+        }
+      ]
+    }
+  ]
+}

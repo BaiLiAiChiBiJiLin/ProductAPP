@@ -1,0 +1,23 @@
+{
+  "name": "Print Option",
+  "label": "Print",
+  "labelZh": "印刷选项",
+  "values": [
+    {
+      "name": "Double Sided Same Design",
+      "labelZh": "双面同图",
+      "image": "",
+      "isDefault": false,
+      "sortOrder": 1,
+      "id": "Y1"
+    },
+    {
+      "name": "Double Sided Different Design",
+      "labelZh": "双面不同图",
+      "isDefault": false,
+      "sortOrder": 2,
+      "id": "Y2"
+    }
+  ],
+  "nextId": 3
+}

@@ -31,7 +31,7 @@ export function restoreProductGroup(assets: Asset[], activeId: string, products:
       ? members.map(asset => asset.id)
       : [leader.id, ...members.filter(asset => asset.id !== leader.id).map(asset => asset.id)],
     editors: Object.fromEntries(members.map(asset => [asset.id, copyEpoxy(asset.id === leader.id ? editor : free ? readEditor(asset) : inheritGroupIdentity(readEditor(asset), editor, products), editor)])),
-    trigger, emptyFirstSlot,
+    trigger, emptyFirstSlot, editingSavedGroup: true,
   }
 }
 

@@ -5,7 +5,8 @@ import { fillFreeRegions } from '../src/modules/schematic/arrangement/freeRegion
 import { backfillPages } from '../src/modules/schematic/arrangement/backfillPages.ts'
 import { GROUP_GAP, HEADER_BLOCK_HEIGHT, PAPER_HEIGHT, PAPER_WIDTH, defaultLayoutBounds } from '../src/model.ts'
 
-const bounds={...defaultLayoutBounds,top:100}
+// These hand-authored fixtures occupy x=10..490; keep their legacy content frame explicit.
+const bounds={...defaultLayoutBounds,top:100,left:10,right:10,paddingLeft:0,paddingRight:0}
 const column={id:'c',imageMode:'photo',detailLabel:'Size/QT/Finish/Accessory'}
 const header=(id,x=10,y=100,width=150)=>({id,x,y,width,auto:true,detailWidth:74,columns:[{...column}]})
 const group=(id,x,y,width,height)=>({id,itemIds:[id],x,y,width,height,detailsX:x+width-74,detailWidth:74,imageCells:[{itemId:id,x,y,width:width-74,height}]})
@@ -48,9 +49,10 @@ test('backfill keeps a product row together when a later page starts with anothe
  const target=page(1,[makeHeader('target')],[makeGroup('a1',10,rowY,'product-a')])
  const source=page(2,[makeHeader('source')],[makeGroup('b1',10,rowY,'product-b'),makeGroup('a2',10,rowY,'product-a')])
  const result=backfillPages([target,source],bounds)
- const row=result[0].imageGroups.filter(g=>Math.abs(g.y-rowY)<1e-7)
+ const compactedRowY=bounds.top+HEADER_BLOCK_HEIGHT+2*GROUP_GAP
+ const row=result[0].imageGroups.filter(g=>Math.abs(g.y-compactedRowY)<1e-7)
  assert.deepEqual(row.map(g=>g.productKey),['product-a','product-a'])
- assert.ok(result[0].imageGroups.some(g=>g.productKey==='product-b' && g.y>rowY))
+ assert.ok(result[0].imageGroups.some(g=>g.productKey==='product-b' && g.y>compactedRowY))
 })
 
 test('a matching header is reused for a middle gap and a sole group retains its header when shifted upward',()=>{

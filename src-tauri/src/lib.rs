@@ -16,6 +16,7 @@ mod product_config_cache;
 mod production_imposition;
 mod schematic_review;
 mod settings;
+mod product_option_settings;
 mod shared_transfers;
 mod staged_artwork;
 pub mod svg_measure;
@@ -1593,6 +1594,8 @@ pub fn run() {
             shared_transfers::refresh_shared_transfers,
             settings::load_storage_settings,
             settings::save_storage_settings,
+            product_option_settings::load_product_option_settings,
+            product_option_settings::save_product_option_settings,
             staged_artwork::write_export_resource_chunk,
             schematic_review::load_schematic_review_resource,
             schematic_review::save_schematic_review,

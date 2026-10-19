@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { JSDOM } from 'jsdom'
-import { svgLayers, selectSvgLayer } from '../src/modules/schematic/services/svgLayerService.ts'
+import { svgLayers, selectSvgLayer, selectSvgLayers } from '../src/modules/schematic/services/svgLayerService.ts'
 
 const parse = svg => new JSDOM(svg, { contentType: 'image/svg+xml' }).window.document
 const source = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="200mm" height="100mm" viewBox="20 30 200 100">
@@ -67,4 +67,60 @@ test('a nested group is selected without removing its ancestors or other images 
   assert.equal(document.querySelectorAll('image').length, 2)
   assert.equal(document.querySelector('#artwork').getAttribute('transform'), 'rotate(15)')
   assert.equal(document.querySelector('#alternate'), null)
+})
+
+test('multiple image selections preserve source paint order, resources and shared ancestors', () => {
+  const layers = svgLayers(source)
+  const front = layers.find(layer => layer.label === 'front-image')
+  const back = layers.find(layer => layer.label === 'back-image')
+  const document = parse(selectSvgLayers(source, [back.id, front.id, back.id]))
+  assert.deepEqual([...document.querySelectorAll('image')].map(image => image.getAttribute('id')), ['resource-image', 'front-image', 'back-image'])
+  assert.ok(document.querySelector('#cutline path'))
+  assert.ok(document.querySelector('#clip'))
+  assert.equal(document.documentElement.getAttribute('viewBox'), '20 30 200 100')
+  assert.equal(document.querySelector('#back').getAttribute('transform'), 'scale(1.2)')
+  const ancestor = document.querySelector('#front').parentElement
+  assert.equal(ancestor.getAttribute('transform'), 'translate(2 3)')
+  assert.equal(ancestor.getAttribute('clip-path'), 'url(#clip)')
+  for (const node of [document.documentElement, ancestor, document.querySelector('#front'), document.querySelector('#back')]) {
+    assert.equal((node.getAttribute('style').match(/display:inline!important/g) ?? []).length, 1)
+  }
+})
+
+test('multiple groups keep their artwork in source order and remove unselected siblings', () => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg"><g id="shared" style="visibility:hidden" transform="translate(4 5)"><g id="front"><rect id="front-art"/></g><g id="unused"><circle/></g><g id="back" style="display:none"><path id="back-art" d="M0 0h10"/></g></g><g id="outline"><path/></g></svg>`
+  const layers = svgLayers(svg)
+  const front = layers.find(layer => layer.label === 'front')
+  const back = layers.find(layer => layer.label === 'back')
+  const document = parse(selectSvgLayers(svg, [back.id, front.id]))
+  assert.deepEqual([...document.querySelector('#shared').children].map(node => node.id), ['front', 'back'])
+  assert.ok(document.querySelector('#front-art'))
+  assert.ok(document.querySelector('#back-art'))
+  assert.ok(document.querySelector('#outline path'))
+  assert.equal(document.querySelector('#shared').getAttribute('transform'), 'translate(4 5)')
+  assert.match(document.querySelector('#shared').getAttribute('style'), /visibility:visible!important$/)
+  assert.match(document.querySelector('#back').getAttribute('style'), /display:inline!important;visibility:visible!important$/)
+})
+
+test('selecting a group and its child once or repeatedly produces one intact copy', () => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg"><g id="parent" style="display:none"><g id="child" style="visibility:hidden"><image href="child.png"/></g><image href="sibling.png"/></g><g id="unused"><image href="unused.png"/></g></svg>`
+  const layers = svgLayers(svg)
+  const parent = layers.find(layer => layer.label === 'parent')
+  const child = layers.find(layer => layer.label === 'child')
+  const result = selectSvgLayers(svg, [child.id, parent.id, child.id])
+  const document = parse(result)
+  assert.equal(document.querySelectorAll('#parent').length, 1)
+  assert.equal(document.querySelectorAll('#child').length, 1)
+  assert.deepEqual([...document.querySelectorAll('image')].map(image => image.getAttribute('href')), ['child.png', 'sibling.png'])
+  assert.equal(document.querySelector('#unused'), null)
+  assert.equal((document.querySelector('#parent').getAttribute('style').match(/display:inline!important/g) ?? []).length, 1)
+  assert.match(document.querySelector('#child').getAttribute('style'), /visibility:visible!important$/)
+  assert.equal(result, selectSvgLayers(svg, [parent.id, child.id]))
+})
+
+test('invalid selections leave the source intact and do not prevent valid selections', () => {
+  const layer = svgLayers(source).find(layer => layer.label === 'back')
+  assert.equal(selectSvgLayers(source, []), source)
+  assert.equal(selectSvgLayers(source, ['missing', 'svg-layer-999']), source)
+  assert.equal(selectSvgLayers(source, ['missing', layer.id]), selectSvgLayer(source, layer.id))
 })

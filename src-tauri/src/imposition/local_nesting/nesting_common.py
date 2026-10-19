@@ -19,7 +19,7 @@ import cv2
 import numpy as np
 import shapely
 from shapely import affinity
-from nesting_rust import MaskBank, dispatch
+from nesting_rust import MaskBank, dispatch, collision_grid, validated_occupancy
 
 # Keep the Python reference/fallback single-threaded.
 cv2.setNumThreads(1)
@@ -145,18 +145,11 @@ def first_spot(occ, item, res, weight, mode, max_origin=None, min_origin=None):
     return score, x, y
 
 
-def _pack_one_python(srcs, bank, remaining, board_w, board_h, gap, margin, res, seed, mode='top', order_mode='small', lookahead=1, progress=None):
+def _pack_one_python(srcs, bank, remaining, board_w, board_h, gap, margin, res, seed, mode='top', order_mode='small', lookahead=1, progress=None, initial_occupancy=None):
     rng = random.Random(seed)
-    uses_frames = any(s.get('frame') is not None for s in srcs)
-    if uses_frames:
-        grid_origin = margin - (gap / 2 + .12)
-        cols = math.ceil((board_w - 2 * grid_origin + 1e-7) / res)
-        rows = math.ceil((board_h - 2 * grid_origin + 1e-7) / res)
-    else:
-        grid_origin = margin + .12 - (gap / 2 + .12)
-        cols = int((board_w - 2 * grid_origin) // res)
-        rows = int((board_h - 2 * grid_origin) // res)
-    occ = np.zeros((rows, cols), dtype=np.uint8)
+    grid_origin, cols, rows = collision_grid(srcs, board_w, board_h, gap, margin, res)
+    seed_occupancy = validated_occupancy(initial_occupancy, rows, cols)
+    occ = np.zeros((rows, cols), dtype=np.uint8) if seed_occupancy is None else np.array(seed_occupancy, dtype=np.uint8, order='C', copy=True)
     if order_mode == 'small':
         order = sorted(srcs, key=lambda s: s['area'])
     elif order_mode == 'large':
@@ -215,10 +208,10 @@ def _pack_one_python(srcs, bank, remaining, board_w, board_h, gap, margin, res, 
     return placed
 
 
-def pack_one(srcs, bank, remaining, board_w, board_h, gap, margin, res, seed, mode='top', order_mode='small', lookahead=1, progress=None):
+def pack_one(srcs, bank, remaining, board_w, board_h, gap, margin, res, seed, mode='top', order_mode='small', lookahead=1, progress=None, initial_occupancy=None):
     """Both strategies share this seam; Python remains the reference solver."""
     return dispatch(_pack_one_python, srcs, bank, remaining, board_w, board_h,
-                    gap, margin, res, seed, mode, order_mode, lookahead, progress)
+                    gap, margin, res, seed, mode, order_mode, lookahead, progress, initial_occupancy)
 
 
 def pack_material_boards(srcs, bank, quantities, args, seed_offset=0, progress=None):

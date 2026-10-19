@@ -20,7 +20,15 @@ export type ImpositionRecord = ImpositionJob & { images: ProductionImage[] }
 export type ImpositionListResult = { records: ImpositionJob[]; total: number; page: number; pageSize: number }
 /** Orders may reference the same asset; solver/canvas identities must remain distinct. */
 export const impositionImageId = (jobId: string, imageId: string) => `${jobId}::${imageId}`
-export type NestRequest = { plateWidthMm: number; plateHeightMm: number; effectiveWidthMm: number; effectiveHeightMm: number; effectiveRightMm: number; spacingMm: number; objective: string; irregularAlgorithm?: 'local-tools'; items: Array<{ id: string; widthMm: number; heightMm: number; quantity?: number; polygon?: Array<[number, number]> }> }
+export type NestTemplatePlacement = { sourceId: string; xMm: number; yMm: number; rotationDeg: number }
+export type NestTemplateRepack = {
+  templates: Array<{ id: string; repeatCount: number; placements: NestTemplatePlacement[] }>
+  sourceTemplateId: string
+  targetTemplateId: string
+  sourceSlotIndex: number
+  targetPlacement: NestTemplatePlacement
+}
+export type NestRequest = { plateWidthMm: number; plateHeightMm: number; effectiveWidthMm: number; effectiveHeightMm: number; effectiveRightMm: number; spacingMm: number; objective: string; irregularAlgorithm?: 'local-tools'; templateRepack?: NestTemplateRepack; items: Array<{ id: string; widthMm: number; heightMm: number; quantity?: number; polygon?: Array<[number, number]> }> }
 export type NestExcludedItem = { id: string; reason: string }
 export type NestResult = { placements: Array<{ id: string; sheetIndex: number; xMm: number; yMm: number; widthMm: number; heightMm: number; rotationDeg: number }>; unplaced: string[]; sheetsUsed: number; utilization: number; algorithm: string; excludedItems?: NestExcludedItem[]; warnings?: string[] }
 export const submitReviewToImposition = (id: string, paymentStatus: PaymentStatus) => invoke<ImpositionJob>('submit_schematic_review_to_imposition', { id, paymentStatus })

@@ -1,9 +1,10 @@
 # 本地异形拼版
 
-当前只提供本地拼版，不再提供外部算法切换。运行源码统一位于 `src-tauri/src/imposition/local_nesting/`，本目录仅保留安装、构建和测试脚本。两种策略共用轮廓和掩码缓存，以及 release Rust 位图搜索核心：
+当前只提供本地拼版，不再提供外部算法切换。运行源码统一位于 `src-tauri/src/imposition/local_nesting/`，本目录仅保留安装、构建和测试脚本。三种策略共用轮廓和掩码缓存，以及 release Rust 位图搜索核心：
 
 - 节省板材：单板尽量多放，优先利用已打开板材的空隙。
 - 切割方案优先：搜索可重复使用的统一版式，同时尽量提高单板放入数量。
+- 综合最少（权重 60:40）：比较节省板材、统一版式、余隙补排和部分版式重组候选，按板材 60%、切割方案 40% 评分（`3 × 板材数 + 2 × 切割方案数`，两项不分别归一化）；先满足全部有效图片的 QT，再选择评分更好的结果。重组允许少量尾板和重复版式的部分副本重新排列，其余板材保留。
 
 所有输入输出使用毫米 JSON；每种基础图片只提交一份轮廓和 QT 数量。无效轮廓按资产返回原因并继续处理其余图片，不生成矩形兜底结果。
 
@@ -12,6 +13,8 @@
 - `src-tauri/src/imposition/local_nesting/local_tools_engine.py`：毫米 JSON 入口、进度与最终几何校验。
 - 同目录 `nesting_common.py`：共享轮廓掩码、单板搜索和节省板材策略。
 - 同目录 `nest_uniform.py`：切割方案优先策略。
+- 同目录 `nest_combined.py`：综合最少策略、切割方案统计与候选评分。
+- 同目录 `nest_replan.py`：跨方案拖动后的数量配额重算与已有空间补排。
 - 同目录 `nesting_rust.py`、`rust_core/`：Python 调用接口和 Rust 搜索核心。
 - `.tools/nesting/.venv`、`.tools/nesting/native`：本机 Python 依赖和已编译 DLL，继续保留。
 
@@ -23,11 +26,11 @@
 
 生产依赖见 `requirements-local-tools.txt`。运行真实 SVG 基准及完整测试前，再安装开发依赖：`& .tools/nesting/.venv/Scripts/python.exe -m pip install -r scripts/nesting/requirements-benchmark.txt`；其中的 `svgpathtools` 不参与生产计算入口。
 
-本地两种策略共用 release Rust 位图搜索核心；Python 保留轮廓准备、策略调度、最终几何校验及可切换的参考搜索。安装脚本同时构建独立 DLL，不需要将整个 Tauri 应用切换到 release。仅安装 Python 可加 `-PythonOnly`；候选 DLL 单独构建使用 `build_rust_core.ps1 -SkipDeploy`。
+本地三种策略共用 release Rust 位图搜索核心；Python 保留轮廓准备、策略调度、最终几何校验及可切换的参考搜索。安装脚本同时构建独立 DLL，不需要将整个 Tauri 应用切换到 release。仅安装 Python 可加 `-PythonOnly`；候选 DLL 单独构建使用 `build_rust_core.ps1 -SkipDeploy`。
 
 默认 `PRINTFLOW_NESTING_CORE=auto`。可设为 `python` 或 `rust` 做同输入对照，`PRINTFLOW_NESTING_THREADS` 控制 1/2/4 个搜索线程（默认 2，低内存降为 1）。`PRINTFLOW_NESTING_CORE_LIBRARY` 可指定候选库。实际核心和回退原因写入结果 `searchCore` 及算法说明，原生失败不会被误报成 Rust 结果。完整实现与测量方法见 `docs/本地拼版Rust搜索核心与性能验收-2026-10-13.md`。
 
-输入 stdin 为 `{ "engine": "local-tools", "request": { ... } }`，每种图片仅提交一个 `polygon` 和 `quantity`。`least-material` 调用节省板材策略，`least-cutting` 调用切割方案优先策略。stdout 只有毫米 `NestResult` JSON；stderr 的 `PRINTFLOW_PROGRESS` 行由 Tauri 实时转发。
+输入 stdin 为 `{ "engine": "local-tools", "request": { ... } }`，每种图片仅提交一个 `polygon` 和 `quantity`。`least-material` 调用节省板材策略，`least-cutting` 调用切割方案优先策略，`combined` 调用综合最少策略。跨方案重排保持手动指定的位置，在既有方案补排后，新增尾版继续使用所选策略。stdout 只有毫米 `NestResult` JSON；stderr 的 `PRINTFLOW_PROGRESS` 行由 Tauri 实时转发。
 
 ```powershell
 & .tools/nesting/.venv/Scripts/python.exe -B -m unittest discover -s scripts/nesting -p 'test_*.py'
@@ -50,8 +53,8 @@
 
 ## Windows 安装包中的拼版运行时
 
-正式打包前自动执行 `node scripts/bundle-nesting-runtime.mjs`。构建机需要 Windows x64、Python 3.13（可由 `PRINTFLOW_NESTING_BUILD_PYTHON` 指定）和 Rust MSVC 工具链；GitHub 发布流程已配置 Python。构建脚本固定安装生产依赖、编译 release 搜索 DLL，并把四个 Python 适配模块、独立解释器、标准库和依赖写入 `src-tauri/resources/imposition-runtime/`，通过 Tauri 资源映射随安装包发布。生成目录不提交 Git，不包含虚拟环境绝对路径、开发测试或订单数据。
+正式打包前自动执行 `node scripts/bundle-nesting-runtime.mjs`。构建机需要 Windows x64、Python 3.13（可由 `PRINTFLOW_NESTING_BUILD_PYTHON` 指定）和 Rust MSVC 工具链；GitHub 发布流程已配置 Python。构建脚本固定安装生产依赖、编译 release 搜索 DLL，并把六个 Python 适配模块、独立解释器、标准库和依赖写入 `src-tauri/resources/imposition-runtime/`，通过 Tauri 资源映射随安装包发布。生成目录不提交 Git，不包含虚拟环境绝对路径、开发测试或订单数据。
 
-每次打包都会从项目目录外验证两种策略使用内置 Rust 核心；运行时还会被复制到含空格和中文的临时安装目录验证搬迁。正式版优先使用 Tauri `resource_dir()/imposition-runtime`，不从当前工作目录查找源码，也不依赖目标电脑的系统 Python。Python 使用相对 `._pth` 隔离模块路径，缓存写入用户数据目录。
+每次打包都会从项目目录外验证三种策略使用内置 Rust 核心，并验证切割方案优先和综合最少的跨方案重排；运行时还会被复制到含空格和中文的临时安装目录验证搬迁。正式版优先使用 Tauri `resource_dir()/imposition-runtime`，不从当前工作目录查找源码，也不依赖目标电脑的系统 Python。Python 使用相对 `._pth` 隔离模块路径，缓存写入用户数据目录。
 
 打包：`npm run tauri -- build --bundles nsis`。重新生成并安装新版安装包后生效；已经生成的旧安装包不会自动补齐资源。

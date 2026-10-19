@@ -1,10 +1,11 @@
-import { GROUP_GAP, headerColumnBounds, HEADER_BLOCK_HEIGHT, PAPER_HEIGHT, PAPER_WIDTH, type HeaderBlock, type LayoutBounds, type Page } from '../../../model.ts'
+import { headerDetailLabel, artworkBounds, GROUP_GAP, headerColumnBounds, HEADER_BLOCK_HEIGHT, PAPER_HEIGHT, PAPER_WIDTH, type HeaderBlock, type LayoutBounds, type Page } from '../../../model.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
 import { headerFor, sharesMixedWidthRow, SECTION_EPS as EPS } from './pageSections.ts'
 
 /** Fill the third base column beside wide standees using whole, already-sized groups. */
 export function fillSideColumns(pages: Page[], bounds: LayoutBounds) {
-  const baseWidth = (PAPER_WIDTH - bounds.left - bounds.right - 2 * GROUP_GAP) / 3
+  const area = artworkBounds(bounds)
+  const baseWidth = (PAPER_WIDTH - area.left - area.right - 2 * GROUP_GAP) / 3
   const owners = new Map<ImageGroup, HeaderBlock>()
   for (const page of pages) for (const group of page.imageGroups ?? []) {
     const header = headerFor(page, group)
@@ -18,9 +19,9 @@ export function fillSideColumns(pages: Page[], bounds: LayoutBounds) {
       if (!wideHeader.auto || wideHeader.columns.length !== 1 || wideHeader.columns[0].imageMode !== 'front-back'
         || Math.abs(wideHeader.width - (2 * baseWidth + GROUP_GAP)) > EPS) continue
       const x = wideHeader.x + wideHeader.width + GROUP_GAP
-      if (x + baseWidth > PAPER_WIDTH - bounds.right + EPS) continue
+      if (x < area.left - EPS || x + baseWidth > PAPER_WIDTH - area.right + EPS) continue
       const nextHeader = headers.find(header => header.y > wideHeader.y + EPS)
-      const limit = nextHeader ? nextHeader.y - GROUP_GAP : PAPER_HEIGHT - bounds.bottom
+      const limit = nextHeader ? nextHeader.y - GROUP_GAP : PAPER_HEIGHT - area.bottom
       let y = wideHeader.y
       let sideHeader: HeaderBlock | undefined
       for (const source of pages.slice(pageIndex)) {
@@ -32,7 +33,7 @@ export function fillSideColumns(pages: Page[], bounds: LayoutBounds) {
             && Math.abs(slot.width - group.width) < EPS)?.column
           if (!column) continue
           const needsHeader = !sideHeader || sideHeader.columns[0].imageMode !== column.imageMode
-            || sideHeader.columns[0].detailLabel !== column.detailLabel || sideHeader.detailWidth !== owner.detailWidth
+            || headerDetailLabel(sideHeader.columns[0].detailLabel) !== headerDetailLabel(column.detailLabel) || sideHeader.detailWidth !== owner.detailWidth
           const groupY = y + (needsHeader ? HEADER_BLOCK_HEIGHT + GROUP_GAP : 0)
           if (groupY + group.height > limit + EPS) continue
           const anchor = target.imageGroups?.find(candidate => owners.get(candidate) === wideHeader && Math.abs(candidate.y - groupY) <= EPS)

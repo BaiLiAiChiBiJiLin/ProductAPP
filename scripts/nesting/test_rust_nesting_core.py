@@ -140,6 +140,47 @@ class NativeFallbackTests(unittest.TestCase):
                     self.call([5])
                 self.assertIsNot(first.exception, second.exception)
 
+    def test_seeded_python_and_old_native_fallback_preserve_fixed_occupancy(self):
+        seed = np.ones((7, 8), np.uint8)
+        seed[1:3, 4:6] = 0
+        snapshot = seed.copy()
+        expected_remaining = [5]
+        expected = python_pack(self.srcs, self.bank, expected_remaining, 8, 7, 0, 0, 1, 42,
+                               initial_occupancy=seed)
+        self.assertEqual(len(expected), 1)
+        self.assertEqual(expected_remaining, [4])
+        self.assertEqual((expected[0]['tx'], expected[0]['ty']), (3.75, 1.75))
+        np.testing.assert_array_equal(seed, snapshot)
+        class OldLibrary:
+            pass
+        context = native._NativeBank.__new__(native._NativeBank)
+        # Call the actual symbol-selection path against an ABI 1 library that lacks only the extension.
+        context.signature = native._bank_signature(self.bank)
+        context.lib = OldLibrary()
+        context.handle = ct.c_void_p()
+        context._lock = native.threading.RLock()
+        context._packing = False
+        self.bank._native_context = context
+        remaining = [5]
+        with patch.dict(os.environ, PRINTFLOW_NESTING_CORE='rust'), contextlib.redirect_stderr(io.StringIO()):
+            actual = run_native(self.srcs, self.bank, remaining, 8, 7, 0, 0, 1, 42, initial_occupancy=seed)
+        self.assertEqual(actual, expected)
+        self.assertEqual(remaining, [4])
+        self.assertIn('seeded occupancy', native.core_status(self.bank)['reason'])
+        np.testing.assert_array_equal(seed, snapshot)
+
+    def test_seeded_validation_rejects_shape_dtype_values_and_memory_without_mutation(self):
+        invalid = [np.zeros((7, 7), np.uint8), np.zeros((7, 8), np.float64), np.full((7, 8), 2, np.uint8)]
+        for seed in invalid:
+            remaining = [5]
+            with self.subTest(shape=seed.shape, dtype=str(seed.dtype)), patch.dict(os.environ, PRINTFLOW_NESTING_CORE='python'):
+                with self.assertRaises(ValueError):
+                    common.pack_one(self.srcs, self.bank, remaining, 8, 7, 0, 0, 1, 42, initial_occupancy=seed)
+            self.assertEqual(remaining, [5])
+        with patch.object(native, '_available_memory', return_value=256 * 1024**2), patch.dict(os.environ, PRINTFLOW_NESTING_CORE='python'):
+            with self.assertRaises(MemoryError):
+                common.pack_one(self.srcs, self.bank, [5], 8, 7, 0, 0, 1, 42, initial_occupancy=np.zeros((7, 8), np.uint8))
+
     def test_pickled_bank_does_not_keep_native_handles_or_failures(self):
         self.bank._native_context = object()
         self.bank._native_failure = ('x', native.NativeCoreError('not persisted'))
@@ -158,21 +199,53 @@ class NativeDifferentialTests(unittest.TestCase):
         self.addCleanup(self.env.stop)
 
     def compare(self, srcs, bank, quantities, width=83, height=67, gap=0, margin=0,
-                resolution=1, seed=0, mode='top', order='small', lookahead=1, threads='1'):
+                resolution=1, seed=0, mode='top', order='small', lookahead=1, threads='1', initial_occupancy=None):
         baseline_remaining, actual_remaining = list(quantities), list(quantities)
         baseline_progress, actual_progress = [], []
         args = (width, height, gap, margin, resolution, seed, mode, order, lookahead)
         expected = python_pack(srcs, bank, baseline_remaining, *args,
-                               progress=lambda *values: baseline_progress.append(values))
+                               progress=lambda *values: baseline_progress.append(values), initial_occupancy=initial_occupancy)
         with patch.dict(os.environ, PRINTFLOW_NESTING_THREADS=threads):
             actual = run_native(srcs, bank, actual_remaining, *args,
-                                progress=lambda *values: actual_progress.append(values))
+                                progress=lambda *values: actual_progress.append(values), initial_occupancy=initial_occupancy)
         self.assertEqual(actual, expected)
         self.assertEqual(actual_remaining, baseline_remaining)
         self.assertEqual(actual_progress, baseline_progress)
         if isinstance(bank, native.MaskBank):
             self.assertEqual(native.core_status(bank)['backend'], 'rust', native.core_status(bank))
         return actual
+
+    def test_seeded_search_matches_python_across_words_frames_and_threads(self):
+        for width in (63, 64, 65, 129):
+            for threads in ('1', '2', '4'):
+                for frame in (False, True):
+                    with self.subTest(width=width, threads=threads, frame=frame):
+                        srcs = [dict(i=0, area=4, **({'frame': (2, 2)} if frame else {}))]
+                        variants = [mask_item([[1, 1], [1, 1]], angle=k*90, **({'frame_width': 2, 'frame_height': 2} if frame else {})) for k in range(4)]
+                        with native.MaskBank({0: variants}) as bank:
+                            _, cols, rows = native.collision_grid(srcs, width, 7, 3, 0, .5)
+                            # A noncontiguous view exercises the contiguous FFI conversion.
+                            seed = np.ones((rows, cols * 2), np.uint8)[:, ::2]
+                            seed[3:5, 63:65] = 0
+                            snapshot = seed.copy()
+                            result = self.compare(srcs, bank, [7], width=width, height=7, gap=3,
+                                                  resolution=.5, threads=threads, initial_occupancy=seed)
+                            self.assertEqual(len(result), 1)
+                            np.testing.assert_array_equal(seed, snapshot)
+                            # Reusing the native context must not retain last board's seed.
+                            empty = self.compare(srcs, bank, [7], width=width, height=7, gap=3, resolution=.5)
+                            self.assertEqual(len(empty), 7)
+
+    def test_seeded_subset_source_keeps_other_source_quantities_untouched(self):
+        srcs = [dict(i=3, area=4)]
+        with native.MaskBank({0: [mask_item([[1]])], 3: [mask_item([[1, 1], [1, 1]])]}) as bank:
+            seed = np.ones((7, 8), np.uint8)
+            seed[1:3, 4:6] = 0
+            remaining = [5, 11, 99, 7]
+            result = run_native(srcs, bank, remaining, 8, 7, 0, 0, 1, 42, initial_occupancy=seed)
+            self.assertEqual([entry['i'] for entry in result], [3])
+            self.assertEqual(remaining, [5, 11, 99, 6])
+            self.assertEqual(native.core_status(bank)['backend'], 'rust')
 
     def test_random_binary_masks_modes_orders_lookahead_and_rotations(self):
         rng = np.random.default_rng(7812)

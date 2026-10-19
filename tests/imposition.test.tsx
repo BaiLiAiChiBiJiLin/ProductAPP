@@ -4,8 +4,10 @@ import { ConfigProvider } from 'antd'
 import ImpositionPage from '../src/modules/imposition/ImpositionPage'
 import ImpositionThumbnail from '../src/modules/imposition/ImpositionThumbnail'
 import { expandImpositionImages, getImpositionQuantity, type ImpositionJob, type ImpositionRecord } from '../src/modules/imposition/impositionRecords'
+import type { PackedImpositionItem } from '../src/modules/imposition/ImpositionKonvaCanvas'
+import { applyPackingEdit, type PackingEdit } from '../src/modules/imposition/packingEdits'
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn(), canvas: vi.fn((_props: { pages: unknown[][]; collapseRepeatedLayouts?: boolean }) => null) }))
+const mocks = vi.hoisted(() => ({ invoke: vi.fn(), canvas: vi.fn((_props: { pages: PackedImpositionItem[][]; collapseRepeatedLayouts?: boolean; onEdit?: (pages: PackedImpositionItem[][], edit: PackingEdit) => void }) => null) }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke, isTauri: () => false }))
 vi.mock('../src/modules/imposition/ImpositionKonvaCanvas', () => ({ default: mocks.canvas }))
 const jobs: ImpositionJob[] = Array.from({ length: 21 }, (_, index) => ({ id: `job-${index}`, sourceReviewId: `review-${index}`, customerName: `生产客户${index}`, output: `C:/proof-${index}.pdf`, submittedAt: '2026-10-08T01:00:00Z', paymentStatus: index % 2 ? 'unpaid' : 'paid', status: 'pending', imageCount: 1 }))
@@ -83,7 +85,10 @@ it('locks packing inputs during a job and unlocks them when the solver returns',
   expect(mocks.invoke.mock.calls.filter(call => call[0] === 'pack_imposition_irregular')).toHaveLength(1)
 })
 
-it('folds cutting-first templates, expands actual boards without solving again, and folds the next result', async () => {
+it.each([
+  ['least-cutting', '切割方案优先（重复统一版式）'],
+  ['combined', '综合最少（权重 60:40）'],
+])('folds %s templates, expands actual boards without solving again, and folds the next result', async (objective, label) => {
   const job = jobs[0]
   const placements = Array.from({ length: 5 }, (_, index) => ({
     id: index === 0 ? `${job.id}::asset` : `${job.id}::asset#qt-${index + 1}`,
@@ -114,32 +119,159 @@ it('folds cutting-first templates, expands actual boards without solving again, 
   expect(mocks.invoke.mock.calls.some(call => call[0] === 'update_imposition_image_quantity')).toBe(false)
   expect(solverCalls()).toHaveLength(1)
   fireEvent.mouseDown(screen.getByRole('combobox', { name: '拼版策略' }))
-  fireEvent.click(await screen.findByText('切割方案优先（重复统一版式）'))
+  fireEvent.click(await screen.findByText(label))
   await waitFor(() => expect(canvasProps().pages).toHaveLength(0))
   expect(solverCalls()).toHaveLength(1)
   fireEvent.click(screen.getByRole('button', { name: '重新计算' }))
   await screen.findByText(/2 种版式 · 共 3 块板材/)
   expect(solverCalls()).toHaveLength(2)
-  expect(solverCalls().at(-1)![1].request).toMatchObject({ irregularAlgorithm: 'local-tools', objective: 'least-cutting', items: [expect.objectContaining({ id: `${job.id}::asset`, quantity: 5 })] })
+  expect(solverCalls().at(-1)![1].request).toMatchObject({ irregularAlgorithm: 'local-tools', objective, items: [expect.objectContaining({ id: `${job.id}::asset`, quantity: 5 })] })
+  expect(solverCalls().at(-1)![1].request.templateRepack).toBeUndefined()
   expect(canvasProps().collapseRepeatedLayouts).toBe(true)
   expect(canvasProps().pages).toHaveLength(3)
   expect(canvasProps().pages.flat()).toHaveLength(5)
   expect(screen.getByText(/已放置/).textContent).toContain('5/5')
 
-  fireEvent.click(screen.getByRole('button', { name: '展开全部板材并编辑' }))
+  fireEvent.click(screen.getByRole('button', { name: '展开全部板材' }))
   await screen.findByText(/3 个版面/)
   expect(canvasProps().collapseRepeatedLayouts).toBe(false)
   expect(canvasProps().pages.flat()).toHaveLength(5)
   expect(solverCalls()).toHaveLength(2)
-  expect(screen.queryByRole('button', { name: '展开全部板材并编辑' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '展开全部板材' })).toBeNull()
 
   fireEvent.click(screen.getByRole('button', { name: '重新计算' }))
   await screen.findByText(/2 种版式 · 共 3 块板材/)
   expect(solverCalls()).toHaveLength(3)
   expect(canvasProps().collapseRepeatedLayouts).toBe(true)
   expect(canvasProps().pages.flat()).toHaveLength(5)
-  expect(screen.getByRole('button', { name: '展开全部板材并编辑' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: '展开全部板材' })).toBeTruthy()
   expect(screen.getByText(/已放置/).textContent).toContain('5/5')
+})
+
+it.each([false, true])('automatically replans full QT and atomically replaces the plan (already excluded artwork: %s)', async withExcluded => {
+  const job = jobs[0]
+  let finishCrossPlan!: (value: unknown) => void
+  mocks.invoke.mockImplementation(async (command, args) => {
+    if (command === 'list_pending_impositions') return { records: [job], total: 1, page: 1, pageSize: 20 }
+    if (command === 'load_imposition_job') return { ...job, images: [
+      { ...detail.images[0], widthMm: 20, heightMm: 20, attributes: { QT: '2' } },
+      ...(withExcluded ? [{ ...detail.images[0], id: 'oversized', name: 'oversized.svg', widthMm: 1000, heightMm: 1000, attributes: { QT: '1' } }] : []),
+    ] }
+    if (command === 'load_imposition_polygon') return [[0, 0], [20, 0], [20, 20], [0, 20]]
+    if (command === 'load_imposition_image') return 'data:image/svg+xml,<svg/>'
+    if (command === 'pack_imposition_irregular' && args.request.templateRepack) return new Promise(resolve => { finishCrossPlan = resolve })
+    if (command === 'pack_imposition_irregular') return {
+      placements: [0, 1].map(index => ({ id: `${job.id}::asset${index ? '#qt-2' : ''}`, sheetIndex: index, xMm: 15, yMm: 15, widthMm: 20, heightMm: 20, rotationDeg: 0 })),
+      unplaced: withExcluded ? [`${job.id}::oversized`] : [], sheetsUsed: 2, utilization: .1, algorithm: 'local-tools',
+      excludedItems: withExcluded ? [{ id: `${job.id}::oversized`, reason: '图片放不进有效区域' }] : [],
+    }
+  })
+  render(<ConfigProvider theme={{ token: { motion: false } }}><ImpositionPage active revision={0}/></ConfigProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: '开始拼版' }))
+  await selectWholeJobAndCalculate(job)
+  await screen.findByText(/2 个版面/)
+  const props = mocks.canvas.mock.calls.at(-1)![0]
+  const moved = { ...props.pages[0][0], x: 45, y: 15, rotation: 180 }
+  const intent = applyPackingEdit(props.pages, 0, props.pages[0][0], 1, moved, false)
+  act(() => props.onEdit!(intent.pages, intent.edit))
+  await waitFor(() => expect(finishCrossPlan).toBeTypeOf('function'))
+  expect(mocks.canvas.mock.calls.at(-1)![0].pages).toEqual(props.pages)
+  expect((screen.getByRole('button', { name: '导出 PDF' }) as HTMLButtonElement).disabled).toBe(true)
+  const request = mocks.invoke.mock.calls.filter(call => call[0] === 'pack_imposition_irregular').at(-1)![1].request
+  expect(request.items).toEqual([expect.objectContaining({ id: `${job.id}::asset`, quantity: 2 })])
+  expect(request.templateRepack).toEqual(intent.edit.templateRepack)
+  await act(async () => finishCrossPlan({
+    placements: [
+      { id: `${job.id}::asset`, sheetIndex: 0, xMm: 45, yMm: 15, widthMm: 20, heightMm: 20, rotationDeg: 180 },
+      { id: `${job.id}::asset#qt-2`, sheetIndex: 0, xMm: 15, yMm: 15, widthMm: 20, heightMm: 20, rotationDeg: 0 },
+    ], unplaced: [], sheetsUsed: 1, utilization: .1, algorithm: 'tools/template-repack',
+  }))
+  await screen.findByText(/1 个版面/)
+  const recalculateButton = screen.getByRole('button', { name: '重新计算' })
+  await waitFor(() => expect(recalculateButton.classList.contains('ant-btn-loading')).toBe(false))
+  const result = mocks.canvas.mock.calls.at(-1)![0].pages
+  expect(result).toHaveLength(1)
+  expect(result.flat()).toHaveLength(2)
+  expect(result[0].some(item => item.x === 45 && item.y === 15 && item.rotation === 180)).toBe(true)
+  expect(screen.getByText(/已放置/).textContent).toContain(withExcluded ? '2/3' : '2/2')
+  expect((screen.getByRole('button', { name: '导出 PDF' }) as HTMLButtonElement).disabled).toBe(false)
+  expect(screen.queryByText('已记录手动方案 · 重新计算将沿用当前版式')).toBeNull()
+  expect(screen.queryByRole('button', { name: '重新自动排版' })).toBeNull()
+
+  // Ordinary recalculation always submits all selected demand to the normal
+  // solver, including artwork that an earlier result could not place.
+  fireEvent.click(recalculateButton)
+  await waitFor(() => expect(mocks.invoke.mock.calls.filter(call => call[0] === 'pack_imposition_irregular')).toHaveLength(3))
+  await screen.findByText(/2 个版面/)
+  const normalRequest = mocks.invoke.mock.calls.filter(call => call[0] === 'pack_imposition_irregular').at(-1)![1].request
+  expect(normalRequest.templateRepack).toBeUndefined()
+  expect(normalRequest.items).toEqual([
+    expect.objectContaining({ id: `${job.id}::asset`, quantity: 2 }),
+    ...(withExcluded ? [expect.objectContaining({ id: `${job.id}::oversized`, quantity: 1 })] : []),
+  ])
+  expect(mocks.canvas.mock.calls.at(-1)![0].pages).toEqual(props.pages)
+  expect(screen.getByText(/已放置/).textContent).toContain(withExcluded ? '2/3' : '2/2')
+
+  // Same-board edits immediately update the committed canvas/export input,
+  // but do not create a separate mode for later recalculation.
+  const sameBoardProps = mocks.canvas.mock.calls.at(-1)![0]
+  const sameBoardEdit = applyPackingEdit(sameBoardProps.pages, 0, sameBoardProps.pages[0][0], 0, { ...sameBoardProps.pages[0][0], x: 75, rotation: 90 }, false)
+  act(() => sameBoardProps.onEdit!(sameBoardEdit.pages, sameBoardEdit.edit))
+  expect(mocks.canvas.mock.calls.at(-1)![0].pages[0][0]).toMatchObject({ x: 75, rotation: 90 })
+  expect((screen.getByRole('button', { name: '导出 PDF' }) as HTMLButtonElement).disabled).toBe(false)
+  fireEvent.click(recalculateButton)
+  await waitFor(() => expect(mocks.invoke.mock.calls.filter(call => call[0] === 'pack_imposition_irregular')).toHaveLength(4))
+  await waitFor(() => expect(mocks.canvas.mock.calls.at(-1)![0].pages).toEqual(props.pages))
+  expect(mocks.invoke.mock.calls.filter(call => call[0] === 'pack_imposition_irregular').at(-1)![1].request.templateRepack).toBeUndefined()
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: '拼版策略' }))
+  fireEvent.click(await screen.findByText('切割方案优先（重复统一版式）'))
+  expect(mocks.canvas.mock.calls.at(-1)![0].pages).toEqual([])
+})
+
+it('restores editing after cross-plan failure and only starts another special calculation on a new cross-board drag', async () => {
+  const job = jobs[0]
+  const placements = [0, 1].map(index => ({ id: `${job.id}::asset${index ? '#qt-2' : ''}`, sheetIndex: index, xMm: 15, yMm: 15, widthMm: 20, heightMm: 20, rotationDeg: 0 }))
+  const intents: unknown[] = []
+  mocks.invoke.mockImplementation(async (command, args) => {
+    if (command === 'list_pending_impositions') return { records: [job], total: 1, page: 1, pageSize: 20 }
+    if (command === 'load_imposition_job') return { ...job, images: [{ ...detail.images[0], widthMm: 20, heightMm: 20, attributes: { QT: '2' } }] }
+    if (command === 'load_imposition_polygon') return [[0, 0], [20, 0], [20, 20], [0, 20]]
+    if (command === 'load_imposition_image') return 'data:image/svg+xml,<svg/>'
+    if (command === 'pack_imposition_irregular') {
+      if (args.request.templateRepack) { intents.push(args.request.templateRepack); throw new Error('worker failure') }
+      return { placements, unplaced: [], sheetsUsed: 2, utilization: .1, algorithm: 'tools' }
+    }
+  })
+  render(<ConfigProvider theme={{ token: { motion: false } }}><ImpositionPage active revision={0}/></ConfigProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: '开始拼版' }))
+  await selectWholeJobAndCalculate(job)
+  await screen.findByText(/2 个版面/)
+  const props = mocks.canvas.mock.calls.at(-1)![0]
+  const intent = applyPackingEdit(props.pages, 0, props.pages[0][0], 1, { ...props.pages[0][0], x: 60 }, false)
+  act(() => props.onEdit!(intent.pages, intent.edit))
+  await screen.findByText(/跨方案重算失败.*worker failure/)
+  expect(mocks.canvas.mock.calls.at(-1)![0].pages).toEqual(props.pages)
+  expect((screen.getByRole('button', { name: '导出 PDF' }) as HTMLButtonElement).disabled).toBe(false)
+  const editableProps = mocks.canvas.mock.calls.at(-1)![0]
+  const edit = applyPackingEdit(editableProps.pages, 0, editableProps.pages[0][0], 0, { ...editableProps.pages[0][0], x: 45 }, false)
+  act(() => editableProps.onEdit!(edit.pages, edit.edit))
+  expect(mocks.canvas.mock.calls.at(-1)![0].pages[0][0].x).toBe(45)
+  fireEvent.click(screen.getByRole('button', { name: '重新计算' }))
+  await waitFor(() => expect(mocks.invoke.mock.calls.filter(call => call[0] === 'pack_imposition_irregular')).toHaveLength(3))
+  await waitFor(() => expect(mocks.canvas.mock.calls.at(-1)![0].pages).toEqual(props.pages))
+  expect(intents).toHaveLength(1)
+  expect(mocks.invoke.mock.calls.filter(call => call[0] === 'pack_imposition_irregular').at(-1)![1].request.templateRepack).toBeUndefined()
+  expect(screen.queryByText(/跨方案重算失败/)).toBeNull()
+
+  const nextProps = mocks.canvas.mock.calls.at(-1)![0]
+  const nextIntent = applyPackingEdit(nextProps.pages, 0, nextProps.pages[0][0], 1, { ...nextProps.pages[0][0], x: 85 }, false)
+  act(() => nextProps.onEdit!(nextIntent.pages, nextIntent.edit))
+  await waitFor(() => expect(intents).toHaveLength(2))
+  expect(intents[1]).toEqual(nextIntent.edit.templateRepack)
+  expect(intents[0]).not.toEqual(intents[1])
+  await screen.findByText(/跨方案重算失败.*worker failure/)
+  expect(mocks.canvas.mock.calls.at(-1)![0].pages).toEqual(props.pages)
+  expect((screen.getByRole('button', { name: '导出 PDF' }) as HTMLButtonElement).disabled).toBe(false)
 })
 
 it('skips one invalid outline, keeps valid placements, and marks only that asset red', async () => {

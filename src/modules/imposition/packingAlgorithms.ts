@@ -1,6 +1,6 @@
 import type { NestExcludedItem, ProductionImage, NestResult } from './impositionRecords'
 
-export type PackingObjective = 'least-material' | 'least-cutting'
+export type PackingObjective = 'least-material' | 'least-cutting' | 'combined'
 export type PackingLayout = {
   plateWidth: number
   plateHeight: number
@@ -67,12 +67,21 @@ export function summarizePackingResult(result: NestResult, images: ProductionIma
   }
   const pages = [...bySheet.entries()].sort(([left], [right]) => left - right).map(([, page]) => page)
   const round = (value: number) => Math.round(value * 100) / 100
+  // Match the solver's cutting-layout identity without serializing thousands
+  // of contour points for each QT copy. Artwork still differs for print/PDF groups.
+  const sourceShapes = new Map<string, string>()
+  const shapeIds = new Map<string, number>()
   const patterns = pages.map(page => page.map(item => {
-    const sourceId = item.image.sourceImageId ?? item.image.id
-    const polygon = polygons[sourceId]
-    // Different silhouettes of the same dimensions cannot share a cutting program.
-    const shape = polygon ? JSON.stringify(polygon.map(([x, y]) => [round(x), round(y)])) : sourceId
-    return `${shape}@${round(item.x)},${round(item.y)},${round(item.rotation % 360)}`
+    const sourceId = item.image.sourceImageId ?? item.image.id.split('#qt-')[0]
+    let shape = sourceShapes.get(sourceId)
+    if (shape === undefined) {
+      const polygon = polygons[sourceId]
+      shape = polygon ? JSON.stringify(polygon.map(([x, y]) => [round(x), round(y)])) : sourceId
+      sourceShapes.set(sourceId, shape)
+    }
+    let shapeId = shapeIds.get(shape)
+    if (shapeId === undefined) { shapeId = shapeIds.size; shapeIds.set(shape, shapeId) }
+    return JSON.stringify([shapeId, round(item.width), round(item.height), round(item.x), round(item.y), round((item.rotation % 360 + 360) % 360)])
   }).sort().join('|'))
   const unplacedIds = images.filter(image => !seen.has(image.id)).map(image => image.id)
   const excludedById = new Map<string, NestExcludedItem>()

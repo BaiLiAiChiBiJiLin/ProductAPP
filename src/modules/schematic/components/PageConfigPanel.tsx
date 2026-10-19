@@ -39,7 +39,9 @@ export default function PageConfigPanel({ metadata, onMetadataChange, bounds, on
       <label><span>左边距 (mm)</span><input type="number" min="0" max="193" step="1" value={toMm(bounds.left)} onChange={event => updateBound('left', event.target.value)} /></label>
       <label><span>右边距 (mm)</span><input type="number" min="0" max="193" step="1" value={toMm(bounds.right)} onChange={event => updateBound('right', event.target.value)} /></label>
       <label><span>下边距 (mm)</span><input type="number" min="0" max="280" step="1" value={toMm(bounds.bottom)} onChange={event => updateBound('bottom', event.target.value)} /></label>
-    </div><p className="page-config-help">圆角框为排列范围。图片与表头位置由自动排列确定，不能拖动。</p></details>
+      <label><span>左内边距 (mm)</span><input type="number" min="0" max="193" step="0.5" value={toMm(bounds.paddingLeft ?? 0)} onChange={event => updateBound('paddingLeft', event.target.value)} /></label>
+      <label><span>右内边距 (mm)</span><input type="number" min="0" max="193" step="0.5" value={toMm(bounds.paddingRight ?? 0)} onChange={event => updateBound('paddingRight', event.target.value)} /></label>
+    </div><p className="page-config-help">边距与内边距修改后自动保存在本机，下次继续使用。内边距是圆角框与表头、图片块之间的留白，预览和导出保持一致。</p></details>
     <details className="page-config-section"><summary>表头</summary>
       <HeaderBlocksEditor pageId={pageId} blocks={headerBlocks} bounds={bounds} selected={selectedHeaderBlock} onSelect={onSelectHeaderBlock} onAdd={onAddHeaderBlock} onChange={onChangeHeaderBlock} onRemove={onRemoveHeaderBlock}/>
     </details>

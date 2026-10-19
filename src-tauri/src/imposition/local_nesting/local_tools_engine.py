@@ -20,6 +20,8 @@ ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from nesting_common import make_masks, pack_material_boards
 from nest_uniform import pack_uniform_boards
+from nest_replan import pack_template_replan
+from nest_combined import pack_combined_boards
 from nesting_rust import MaskBank, core_status
 from shapely import affinity
 from shapely.geometry import Polygon, box
@@ -85,7 +87,7 @@ def _source(item, index, cache):
     filename = cache / (digest + ".json")
     if not filename.exists():
         filename.write_bytes(encoded)
-    return dict(i=index, id=ident, name=ident, file=filename, poly=poly,
+    return dict(i=index, id=ident, name=ident, file=filename, poly=poly, polygon=points,
                 frame=frame, width=width, height=height, area=poly.area,
                 quantity=int(item.get("quantity", 1)), digest=digest)
 
@@ -178,12 +180,29 @@ def _solve(request, *, cache_dir=None, progress=None, resolution=.5):
     quantities = [source["quantity"] for source in srcs]
     total = sum(quantities)
     objective = request.get("objective", "least-material")
-    strategy = "uniform" if objective == "least-cutting" else "material"
-    if objective == "combined":
-        warnings.append("tools 仅提供两种实际策略；旧综合最少设置已按节省板材处理")
+    template_repack = request.get("templateRepack")
+    strategy = "combined" if objective in ("combined", "least-combined") else ("uniform" if objective == "least-cutting" else "material")
+    combined_job = None
     boards = []
-    progress.emit("search", "开始搜索：" + ("切割方案优先，先排满模板再按 QT 配比复用" if strategy == "uniform" else "节省板材，每板多角度试排后选放入数量最多的方案"), 0, total, 25, True)
-    if srcs and strategy == "uniform":
+    progress.emit("search", "开始搜索：" + ("综合最少，权重 60:40，比较基线后补排余隙并重组版式" if strategy == "combined" else ("切割方案优先，先排满模板再按 QT 配比复用" if strategy == "uniform" else "节省板材，每板多角度试排后选放入数量最多的方案")), 0, total, 25, True)
+    if template_repack is not None:
+        if excluded:
+            raise ValueError('跨方案重排的完整 QT 包含无效图片，结果未提交：' + '; '.join(item['id'] + '：' + item['reason'] for item in excluded))
+        if not srcs:
+            raise ValueError('跨方案重排没有有效图片')
+        def replan_progress(detail, done, count):
+            progress.emit("search", detail, done, count, 25 + 65 * done / max(1, count))
+        boards = pack_template_replan(dict(srcs=srcs, bank=bank, quantities=quantities), args,
+                                      template_repack, origin=(left, top), objective=objective,
+                                      validate=lambda pages: _validate_boards(srcs, pages, width, height, gap),
+                                      progress=replan_progress)
+    elif srcs and strategy == "combined":
+        combined_job = dict(srcs=srcs, bank=bank, quantities=quantities)
+        def combined_progress(detail, done, count):
+            progress.emit("search", detail, done, count, 25 + 65 * done / max(1, count))
+        boards = pack_combined_boards(combined_job, args, combined_progress, origin=(left, top),
+                                     validate=lambda pages: _validate_boards(srcs, pages, width, height, gap))
+    elif srcs and strategy == "uniform":
         def uniform_progress(template, repeat, count, remaining):
             done = total - remaining
             progress.emit("search", f"方案 {template + 1}：尝试复用 {repeat} 块，单板已放 {count} 张；尚余 {remaining} 张", done, total, 25 + 65 * done / max(1, total))
@@ -224,10 +243,13 @@ def _solve(request, *, cache_dir=None, progress=None, resolution=.5):
     else:
         core_label = "Python 搜索"
     progress.emit("completed", f"计算完成：{len(placements)} 张，{len(boards)} 块板材；{core_label}", len(placements), len(placements) + len(unplaced), 100, True)
-    return dict(placements=placements, unplaced=unplaced, sheetsUsed=len(boards),
+    result = dict(placements=placements, unplaced=unplaced, sheetsUsed=len(boards),
                 utilization=area / (len(boards) * width * height) if boards else 0,
-                algorithm="tools/" + ("uniform（切割方案优先，重复统一版式）" if strategy == "uniform" else "material（节省板材，单板尽量多放）") + " · " + core_label,
+                algorithm="tools/" + ("template-repack（整款数量迁移，固定落点与余隙补排）" if template_repack is not None else ("combined（综合最少，权重 60:40 · 余隙补排与版式重组）" if strategy == "combined" else ("uniform（切割方案优先，重复统一版式）" if strategy == "uniform" else "material（节省板材，单板尽量多放）"))) + " · " + core_label,
                 excludedItems=excluded, warnings=warnings, searchCore=search_core)
+    if combined_job is not None:
+        result['combinedDiagnostics'] = combined_job.get('combinedDiagnostics', {})
+    return result
 
 
 def solve(request, *, cache_dir=None, progress=None):
@@ -235,13 +257,16 @@ def solve(request, *, cache_dir=None, progress=None):
     try:
         return _solve(request, cache_dir=cache_dir, progress=progress)
     except MemoryError:
-        import gc
-        gc.collect()
-        detail = "0.5 mm 轮廓缓存内存不足，按 tools 原有策略改用 1 mm 栅格重新计算；旋转步进和图片间距不变"
-        progress.emit("geometry", detail, force=True)
-        result = _solve(request, cache_dir=cache_dir, progress=progress, resolution=1.)
-        result["warnings"].append(detail)
-        return result
+        # Leave the handler before retrying: its active exception traceback
+        # retains _solve's original mask bank and native search buffers.
+        pass
+    import gc
+    gc.collect()
+    detail = "0.5 mm 轮廓缓存内存不足，按 tools 原有策略改用 1 mm 栅格重新计算；旋转步进和图片间距不变"
+    progress.emit("geometry", detail, force=True)
+    result = _solve(request, cache_dir=cache_dir, progress=progress, resolution=1.)
+    result["warnings"].append(detail)
+    return result
 
 
 def main():

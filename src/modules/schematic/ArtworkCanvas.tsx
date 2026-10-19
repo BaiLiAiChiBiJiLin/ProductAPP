@@ -10,6 +10,7 @@ import ImageDimensionMarkers from './components/ImageDimensionMarkers'
 import type { AccessoryVisual, EditImageGroupText } from './components/ImageGroupDetails'
 import type { RulerChange } from './components/ImageDimensionMarkers'
 import type { DimensionDisplayOverride, DimensionDisplayPrecision } from './services/imageDimensionService'
+import { itemForCanvasDisplay } from './services/canvasDisplayScaleService'
 
 const svgImageCache = new Map<string, HTMLImageElement>()
 function displayDate(value?: string) {
@@ -69,7 +70,7 @@ const Artwork = memo(function Artwork({ item, asset, visualScale = 1, selected, 
     img.src = svgObjectUrl(sourceSvg)
     return () => { cancelled = true; img.onload = null; img.onerror = null }
   }, [asset.svg, item.backSvg])
-  const displayItem = visualScale === 1 ? item : { ...item, w: item.w * visualScale, h: item.h * visualScale }
+  const displayItem = itemForCanvasDisplay(item, visualScale)
   useEffect(() => {
     if (selected && nodeRef.current) transformerRef.current?.nodes([nodeRef.current])
   }, [selected, image, interactive])

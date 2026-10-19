@@ -133,6 +133,10 @@ def _load_library(path):
         for name, (args, result) in functions.items():
             function = getattr(lib, name)
             function.argtypes, function.restype = args, result
+        seeded = getattr(lib, 'nc_pack_seeded', None)
+        if seeded is not None:
+            seeded.argtypes = functions['nc_pack'][0][:-2] + [ct.POINTER(ct.c_uint8), ct.c_size_t] + functions['nc_pack'][0][-2:]
+            seeded.restype = ct.c_int32
         return lib
     except (OSError, AttributeError) as exc:
         raise RustUnavailable(f'Rust nesting library unavailable: {path} ({exc})') from exc
@@ -184,6 +188,44 @@ def _integer(value, label, maximum=_U32):
     if result < 0 or result > maximum:
         raise ValueError(f'{label} is out of range')
     return result
+
+
+
+def collision_grid(srcs, board_w, board_h, gap, margin, res):
+    """Shared world-to-raster contract for empty and seeded single-sheet search."""
+    for value, label in ((board_w, 'Board width'), (board_h, 'Board height'),
+                         (gap, 'Gap'), (margin, 'Margin'), (res, 'Resolution')):
+        if not math.isfinite(float(value)):
+            raise ValueError(f'{label} must be finite')
+    if board_w <= 0 or board_h <= 0 or res <= 0 or gap < 0 or margin < 0:
+        raise ValueError('Board dimensions/resolution must be positive and gap/margin nonnegative')
+    if any(s.get('frame') is not None for s in srcs):
+        origin = margin - (gap / 2 + .12)
+        cols = math.ceil((board_w - 2 * origin + 1e-7) / res)
+        rows = math.ceil((board_h - 2 * origin + 1e-7) / res)
+    else:
+        origin = margin + .12 - (gap / 2 + .12)
+        cols = int((board_w - 2 * origin) // res)
+        rows = int((board_h - 2 * origin) // res)
+    _integer(cols, 'Grid columns', _I32)
+    _integer(rows, 'Grid rows', _I32)
+    return origin, cols, rows
+
+
+def validated_occupancy(value, rows, cols):
+    """Return the caller-owned grid without mutating it or silently dropping invalid seeds."""
+    if value is None:
+        return None
+    if not isinstance(value, np.ndarray) or value.shape != (rows, cols):
+        raise ValueError('Initial occupancy shape must match the full board grid (rows, columns)')
+    if value.dtype not in (np.dtype(np.uint8), np.dtype(bool)):
+        raise ValueError('Initial occupancy must be a binary uint8/bool array')
+    # Allow one private Python/contiguous copy while retaining a process reserve.
+    if value.size > max(0, _available_memory() - 256 * _MIB):
+        raise MemoryError('Insufficient available memory for the initial board occupancy')
+    if value.size and int(value.max()) > 1:
+        raise ValueError('Initial occupancy must contain only 0 and 1')
+    return value
 
 
 def _bank_signature(bank):
@@ -271,26 +313,14 @@ class _NativeBank:
                 self._packing = False
 
     def _pack(self, srcs, bank, remaining, board_w, board_h, gap, margin, res, seed,
-             mode='top', order_mode='small', lookahead=1, progress=None):
+             mode='top', order_mode='small', lookahead=1, progress=None, initial_occupancy=None):
         if self.signature != _bank_signature(bank):
             raise NativeCoreError('Mask bank changed after native upload; recreate its job context')
-        for value, label in ((board_w, 'Board width'), (board_h, 'Board height'),
-                             (gap, 'Gap'), (margin, 'Margin'), (res, 'Resolution')):
-            if not math.isfinite(float(value)):
-                raise ValueError(f'{label} must be finite')
-        if board_w <= 0 or board_h <= 0 or res <= 0 or gap < 0 or margin < 0:
-            raise ValueError('Board dimensions/resolution must be positive and gap/margin nonnegative')
-        uses_frames = any(s.get('frame') is not None for s in srcs)
-        if uses_frames:
-            grid_origin = margin - (gap / 2 + .12)
-            cols = math.ceil((board_w - 2 * grid_origin + 1e-7) / res)
-            rows = math.ceil((board_h - 2 * grid_origin + 1e-7) / res)
-        else:
-            grid_origin = margin + .12 - (gap / 2 + .12)
-            cols = int((board_w - 2 * grid_origin) // res)
-            rows = int((board_h - 2 * grid_origin) // res)
-        _integer(cols, 'Grid columns', _I32)
-        _integer(rows, 'Grid rows', _I32)
+        grid_origin, cols, rows = collision_grid(srcs, board_w, board_h, gap, margin, res)
+        initial_occupancy = validated_occupancy(initial_occupancy, rows, cols)
+        seeded_function = getattr(self.lib, 'nc_pack_seeded', None)
+        if initial_occupancy is not None and seeded_function is None:
+            raise NativeCoreError('Native nesting library lacks seeded occupancy support; keeping fixed pieces in Python')
         if cols == 0 or rows == 0:
             return []
         lookahead = max(1, _integer(lookahead, 'Lookahead'))
@@ -356,9 +386,15 @@ class _NativeBank:
         callback = _Progress(report) if progress else _Progress()
         # All ctypes buffers, mask metadata and callback references remain live
         # until nc_pack joins its bounded workers and returns.
-        result = self.lib.nc_pack(self.handle, ct.byref(config), c_sources, len(sources),
-                                  c_indexes, len(indexes), c_limits, len(limits), c_order, len(order),
-                                  c_quantities, len(quantities), callback, None)
+        pack_args = (self.handle, ct.byref(config), c_sources, len(sources),
+                     c_indexes, len(indexes), c_limits, len(limits), c_order, len(order),
+                     c_quantities, len(quantities))
+        if initial_occupancy is None:
+            result = self.lib.nc_pack(*pack_args, callback, None)
+        else:
+            occupancy = np.ascontiguousarray(initial_occupancy, dtype=np.uint8)
+            result = seeded_function(*pack_args, occupancy.ctypes.data_as(ct.POINTER(ct.c_uint8)),
+                                     occupancy.size, callback, None)
         if callback_errors:
             raise _CallbackFailure(callback_errors[0])
         self._check(result, 'pack')
@@ -387,7 +423,7 @@ class _NativeBank:
 
 
 def dispatch(python_impl, srcs, bank, remaining, board_w, board_h, gap, margin, res, seed,
-             mode='top', order_mode='small', lookahead=1, progress=None):
+             mode='top', order_mode='small', lookahead=1, progress=None, initial_occupancy=None):
     """Run a complete sheet atomically; native failures rerun it in Python."""
     requested = os.environ.get('PRINTFLOW_NESTING_CORE', 'auto').strip().lower()
     if requested not in ('auto', 'rust', 'python'):
@@ -395,7 +431,7 @@ def dispatch(python_impl, srcs, bank, remaining, board_w, board_h, gap, margin, 
     persistent = isinstance(bank, MaskBank)
     status = dict(requested=requested, backend='python', threads=1, reason=None, mask_count=0, bank_bytes=0)
     args = (srcs, bank, remaining, board_w, board_h, gap, margin, res, seed,
-            mode, order_mode, lookahead, progress)
+            mode, order_mode, lookahead, progress, initial_occupancy)
     if requested == 'python':
         placed = python_impl(*args)
         _record_status(bank, status)

@@ -1,4 +1,4 @@
-import { GROUP_GAP, HEADER_BLOCK_HEIGHT, normalizeLayoutBounds, PAPER_HEIGHT, PAPER_WIDTH, type Asset, type HeaderBlock, type HeaderImageMode, type LayoutBounds, type Page } from '../../../model.ts'
+import { GROUP_GAP, HEADER_BLOCK_HEIGHT, artworkBounds, PAPER_HEIGHT, PAPER_WIDTH, type Asset, type HeaderBlock, type HeaderImageMode, type LayoutBounds, type Page } from '../../../model.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
 import type { ProductConfig } from '../services/productConfigService.ts'
 import { paginateAutomaticAssets, headerModeForAsset } from '../services/automaticArrangementService.ts'
@@ -88,7 +88,7 @@ function makeBackfillPlan(page: Page, modeAssets: Asset[], mode: HeaderImageMode
   }))
   if (!sourceGroups.length) return undefined
   const rows = groupedRows(sourceGroups)
-  const area = normalizeLayoutBounds(bounds)
+  const area = artworkBounds(bounds)
   const lastHeaderY = Math.max(...(page.headerBlocks ?? []).map(header => header.y), -Infinity)
   const existingHeader = page.headerBlocks?.find(header => header.y === lastHeaderY && header.columns[0]?.imageMode === mode)
   const contentBottom = pageContentBottom(page, area)
@@ -120,7 +120,7 @@ function backfillOrdinaryAssets(groupedPages: Page[], ordinaryAssets: Asset[], b
     queues.set(mode, [...(queues.get(mode) ?? []), asset])
   }
   const pages = groupedPages.map(page => ({ ...page, items: [...page.items], imageGroups: [...(page.imageGroups ?? [])], headerBlocks: [...(page.headerBlocks ?? [])] }))
-  const area = normalizeLayoutBounds(bounds)
+  const area = artworkBounds(bounds)
   const consumed = new Set<string>()
   for (const page of pages) {
     while (true) {

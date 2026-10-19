@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { paginateAssets, autoArrangePages } from '../src/modules/schematic/services/paginationService.ts'
 import { dimensionGroups, imageDimensionMarkerLayout, dimensionForItem, rulerDimensionLabel, physicalSourceSize, formatDimensionNumber } from '../src/modules/schematic/services/imageDimensionService.ts'
 
-import { defaultLayoutBounds, GROUP_GAP, HEADER_BLOCK_HEIGHT, PAPER_HEIGHT, PAPER_WIDTH, pageSvg } from '../src/model.ts'
+import { artworkBounds, defaultLayoutBounds, GROUP_GAP, HEADER_BLOCK_HEIGHT, PAPER_HEIGHT, PAPER_WIDTH, pageSvg } from '../src/model.ts'
 import { imageDetailsLayout } from '../src/modules/schematic/services/imageDetailsLayoutService.ts'
 const asset = (id, productName = 'Keychains', attributes = {}, productGroupId = '') => ({ id, name: id, productId: productName, productName, width: 100, height: 120, svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 120"><rect width="100" height="120" fill="red"/></svg>', previewUrl: '', thumbnailUrl: '', attributes, productGroupId })
 
@@ -79,7 +79,10 @@ test('portrait holder roles use four equal columns and keep each note under its 
  const imageWidth = group.detailsX - group.x
  assert.ok(roles.every((item, index) => Math.abs(item.x - (group.x + imageWidth * (index + .5) / 4)) < 1e-7))
  assert.equal(roles[1].note, 'front note')
- assert.ok(roles.every(item => item.y < group.y + group.height * .48))
+ assert.ok(roles.every(item => {
+  const cell = group.imageCells.find(cell => cell.itemId === item.id)
+  return item.y - item.h / 2 >= cell.y && item.y + item.h / 2 <= cell.y + cell.height
+ }))
  assert.match(pageSvg(page, new Map(assets.map(item => [item.id, item]))), />front note</)
 })
 
@@ -216,7 +219,7 @@ test('v2 standees put last base in details and mirror only different-design memb
 })
 test('different-design standees span two of three base columns with a matching Front/Back header through reordering', () => {
  const assets=Array.from({length:12},(_,i)=>asset(`stand-${i}`,'Broken Glass Acrylic Standees',{'Print Option':'Double Sided Different Design'}))
- const columnWidth=(PAPER_WIDTH-defaultLayoutBounds.left-defaultLayoutBounds.right-2*GROUP_GAP)/3
+ const columnWidth=(PAPER_WIDTH-artworkBounds(defaultLayoutBounds).left-artworkBounds(defaultLayoutBounds).right-2*GROUP_GAP)/3
  let pages=paginateAssets(assets)
  for(const order of [assets,[...assets].reverse(),assets]) {
   pages=autoArrangePages(pages,1,order,defaultLayoutBounds)
@@ -274,7 +277,7 @@ test('product changes leave unfinished rows open only for the same product', () 
 test('v2 chains keep details right and arrange horizontal front/back pairs',()=>{
  const assets=Array.from({length:6},(_,i)=>asset(String(i),'串串',{'Print Option':i%2?'Double Sided Same Design':'Double Sided Different Design'},'g'))
  const [page]=paginateAssets(assets); const g=page.imageGroups[0]
- assert.equal(g.width,(PAPER_WIDTH-defaultLayoutBounds.left-defaultLayoutBounds.right-GROUP_GAP)/2)
+ assert.equal(g.width,(PAPER_WIDTH-artworkBounds(defaultLayoutBounds).left-artworkBounds(defaultLayoutBounds).right-GROUP_GAP)/2)
  for(const item of page.items) assert.ok(item.x+item.w/2<=g.detailsX)
  assert.equal(page.items.filter(i=>i.derivedFrom).length,3)
 })
@@ -416,7 +419,7 @@ test('small chains reserve actual artwork height instead of 120 units per member
 
 test('backfill reuses an empty ordinary column before adding page-tail sections', () => {
  const ordinary=Array.from({length:5},(_,i)=>asset('o'+i,'Keychains',{'Print Option':'Double Sided Different Design'}))
- const holder=['Example','Front','Inside','Back'].map(id=>asset(id,'Shaker',{},'h'))
+ const holder=['Example','Front','Inside','Back'].map(id=>({...asset(id,'Shaker',{},'h'),width:160,height:100}))
  const pages=paginateAssets([...ordinary,...holder,asset('tail')])
  const first=pages[0]
  const moved=first.imageGroups.find(group=>group.itemIds.includes('item-tail'))
@@ -431,7 +434,7 @@ test('backfill reuses an empty ordinary column before adding page-tail sections'
 })
 test('later fitting groups backfill earlier pages while retaining headers and fitting their own image cells', () => {
  const ordinary=Array.from({length:5},(_,i)=>asset('o'+i,'Keychains',{'Print Option':'Double Sided Different Design'}))
- const holder=['Example','Front','Inside','Back'].map(id=>asset(id,'Shaker',{},'h'))
+ const holder=['Example','Front','Inside','Back'].map(id=>({...asset(id,'Shaker',{},'h'),width:160,height:100}))
  const chain=[{...asset('small','串串',{},'c'),width:80,height:80,sourceGroupWidthMm:20,sourceGroupHeightMm:20}]
  const pages=paginateAssets([...ordinary,...holder,...chain])
  assert.ok(pages[0].items.some(i=>i.assetId==='small'),'small chain should use the earlier page tail, skipping the oversized holder')
@@ -519,7 +522,7 @@ test('holder and shaker extras stay below the first four visual baseline unless 
 
 test('two holder groups fit one page with headers and gaps included in each half-area budget', () => {
  for (const name of ['Shaker', 'Photocard Holders', '照片夹']) {
-  const sources = ['one','two'].flatMap(group => ['Example','Front','Inside','Back'].map(role => ({...asset(`${group}-${role}`,name,{},group), name:role})))
+  const sources = ['one','two'].flatMap(group => ['Example','Front','Inside','Back'].map(role => ({...asset(`${group}-${role}`,name,{},group), name:role,width:160,height:100})))
   const pages=paginateAssets(sources)
   assert.equal(pages.length,1)
   assert.equal(pages[0].imageGroups.length,2)
