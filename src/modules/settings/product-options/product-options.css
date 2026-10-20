@@ -56,6 +56,10 @@
 .po-value-title .ant-input-number{width:70px}
 .po-value-disabled{box-shadow:0 1px 4px rgba(15,23,42,.04)}
 .po-id{font-family:monospace}
+.po-rule-editor{margin-top:14px;padding:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px}
+.po-rule-editor strong{color:#000}.po-rule-editor small,.po-rule-editor p{color:#64748b;font-weight:normal;font-size:12px}
+.po-rule-row{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:12px 0}.po-rule-row>span{flex-shrink:0}.po-rule-attribute{width:120px;flex:0 0 120px}.po-rule-values{flex:1 1 180px;min-width:0}
+.po-rule-prompt{color:#000}
 .po-preview>h3{background:#fff;padding:12px;border-bottom:1px solid #e2e8f0}
 .po-preview>div{padding:12px;display:flex;flex-direction:column;gap:16px}
 .po-preview .ant-select,.po-grid .ant-select{width:100%}

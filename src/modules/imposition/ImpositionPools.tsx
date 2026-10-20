@@ -121,7 +121,7 @@ export default function ImpositionPools({ active, revision, onBack, onStart }: P
 
   return <section className="imposition-pools" aria-label="拼版池">
     <div className="pool-page-card">
-    <header className="pool-page-header"><div><h1>拼版池</h1></div><div className="pool-page-actions"><Button icon={<ArrowLeft size={15}/>} onClick={onBack}>返回列表</Button><Button icon={<RefreshCw size={15}/>} loading={loading} onClick={() => setRefresh(value => value + 1)}>刷新</Button><Button type="primary" disabled={!configReady} icon={<Plus size={17}/>} onClick={() => { setEditorError(''); setEditor({ name: '', color: POOL_COLORS[pools.length % POOL_COLORS.length] }) }}>新建池子</Button></div></header>
+    <header className="pool-page-header"><div><h1>拼版池</h1></div><div className="pool-page-actions"><Button icon={<ArrowLeft size={15}/>} onClick={onBack}>返回列表</Button><Button icon={<RefreshCw size={15}/>} loading={loading} onClick={() => setRefresh(value => value + 1)}>刷新</Button></div></header>
     <div className="pool-totals"><span>订单数 <strong>{loading ? '—' : records.length}</strong></span><span>设计总数 <strong>{loading ? '—' : allImages.length}</strong></span></div>
     {(loadError || storageError) && <Alert type="error" showIcon message={loadError || storageError} action={loadError ? <Button size="small" onClick={() => setRefresh(value => value + 1)}>重试</Button> : undefined}/>}
     <Spin wrapperClassName="pool-loading-shell" spinning={loading} tip="正在读取待拼版图片…"><div className="pool-workbench">

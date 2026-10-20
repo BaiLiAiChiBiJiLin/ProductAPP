@@ -4,7 +4,7 @@ import { ConfigProvider } from 'antd'
 import type { ReactNode } from 'react'
 import ProductOptionsSettings from '../src/modules/settings/product-options/ProductOptionsSettings'
 import { initialBundle } from '../src/modules/settings/product-options/service'
-import { addValue, allProducts, applyMembership, changeOrder, clone, definitions, deleteCategory, deleteValue, getProduct, isEnabled, locations, makeProduct, optionFor, ordered, parseImport, setDefault, setEnabled, validateBundle } from '../src/modules/settings/product-options/model'
+import { addValue, allProducts, applyMembership, changeOrder, clone, definitions, deleteCategory, deleteValue, getProduct, isEnabled, locations, makeProduct, optionFor, ordered, parseImport, resolvePreview, setRule, setDefault, setEnabled, validateBundle } from '../src/modules/settings/product-options/model'
 
 const api = vi.hoisted(() => ({ invoke: vi.fn() }))
 const render = (ui: ReactNode) => renderView(<ConfigProvider theme={{ token: { motion: false } }}>{ui}</ConfigProvider>)
@@ -16,6 +16,110 @@ beforeAll(() => {
 })
 beforeEach(() => { api.invoke.mockReset().mockImplementation(async command => { if (command === 'load_product_option_settings') return { bundle: clone(initialBundle), version: 'v1', directory: 'D:\\PrintFlow\\settings\\product-options' }; return { version: 'v2', directory: 'D:\\PrintFlow\\settings\\product-options' } }) })
 afterEach(cleanup)
+
+test('product IDs are sequential, remain stable on moves and renames, and never reuse deleted IDs', () => {
+  const data = clone(initialBundle)
+  expect(allProducts(data.main).map(product => product.id)).toEqual(Array.from({ length: 65 }, (_, i) => `P${i + 1}`))
+  const first = allProducts(data.main)[0]; first.title = 'Renamed'
+  applyMembership(data.main, 0, [], [])
+  expect(first.id).toBe('P1')
+  expect(makeProduct(data.main).id).toBe('P66')
+  const next = makeProduct(data.main); expect(next.id).toBe('P67')
+  data.main.uncategorizedProducts.push(next); validateBundle(data)
+  next.id = 'P1'; expect(() => validateBundle(data)).toThrow('产品 ID')
+})
+
+test('rules subtract from product availability, isolate products, and clear invalid selections without restoring them', () => {
+  const data = clone(initialBundle); const [product, other] = allProducts(data.main)
+  product.productOptions.forEach(option => { option.deleted = false; delete option.disabledValues })
+  setEnabled(optionFor(product, 'Holo Film')!, 'M2', false)
+  setRule(product, 'Technique', 'G2', 'Holo Film', ['M1', 'M2'])
+  const result = resolvePreview(data, product, { Technique: 'G2', 'Holo Film': 'M1' })
+  expect(result.selections['Holo Film']).toBe('')
+  expect(result.hidden.get('Holo Film')?.has('M1')).toBe(true)
+  const cleared = resolvePreview(data, product, { ...result.selections, Technique: '' })
+  expect(cleared.selections['Holo Film']).toBe('')
+  expect(isEnabled(optionFor(product, 'Holo Film'), 'M2')).toBe(false)
+  expect(product.optionRules?.[0].hide[0].valueIds).toContain('M2')
+  setEnabled(optionFor(product, 'Holo Film')!, 'M2', true)
+  expect(resolvePreview(data, product, { Technique: 'G2', 'Holo Film': 'M2' }).selections['Holo Film']).toBe('')
+  expect(other.optionRules).toBeUndefined()
+  optionFor(product, 'Technique')!.deleted = true
+  expect(resolvePreview(data, product, { Technique: 'G2' }).hidden.size).toBe(0)
+  validateBundle(data)
+})
+
+test('G1 hides exactly M7 through M13 while different IDs with the same labels remain available', () => {
+  const data = clone(initialBundle); const product = allProducts(data.main)[0]
+  product.productOptions.forEach(option => { option.deleted = false; delete option.disabledValues })
+  setRule(product, 'Technique', 'G1', 'Holo Film', ['M7', 'M8', 'M9', 'M10', 'M11', 'M12', 'M13'])
+  const result = resolvePreview(data, product, { Technique: 'G1' })
+  const visible = data.catalogs['holo-films.json'].values.filter(value => !result.hidden.get('Holo Film')?.has(value.id))
+  expect(visible.map(value => value.id)).toEqual(['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M14'])
+  expect(result.hidden.get('Holo Film')?.has('M9')).toBe(true)
+  expect(visible.find(value => value.id === 'M2')?.labelZh).toBe(data.catalogs['holo-films.json'].values.find(value => value.id === 'M9')?.labelZh)
+})
+
+test('rules handle unions, cascading invalidation, cycles, accessory colors, and cleanup of deleted IDs', () => {
+  const data = clone(initialBundle); const product = allProducts(data.main)[0]
+  product.productOptions.forEach(option => { option.deleted = false; delete option.disabledValues })
+  setRule(product, 'Technique', 'G2', 'Holo Film', ['M1'])
+  setRule(product, 'Material', 'C1', 'Holo Film', ['M2'])
+  expect([...resolvePreview(data, product, { Technique: 'G2', Material: 'C1' }).hidden.get('Holo Film')!]).toEqual(['M1', 'M2'])
+  setRule(product, 'Holo Film', 'M1', 'Technique', ['G2'])
+  const cycle = resolvePreview(data, product, { Technique: 'G2', 'Holo Film': 'M1' })
+  expect(cycle.selections.Technique).toBe(''); expect(cycle.selections['Holo Film']).toBe('')
+  const accessory = data.catalogs['accessory-styles.json']; const style = accessory.values.find(value => value.colors?.length)!
+  const color = style.colors![0]
+  setRule(product, 'Material', 'C2', 'Accessories Style', [color.id])
+  expect(resolvePreview(data, product, { Material: 'C2', 'Accessories Style': style.id, 'Accessories Style:color': color.id }).selections['Accessories Style:color']).toBe('')
+  setRule(product, 'Accessories Style', color.id, 'Material', ['C3'])
+  setEnabled(optionFor(product, 'Accessories Style')!, style.id, false)
+  expect(resolvePreview(data, product, { Material: 'C3', 'Accessories Style': style.id, 'Accessories Style:color': color.id }).selections.Material).toBe('C3')
+  deleteValue(data, accessory, style)
+  expect(product.optionRules?.some(rule => rule.when.valueId === 'C2')).toBe(false)
+  const holo = data.catalogs['holo-films.json']
+  deleteValue(data, holo, holo.values.find(value => value.id === 'M1')!)
+  expect(product.optionRules?.some(rule => rule.when.option === 'Holo Film' || rule.when.option === 'Technique')).toBe(false)
+  validateBundle(data)
+  setRule(product, 'Technique', 'G2', 'Holo Film', ['M999'])
+  expect(() => validateBundle(data)).toThrow('联动规则')
+})
+
+test('rule editor allows closed targets, saves their rules without enabling them, and preview applies them', async () => {
+  const data = clone(initialBundle); const product = allProducts(data.main)[0]
+  product.productOptions.forEach(option => { option.deleted = false; delete option.disabledValues })
+  setEnabled(optionFor(product, 'Holo Film')!, 'M2', false)
+  api.invoke.mockImplementation(async command => command === 'load_product_option_settings' ? { bundle: data, version: 'v1', directory: 'test' } : { version: 'v2', directory: 'test' })
+  render(<ProductOptionsSettings/>); await screen.findByLabelText('产品中文名')
+  fireEvent.click(screen.getByRole('button', { name: /^工艺已/ }))
+  await select('G2添加联动属性', '全息膜')
+  const target = screen.getByRole('combobox', { name: 'G2隐藏全息膜' })
+  fireEvent.mouseDown(target.closest('.ant-select')!.querySelector('.ant-select-selector')!)
+  const disabled = await screen.findByText('爱心镭射（已关闭）', { selector: '.ant-select-item-option-content' })
+  expect(disabled.closest('.ant-select-item')?.classList.contains('ant-select-item-option-disabled')).toBe(false)
+  fireEvent.click(disabled)
+  fireEvent.click(await screen.findByText('无附加工艺', { selector: '.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option-content' }))
+  fireEvent.keyDown(target, { key: 'Escape' })
+  await select('预览全息膜', '无附加工艺')
+  await select('预览工艺', '单面星星镭射')
+  const previewPanel = document.querySelector('.po-preview') as HTMLElement
+  expect(previewPanel.textContent).not.toContain('无附加工艺')
+  const craft = screen.getByRole('combobox', { name: '预览工艺' })
+  fireEvent.mouseDown(craft.closest('.ant-select')!.querySelector('.ant-select-clear')!)
+  const film = screen.getByRole('combobox', { name: '预览全息膜' })
+  fireEvent.mouseDown(film.closest('.ant-select')!.querySelector('.ant-select-selector')!)
+  expect(await screen.findByText('无附加工艺', { selector: '.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option-content' })).toBeTruthy()
+  expect(previewPanel.textContent).not.toContain('无附加工艺')
+  fireEvent.keyDown(film, { key: 'Escape' })
+  fireEvent.click(screen.getByRole('button', { name: /保\s*存$/ }))
+  await screen.findByText('配置已保存')
+  const saved = api.invoke.mock.calls.at(-1)![1].bundle
+  expect(allProducts(saved.main)[0].optionRules).toEqual([{ when: { option: 'Technique', valueId: 'G2' }, hide: [{ option: 'Holo Film', valueIds: ['M2', 'M1'] }] }])
+  expect(optionFor(allProducts(saved.main)[0], 'Holo Film')!.disabledValues).toContain('M2')
+  expect(saved.catalogs).toEqual(data.catalogs)
+  validateBundle(saved)
+}, 15000)
 
 test('all migrated files validate, preserve 65 products and duplicate titles, and retain nested colors', () => {
   const data = clone(initialBundle); validateBundle(data)
@@ -70,7 +174,7 @@ test('category membership moves instances without losing products, category dele
   deleteCategory(data.main, 0)
   expect(allProducts(data.main)).toHaveLength(count)
   expect(data.main.uncategorizedProducts).toContain(included)
-  const product = makeProduct(); expect(product.productOptions.map(option => option.deleted)).toEqual(definitions.map(() => true))
+  const product = makeProduct(data.main); expect(product.productOptions.map(option => option.deleted)).toEqual(definitions.map(() => true))
   validateBundle(data)
 })
 test('malformed imports fail without changing current data', () => {

@@ -65,8 +65,65 @@ function containsPaint(node: SvgNode): boolean {
   return !node.resource && (PAINT_TAGS.has(node.tag) || node.children.some(containsPaint))
 }
 
+function imageCount(node: SvgNode): number {
+  if (node.resource) return 0
+  return node.tag === 'image'
+    ? 1
+    : node.children.reduce((count, child) => count + imageCount(child), 0)
+}
+
+function imageBearingChildGroups(node: SvgNode): SvgNode[] {
+  return node.children.filter(child => child.tag === 'g' && imageCount(child) > 0)
+}
+
+/**
+ * CorelDRAW often places two faces inside anonymous sibling groups. They are
+ * the selectable artwork boundaries even though their parent layer and the
+ * faces themselves have no authored names. The old menu only surfaced the
+ * named wrappers and the embedded bitmap nodes, which made both thumbnails
+ * appear to be the same face.
+ */
+function isAnonymousArtworkBoundary(node: SvgNode): boolean {
+  return node.tag === 'g'
+    && !node.resource
+    && !name(node)
+    && containsPaint(node)
+    && imageCount(node) > 0
+    && Boolean(node.parent && imageBearingChildGroups(node.parent).length >= 2)
+}
+
+function hasAnonymousArtworkBoundaryAncestor(node: SvgNode, boundaries: Set<SvgNode>): boolean {
+  for (let parent = node.parent; parent; parent = parent.parent) {
+    if (boundaries.has(parent)) return true
+  }
+  return false
+}
+
+function hasMultiImageGroupDescendant(node: SvgNode): boolean {
+  return node.children.some(child => child.tag === 'g'
+    && (imageCount(child) > 1 || hasMultiImageGroupDescendant(child)))
+}
+
+/**
+ * Named groups that only wrap several sibling faces are structural containers,
+ * rather than a user-selectable face. Hiding them prevents duplicate "whole
+ * design" entries while preserving named one-face groups in ordinary files.
+ */
+function isMultiFaceWrapper(node: SvgNode): boolean {
+  return node.tag === 'g'
+    && Boolean(name(node))
+    && imageCount(node) > 1
+    && (imageBearingChildGroups(node).length >= 2 || hasMultiImageGroupDescendant(node))
+}
+
 function layerNodes(nodes: SvgNode[]): SvgNode[] {
-  return nodes.filter(node => !node.resource && (node.tag === 'image' || (node.tag === 'g' && (name(node) || node.attributes.get('inkscape:groupmode') === 'layer') && containsPaint(node))))
+  const boundaries = new Set(nodes.filter(isAnonymousArtworkBoundary))
+  return nodes.filter(node => {
+    if (node.resource) return false
+    if (node.tag === 'image') return !hasAnonymousArtworkBoundaryAncestor(node, boundaries)
+    if (node.tag !== 'g' || !containsPaint(node) || isMultiFaceWrapper(node)) return false
+    return Boolean(name(node) || node.attributes.get('inkscape:groupmode') === 'layer' || boundaries.has(node))
+  })
 }
 
 function layerId(index: number): string { return `svg-layer-${index}` }

@@ -93,7 +93,7 @@ it('does not overwrite unreadable saved configuration', async () => {
   render(<ImpositionPools active revision={0} onBack={() => {}} onStart={() => {}}/>)
   await screen.findByText(/读取拼版池配置失败/)
   expect(localStorage.getItem(poolStorageKey())).toBe('{broken')
-  expect((screen.getAllByRole('button', { name: '新建池子' })[0] as HTMLButtonElement).disabled).toBe(true)
+  expect((screen.getByRole('button', { name: /^新建池子/ }) as HTMLButtonElement).disabled).toBe(true)
 })
 
 it('retains the pool boundary when the workspace saves QT using a full job response', async () => {

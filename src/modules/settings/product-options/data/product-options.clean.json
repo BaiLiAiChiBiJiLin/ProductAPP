@@ -17,8 +17,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -50,7 +49,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P1"
         },
         {
           "title": "Brushed Silver Stickers",
@@ -64,8 +64,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -97,7 +96,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P2"
         },
         {
           "title": "Circle Stickers",
@@ -111,8 +111,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -144,7 +143,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P3"
         },
         {
           "title": "Clear Stickers",
@@ -158,8 +158,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -191,7 +190,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P4"
         },
         {
           "title": "Custom Sticker Sheets",
@@ -205,8 +205,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -238,7 +237,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P5"
         },
         {
           "title": "Die-Cut Stickers",
@@ -252,8 +252,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -285,7 +284,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P6"
         },
         {
           "title": "Glitter Stickers",
@@ -299,8 +299,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -332,7 +331,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P7"
         },
         {
           "title": "Holo Heart Stickers",
@@ -346,8 +346,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -379,7 +378,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P8"
         },
         {
           "title": "Holo Star Stickers",
@@ -393,8 +393,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -426,7 +425,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P9"
         },
         {
           "title": "Holo broken Glasses Stickers",
@@ -440,8 +440,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -473,7 +472,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P10"
         },
         {
           "title": "Holographic Stickers",
@@ -487,8 +487,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -520,7 +519,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P11"
         },
         {
           "title": "Prismatic Stickers",
@@ -534,8 +534,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -567,7 +566,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P12"
         },
         {
           "title": "Square Stickers",
@@ -581,8 +581,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -614,7 +613,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P13"
         },
         {
           "title": "Star lllusion Film stickers",
@@ -628,8 +628,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -661,7 +660,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P14"
         },
         {
           "title": "Stickers Collections",
@@ -675,8 +675,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -708,7 +707,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P15"
         },
         {
           "title": "Vinyl Stickers",
@@ -722,8 +722,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -755,7 +754,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P16"
         }
       ]
     },
@@ -776,8 +776,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -809,7 +808,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P17"
         },
         {
           "title": "Anime Acrylic Rotating Ballpoint Pen",
@@ -823,8 +823,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -856,7 +855,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P18"
         },
         {
           "title": "Custom Acrylic Earrings - Unique and Stylish Designs",
@@ -870,8 +870,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -903,7 +902,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P19"
         },
         {
           "title": "Custom Acrylic Hair Clips – Stylish and Personalized",
@@ -917,8 +917,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -950,7 +949,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P20"
         },
         {
           "title": "Custom Acrylic Mirror - Stylish and Durable Design",
@@ -964,8 +964,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -997,7 +996,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P21"
         },
         {
           "title": "Custom Acrylic Rulers",
@@ -1011,8 +1011,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -1044,7 +1043,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P22"
         }
       ]
     },
@@ -1065,8 +1065,7 @@
               "name": "Technique",
               "deleted": false,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -1098,7 +1097,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P23"
         },
         {
           "title": "Clear Acrylic Standees",
@@ -1112,8 +1112,7 @@
               "name": "Technique",
               "deleted": false,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -1145,7 +1144,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P24"
         },
         {
           "title": "Custom Colored Acrylic Standees",
@@ -1159,8 +1159,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -1192,7 +1191,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P25"
         },
         {
           "title": "Custom Rainbow Acrylic Standees",
@@ -1206,8 +1206,7 @@
               "name": "Technique",
               "deleted": false,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -1239,7 +1238,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P26"
         },
         {
           "title": "Full Bleed Acrylic Standees",
@@ -1253,8 +1253,7 @@
               "name": "Technique",
               "deleted": false,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -1286,7 +1285,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P27"
         },
         {
           "title": "Holo Heart Acrylic Standees",
@@ -1300,8 +1300,7 @@
               "name": "Technique",
               "deleted": false,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -1333,7 +1332,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P28"
         },
         {
           "title": "Holo Star Acrylic Standees",
@@ -1347,8 +1347,7 @@
               "name": "Technique",
               "deleted": false,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -1380,7 +1379,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P29"
         },
         {
           "title": "Rotating Acrylic Standees",
@@ -1394,8 +1394,7 @@
               "name": "Technique",
               "deleted": false,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -1427,7 +1426,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P30"
         }
       ]
     },
@@ -1448,8 +1448,7 @@
               "name": "Technique",
               "deleted": false,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -1481,7 +1480,8 @@
               "name": "Accessories Style",
               "deleted": false
             }
-          ]
+          ],
+          "id": "P31"
         },
         {
           "title": "Color Edge Acrylic Keychains",
@@ -1495,8 +1495,7 @@
               "name": "Technique",
               "deleted": false,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -1528,7 +1527,8 @@
               "name": "Accessories Style",
               "deleted": false
             }
-          ]
+          ],
+          "id": "P32"
         },
         {
           "title": "Custom Acrylic Photocard Holders Keychains",
@@ -1542,8 +1542,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -1575,7 +1574,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P33"
         },
         {
           "title": "Custom Shaker Keychain",
@@ -1589,8 +1589,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -1622,7 +1621,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P34"
         },
         {
           "title": "Custom Synthetic Wooden Keychains",
@@ -1636,8 +1636,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -1669,7 +1668,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P35"
         },
         {
           "title": "Epoxy Acrylic Keychains",
@@ -1683,8 +1683,7 @@
               "name": "Technique",
               "deleted": false,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -1716,7 +1715,8 @@
               "name": "Accessories Style",
               "deleted": false
             }
-          ]
+          ],
+          "id": "P36"
         },
         {
           "title": "Epoxy Holographic Keychains",
@@ -1730,8 +1730,7 @@
               "name": "Technique",
               "deleted": false,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -1763,7 +1762,8 @@
               "name": "Accessories Style",
               "deleted": false
             }
-          ]
+          ],
+          "id": "P37"
         },
         {
           "title": "Full Bleed Acrylic Keychains",
@@ -1777,8 +1777,7 @@
               "name": "Technique",
               "deleted": false,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -1810,7 +1809,8 @@
               "name": "Accessories Style",
               "deleted": false
             }
-          ]
+          ],
+          "id": "P38"
         },
         {
           "title": "Glitter Epoxy Holographic Keychains",
@@ -1824,8 +1824,7 @@
               "name": "Technique",
               "deleted": false,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -1857,7 +1856,8 @@
               "name": "Accessories Style",
               "deleted": false
             }
-          ]
+          ],
+          "id": "P39"
         },
         {
           "title": "Holographic Acrylic Keychains",
@@ -1871,8 +1871,7 @@
               "name": "Technique",
               "deleted": false,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -1904,7 +1903,8 @@
               "name": "Accessories Style",
               "deleted": false
             }
-          ]
+          ],
+          "id": "P40"
         },
         {
           "title": "Rainbow Acrylic Keychains",
@@ -1918,8 +1918,7 @@
               "name": "Technique",
               "deleted": false,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -1951,7 +1950,8 @@
               "name": "Accessories Style",
               "deleted": false
             }
-          ]
+          ],
+          "id": "P41"
         },
         {
           "title": "Rainbow Epoxy Keychains",
@@ -1965,8 +1965,7 @@
               "name": "Technique",
               "deleted": false,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -1998,7 +1997,8 @@
               "name": "Accessories Style",
               "deleted": false
             }
-          ]
+          ],
+          "id": "P42"
         },
         {
           "title": "Rounding Clear Acrylic Keychains",
@@ -2012,8 +2012,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -2045,7 +2044,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P43"
         },
         {
           "title": "Rounding Clear Acrylic Keychains",
@@ -2059,8 +2059,7 @@
               "name": "Technique",
               "deleted": false,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -2092,7 +2091,8 @@
               "name": "Accessories Style",
               "deleted": false
             }
-          ]
+          ],
+          "id": "P44"
         }
       ]
     },
@@ -2113,8 +2113,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -2146,7 +2145,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P45"
         }
       ]
     },
@@ -2167,8 +2167,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -2200,7 +2199,8 @@
               "name": "Accessories Style",
               "deleted": false
             }
-          ]
+          ],
+          "id": "P46"
         },
         {
           "title": "Custom Colored Acrylic Pins",
@@ -2214,8 +2214,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -2247,7 +2246,8 @@
               "name": "Accessories Style",
               "deleted": false
             }
-          ]
+          ],
+          "id": "P47"
         },
         {
           "title": "Custom Frosted Acrylic Pins",
@@ -2261,8 +2261,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -2294,7 +2293,8 @@
               "name": "Accessories Style",
               "deleted": false
             }
-          ]
+          ],
+          "id": "P48"
         },
         {
           "title": "Custom Full Bleed Acrylic Pin",
@@ -2308,8 +2308,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -2341,7 +2340,8 @@
               "name": "Accessories Style",
               "deleted": false
             }
-          ]
+          ],
+          "id": "P49"
         },
         {
           "title": "Custom Holographic Acrylic Pins",
@@ -2355,8 +2355,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -2388,7 +2387,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P50"
         },
         {
           "title": "Custom Rainbow Acrylic Pins",
@@ -2402,8 +2402,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -2435,7 +2434,8 @@
               "name": "Accessories Style",
               "deleted": false
             }
-          ]
+          ],
+          "id": "P51"
         }
       ]
     },
@@ -2456,8 +2456,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -2489,7 +2488,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P52"
         },
         {
           "title": "Custom Bottle Opener Fridge MagnetsButton Pins",
@@ -2503,8 +2503,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -2536,7 +2535,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P53"
         },
         {
           "title": "Custom Fridge Magnets Button Pins",
@@ -2550,8 +2550,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -2583,7 +2582,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P54"
         },
         {
           "title": "Custom Raised Foil Printing Cold FoilStamping Glitter Holographic Button Pins",
@@ -2597,8 +2597,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -2630,7 +2629,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P55"
         },
         {
           "title": "Custom Round Button Pins",
@@ -2644,8 +2644,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -2677,7 +2676,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P56"
         },
         {
           "title": "Custom Round Glitter Holographic Button Pins",
@@ -2691,8 +2691,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -2724,7 +2723,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P57"
         }
       ]
     },
@@ -2745,8 +2745,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -2778,7 +2777,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P58"
         },
         {
           "title": "Personalized Custom Clear PET Bookmarks",
@@ -2792,8 +2792,7 @@
               "name": "Technique",
               "deleted": true,
               "disabledValues": [
-                "G18",
-                "G19"
+                "G18"
               ]
             },
             {
@@ -2825,7 +2824,8 @@
               "name": "Accessories Style",
               "deleted": true
             }
-          ]
+          ],
+          "id": "P59"
         }
       ]
     }
@@ -2843,8 +2843,7 @@
           "name": "Technique",
           "deleted": true,
           "disabledValues": [
-            "G18",
-            "G19"
+            "G18"
           ]
         },
         {
@@ -2876,7 +2875,8 @@
           "name": "Accessories Style",
           "deleted": true
         }
-      ]
+      ],
+      "id": "P60"
     },
     {
       "title": "Custom Business Card",
@@ -2890,8 +2890,7 @@
           "name": "Technique",
           "deleted": true,
           "disabledValues": [
-            "G18",
-            "G19"
+            "G18"
           ]
         },
         {
@@ -2923,7 +2922,8 @@
           "name": "Accessories Style",
           "deleted": true
         }
-      ]
+      ],
+      "id": "P61"
     },
     {
       "title": "Custom Game Cards Printable Tarot Cards",
@@ -2937,8 +2937,7 @@
           "name": "Technique",
           "deleted": true,
           "disabledValues": [
-            "G18",
-            "G19"
+            "G18"
           ]
         },
         {
@@ -2970,7 +2969,8 @@
           "name": "Accessories Style",
           "deleted": true
         }
-      ]
+      ],
+      "id": "P62"
     },
     {
       "title": "Custom Packaging Backing Cards",
@@ -2984,8 +2984,7 @@
           "name": "Technique",
           "deleted": true,
           "disabledValues": [
-            "G18",
-            "G19"
+            "G18"
           ]
         },
         {
@@ -3017,7 +3016,8 @@
           "name": "Accessories Style",
           "deleted": true
         }
-      ]
+      ],
+      "id": "P63"
     },
     {
       "title": "Custom Poster Printing",
@@ -3031,8 +3031,7 @@
           "name": "Technique",
           "deleted": true,
           "disabledValues": [
-            "G18",
-            "G19"
+            "G18"
           ]
         },
         {
@@ -3064,7 +3063,8 @@
           "name": "Accessories Style",
           "deleted": true
         }
-      ]
+      ],
+      "id": "P64"
     },
     {
       "title": "Custom Thank You Cards Greeting Cards Post Card Printing",
@@ -3078,8 +3078,7 @@
           "name": "Technique",
           "deleted": true,
           "disabledValues": [
-            "G18",
-            "G19"
+            "G18"
           ]
         },
         {
@@ -3111,7 +3110,9 @@
           "name": "Accessories Style",
           "deleted": true
         }
-      ]
+      ],
+      "id": "P65"
     }
-  ]
+  ],
+  "nextProductId": 66
 }

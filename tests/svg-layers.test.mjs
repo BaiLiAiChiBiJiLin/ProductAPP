@@ -124,3 +124,17 @@ test('invalid selections leave the source intact and do not prevent valid select
   assert.equal(selectSvgLayers(source, ['missing', 'svg-layer-999']), source)
   assert.equal(selectSvgLayers(source, ['missing', layer.id]), selectSvgLayer(source, layer.id))
 })
+
+test('anonymous sibling face groups are exposed instead of their structural wrappers', () => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg"><g id="图层_x0020_1"><g id="_236039217488"><g><path id="palmer" d="M0 0h10"/><g><image id="palmer-bitmap" href="palmer.png"/></g></g><path id="cutline" d="M0 0h20"/><g><path id="lampard" d="M10 0h10"/><g><image id="lampard-bitmap" href="lampard.png"/></g></g></g></g></svg>`
+  const layers = svgLayers(svg)
+  assert.deepEqual(layers.map(layer => layer.label), ['图层 1', '图层 2'])
+  const first = parse(selectSvgLayer(svg, layers[0].id))
+  const second = parse(selectSvgLayer(svg, layers[1].id))
+  assert.ok(first.querySelector('#palmer'))
+  assert.equal(first.querySelector('#lampard'), null)
+  assert.ok(first.querySelector('#cutline'))
+  assert.ok(second.querySelector('#lampard'))
+  assert.equal(second.querySelector('#palmer'), null)
+  assert.ok(second.querySelector('#cutline'))
+})

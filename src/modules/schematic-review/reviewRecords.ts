@@ -33,15 +33,16 @@ export type SchematicReviewSummary = Pick<SchematicReviewRecord, 'id' | 'savedAt
   returned?: boolean
   impositionJobId?: string
 }
+export type ReviewRecordIdentity = Pick<SchematicReviewRecord, 'id' | 'sourceRecordId' | 'paymentStatus'>
 export type ReviewRestoreRequest = { token: string; record: SchematicReviewRecord }
 export type ReviewListQuery = { page: number; pageSize: number; search?: string; dateFrom?: string; dateTo?: string }
 export type ReviewListResult = { records: SchematicReviewSummary[]; total: number; page: number; pageSize: number }
 
-/** Freeze the exported revision, including edits held outside the page model. */
-export function createReviewRecord(workspace: ReviewWorkspace, display: ArrangementDisplayState, format: ExportFormat, output: string, sourceRecordId?: string): SchematicReviewRecord {
+/** Freeze the exported layout while retaining the current review's identity. */
+export function createReviewRecord(workspace: ReviewWorkspace, display: ArrangementDisplayState, format: ExportFormat, output: string, previous?: ReviewRecordIdentity): SchematicReviewRecord {
   return copyWorkspaceValue({
-    ...workspace, schemaVersion: 1, id: crypto.randomUUID(), savedAt: new Date().toISOString(),
-    format, output, sourceRecordId, paymentStatus: 'unpaid', display: saveArrangementDisplay(display),
+    ...workspace, schemaVersion: 1, id: previous?.id ?? crypto.randomUUID(), savedAt: new Date().toISOString(),
+    format, output, sourceRecordId: previous?.sourceRecordId, paymentStatus: previous?.paymentStatus ?? 'unpaid', display: saveArrangementDisplay(display),
     // Blob preview URLs do not survive an app restart. The SVG is canonical.
     assets: workspace.assets.map(asset => ({ ...asset, previewUrl: '', thumbnailUrl: '' })),
   })

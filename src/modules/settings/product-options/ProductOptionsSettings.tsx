@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Checkbox, Input, InputNumber, Modal, Pagination, Select, Spin, Switch } from 'antd'
-import { addValue, allProducts, applyMembership, changeOrder, clone, definitions as publicDefinitions, deleteCategory, deleteValue, display, getProduct, isEnabled, locations, makeProduct, optionFor, ordered, productList, setDefault, setEnabled, type Bundle, type Catalog, type Location, type OptionValue } from './model'
+import { addValue, allProducts, applyMembership, changeOrder, clone, definitions as publicDefinitions, deleteCategory, deleteValue, display, getProduct, isEnabled, locations, makeProduct, optionFor, ordered, productList, pruneRules, resolvePreview, setRule, setDefault, setEnabled, type Bundle, type Catalog, type Location, valueLabel, type OptionValue } from './model'
 import { loadProductOptions, saveProductOptions } from './service'
 import EditableNameSelect from './EditableNameSelect'
+import OptionRuleEditor from './OptionRuleEditor'
 import './product-options.css'
 
 type Props = { onBusyChange?: (busy: boolean) => void }
@@ -98,7 +99,7 @@ export default function ProductOptionsSettings({ onBusyChange }: Props) {
         <div className="po-value-title"><label>序号 <InputNumber aria-label={`${value.id}序号`} min={1} precision={0} value={value.sortOrder} onChange={rank => { if (rank != null) mutate((_, list) => changeOrder(list, value.id, rank)) }}/></label><strong>{display(value)}</strong><span className="po-id">{value.id}</span></div>
         <div className="po-actions"><label><Switch size="small" checked={enabled} disabled={!product} aria-label={`${value.id}启用`} onChange={checked => toggleValue(value.id, checked)}/> 启用</label>
           <label><Switch size="small" checked={!!value.isDefault} aria-label={`${value.id}默认选中`} onChange={checked => mutate((_, __, target) => setDefault(target, checked ? value.id : '', parentId ? target.values.find(item => item.id === parentId) : undefined))}/> 默认选中</label>
-          <Button danger size="small" onClick={() => setConfirm({ title: definition.file ? `删除“${display(value)}”？所有产品都会移除此公共${parentId ? '颜色' : '选项值'}。` : `删除“${display(value)}”？`, run: draft => { const target = (definition.file ? draft.catalogs[definition.file] : optionFor(getProduct(draft.main, location!)!, definition.name)) as Catalog; const parent = parentId ? target.values.find(item => item.id === parentId) : undefined; const item = (parent ? parent.colors! : target.values).find(item => item.id === value.id)!; if (definition.file) deleteValue(draft, target, item, parent); else { target.values.splice(target.values.indexOf(item), 1); setEnabled(target as unknown as NonNullable<typeof productOption>, item.id, true); if (target.defaultValue === item.name) delete target.defaultValue } } })}>删除</Button>
+          <Button danger size="small" onClick={() => setConfirm({ title: definition.file ? `删除“${display(value)}”？所有产品都会移除此公共${parentId ? '颜色' : '选项值'}。` : `删除“${display(value)}”？`, run: draft => { const target = (definition.file ? draft.catalogs[definition.file] : optionFor(getProduct(draft.main, location!)!, definition.name)) as Catalog; const parent = parentId ? target.values.find(item => item.id === parentId) : undefined; const item = (parent ? parent.colors! : target.values).find(item => item.id === value.id)!; if (definition.file) deleteValue(draft, target, item, parent); else { pruneRules(getProduct(draft.main, location!)!, definition.name, new Set([item.id])); target.values.splice(target.values.indexOf(item), 1); setEnabled(target as unknown as NonNullable<typeof productOption>, item.id, true); if (target.defaultValue === item.name) delete target.defaultValue } } })}>删除</Button>
         </div>
       </div>
       <div className="po-grid po-grid-two">
@@ -106,18 +107,26 @@ export default function ProductOptionsSettings({ onBusyChange }: Props) {
         <label>中文名称（labelZh）<Input aria-label={`${value.id}中文名称`} value={value.labelZh ?? ''} onChange={event => mutate(target => { target.labelZh = event.target.value })}/></label>
         <label className="po-wide">图片地址（image）<Input aria-label={`${value.id}图片地址`} value={value.image ?? ''} onChange={event => mutate(target => { target.image = event.target.value })}/></label>
       </div>
+      {product && <OptionRuleEditor key={`${product.id}:${definition.name}:${value.id}`} bundle={bundle} product={product} source={definition.name} valueId={value.id} onChange={(target, ids) => editProduct(item => setRule(item, definition.name, value.id, target, ids))}/>}
     </article>
   }
 
+  const resolved = product ? resolvePreview(bundle, product, preview) : { selections: {}, hidden: new Map<string, Set<string>>() }
+  const changePreview = (name: string, id: string, color = false) => {
+    if (!product) return
+    const next = { ...resolved.selections, [color ? `${name}:color` : name]: id }
+    if (!color) delete next[`${name}:color`]
+    setPreview(resolvePreview(bundle, product, next).selections)
+  }
   const previewFields = definitions.flatMap(item => {
     const root = (item.file ? bundle.catalogs[item.file] : optionFor(product!, item.name)) as Catalog; const option = product && optionFor(product, item.name)
     if (!option || option.deleted) return []
-    const values = ordered(root.values).filter(value => isEnabled(option, value.id))
-    const chosen = values.find(value => value.id === preview[item.name]) ?? (!Object.hasOwn(preview, item.name) ? values.find(value => value.isDefault) ?? values.find(value => value.name === root.defaultValue) : undefined)
-    const fields = [<label key={item.name}>{root.labelZh}<Select aria-label={`预览${root.labelZh}`} placeholder={values.length ? '请选择' : '暂无启用的选项值'} allowClear value={chosen?.id} options={values.map(value => ({ value: value.id, label: display(value) }))} onChange={id => setPreview(current => { const next = { ...current, [item.name]: id ?? '' }; delete next[`${item.name}:color`]; return next })}/></label>]
+    const values = ordered(root.values).filter(value => isEnabled(option, value.id) && !resolved.hidden.get(item.name)?.has(value.id))
+    const chosen = values.find(value => value.id === resolved.selections[item.name])
+    const fields = [<label key={item.name}>{root.labelZh}<Select aria-label={`预览${root.labelZh}`} placeholder={values.length ? '请选择' : '暂无启用的选项值'} allowClear value={chosen?.id} options={values.map(value => ({ value: value.id, label: valueLabel(value, root.values) }))} onChange={id => changePreview(item.name, id ?? '')}/>{!!root.values.filter(value => resolved.hidden.get(item.name)?.has(value.id)).length && <small>联动已隐藏 {root.values.filter(value => resolved.hidden.get(item.name)?.has(value.id)).length} 项</small>}</label>]
     if (item.prefix === 'P' && chosen) {
-      const colors = ordered(chosen.colors ?? []).filter(color => isEnabled(option, color.id))
-      if (colors.length) fields.push(<label key="colors">配件颜色<Select aria-label="预览配件颜色" placeholder="请选择" allowClear value={colors.find(color => color.id === preview[`${item.name}:color`])?.id ?? (!Object.hasOwn(preview, `${item.name}:color`) ? colors.find(color => color.isDefault)?.id : undefined)} options={colors.map(color => ({ value: color.id, label: display(color) }))} onChange={id => setPreview(current => ({ ...current, [`${item.name}:color`]: id ?? '' }))}/></label>)
+      const colors = ordered(chosen.colors ?? []).filter(color => isEnabled(option, color.id) && !resolved.hidden.get(item.name)?.has(color.id))
+      if (colors.length) fields.push(<label key="colors">配件颜色<Select aria-label="预览配件颜色" placeholder="请选择" allowClear value={colors.find(color => color.id === resolved.selections[`${item.name}:color`])?.id} options={colors.map(color => ({ value: color.id, label: valueLabel(color, chosen.colors ?? []) }))} onChange={id => changePreview(item.name, id ?? '', true)}/></label>)
     }
     return fields
   })
@@ -140,7 +149,7 @@ export default function ProductOptionsSettings({ onBusyChange }: Props) {
         {category && <label>产品类别中文名称<Input value={category.titleZh} aria-label="产品类别中文名称" onChange={event => edit(draft => { draft.main.categories[filter].titleZh = event.target.value })}/></label>}
       </div></section>
       <section className="po-section"><div className="po-section-heading"><h3>步骤二：配置产品子类</h3><div className="po-actions">
-        <Button onClick={() => edit(draft => { const target = filter >= 0 ? filter : -1; const list = productList(draft.main, target); list.push(makeProduct()); setLocation({ category: target, product: list.length - 1 }) })}>新增{category ? display(category) : ''}产品</Button>
+        <Button onClick={() => edit(draft => { const target = filter >= 0 ? filter : -1; const list = productList(draft.main, target); list.push(makeProduct(draft.main)); setLocation({ category: target, product: list.length - 1 }) })}>新增{category ? display(category) : ''}产品</Button>
         <Button danger disabled={!product} onClick={() => setConfirm({ title: `删除产品“${display(product!)}”？`, run: draft => { productList(draft.main, location!.category).splice(location!.product, 1); setLocation(locations(draft.main, filter)[0]) } })}>删除{category ? display(category) : ''}产品</Button>
       </div></div><div className="po-grid po-grid-names">
         <label>{prefix}产品<EditableNameSelect name={product ? '产品名称' : '产品子类'} selectionName="选择产品子类" text={product?.title ?? ''} placeholder="暂无产品，请新增" selected={productKey} options={productOptions} disabled={!product} onSelect={chooseProduct} onTextChange={text => editProduct(target => { target.title = text })}/></label>

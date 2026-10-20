@@ -31,7 +31,7 @@ import { paginateAssets, autoArrangePages } from './services/paginationService'
 import { exportPage, exportPdf, type PdfExportProgress } from './services/exportService'
 import type { DimensionDisplayOverride } from './services/imageDimensionService'
 import { emptyArrangementDisplayState, restoreArrangementDisplay } from './services/arrangementDisplayState'
-import { createReviewRecord, exportAndRecord, saveReviewRecord, type SchematicReviewRecord } from '../schematic-review/reviewRecords'
+import { createReviewRecord, exportAndRecord, saveReviewRecord, type ReviewRecordIdentity, type SchematicReviewRecord } from '../schematic-review/reviewRecords'
 import { schematicCopy } from './copy'
 import ArrangePage from './ArrangePage'
 import BatchHistoryPanel from './history/BatchHistoryPanel'
@@ -65,8 +65,12 @@ export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingC
   const [defaultArrangementIds, setDefaultArrangementIds] = useState<string[]>(initialRecord?.defaultArrangementIds ?? [])
   const [displayState, setDisplayState] = useState(() => initialRecord ? restoreArrangementDisplay(initialRecord.display) : emptyArrangementDisplayState())
   const [sourceRecordId, setSourceRecordId] = useState(initialRecord?.id)
+  const reviewIdentity = useRef<ReviewRecordIdentity | undefined>(initialRecord ? { id: initialRecord.id, sourceRecordId: initialRecord.sourceRecordId, paymentStatus: initialRecord.paymentStatus } : undefined)
+  const reviewSaveNotice = useRef<(() => void) | null>(null)
+  const closeReviewSaveNotice = () => { const notice = reviewSaveNotice.current; reviewSaveNotice.current = null; notice?.() }
+  const exportGeneration = useRef(0)
   const exportLock = useRef(false)
-  const resetArrangementDisplay = () => { setDisplayState(emptyArrangementDisplayState()); setSourceRecordId(undefined); setLayoutBounds(loadLayoutBounds()) }
+  const resetArrangementDisplay = () => { setDisplayState(emptyArrangementDisplayState()); setSourceRecordId(undefined); reviewIdentity.current = undefined; exportGeneration.current++; closeReviewSaveNotice(); toast.destroy('review-save'); setLayoutBounds(loadLayoutBounds()) }
   const [category, setCategory] = useState(UNASSIGNED_PRODUCT_CATEGORY)
   const [scrollToAssetId, setScrollToAssetId] = useState<string | null>(null)
   const saveLock = useRef(false)
@@ -414,19 +418,33 @@ export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingC
     try {
       const output = await save({ defaultPath: exportFileName(assets, format), filters: [{ name: format.toUpperCase(), extensions: [format] }] })
       if (!output) return
-      const record = createReviewRecord({ assets, pages, activePage, metadata: batchMetadata, layoutBounds, arrangementSort, defaultArrangementIds, sourceBatchId: currentBatchId ?? undefined }, displayState, format, output, sourceRecordId)
+      const generation = ++exportGeneration.current
+      closeReviewSaveNotice()
+      toast.destroy('review-save')
+      const record = createReviewRecord({ assets, pages, activePage, metadata: batchMetadata, layoutBounds, arrangementSort, defaultArrangementIds, sourceBatchId: currentBatchId ?? undefined }, displayState, format, output, reviewIdentity.current)
+      // Reserve one ID even when the file succeeds but persisting its review needs a retry.
+      reviewIdentity.current = { id: record.id, sourceRecordId: record.sourceRecordId, paymentStatus: record.paymentStatus }
       const result = await exportAndRecord(record, () => format === 'pdf'
         ? exportPdf(pages, assets, output, batchMetadata, setExportProgress, displayOverrides, layoutBounds, displayState.accessoryVisuals, displayState.visualScales)
         : exportPage(page, assets, output, format, batchMetadata, pages.length, displayOverrides, layoutBounds, displayState.accessoryVisuals, displayState.visualScales))
       if (result.saved) {
+        // The failed-save notice can be created while the export is in flight.
+        // Clear it after the persistence result is known so a successful retry
+        // or subsequent export cannot leave a stale action in the UI.
+        closeReviewSaveNotice()
+        toast.destroy('review-save')
         onRecordSaved?.()
-        toast.success('导出完成，已保存到示意图审核')
+        toast.success({ key: 'review-save', content: '导出完成，已保存到示意图审核' })
       } else {
         const retry = async () => {
-          try { await saveReviewRecord(record); onRecordSaved?.(); toast.destroy('review-save'); toast.success('审核记录已保存') }
+          if (exportLock.current || generation !== exportGeneration.current) return
+          exportLock.current = true
+          setExporting(true)
+          try { await saveReviewRecord(record); onRecordSaved?.(); closeReviewSaveNotice(); toast.success({ key: 'review-save', content: '审核记录已保存' }) }
           catch (error) { toast.error(`审核记录保存失败：${String(error)}`) }
+          finally { exportLock.current = false; setExporting(false) }
         }
-        toast.error({ key: 'review-save', duration: 0, content: <span>文件已导出，审核记录保存失败：{String(result.error)} <Button size="small" onClick={() => void retry()}>重试保存记录</Button></span> })
+        reviewSaveNotice.current = toast.error({ key: 'review-save', duration: 0, content: <span>文件已导出，审核记录保存失败：{String(result.error)} <Button size="small" onClick={() => void retry()}>重试保存记录</Button></span> })
       }
     } catch (error) { toast.error(String(error)) }
     finally { exportLock.current = false; setExporting(false) }

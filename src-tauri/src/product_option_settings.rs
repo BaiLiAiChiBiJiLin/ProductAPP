@@ -147,6 +147,23 @@ fn validate(bundle: &Bundle) -> Result<(), String> {
         }
         products.extend(array(category, "products")?);
     }
+    let mut product_ids = HashSet::new();
+    let mut max_product_id = 0;
+    for product in &products {
+        let id = product["id"].as_str().ok_or_else(|| error("缺少产品 ID"))?;
+        let number = product_number(id).ok_or_else(|| error("产品 ID 格式错误"))?;
+        if !product_ids.insert(id) {
+            return Err(error("产品 ID 重复"));
+        }
+        max_product_id = max_product_id.max(number);
+    }
+    if bundle.main["nextProductId"]
+        .as_u64()
+        .filter(|n| *n > max_product_id)
+        .is_none()
+    {
+        return Err(error("产品 ID 计数器无效"));
+    }
     for (file, name, prefix) in DEFINITIONS {
         let catalog = &bundle.catalogs[file];
         if catalog["name"] != name {
@@ -238,6 +255,131 @@ fn validate(bundle: &Bundle) -> Result<(), String> {
                 }
             }
         }
+        validate_rules(bundle, product)?;
+    }
+    Ok(())
+}
+fn product_number(id: &str) -> Option<u64> {
+    let number = id.strip_prefix('P')?;
+    if number.is_empty() || number.starts_with('0') || !number.bytes().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    number
+        .parse::<u64>()
+        .ok()
+        .filter(|n| *n > 0 && *n < 9_007_199_254_740_991)
+}
+fn migrate_product_ids(main: &mut Value) -> Result<bool, String> {
+    let mut used = HashSet::new();
+    let mut next = main["nextProductId"].as_u64().unwrap_or(1).max(1);
+    let products = array(main, "categories")?
+        .iter()
+        .map(|c| array(c, "products"))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
+        .chain(array(main, "uncategorizedProducts")?);
+    for product in products {
+        if let Some(id) = product.get("id") {
+            let id = id.as_str().ok_or_else(|| error("产品 ID 格式错误"))?;
+            let number = product_number(id).ok_or_else(|| error("产品 ID 格式错误"))?;
+            if !used.insert(id.to_owned()) {
+                return Err(error("产品 ID 重复"));
+            }
+            next = next.max(number + 1);
+        }
+    }
+    let mut changed = false;
+    let mut lists: Vec<&mut Value> = main["categories"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .map(|c| &mut c["products"])
+        .collect();
+    // The uncategorized list is handled separately to avoid borrowing main twice.
+    for list in &mut lists {
+        for product in list.as_array_mut().unwrap() {
+            if product.get("id").is_none() {
+                product["id"] = Value::String(format!("P{next}"));
+                next += 1;
+                changed = true;
+            }
+        }
+    }
+    for product in main["uncategorizedProducts"].as_array_mut().unwrap() {
+        if product.get("id").is_none() {
+            product["id"] = Value::String(format!("P{next}"));
+            next += 1;
+            changed = true;
+        }
+    }
+    if main["nextProductId"].as_u64() != Some(next) {
+        main["nextProductId"] = Value::from(next);
+        changed = true;
+    }
+    Ok(changed)
+}
+fn validate_rules(bundle: &Bundle, product: &Value) -> Result<(), String> {
+    let Some(rules) = product.get("optionRules") else {
+        return Ok(());
+    };
+    let exists = |name: &str, id: &str| -> bool {
+        let Some(option) = product["productOptions"]
+            .as_array()
+            .and_then(|options| options.iter().find(|option| option["name"] == name))
+        else {
+            return false;
+        };
+        let catalog = DEFINITIONS
+            .iter()
+            .find(|(_, known, _)| *known == name)
+            .map(|(file, _, _)| &bundle.catalogs[*file])
+            .unwrap_or(option);
+        catalog["values"].as_array().is_some_and(|values| {
+            values.iter().any(|value| {
+                value["id"] == id
+                    || value["colors"]
+                        .as_array()
+                        .is_some_and(|colors| colors.iter().any(|color| color["id"] == id))
+            })
+        })
+    };
+    let mut sources = HashSet::new();
+    for rule in rules
+        .as_array()
+        .ok_or_else(|| error("联动规则必须是数组"))?
+    {
+        let name = rule["when"]["option"]
+            .as_str()
+            .ok_or_else(|| error("联动触发属性无效"))?;
+        let id = rule["when"]["valueId"]
+            .as_str()
+            .ok_or_else(|| error("联动触发值无效"))?;
+        if !exists(name, id) || !sources.insert((name, id)) {
+            return Err(error("联动触发值不存在或重复"));
+        }
+        let groups = array(rule, "hide")?;
+        if groups.is_empty() {
+            return Err(error("联动隐藏目标不能为空"));
+        }
+        let mut targets = HashSet::new();
+        for group in groups {
+            let target = group["option"]
+                .as_str()
+                .ok_or_else(|| error("联动目标属性无效"))?;
+            let ids = array(group, "valueIds")?;
+            let mut unique = HashSet::new();
+            if target == name
+                || !targets.insert(target)
+                || ids.is_empty()
+                || ids.iter().any(|id| {
+                    !id.as_str()
+                        .is_some_and(|id| exists(target, id) && unique.insert(id))
+                })
+            {
+                return Err(error("联动隐藏选项无效或重复"));
+            }
+        }
     }
     Ok(())
 }
@@ -245,15 +387,14 @@ fn read(root: &Path) -> Result<Snapshot, String> {
     fs::create_dir_all(root).map_err(error)?;
     let mut catalogs = serde_json::Map::new();
     let mut main = Value::Null;
-    let mut hash = Sha256::new();
+    let mut originals = Vec::new();
     for (index, (name, seed)) in FILES.iter().enumerate() {
         let path = root.join(name);
         if !path.exists() {
             fs::write(&path, seed).map_err(error)?;
         }
         let bytes = fs::read(&path).map_err(error)?;
-        hash.update(name.as_bytes());
-        hash.update(&bytes);
+        originals.push(bytes.clone());
         let value: Value = serde_json::from_slice(&bytes).map_err(error)?;
         if index == 0 {
             main = value;
@@ -261,11 +402,29 @@ fn read(root: &Path) -> Result<Snapshot, String> {
             catalogs.insert((*name).to_owned(), value);
         }
     }
+    let migrated = migrate_product_ids(&mut main)?;
     let bundle = Bundle {
         main,
         catalogs: Value::Object(catalogs),
     };
     validate(&bundle)?;
+    if migrated {
+        let backup = root.join("product-options.clean.json.before-product-ids.bak");
+        if !backup.exists() {
+            fs::write(&backup, &originals[0]).map_err(error)?;
+        }
+        let mut bytes = serde_json::to_vec_pretty(&bundle.main).map_err(error)?;
+        bytes.push(b'\n');
+        let pending = root.join("product-options.clean.json.pending");
+        fs::write(&pending, &bytes).map_err(error)?;
+        fs::rename(&pending, root.join(FILES[0].0)).map_err(error)?;
+        originals[0] = bytes;
+    }
+    let mut hash = Sha256::new();
+    for ((name, _), bytes) in FILES.iter().zip(originals) {
+        hash.update(name.as_bytes());
+        hash.update(bytes);
+    }
     Ok(Snapshot {
         bundle,
         version: format!("{:x}", hash.finalize()),
@@ -346,6 +505,47 @@ pub async fn save_product_option_settings(
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn legacy_ids_migrate_once_and_rules_roundtrip() {
+        let root = std::env::temp_dir().join(format!(
+            "printflow-rules-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap()
+        ));
+        let original = read(&root).unwrap();
+        let mut legacy = original.bundle.main.clone();
+        legacy.as_object_mut().unwrap().remove("nextProductId");
+        for category in legacy["categories"].as_array_mut().unwrap() {
+            for product in category["products"].as_array_mut().unwrap() {
+                product.as_object_mut().unwrap().remove("id");
+            }
+        }
+        for product in legacy["uncategorizedProducts"].as_array_mut().unwrap() {
+            product.as_object_mut().unwrap().remove("id");
+        }
+        fs::write(root.join(FILES[0].0), serde_json::to_vec(&legacy).unwrap()).unwrap();
+        let migrated = read(&root).unwrap();
+        assert_eq!(
+            migrated.bundle.main["categories"][0]["products"][0]["id"],
+            "P1"
+        );
+        assert_eq!(migrated.bundle.main["nextProductId"], 66);
+        assert_eq!(migrated.version, read(&root).unwrap().version);
+        assert!(root
+            .join("product-options.clean.json.before-product-ids.bak")
+            .exists());
+        let mut edited = migrated.bundle.clone();
+        edited.main["categories"][0]["products"][0]["optionRules"] = json!([{"when":{"option":"Technique","valueId":"G2"},"hide":[{"option":"Holo Film","valueIds":["M1","M2"]}]}]);
+        let saved = save(&root, edited.clone(), &migrated.version).unwrap();
+        assert_eq!(read(&root).unwrap().bundle.main, edited.main);
+        edited.main["categories"][0]["products"][0]["optionRules"][0]["hide"][0]["valueIds"] =
+            json!(["M999"]);
+        assert!(save(&root, edited, &saved.version).is_err());
+        let mut invalid = saved.bundle;
+        invalid.main["categories"][0]["products"][1]["id"] = json!("P1");
+        assert!(validate(&invalid).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn roundtrip_conflict_and_invalid_data() {
         let root = std::env::temp_dir().join(format!(

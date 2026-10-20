@@ -139,21 +139,6 @@
       "isDefault": false,
       "sortOrder": 18,
       "id": "G18"
-    },
-    {
-      "name": "Holo Star",
-      "labelZh": "星星镭射",
-      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1779786184978-_.png",
-      "isDefault": false,
-      "sortOrder": 19,
-      "id": "G19"
-    },
-    {
-      "name": "Double-sided rainbow",
-      "labelZh": "无附加工艺",
-      "isDefault": false,
-      "sortOrder": 20,
-      "id": "G20"
     }
   ],
   "nextId": 21

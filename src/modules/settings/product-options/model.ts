@@ -9,13 +9,15 @@ export const definitions = [
 export type OptionValue = { id: string; name: string; labelZh?: string; image?: string; isDefault?: boolean; sortOrder: number; colors?: OptionValue[] }
 export type Catalog = { name: string; label?: string; labelZh: string; defaultValue?: string; values: OptionValue[]; nextId: number; nextColorId?: number }
 export type ProductOption = { name: string; deleted: boolean; disabledValues?: string[]; label?: string; labelZh?: string; defaultValue?: string; values?: OptionValue[]; nextId?: number }
-export type Product = { title: string; titleZh: string; productOptions: ProductOption[] }
+export type OptionRule = { when: { option: string; valueId: string }; hide: { option: string; valueIds: string[] }[] }
+export type Product = { id: string; title: string; titleZh: string; productOptions: ProductOption[]; optionRules?: OptionRule[] }
 export type Category = { name: string; title: string; titleZh: string; products: Product[] }
-export type ProductDocument = { categories: Category[]; uncategorizedProducts: Product[] }
+export type ProductDocument = { categories: Category[]; uncategorizedProducts: Product[]; nextProductId: number }
 export type Bundle = { main: ProductDocument; catalogs: Record<string, Catalog> }
 export type Location = { category: number; product: number }
 export const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 export const display = (value: { name?: string; labelZh?: string; title?: string; titleZh?: string }) => value.titleZh || value.labelZh || value.title || value.name || '未命名'
+export const valueLabel = (value: OptionValue, peers: OptionValue[]) => !/^M[1-9][0-9]*$/.test(value.id) && peers.some(peer => peer.id !== value.id && display(peer) === display(value)) ? `${display(value)}（${value.id}）` : display(value)
 export const ordered = (values: OptionValue[]) => [...values].sort((a, b) => a.sortOrder - b.sortOrder)
 export function productList(main: ProductDocument, category: number) { return category < 0 ? main.uncategorizedProducts : main.categories[category]?.products ?? [] }
 export function allProducts(main: ProductDocument) { return [...main.categories.flatMap(category => category.products), ...main.uncategorizedProducts] }
@@ -30,7 +32,60 @@ export function setEnabled(option: ProductOption, id: string, enabled: boolean) 
   if (enabled) ids.delete(id); else ids.add(id)
   if (ids.size) option.disabledValues = [...ids]; else delete option.disabledValues
 }
-export function makeProduct(): Product { return { title: 'New Product', titleZh: '新产品', productOptions: definitions.map(({ name }) => ({ name, deleted: true })) } }
+export function makeProduct(main: ProductDocument): Product { return { id: `P${main.nextProductId++}`, title: 'New Product', titleZh: '新产品', productOptions: definitions.map(({ name }) => ({ name, deleted: true })) } }
+export function catalogFor(bundle: Bundle, product: Product, name: string): Catalog {
+  const definition = definitions.find(item => item.name === name)
+  return (definition ? bundle.catalogs[definition.file] : optionFor(product, name)) as Catalog
+}
+export const flattenedValues = (catalog: Catalog) => catalog.values.flatMap(value => [value, ...(value.colors ?? [])])
+export function setRule(product: Product, source: string, sourceId: string, target: string, ids: string[]) {
+  const rules = product.optionRules ??= []
+  let rule = rules.find(rule => rule.when.option === source && rule.when.valueId === sourceId)
+  if (!rule && ids.length) { rule = { when: { option: source, valueId: sourceId }, hide: [] }; rules.push(rule) }
+  if (rule) {
+    rule.hide = rule.hide.filter(group => group.option !== target)
+    if (ids.length) rule.hide.push({ option: target, valueIds: [...new Set(ids)] })
+  }
+  product.optionRules = rules.filter(rule => rule.hide.length)
+  if (!product.optionRules.length) delete product.optionRules
+}
+export function pruneRules(product: Product, name: string, ids: Set<string>) {
+  product.optionRules = product.optionRules?.filter(rule => rule.when.option !== name || !ids.has(rule.when.valueId)).map(rule => ({ ...rule, hide: rule.hide.map(group => ({ ...group, valueIds: group.valueIds.filter(id => group.option !== name || !ids.has(id)) })).filter(group => group.valueIds.length) })).filter(rule => rule.hide.length)
+  if (!product.optionRules?.length) delete product.optionRules
+}
+// Resolve by clearing invalid choices only. Cleared values stay empty even if a
+// cascading rule stops applying; this bounds cycles and prevents default revival.
+export function resolvePreview(bundle: Bundle, product: Product, requested: Record<string, string>) {
+  const selections = { ...requested }
+  const roots = product.productOptions.map(option => ({ option, catalog: catalogFor(bundle, product, option.name) }))
+  for (const { option, catalog } of roots) {
+    if (!Object.hasOwn(selections, option.name)) selections[option.name] = !option.deleted ? ordered(catalog.values).find(value => isEnabled(option, value.id) && (value.isDefault || value.name === catalog.defaultValue))?.id ?? '' : ''
+    const style = catalog.values.find(value => value.id === selections[option.name])
+    const key = `${option.name}:color`
+    if (!Object.hasOwn(selections, key)) selections[key] = !option.deleted && style ? ordered(style.colors ?? []).find(color => isEnabled(option, color.id) && color.isDefault)?.id ?? '' : ''
+  }
+  let hidden = new Map<string, Set<string>>()
+  for (let pass = 0; pass <= roots.length * 2; pass++) {
+    hidden = new Map()
+    for (const rule of product.optionRules ?? []) {
+      const option = optionFor(product, rule.when.option)
+      if (!option || option.deleted || !isEnabled(option, rule.when.valueId)) continue
+      const chosen = catalogFor(bundle, product, rule.when.option).values.find(value => value.id === selections[rule.when.option] && isEnabled(option, value.id))
+      if (!chosen || (chosen.id !== rule.when.valueId && !(selections[`${rule.when.option}:color`] === rule.when.valueId && chosen.colors?.some(color => color.id === rule.when.valueId)))) continue
+      for (const group of rule.hide) { const ids = hidden.get(group.option) ?? new Set<string>(); group.valueIds.forEach(id => ids.add(id)); hidden.set(group.option, ids) }
+    }
+    let changed = false
+    for (const { option, catalog } of roots) {
+      const allowed = (value: OptionValue) => !option.deleted && isEnabled(option, value.id) && !hidden.get(option.name)?.has(value.id)
+      const chosen = catalog.values.find(value => value.id === selections[option.name] && allowed(value))
+      if (!chosen && selections[option.name]) { selections[option.name] = ''; changed = true }
+      const key = `${option.name}:color`
+      if (selections[key] && !chosen?.colors?.some(value => value.id === selections[key] && allowed(value))) { selections[key] = ''; changed = true }
+    }
+    if (!changed) break
+  }
+  return { selections, hidden }
+}
 export function addValue(catalog: Catalog, style?: OptionValue) {
   const definition = definitions.find(item => item.name === catalog.name)
   const prefix = style ? 'P-C' : definition?.prefix ?? 'X'
@@ -59,6 +114,7 @@ export function deleteValue(bundle: Bundle, catalog: Catalog, value: OptionValue
   const ids = new Set([value.id, ...(value.colors ?? []).map(color => color.id)])
   if (!style && catalog.defaultValue === value.name) delete catalog.defaultValue
   allProducts(bundle.main).forEach(product => {
+    pruneRules(product, catalog.name, ids)
     const option = optionFor(product, catalog.name)
     if (option?.disabledValues) { option.disabledValues = option.disabledValues.filter(id => !ids.has(id)); if (!option.disabledValues.length) delete option.disabledValues }
   })
@@ -78,6 +134,12 @@ export function applyMembership(main: ProductDocument, index: number, retained: 
 export function validateBundle(bundle: Bundle): void {
   if (!bundle?.main || !Array.isArray(bundle.main.categories) || !Array.isArray(bundle.main.uncategorizedProducts) || !bundle.catalogs) throw new Error('配置格式错误：需要产品类别、未归类产品和公共选项数据')
   const categoryIds = new Set<string>()
+  const productIds = new Set<string>(); let maxProductId = 0
+  allProducts(bundle.main).forEach(product => {
+    if (!/^P[1-9][0-9]*$/.test(product.id) || productIds.has(product.id)) throw new Error('产品 ID 格式错误或重复')
+    productIds.add(product.id); maxProductId = Math.max(maxProductId, Number(product.id.slice(1)))
+  })
+  if (!Number.isSafeInteger(bundle.main.nextProductId) || bundle.main.nextProductId <= maxProductId) throw new Error('产品 ID 计数器无效')
   bundle.main.categories.forEach(category => {
     if (!category.name || categoryIds.has(category.name) || typeof category.title !== 'string' || typeof category.titleZh !== 'string' || !Array.isArray(category.products)) throw new Error('产品类别名称重复或格式错误')
     categoryIds.add(category.name)
@@ -117,6 +179,21 @@ export function validateBundle(bundle: Bundle): void {
     })
     if (!Number.isSafeInteger(option.nextId) || option.nextId! <= max || option.disabledValues?.some(id => !ids.has(id))) throw new Error('自定义选项的 ID 无效')
   }))
+  allProducts(bundle.main).forEach(product => {
+    if (product.optionRules === undefined) return
+    if (!Array.isArray(product.optionRules)) throw new Error('联动规则必须是数组')
+    const sources = new Set<string>()
+    const exists = (name: string, id: string) => !!optionFor(product, name) && flattenedValues(catalogFor(bundle, product, name)).some(value => value.id === id)
+    for (const rule of product.optionRules) {
+      const key = JSON.stringify([rule?.when?.option, rule?.when?.valueId])
+      if (!rule?.when || !exists(rule.when.option, rule.when.valueId) || sources.has(key) || !Array.isArray(rule.hide) || !rule.hide.length) throw new Error('联动规则的触发选项无效或重复')
+      sources.add(key); const targets = new Set<string>()
+      for (const group of rule.hide) {
+        if (!group || group.option === rule.when.option || targets.has(group.option) || !Array.isArray(group.valueIds) || !group.valueIds.length || new Set(group.valueIds).size !== group.valueIds.length || group.valueIds.some(id => !exists(group.option, id))) throw new Error('联动规则的隐藏选项无效或重复')
+        targets.add(group.option)
+      }
+    }
+  })
 }
 export function parseImport(text: string, current: Bundle): Bundle {
   const data: unknown = JSON.parse(text)
