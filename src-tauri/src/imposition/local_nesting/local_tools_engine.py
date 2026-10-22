@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from nesting_common import make_masks, pack_material_boards
 from nest_uniform import pack_uniform_boards
-from nest_replan import pack_template_replan
+from nest_replan import pack_template_replan, _placement
 from nest_combined import pack_combined_boards
 from nesting_rust import MaskBank, core_status
 from shapely import affinity
@@ -89,7 +89,8 @@ def _source(item, index, cache):
         filename.write_bytes(encoded)
     return dict(i=index, id=ident, name=ident, file=filename, poly=poly, polygon=points,
                 frame=frame, width=width, height=height, area=poly.area,
-                quantity=int(item.get("quantity", 1)), digest=digest)
+                quantity=int(item.get("quantity", 1)), digest=digest,
+                line_only=item.get("lineOnly") is True)
 
 
 def _validate_boards(srcs, boards, width, height, gap):
@@ -97,6 +98,8 @@ def _validate_boards(srcs, boards, width, height, gap):
     region = box(0, 0, width, height).buffer(1e-7)
     checked = set()
     for board in boards:
+        if len({srcs[p["i"]].get("line_only", False) for p in board}) > 1:
+            raise ValueError("纯线条 SVG 必须单独开板，不能与其他图片混排")
         signature = tuple((p["i"], p["angle"], p["tx"], p["ty"]) for p in board)
         if signature in checked:
             continue
@@ -117,6 +120,52 @@ def _validate_boards(srcs, boards, width, height, gap):
                 other = polys[j]
                 if poly.intersection(other).area > 1e-7 or poly.distance(other) < gap - 1e-6:
                     raise ValueError(f'图片 {srcs[board[i]["i"]]["id"]} 与 {srcs[board[j]["i"]]["id"]} 的最终轮廓间距不足')
+
+
+def _replan_partition(request, srcs, origin, validate):
+    """Scope a manual transaction to its class and preserve other-class sheets.
+
+    The complete source/bank indexes stay unchanged. Repeated untouched sheets
+    share their placement lists and never rebuild their contour masks.
+    """
+    if not isinstance(request, dict) or not isinstance(request.get("templates"), list):
+        raise ValueError("跨方案重排缺少原始版式")
+    by_id = {source["id"]: source for source in srcs}
+    parsed = {}
+    for template in request["templates"]:
+        if not isinstance(template, dict):
+            raise ValueError("跨方案重排的原始版式无效")
+        ident = str(template.get("id", ""))
+        repeat = template.get("repeatCount")
+        raw = template.get("placements")
+        if not ident or ident in parsed or isinstance(repeat, bool) or not isinstance(repeat, int) or repeat < 1:
+            raise ValueError("原始版式编号或生产份数无效")
+        if not isinstance(raw, list) or not raw:
+            raise ValueError("原始版式不能为空")
+        placements = [_placement(item, by_id, origin) for item in raw]
+        kinds = {srcs[p["i"]].get("line_only", False) for p in placements}
+        if len(kinds) != 1:
+            raise ValueError("原版式混有纯线条 SVG 和其他图片，请先重新计算以单独开板")
+        validate([placements])
+        parsed[ident] = (template, placements, kinds.pop())
+    source_id, target_id = request.get("sourceTemplateId"), request.get("targetTemplateId")
+    if source_id == target_id or source_id not in parsed or target_id not in parsed:
+        raise ValueError("跨方案重排的来源或目标版式无效")
+    line_only = parsed[source_id][2]
+    if line_only != parsed[target_id][2]:
+        raise ValueError("纯线条 SVG 与其他图片必须分别开板，不能跨这两类版式移动")
+    preserved, preserved_counts, scoped = [], Counter(), []
+    for template, placements, kind in parsed.values():
+        if kind == line_only:
+            scoped.append(template)
+        else:
+            repeat = template["repeatCount"]
+            preserved.extend([placements] * repeat)
+            for p in placements:
+                preserved_counts[p["i"]] += repeat
+    if any(preserved_counts[s["i"]] != s["quantity"] for s in srcs if s.get("line_only", False) != line_only):
+        raise ValueError("未参与跨方案重排的另一类版式 QT 不完整，请先重新计算")
+    return dict(request, templates=scoped), line_only, preserved
 
 
 def _solve(request, *, cache_dir=None, progress=None, resolution=.5):
@@ -182,7 +231,7 @@ def _solve(request, *, cache_dir=None, progress=None, resolution=.5):
     objective = request.get("objective", "least-material")
     template_repack = request.get("templateRepack")
     strategy = "combined" if objective in ("combined", "least-combined") else ("uniform" if objective == "least-cutting" else "material")
-    combined_job = None
+    combined_diagnostics = {}
     boards = []
     progress.emit("search", "开始搜索：" + ("综合最少，权重 60:40，比较基线后补排余隙并重组版式" if strategy == "combined" else ("切割方案优先，先排满模板再按 QT 配比复用" if strategy == "uniform" else "节省板材，每板多角度试排后选放入数量最多的方案")), 0, total, 25, True)
     if template_repack is not None:
@@ -190,28 +239,57 @@ def _solve(request, *, cache_dir=None, progress=None, resolution=.5):
             raise ValueError('跨方案重排的完整 QT 包含无效图片，结果未提交：' + '; '.join(item['id'] + '：' + item['reason'] for item in excluded))
         if not srcs:
             raise ValueError('跨方案重排没有有效图片')
+        scoped, line_only, preserved = _replan_partition(
+            template_repack, srcs, (left, top),
+            lambda pages: _validate_boards(srcs, pages, width, height, gap))
+        scoped_quantities = [quantity if source["line_only"] == line_only else 0
+                             for source, quantity in zip(srcs, quantities)]
         def replan_progress(detail, done, count):
             progress.emit("search", detail, done, count, 25 + 65 * done / max(1, count))
-        boards = pack_template_replan(dict(srcs=srcs, bank=bank, quantities=quantities), args,
-                                      template_repack, origin=(left, top), objective=objective,
+        boards = pack_template_replan(dict(srcs=srcs, bank=bank, quantities=scoped_quantities), args,
+                                      scoped, origin=(left, top), objective=objective,
                                       validate=lambda pages: _validate_boards(srcs, pages, width, height, gap),
                                       progress=replan_progress)
-    elif srcs and strategy == "combined":
-        combined_job = dict(srcs=srcs, bank=bank, quantities=quantities)
-        def combined_progress(detail, done, count):
-            progress.emit("search", detail, done, count, 25 + 65 * done / max(1, count))
-        boards = pack_combined_boards(combined_job, args, combined_progress, origin=(left, top),
-                                     validate=lambda pages: _validate_boards(srcs, pages, width, height, gap))
-    elif srcs and strategy == "uniform":
-        def uniform_progress(template, repeat, count, remaining):
-            done = total - remaining
-            progress.emit("search", f"方案 {template + 1}：尝试复用 {repeat} 块，单板已放 {count} 张；尚余 {remaining} 张", done, total, 25 + 65 * done / max(1, total))
-        boards, templates, summaries = pack_uniform_boards(dict(srcs=srcs, bank=bank, quantities=quantities), args, uniform_progress)
+        boards.extend(preserved)
     elif srcs:
-        def material_progress(board, attempt, count, remaining):
-            done = total - remaining - count
-            progress.emit("search", f"第 {board + 1} 块板材，第 {attempt} 次试排：当前放入 {count} 张；尚余 {remaining} 张", done, total, 25 + 65 * done / max(1, total))
-        boards = pack_material_boards(srcs, bank, quantities, args, progress=material_progress)
+        # Keep global source indexes and a single native MaskBank. A zero QT
+        # removes the other class from every baseline, tail repair and template
+        # recombination without rebuilding masks or expanding QT into sources.
+        completed = 0
+        for line_only in (False, True):
+            group_quantities = [quantity if source["line_only"] == line_only else 0
+                                for source, quantity in zip(srcs, quantities)]
+            group_total = sum(group_quantities)
+            if not group_total:
+                continue
+            label = "纯线条 SVG 独立板材" if line_only else "其他图片板材"
+            group_job = dict(srcs=srcs, bank=bank, quantities=group_quantities)
+
+            def group_progress(detail, done, count):
+                fraction = max(0., min(1., done / max(1, count)))
+                progress.emit("search", label + "：" + detail,
+                              completed + int(group_total * fraction), total,
+                              25 + 65 * (completed + group_total * fraction) / max(1, total))
+
+            progress.emit("search", f"{label}：{group_total} 张；共用唯一轮廓缓存，单独排版",
+                          completed, total, 25 + 65 * completed / max(1, total), True)
+            if strategy == "combined":
+                group_boards = pack_combined_boards(
+                    group_job, args, group_progress, origin=(left, top),
+                    validate=lambda pages: _validate_boards(srcs, pages, width, height, gap))
+                combined_diagnostics["lineOnly" if line_only else "other"] = group_job.get("combinedDiagnostics", {})
+            elif strategy == "uniform":
+                def uniform_progress(template, repeat, count, remaining):
+                    group_progress(f"方案 {template + 1}：尝试复用 {repeat} 块，单板已放 {count} 张；尚余 {remaining} 张",
+                                   group_total - remaining, group_total)
+                group_boards, _, _ = pack_uniform_boards(group_job, args, uniform_progress)
+            else:
+                def material_progress(board, attempt, count, remaining):
+                    group_progress(f"第 {board + 1} 块板材，第 {attempt} 次试排：当前放入 {count} 张；尚余 {remaining} 张",
+                                   group_total - remaining - count, group_total)
+                group_boards = pack_material_boards(srcs, bank, group_quantities, args, progress=material_progress)
+            boards.extend(group_boards)
+            completed += group_total
     progress.emit("validation", "验证真实轮廓间距、完整图片边界和 QT 数量", total, total, 93, True)
     _validate_boards(srcs, boards, width, height, gap)
     counts, placements, frame_origins = Counter(), [], {}
@@ -247,8 +325,9 @@ def _solve(request, *, cache_dir=None, progress=None, resolution=.5):
                 utilization=area / (len(boards) * width * height) if boards else 0,
                 algorithm="tools/" + ("template-repack（整款数量迁移，固定落点与余隙补排）" if template_repack is not None else ("combined（综合最少，权重 60:40 · 余隙补排与版式重组）" if strategy == "combined" else ("uniform（切割方案优先，重复统一版式）" if strategy == "uniform" else "material（节省板材，单板尽量多放）"))) + " · " + core_label,
                 excludedItems=excluded, warnings=warnings, searchCore=search_core)
-    if combined_job is not None:
-        result['combinedDiagnostics'] = combined_job.get('combinedDiagnostics', {})
+    if combined_diagnostics:
+        result['combinedDiagnostics'] = (next(iter(combined_diagnostics.values()))
+                                         if len(combined_diagnostics) == 1 else dict(groups=combined_diagnostics))
     return result
 
 

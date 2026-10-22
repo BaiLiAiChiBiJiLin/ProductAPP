@@ -235,22 +235,32 @@ describe('imposition export SVG layers', () => {
 })
 
 describe('imposition export physical board identity and positioning', () => {
-  test('every export and preview retains unfilled circular paths with the configured diameter and centered millimetre positions', () => {
+  test('holes use the configured outer-edge span and page-specific circular paint', () => {
     const current = createImpositionExportModel({ pages: [[item()]], sources: { art: source }, plateWidthMm: 300, plateHeightMm: 464, holes: { count: 2, sizeMm: 3, gapMm: 203.468, leftMm: 4 } })
     const entries = buildImpositionSvgExports(current)
     const preview = buildImpositionTemplatePreview(current, current.templates[0].id)
-    for (const svg of [...entries.map(entry => entry.svg), preview]) {
+    for (const { svg, outline } of [...entries.map(entry => ({ svg: entry.svg, outline: entry.groupId === 'paths' })), { svg: preview, outline: true }]) {
       const group = read(svg).querySelector('[data-board-holes]')!
-      expect(group.getAttribute('fill')).toBe('none')
-      expect(group.getAttribute('stroke')).toBe('#2563eb')
+      expect(group.getAttribute('fill')).toBe(outline ? 'none' : '#000000')
+      expect(group.getAttribute('stroke')).toBe(outline ? '#2563eb' : 'none')
       expect(Number(group.getAttribute('stroke-width'))).toBeGreaterThan(0)
       const paths = Array.from(group.querySelectorAll('path'))
       expect(paths).toHaveLength(2)
       expect(group.querySelector('circle')).toBeNull()
       expect(paths.map(path => path.getAttribute('d'))).toEqual([
-        'M 4 130.266 A 1.5 1.5 0 1 0 7 130.266 A 1.5 1.5 0 1 0 4 130.266 Z',
-        'M 4 333.734 A 1.5 1.5 0 1 0 7 333.734 A 1.5 1.5 0 1 0 4 333.734 Z',
+        'M 4 131.766 A 1.5 1.5 0 1 0 7 131.766 A 1.5 1.5 0 1 0 4 131.766 Z',
+        'M 4 332.234 A 1.5 1.5 0 1 0 7 332.234 A 1.5 1.5 0 1 0 4 332.234 Z',
       ])
+    }
+    for (const type of ['paths', 'images', 'fills', 'white']) {
+      current.assignments.art = Object.fromEntries(source.layers.map(layer => [layer.id, type]))
+      const entry = buildImpositionSvgExports(current)[0]
+      const preview = buildImpositionTemplatePreview(current, current.templates[0].id, type)
+      for (const svg of [entry.svg, preview]) {
+        const group = read(svg).querySelector('[data-board-holes]')!
+        expect(group.getAttribute('fill')).toBe(type === 'paths' ? 'none' : '#000000')
+        expect(group.getAttribute('stroke')).toBe(type === 'paths' ? '#2563eb' : 'none')
+      }
     }
     current.holes!.count = 1
     expect(read(buildImpositionSvgExports(current)[0].svg).querySelector('[data-board-holes] path')!.getAttribute('d')).toBe('M 4 232 A 1.5 1.5 0 1 0 7 232 A 1.5 1.5 0 1 0 4 232 Z')

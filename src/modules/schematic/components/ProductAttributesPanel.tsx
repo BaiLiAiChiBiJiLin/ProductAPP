@@ -53,16 +53,14 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
     setPreviousSelection(selectionKey)
     setError('')
     const cached = selected.length === 1 ? grouping?.readDraft(selected[0].id) : undefined
-    const next = cached?.draft ?? readSelectionDraft(draft, selected)
+    const next = cached?.draft ?? readSelectionDraft(selected)
     if (cached) { setMode(cached.mode); setDraft(cached.draft); setCustom(cached.custom) }
-    else if (!session && next !== draft) {
+    else if (!session) {
       setDraft(next)
       const isCustom = next.productId.startsWith('custom:')
       setMode(isCustom ? 'custom' : 'existing')
       if (isCustom) setCustom({ id: Number(next.productId.slice(7)), name: selected[0]?.productName ?? '', size: next.attributes.Size ?? '', printOption: next.attributes['Print Option'] ?? '', finish: next.attributes.Finish ?? '', accessoryColor: next.attributes['Accessories Color'] ?? '', accessoryColorImage: next.images['Accessories Color'] ?? '', qt: next.attributes.QT?.trim() ? Number(next.attributes.QT) : null, attributes: { ...next.attributes }, attributeImages: { ...next.images }, finishMatchDisabled: Boolean(next.finishMatchDisabled) })
-    } else if (!session && selected.length === 1 && (selected[0].note || getNoteImages(selected[0]).length)) {
-      // Notes remain independent when a product has been cleared from an image.
-      setDraft({ ...draft, note: selected[0].note ?? '', ...noteImagesPatch(getNoteImages(selected[0])) })
+      else setCustom(emptyCustomProduct())
     }
   }
   useEffect(() => {

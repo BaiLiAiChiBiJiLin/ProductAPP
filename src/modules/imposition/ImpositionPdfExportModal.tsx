@@ -15,7 +15,7 @@ type Props = { pages: PackedItem[][]; imageSources: Record<string, string>; widt
 const OMIT = '__omit__'
 const CATEGORIES = { paths: '轮廓 / 路径', images: '图片', fills: '彩窗', white: '白墨', unknown: '待确认' }
 const TYPE_OPTIONS = [{ value: 'paths', label: '轮廓 / 路径' }, { value: 'images', label: '图片' }, { value: 'fills', label: '彩窗' }, { value: 'white', label: '白墨' }, { value: OMIT, label: '不导出' }]
-const PHASES: Record<ImpositionPdfExportProgress['phase'], string> = { prepare: '组合图层', transfer: '传输 SVG', resources: '读取图片资源', flatten: '处理渐变和透明度', fonts: '加载字体', parse: '解析 SVG', convert: '生成 PDF', write: '写入文件', complete: '已完成' }
+const PHASES: Record<ImpositionPdfExportProgress['phase'], string> = { prepare: '组合图层', transfer: '传输 SVG', queue: '等待 CPU / 内存额度', resources: '读取图片资源', flatten: '处理渐变和透明度', fonts: '加载字体', parse: '解析 SVG', convert: '生成 PDF', merge: '按图层顺序合并', write: '写入文件', complete: '已完成' }
 
 function layerDisplayName(name: string) {
   const normalized = name.toLowerCase()

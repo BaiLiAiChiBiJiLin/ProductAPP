@@ -28,7 +28,8 @@ export type NestTemplateRepack = {
   sourceSlotIndex: number
   targetPlacement: NestTemplatePlacement
 }
-export type NestRequest = { plateWidthMm: number; plateHeightMm: number; effectiveWidthMm: number; effectiveHeightMm: number; effectiveRightMm: number; spacingMm: number; objective: string; irregularAlgorithm?: 'local-tools'; templateRepack?: NestTemplateRepack; items: Array<{ id: string; widthMm: number; heightMm: number; quantity?: number; polygon?: Array<[number, number]> }> }
+export type NestRequest = { plateWidthMm: number; plateHeightMm: number; effectiveWidthMm: number; effectiveHeightMm: number; effectiveRightMm: number; spacingMm: number; objective: string; irregularAlgorithm?: 'local-tools'; threadCount?: number; templateRepack?: NestTemplateRepack; items: Array<{ id: string; widthMm: number; heightMm: number; quantity?: number; polygon?: Array<[number, number]>; lineOnly?: boolean }> }
+export type ImpositionGeometry = { polygon: Array<[number, number]>; lineOnly: boolean }
 export type NestExcludedItem = { id: string; reason: string }
 export type NestResult = { placements: Array<{ id: string; sheetIndex: number; xMm: number; yMm: number; widthMm: number; heightMm: number; rotationDeg: number }>; unplaced: string[]; sheetsUsed: number; utilization: number; algorithm: string; excludedItems?: NestExcludedItem[]; warnings?: string[] }
 export const submitReviewToImposition = (id: string, paymentStatus: PaymentStatus) => invoke<ImpositionJob>('submit_schematic_review_to_imposition', { id, paymentStatus })
@@ -37,21 +38,22 @@ export const loadImpositionJob = (id: string) => invoke<ImpositionRecord>('load_
 export const updateImpositionImageQuantity = (jobId: string, imageId: string, quantity: number) => invoke<ImpositionRecord>('update_imposition_image_quantity', { jobId, imageId, quantity })
 export const loadImpositionImage = (path: string) => invoke<string>('load_imposition_image', { path })
 export const packImpositionIrregular = (request: NestRequest) => invoke<NestResult>('pack_imposition_irregular', { request })
+export type ImpositionComputeInfo = { logicalCores: number; defaultThreads: number }
+export const getImpositionComputeInfo = () => invoke<ImpositionComputeInfo>('get_imposition_compute_info')
 
-// Outline extraction is independent from the raster preview. Keep the parsed
-// contour promise by immutable asset path/dimensions so changing QT, the
-// layout settings or objective does not parse the same SVG again.
-const impositionOutlineCache = new Map<string, Promise<Array<[number, number]>>>()
-export const loadImpositionPolygon = (path: string, widthMm: number, heightMm: number) => {
+// Extract the outline and classify visible SVG content in the same native
+// parse, independently from the raster preview. QT copies share this result.
+const impositionGeometryCache = new Map<string, Promise<ImpositionGeometry>>()
+export const loadImpositionGeometry = (path: string, widthMm: number, heightMm: number) => {
   const key = `${path}\u0000${widthMm}\u0000${heightMm}`
-  const cached = impositionOutlineCache.get(key)
+  const cached = impositionGeometryCache.get(key)
   if (cached) return cached
-  const pending = invoke<Array<[number, number]>>('load_imposition_polygon', { path, widthMm, heightMm })
-  impositionOutlineCache.set(key, pending)
+  const pending = invoke<ImpositionGeometry>('load_imposition_geometry', { path, widthMm, heightMm })
+  impositionGeometryCache.set(key, pending)
   // A transient read/parse failure should be retryable after the asset is
   // repaired. Successful contours remain cached for the lifetime of the UI.
   void pending.catch(() => {
-    if (impositionOutlineCache.get(key) === pending) impositionOutlineCache.delete(key)
+    if (impositionGeometryCache.get(key) === pending) impositionGeometryCache.delete(key)
   })
   return pending
 }

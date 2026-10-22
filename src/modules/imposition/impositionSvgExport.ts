@@ -1,5 +1,5 @@
 import type { PackedItem } from './packingAlgorithms'
-import { BOARD_HOLE_COLOR, BOARD_HOLE_STROKE_MM, boardHolePath } from './impositionHoles'
+import { BOARD_HOLE_COLOR, BOARD_HOLE_STROKE_MM, boardHoleLayout, boardHolePath } from './impositionHoles'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const RESOURCE_TAGS = new Set(['defs', 'clippath', 'mask', 'pattern', 'marker', 'symbol', 'lineargradient', 'radialgradient', 'filter'])
@@ -483,7 +483,7 @@ function sourceViewport(svg: Element) {
   return { width, height }
 }
 
-function renderBoardLayers(model: ImpositionExportModel, templateId: string, prefixId: string, include: (sourceId: string, layerId: string) => boolean) {
+function renderBoardLayers(model: ImpositionExportModel, templateId: string, prefixId: string, include: (sourceId: string, layerId: string) => boolean, solidHoles = false) {
   const template = model.templates.find(item => item.id === templateId)
   if (!template) throw new Error('导出方案已不存在，请重新打开导出管理')
   const root = document.createElementNS(SVG_NS, 'svg')
@@ -534,13 +534,13 @@ function renderBoardLayers(model: ImpositionExportModel, templateId: string, pre
   if (holes && holes.count > 0 && holes.sizeMm > 0) {
     const holeGroup = root.ownerDocument.createElementNS(SVG_NS, 'g')
     holeGroup.setAttribute('data-board-holes', 'true')
-    holeGroup.setAttribute('fill', 'none')
-    holeGroup.setAttribute('stroke', BOARD_HOLE_COLOR)
+    holeGroup.setAttribute('fill', solidHoles ? '#000000' : 'none')
+    holeGroup.setAttribute('stroke', solidHoles ? 'none' : BOARD_HOLE_COLOR)
     holeGroup.setAttribute('stroke-width', number(BOARD_HOLE_STROKE_MM))
-    const start = (model.plateHeightMm - ((holes.count - 1) * holes.gapMm + holes.sizeMm)) / 2
+    const { startMm, pitchMm } = boardHoleLayout(model.plateHeightMm, holes.count, holes.sizeMm, holes.gapMm)
     for (let index = 0; index < holes.count; index++) {
       const hole = root.ownerDocument.createElementNS(SVG_NS, 'path')
-      hole.setAttribute('d', boardHolePath(holes.leftMm, start + index * holes.gapMm, holes.sizeMm))
+      hole.setAttribute('d', boardHolePath(holes.leftMm, startMm + index * pitchMm, holes.sizeMm))
       holeGroup.append(hole)
     }
     root.append(holeGroup)
@@ -552,7 +552,7 @@ export function renderImpositionSvgExport(model: ImpositionExportModel, entry: I
   return renderBoardLayers(model, entry.templateId, `${entry.templateNumber}-${entry.groupNumber}`, (sourceId, layerId) => {
     if (assignment(model, entry.templateId, sourceId, layerId) !== entry.groupId) return false
     return entry.groupId !== 'images' || entry.imageLayerMembers?.[sourceId] === layerId
-  })
+  }, entry.groupId !== 'paths')
 }
 
 /** A combined board preview is independent of the numbered image channels. */
@@ -562,7 +562,7 @@ export function buildImpositionTemplatePreview(model: ImpositionExportModel, tem
     if (!Number.isInteger(imageLayerIndex) || imageLayerIndex < 0) throw new Error('图片图层序号无效')
     imageMembers = new Map((model.templates.find(template => template.id === templateId)?.sourceIds ?? []).map(sourceId => [sourceId, model.sources[sourceId].layers.filter(layer => assignment(model, templateId, sourceId, layer.id) === 'images')[imageLayerIndex]?.id]))
   }
-  return renderBoardLayers(model, templateId, 'preview', (sourceId, layerId) => imageMembers ? imageMembers.get(sourceId) === layerId : type === 'all' || assignment(model, templateId, sourceId, layerId) === type)
+  return renderBoardLayers(model, templateId, 'preview', (sourceId, layerId) => imageMembers ? imageMembers.get(sourceId) === layerId : type === 'all' || assignment(model, templateId, sourceId, layerId) === type, type !== 'all' && type !== 'paths')
 }
 
 export function buildImpositionSvgExports(model: ImpositionExportModel, options: ExportOptions = {}): ImpositionSvgExportPage[] {

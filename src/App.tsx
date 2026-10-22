@@ -15,12 +15,14 @@ import { refreshProductConfigs } from './modules/schematic/services/productConfi
 import { invalidateFinishNames } from './modules/schematic/services/finishService'
 import UpdateButton from './modules/update/UpdateButton'
 import SettingsModal from './modules/settings/SettingsModal'
+import { installButtonKeyboardGuard } from './buttonKeyboard'
 const modules = [orderModule, imageEditModule, schematicModule, schematicReviewModule, impositionModule, progressModule]
 // React StrictMode mounts effects twice in development. Keep the startup
 // refresh single-flight so two 9 MB responses cannot overlap and double the
 // JSON parsing/transport peak.
 let startupProductConfigRefresh: Promise<void> | undefined
 export default function App() {
+  useEffect(() => installButtonKeyboardGuard(), [])
   const [notice, noticeContext] = message.useMessage()
   const [active, setActive] = useState('schematic')
   const [reviewRevision, setReviewRevision] = useState(0)

@@ -9,14 +9,39 @@ test('catalog Finish is stored once as the canonical process field', () => {
   assert.deepEqual(patch.attributes, { '工艺': 'Front Side Epoxy' })
 })
 
-test('blank images keep previous form while populated images hydrate their own values', () => {
-  const previous = { ...emptyAttributeDraft(), productId: 'p', attributes: { Size: '10cm', QT: '3' }, note: '上一张备注' }
-  assert.equal(readSelectionDraft(previous, [{ id: 'blank', productId: 'a' }]), previous)
-  const next = readSelectionDraft(previous, [{ id: 'saved', productId: 'p', attributes: { Size: '20cm', QT: '2' }, note: '已存备注', noteImage: 'note.png' }])
+test('blank images start fresh while populated images hydrate only their own values', () => {
+  const blank = readSelectionDraft([{ id: 'blank', productId: 'a', note: '当前图片备注' }])
+  assert.equal(blank.productId, '')
+  assert.deepEqual(blank.attributes, {})
+  assert.deepEqual(blank.images, {})
+  assert.equal(blank.note, '当前图片备注')
+  assert.equal(blank.noteImage, '')
+  const next = readSelectionDraft([{ id: 'saved', productId: 'p', attributes: { Size: '20cm', QT: '2' }, note: '已存备注', noteImage: 'note.png' }])
   assert.deepEqual(next.attributes, { Size: '20cm', QT: '2' })
   assert.equal(next.note, '已存备注')
   assert.equal(next.noteImage, 'note.png')
-  assert.equal(previous.attributes.Size, '10cm')
+})
+
+test('multiple selections use shared saved values without retaining conflicting previous options or notes', () => {
+  const selected = [
+    { id: 'one', productId: 'p', attributes: { Size: 'small', Color: 'red' }, attributeImages: { Color: 'red.png' }, note: 'one-note' },
+    { id: 'two', productId: 'p', attributes: { Size: 'small', Color: 'blue' }, attributeImages: { Color: 'blue.png' }, note: 'two-note' },
+  ]
+  const next = readSelectionDraft(selected)
+  assert.equal(next.productId, 'p')
+  assert.deepEqual(next.attributes, { Size: 'small' })
+  assert.deepEqual(next.images, {})
+  assert.equal(next.note, '')
+  assert.equal(next.noteImage, '')
+  assert.equal(next.finishMatchDisabled, false)
+  for (const assets of [[], [selected[0], { ...selected[1], productId: 'different' }]]) {
+    const blank = readSelectionDraft(assets)
+    assert.equal(blank.productId, '')
+    assert.deepEqual(blank.attributes, {})
+    assert.deepEqual(blank.images, {})
+    assert.equal(blank.note, '')
+    assert.equal(blank.noteImage, '')
+  }
 })
 
 test('confirmation strips hidden fields and hidden or invalid dependent values', () => {

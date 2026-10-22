@@ -57,7 +57,9 @@ size_t nc_last_error(const NcContext *, uint8_t *out, size_t capacity);
 void nc_destroy(NcContext *);
 ```
 
-`nc_create` accepts workers 0 (default 2), 1, 2 or 4. `max_bytes=0` selects a
+`nc_create` accepts workers 0 (automatic: half of available logical CPUs,
+rounded down and at least 1) or any positive integer. An explicit count is
+capped to the CPUs available to the process. `max_bytes=0` selects a
 128 MiB budget. A context uploads each unique Python **item object** once,
 in row-major contiguous uint8 format with values 0 or 1. Repeated source
 references reuse that mask index. Masks are bit-packed immediately; the input
@@ -122,6 +124,20 @@ every horizontal bit offset. Results grow only with pieces actually placed.
 `nc_memory_used` reports retained allocations; temporary board allocations and
 result growth are checked against the same context budget. Fallible vector
 reservation reports memory errors instead of invoking Rust's allocation-failure
-handler. Thread startup failures reduce parallelism. On Windows, low available
-physical memory or commit headroom forces one worker. `nc_worker_count` reports
-the effective worker count from the most recent packing call.
+handler. Thread startup failures reduce parallelism. Python defaults to half
+the available logical CPU count; `PRINTFLOW_NESTING_THREADS` overrides it with
+any positive integer, capped to available CPUs. Before allocating the shared
+mask bank, Python reserves 256 MiB for the process and allows 32 MiB of remaining
+headroom per worker. Rust independently checks CPU availability and available
+physical/commit memory before each sheet, reserves the same system headroom,
+and checks actual thread stacks against the job's byte budget. Below 768 MiB
+available memory, or when memory availability is unknown, the core uses one
+worker. On Linux, native available memory comes from `/proc/meminfo`; other
+non-Windows platforms currently use the conservative unknown-memory policy.
+
+Worker counts can therefore be lower than the configured maximum when memory,
+the number of orientations, or thread creation limits parallelism.
+`nc_worker_count` reports the effective worker count from the most recent
+packing call. Workers share read-only masks and one board rather than cloning
+geometry per QT. The choice merge retains source/angle order, so changing the
+worker count changes search execution but not layout tie-breaking or spacing.

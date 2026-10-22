@@ -38,7 +38,7 @@ export async function exportPdf(pages: Page[], assets: Asset[], output: string, 
       const id = crypto.randomUUID()
       ids.push(id)
       // Only layout and resource references cross IPC, never base64 artwork.
-      const svg = pageRasterSvg(page, map, metadata, pages.length, displayOverrides, resources.reference, layoutBounds, accessoryVisuals, visualScales)
+      const svg = pageRasterSvg({ ...page, id: index + 1 }, map, metadata, pages.length, displayOverrides, resources.reference, layoutBounds, accessoryVisuals, visualScales)
       onProgress?.({ phase: 'transfer', completed: index, total: pages.length })
       if (svg.length <= 64 * 1024) await invoke('stage_pdf_page', { id, svg })
       else await writeStagedText(id, svg)

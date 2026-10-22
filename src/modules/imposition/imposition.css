@@ -32,6 +32,11 @@
 .imposition-packing-settings .ant-radio-button-wrapper { padding-inline: 9px; font-size: 11px; }
 .imposition-packing-settings .ant-select { width: 168px; }
 .imposition-packing-settings .imposition-objective-select { width: 230px; }
+.imposition-thread-setting { width: 100%; display: flex; align-items: center; gap: 8px; color: #475569; font-size: 12px; }
+.imposition-thread-setting label { flex: 0 0 auto; }
+.imposition-packing-settings .imposition-thread-select { flex: 1; min-width: 0; width: auto; }
+.imposition-thread-hint { width: 100%; margin: 0; font-size: 11px; line-height: 1.5; color: #64748b; }
+.imposition-thread-hint .ant-btn { padding: 0 4px; height: auto; }
 .imposition-packing-settings .ant-btn { font-size: 11px; }
 .imposition-packing-results { display: flex; gap: 10px; color: #64748b; font-size: 11px; white-space: nowrap; }
 .imposition-packing-results strong { color: #2563eb; font-weight: 600; }

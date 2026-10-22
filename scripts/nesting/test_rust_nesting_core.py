@@ -99,8 +99,10 @@ class NativeFallbackTests(unittest.TestCase):
         with patch.object(native, '_available_memory', return_value=260 * 1024**2):
             with self.assertRaises(native.NativeCoreError):
                 native._resource_limits(1024**2)
-        with patch.object(native, '_available_memory', return_value=4 * 1024**3), patch.dict(os.environ, PRINTFLOW_NESTING_THREADS='999'):
-            self.assertEqual(native._resource_limits(1024)[0], 4)
+        with (patch.object(native, '_available_memory', return_value=4 * 1024**3),
+              patch.object(native, '_available_cpu_count', return_value=8),
+              patch.dict(os.environ, PRINTFLOW_NESTING_THREADS='999')):
+            self.assertEqual(native._resource_limits(1024)[0], 8)
 
     def test_repeated_fallback_does_not_retain_tracebacks_or_board_buffers(self):
         scratch_refs = []
@@ -191,6 +193,43 @@ class NativeFallbackTests(unittest.TestCase):
         self.assertFalse(hasattr(clone, '_native_failure'))
 
 
+class NativeThreadPolicyTests(unittest.TestCase):
+    def test_default_uses_half_available_logical_cpus_at_least_one(self):
+        for available, expected in ((1, 1), (2, 1), (3, 1), (7, 3), (8, 4), (24, 12)):
+            with (self.subTest(cpus=available), patch.dict(os.environ, {}, clear=True),
+                  patch.object(native, '_available_cpu_count', return_value=available),
+                  patch.object(native, '_available_memory', return_value=8 * 1024**3)):
+                self.assertEqual(native._resource_limits(1024)[0], expected)
+
+    def test_cpu_detection_uses_process_limit_and_unknown_is_one(self):
+        with (patch.object(os, 'process_cpu_count', return_value=7, create=True),
+              patch.object(os, 'cpu_count', return_value=24)):
+            self.assertEqual(native._available_cpu_count(), 7)
+        with (patch.object(os, 'process_cpu_count', return_value=None, create=True),
+              patch.object(os, 'sched_getaffinity', side_effect=OSError('unavailable'), create=True),
+              patch.object(os, 'cpu_count', return_value=None)):
+            self.assertEqual(native._available_cpu_count(), 1)
+
+    def test_manual_worker_count_accepts_all_integers_and_caps_at_cpu_count(self):
+        for requested, expected in (('7', 7), ('8', 8), ('999', 12), ('0', 1)):
+            with (self.subTest(requested=requested), patch.dict(os.environ, PRINTFLOW_NESTING_THREADS=requested),
+                  patch.object(native, '_available_cpu_count', return_value=12),
+                  patch.object(native, '_available_memory', return_value=8 * 1024**3)):
+                self.assertEqual(native._resource_limits(1024)[0], expected)
+        with patch.dict(os.environ, PRINTFLOW_NESTING_THREADS='four'):
+            with self.assertRaisesRegex(ValueError, 'integer'):
+                native._resource_limits(1024)
+
+    def test_memory_headroom_reduces_workers_gradually(self):
+        with (patch.dict(os.environ, PRINTFLOW_NESTING_THREADS='8'),
+              patch.object(native, '_available_cpu_count', return_value=16),
+              patch.object(native, '_available_memory', return_value=1024 * 1024**2)):
+            # 768 MiB job budget - 600 MiB bank leaves room for five workers.
+            workers, budget = native._resource_limits(600 * 1024**2)
+            self.assertEqual(workers, 5)
+            self.assertEqual(budget, 768 * 1024**2)
+
+
 @unittest.skipUnless(Path(native._library_path()).is_file(), 'Build the native candidate and set PRINTFLOW_NESTING_CORE_LIBRARY')
 class NativeDifferentialTests(unittest.TestCase):
     def setUp(self):
@@ -278,20 +317,19 @@ class NativeDifferentialTests(unittest.TestCase):
 
     def test_sparse_sources_shared_rotation_cache_and_thread_determinism(self):
         mask = np.array([[1, 1, 0], [1, 0, 0], [1, 1, 1]], np.uint8)
-        variants = [mask_item(np.rot90(mask, k), k*90) for k in range(4)]
+        variants = [mask_item(np.rot90(mask, k), (k % 4)*90) for k in range(8)]
         srcs = [dict(i=3, area=6), dict(i=1, area=6), dict(i=0, area=2)]
         results = []
-        for threads in ('1', '2', '4'):
+        for threads in ('1', '2', '4', '7', '8'):
             bank = native.MaskBank({3: variants, 1: variants, 0: [mask_item([[1, 1]])]})
             try:
                 results.append(self.compare(srcs, bank, [8, 20, 7, 30], width=29, height=17,
                                             order='random', seed=76, lookahead=3, threads=threads))
-                self.assertEqual(native.core_status(bank)['mask_count'], 5)
+                self.assertEqual(native.core_status(bank)['mask_count'], 9)
                 self.assertLessEqual(native.core_status(bank)['threads'], int(threads))
             finally:
                 bank.close()
-        self.assertEqual(results[0], results[1])
-        self.assertEqual(results[1], results[2])
+        self.assertTrue(all(result == results[0] for result in results[1:]))
 
     def test_quantity_above_1200_and_trials_share_one_native_bank(self):
         bank = native.MaskBank({0: [mask_item([[1]])]})

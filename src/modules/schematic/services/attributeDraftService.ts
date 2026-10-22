@@ -6,21 +6,24 @@ import { availableOptionValues, type ProductAttributePatch } from './productOpti
 export type AttributeDraft = { productId: string; attributes: Record<string, string>; images: Record<string, string>; note: string; noteImage: string; noteImages?: NoteImage[]; finishMatchDisabled?: boolean }
 export const emptyAttributeDraft = (): AttributeDraft => ({ productId: '', attributes: {}, images: {}, note: '', noteImage: '', finishMatchDisabled: false })
 
-/** A blank asset inherits the previous form without changing any asset. */
-export function readSelectionDraft(previous: AttributeDraft, selected: Asset[]): AttributeDraft {
+/** Hydrate only the current selection; blank or conflicting values start empty. */
+export function readSelectionDraft(selected: Asset[]): AttributeDraft {
   const first = selected[0]
-  if (!first || !first.productId || first.productId === 'a' || !selected.every(asset => asset.productId === first.productId)) return previous
-  const sameProduct = previous.productId === first.productId
-  const attributes = sameProduct ? { ...previous.attributes } : {}
-  const images = sameProduct ? { ...previous.images } : {}
+  if (!first) return emptyAttributeDraft()
+  const draft: AttributeDraft = {
+    ...emptyAttributeDraft(),
+    note: selected.every(asset => (asset.note ?? '') === (first.note ?? '')) ? first.note ?? '' : '',
+    ...noteImagesPatch(selected.every(asset => sameNoteImages(getNoteImages(asset), getNoteImages(first))) ? getNoteImages(first) : []),
+  }
+  if (!first.productId || first.productId === 'a' || !selected.every(asset => asset.productId === first.productId)) return draft
+  const attributes: Record<string, string> = {}
+  const images: Record<string, string> = {}
   const keys = new Set(selected.flatMap(asset => Object.keys(asset.attributes ?? {})))
   for (const key of keys) if (selected.every(asset => (asset.attributes?.[key] ?? '') === (first.attributes?.[key] ?? ''))) attributes[key] = first.attributes?.[key] ?? ''
   const imageKeys = new Set(selected.flatMap(asset => Object.keys(asset.attributeImages ?? {})))
   for (const key of imageKeys) if (selected.every(asset => (asset.attributeImages?.[key] ?? '') === (first.attributeImages?.[key] ?? ''))) images[key] = first.attributeImages?.[key] ?? ''
-  return { productId: first.productId, attributes: selected.length === 1 ? { ...first.attributes } : attributes, images: selected.length === 1 ? { ...first.attributeImages } : images,
-    note: selected.every(asset => (asset.note ?? '') === (first.note ?? '')) ? first.note ?? '' : previous.note,
-    ...noteImagesPatch(selected.every(asset => sameNoteImages(getNoteImages(asset), getNoteImages(first))) ? getNoteImages(first) : getNoteImages(previous)),
-    finishMatchDisabled: selected.length === 1 ? Boolean(first.finishMatchDisabled) : previous.finishMatchDisabled }
+  return { ...draft, productId: first.productId, attributes, images,
+    finishMatchDisabled: selected.every(asset => Boolean(asset.finishMatchDisabled)) }
 }
 
 /** Hidden or invalid dependent values cannot be confirmed from a stale draft. */

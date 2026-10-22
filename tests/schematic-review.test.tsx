@@ -189,6 +189,53 @@ it('restores exact arrangement, text, rulers and independent visuals without aut
   expect(mocks.autoArrange).not.toHaveBeenCalled()
 })
 
+it('saves and restores editor annotations, deleted captions, colors, horizontal layout and reordered pages', async () => {
+  const record = fixture()
+  const onSaved = vi.fn()
+  const view = render(<SchematicPage initialRecord={record} onRecordSaved={onSaved}/>)
+  await screen.findByText('恢复的排列页')
+  expect(latestArrange().onChangePage).toBeTypeOf('function')
+  expect(latestArrange().onReorderPages).toBeTypeOf('function')
+  const edited = structuredClone(latestArrange().pages[0])
+  edited.annotations = [
+    { id: 'custom-label', kind: 'text', x: 91, y: 177, text: '制作说明\n保留第二行', color: '#245678', fontSize: 16 },
+    { id: 'manual-ruler', kind: 'ruler', x: 70, y: 212, x2: 190, y2: 248, color: '#987654', measuredMm: 53.28, sourceItemId: edited.items[0].id },
+  ]
+  edited.backgroundColor = '#f7f2ee'
+  edited.items[0].caption = 'Front'
+  edited.items[0].captionHidden = true
+  edited.items[0].captionColor = '#123456'
+  edited.items[0].rulerHeightMm = 82.5
+  edited.imageGroups![0].backgroundColor = '#aabbcc'
+  edited.imageGroups![0].layoutMode = 'horizontal'
+  edited.imageGroups![0].imageCells = [{ itemId: 'empty-example', x: 10, y: 20, width: 40, height: 60 }]
+  act(() => latestArrange().onChangePage!(edited))
+  act(() => latestArrange().onReorderPages!(2, 1))
+  expect(latestArrange().pages.map(page => page.id)).toEqual([2, 1])
+  expect(latestArrange().activePage).toBe(1)
+  fireEvent.click(screen.getByText('导出测试 PDF'))
+  await waitFor(() => expect(onSaved).toHaveBeenCalledOnce())
+  const saved = mocks.invoke.mock.calls.find(([command]) => command === 'save_schematic_review')![1].record as SchematicReviewRecord
+  expect(saved.id).toBe(record.id)
+  expect(saved.pages.map(page => page.id)).toEqual([2, 1])
+  expect(saved.pages[1]).toEqual(edited)
+  expect(mocks.exportPdf.mock.calls[0][0]).toEqual(saved.pages)
+
+  act(() => latestArrange().onChangePage!({ ...edited, annotations: [] }))
+  expect(saved.pages[1].annotations).toHaveLength(2)
+  view.unmount()
+  mocks.invoke.mockImplementation(async command => command === 'load_schematic_review' ? saved : undefined)
+  const restored = await loadReviewRecord(saved.id)
+  render(<SchematicPage initialRecord={restored}/>)
+  await screen.findByText('恢复的排列页')
+  expect(latestArrange().pages).toEqual(saved.pages)
+  expect(latestArrange().activePage).toBe(1)
+  expect(latestArrange().pages[1].annotations).toEqual(edited.annotations)
+  expect(latestArrange().pages[1].items[0].captionHidden).toBe(true)
+  expect(latestArrange().pages[1].imageGroups![0].imageCells![0].label).toBeUndefined()
+  expect(mocks.autoArrange).not.toHaveBeenCalled()
+})
+
 it('moving or switching either artwork preserves custom Size text and the other side', async () => {
   const record = fixture()
   const page = record.pages[0]

@@ -23,7 +23,7 @@ export function buildProductGroupDetails(items: Item[], assets: Map<string, Asse
 export function detailPanelsForGroup(group: ImageGroup): ImageGroup[] {
   if (!group.detailGroups?.length) return [{ ...group, height: group.detailsHeight ?? group.height }]
   const count = group.detailGroups.length
-  const columns = Math.min(group.imageColumns ?? 1, count)
+  const columns = Math.min(group.detailColumns ?? group.imageColumns ?? 1, count)
   const rows = Math.ceil(count / columns)
   const detailsStart = group.detailsX ?? group.x + group.width * IMAGE_AREA_RATIO
   const totalDetailWidth = group.detailWidth ?? group.width * DETAIL_AREA_RATIO

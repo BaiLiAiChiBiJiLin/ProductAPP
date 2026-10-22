@@ -3,9 +3,10 @@ import { useMemo, useRef, useState } from 'react'
 import { pageForCanvasDisplay } from '../services/canvasDisplayScaleService'
 import type { Node as KonvaNode } from 'konva/lib/Node'
 import type { Asset, Item, Page, RulerRange } from '../../../model'
-import { imageDimensionMarkerLayout, dimensionGroups, RULER_MIN_RANGE, RULER_STROKE_WIDTH, type DimensionDisplayOverride, type DimensionDisplayPrecision, type ImageDimensionMarkerLayout } from '../services/imageDimensionService'
+import { imageDimensionMarkerLayout, dimensionGroups, RULER_MIN_RANGE, RULER_COLOR, RULER_STROKE_WIDTH, type DimensionDisplayOverride, type DimensionDisplayPrecision, type ImageDimensionMarkerLayout } from '../services/imageDimensionService'
 
 export type RulerChange = (itemId: string, patch: Pick<Item, 'rulerWidthRange' | 'rulerHeightRange'>) => void
+export type EditRulerValue = (itemId: string, axis: 'width' | 'height') => void
 
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.max(minimum, Math.min(maximum, value))
@@ -109,16 +110,16 @@ function RulerArrow({ marker, endpoint, onPreview, onCommit }: RulerHandleProps)
     onCommit(pendingRange.current)
     setPressed(false)
   }}>
-    <Line points={handle} closed fill={pressed ? '#2563eb' : '#2f6fa3'} stroke={pressed ? '#1d4ed8' : '#2f6fa3'} strokeWidth={pressed ? 1.3 : RULER_STROKE_WIDTH} hitStrokeWidth={12}/>
+    <Line points={handle} closed fill={pressed ? '#2563eb' : RULER_COLOR} stroke={pressed ? '#1d4ed8' : RULER_COLOR} strokeWidth={pressed ? 1.3 : RULER_STROKE_WIDTH} hitStrokeWidth={12}/>
   </Group>
 }
 
-function RulerLabel({ marker, onPreview, onCommit, movable }: { marker: ImageDimensionMarkerLayout; onPreview: (range: RulerRange) => void; onCommit: (range: RulerRange) => void; movable: boolean }) {
+function RulerLabel({ marker, onPreview, onCommit, movable, onEditRuler }: { marker: ImageDimensionMarkerLayout; onPreview: (range: RulerRange) => void; onCommit: (range: RulerRange) => void; movable: boolean; onEditRuler?: EditRulerValue }) {
   const horizontal = marker.axis === 'width'
   const startPointer = useRef({ x: marker.textX, y: horizontal ? marker.textY - 4 : marker.textY })
   const baseMarker = useRef(marker)
   const pendingRange = useRef<RulerRange>(marker.range)
-  return <Group x={marker.textX} y={horizontal ? marker.textY - 4 : marker.textY} draggable={movable} listening={movable} name="ruler-label" onMouseDown={event => { event.cancelBubble = true }} onTouchStart={event => { event.cancelBubble = true }} onDragStart={event => {
+  return <Group x={marker.textX} y={horizontal ? marker.textY - 4 : marker.textY} draggable={movable} listening={movable || Boolean(onEditRuler)} name="ruler-label" onMouseDown={event => { event.cancelBubble = true }} onTouchStart={event => { event.cancelBubble = true }} onClick={event => { event.cancelBubble = true }} onTap={event => { event.cancelBubble = true }} onDblClick={event => { event.cancelBubble = true; onEditRuler?.(marker.itemId, marker.axis) }} onDblTap={event => { event.cancelBubble = true; onEditRuler?.(marker.itemId, marker.axis) }} onDragStart={event => {
     event.cancelBubble = true
     startPointer.current = pointerInParent(event.currentTarget)
     baseMarker.current = marker
@@ -137,12 +138,12 @@ function RulerLabel({ marker, onPreview, onCommit, movable }: { marker: ImageDim
     onCommit(pendingRange.current)
   }}>
     {horizontal
-      ? <Text x={-marker.textWidth / 2} y={0} width={marker.textWidth} height={8} text={marker.label} align="center" fontSize={7} fill="#2f6fa3"/>
-      : <Group rotation={-90}><Text x={-marker.textWidth / 2} y={-7} width={marker.textWidth} height={8} text={marker.label} align="center" fontSize={7} fill="#2f6fa3"/></Group>}
+      ? <Text x={-marker.textWidth / 2} y={0} width={marker.textWidth} height={8} text={marker.label} align="center" fontSize={7} fill={RULER_COLOR}/>
+      : <Group rotation={-90}><Text x={-marker.textWidth / 2} y={-7} width={marker.textWidth} height={8} text={marker.label} align="center" fontSize={7} fill={RULER_COLOR}/></Group>}
   </Group>
 }
 
-function Marker({ marker, onChangeRuler }: { marker: ImageDimensionMarkerLayout; onChangeRuler?: RulerChange }) {
+function Marker({ marker, onChangeRuler, onEditRuler }: { marker: ImageDimensionMarkerLayout; onChangeRuler?: RulerChange; onEditRuler?: EditRulerValue }) {
   const [previewRange, setPreviewRange] = useState<RulerRange>()
   const displayMarker = previewRange ? markerWithRange(marker, previewRange) : marker
   const preview = (range: RulerRange) => setPreviewRange(range)
@@ -153,42 +154,42 @@ function Marker({ marker, onChangeRuler }: { marker: ImageDimensionMarkerLayout;
   const horizontal = displayMarker.axis === 'width'
   const defaultRange = displayMarker.range[0] < 0.0001 && Math.abs(displayMarker.range[1] - 1) < 0.0001
   const labelMovable = !defaultRange && displayMarker.range[1] - displayMarker.range[0] < displayMarker.rangeMax - 0.0001
-  return <Group key={marker.itemId} name={`image-dimension-${marker.itemId}`} listening={Boolean(onChangeRuler)}>
-    {displayMarker.extension.map(([x1, y1, x2, y2], index) => <Line key={`extension-${index}`} points={[x1, y1, x2, y2]} stroke="#2f6fa3" strokeWidth={RULER_STROKE_WIDTH} listening={false}/>) }
+  return <Group key={marker.itemId} name={`image-dimension-${marker.itemId}`} listening={Boolean(onChangeRuler || onEditRuler)}>
+    {displayMarker.extension.map(([x1, y1, x2, y2], index) => <Line key={`extension-${index}`} points={[x1, y1, x2, y2]} stroke={RULER_COLOR} strokeWidth={RULER_STROKE_WIDTH} listening={false}/>) }
     {horizontal
       ? <>
-        <Line points={[displayMarker.x1, displayMarker.y1, displayMarker.textX - displayMarker.gap, displayMarker.y1]} stroke="#2f6fa3" strokeWidth={RULER_STROKE_WIDTH} lineCap="round" listening={false}/>
-        <Line points={[displayMarker.textX + displayMarker.gap, displayMarker.y1, displayMarker.x2, displayMarker.y1]} stroke="#2f6fa3" strokeWidth={RULER_STROKE_WIDTH} lineCap="round" listening={false}/>
-        {!onChangeRuler && <><Line points={[displayMarker.x1, displayMarker.y1, displayMarker.x1 + 5, displayMarker.y1 - 2, displayMarker.x1 + 5, displayMarker.y1 + 2]} closed fill="#2f6fa3" stroke="#2f6fa3" strokeWidth={RULER_STROKE_WIDTH} listening={false}/>
-        <Line points={[displayMarker.x2, displayMarker.y1, displayMarker.x2 - 5, displayMarker.y1 - 2, displayMarker.x2 - 5, displayMarker.y1 + 2]} closed fill="#2f6fa3" stroke="#2f6fa3" strokeWidth={RULER_STROKE_WIDTH} listening={false}/></>}
+        <Line points={[displayMarker.x1, displayMarker.y1, displayMarker.textX - displayMarker.gap, displayMarker.y1]} stroke={RULER_COLOR} strokeWidth={RULER_STROKE_WIDTH} lineCap="round" listening={false}/>
+        <Line points={[displayMarker.textX + displayMarker.gap, displayMarker.y1, displayMarker.x2, displayMarker.y1]} stroke={RULER_COLOR} strokeWidth={RULER_STROKE_WIDTH} lineCap="round" listening={false}/>
+        {!onChangeRuler && <><Line points={[displayMarker.x1, displayMarker.y1, displayMarker.x1 + 5, displayMarker.y1 - 2, displayMarker.x1 + 5, displayMarker.y1 + 2]} closed fill={RULER_COLOR} stroke={RULER_COLOR} strokeWidth={RULER_STROKE_WIDTH} listening={false}/>
+        <Line points={[displayMarker.x2, displayMarker.y1, displayMarker.x2 - 5, displayMarker.y1 - 2, displayMarker.x2 - 5, displayMarker.y1 + 2]} closed fill={RULER_COLOR} stroke={RULER_COLOR} strokeWidth={RULER_STROKE_WIDTH} listening={false}/></>}
       </>
       : <>
-        <Line points={[displayMarker.x1, displayMarker.y1, displayMarker.x1, displayMarker.textY - displayMarker.gap]} stroke="#2f6fa3" strokeWidth={RULER_STROKE_WIDTH} lineCap="round" listening={false}/>
-        <Line points={[displayMarker.x1, displayMarker.textY + displayMarker.gap, displayMarker.x1, displayMarker.y2]} stroke="#2f6fa3" strokeWidth={RULER_STROKE_WIDTH} lineCap="round" listening={false}/>
-        {!onChangeRuler && <><Line points={[displayMarker.x1, displayMarker.y1, displayMarker.x1 - 2, displayMarker.y1 + 5, displayMarker.x1 + 2, displayMarker.y1 + 5]} closed fill="#2f6fa3" stroke="#2f6fa3" strokeWidth={RULER_STROKE_WIDTH} listening={false}/>
-        <Line points={[displayMarker.x1, displayMarker.y2, displayMarker.x1 - 2, displayMarker.y2 - 5, displayMarker.x1 + 2, displayMarker.y2 - 5]} closed fill="#2f6fa3" stroke="#2f6fa3" strokeWidth={RULER_STROKE_WIDTH} listening={false}/></>}
+        <Line points={[displayMarker.x1, displayMarker.y1, displayMarker.x1, displayMarker.textY - displayMarker.gap]} stroke={RULER_COLOR} strokeWidth={RULER_STROKE_WIDTH} lineCap="round" listening={false}/>
+        <Line points={[displayMarker.x1, displayMarker.textY + displayMarker.gap, displayMarker.x1, displayMarker.y2]} stroke={RULER_COLOR} strokeWidth={RULER_STROKE_WIDTH} lineCap="round" listening={false}/>
+        {!onChangeRuler && <><Line points={[displayMarker.x1, displayMarker.y1, displayMarker.x1 - 2, displayMarker.y1 + 5, displayMarker.x1 + 2, displayMarker.y1 + 5]} closed fill={RULER_COLOR} stroke={RULER_COLOR} strokeWidth={RULER_STROKE_WIDTH} listening={false}/>
+        <Line points={[displayMarker.x1, displayMarker.y2, displayMarker.x1 - 2, displayMarker.y2 - 5, displayMarker.x1 + 2, displayMarker.y2 - 5]} closed fill={RULER_COLOR} stroke={RULER_COLOR} strokeWidth={RULER_STROKE_WIDTH} listening={false}/></>}
       </>}
+    {(onChangeRuler || onEditRuler) && <RulerLabel marker={displayMarker} onPreview={preview} onCommit={commit} movable={Boolean(onChangeRuler) && labelMovable} onEditRuler={onEditRuler}/>}
     {onChangeRuler && <>
-      <RulerLabel marker={displayMarker} onPreview={preview} onCommit={commit} movable={labelMovable}/>
       <RulerArrow marker={displayMarker} endpoint="start" onPreview={preview} onCommit={commit}/>
       <RulerArrow marker={displayMarker} endpoint="end" onPreview={preview} onCommit={commit}/>
     </>}
-    {!onChangeRuler && (horizontal
-      ? <Text x={displayMarker.textX - displayMarker.textWidth / 2} y={displayMarker.textY - 4} width={displayMarker.textWidth} height={8} text={displayMarker.label} align="center" fontSize={7} fill="#2f6fa3" listening={false}/>
-      : <Group x={displayMarker.textX} y={displayMarker.textY} rotation={-90} listening={false}><Text x={-displayMarker.textWidth / 2} y={-7} width={displayMarker.textWidth} height={8} text={displayMarker.label} align="center" fontSize={7} fill="#2f6fa3"/></Group>)}
+    {!onChangeRuler && !onEditRuler && (horizontal
+      ? <Text x={displayMarker.textX - displayMarker.textWidth / 2} y={displayMarker.textY - 4} width={displayMarker.textWidth} height={8} text={displayMarker.label} align="center" fontSize={7} fill={RULER_COLOR} listening={false}/>
+      : <Group x={displayMarker.textX} y={displayMarker.textY} rotation={-90} listening={false}><Text x={-displayMarker.textWidth / 2} y={-7} width={displayMarker.textWidth} height={8} text={displayMarker.label} align="center" fontSize={7} fill={RULER_COLOR}/></Group>)}
   </Group>
 }
 
-export default function ImageDimensionMarkers({ page, assets, selectedItemIds = [], precision = 'default', decimalPlaces = 1, displayOverrides, visualScales, onChangeRuler }: { page: Page; assets: Map<string, Asset>; selectedItemIds?: string[]; precision?: DimensionDisplayPrecision; decimalPlaces?: number; displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>; visualScales?: ReadonlyMap<string, number>; onChangeRuler?: RulerChange }) {
+export default function ImageDimensionMarkers({ page, assets, selectedItemIds = [], precision = 'default', decimalPlaces = 1, displayOverrides, visualScales, onChangeRuler, onEditRuler }: { page: Page; assets: Map<string, Asset>; selectedItemIds?: string[]; precision?: DimensionDisplayPrecision; decimalPlaces?: number; displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>; visualScales?: ReadonlyMap<string, number>; onChangeRuler?: RulerChange; onEditRuler?: EditRulerValue }) {
   const displayPage = useMemo(() => pageForCanvasDisplay(page, visualScales), [page, visualScales])
-  return <Group listening={Boolean(onChangeRuler)} name="image-dimension-markers">
+  return <Group listening={Boolean(onChangeRuler || onEditRuler)} name="image-dimension-markers">
     {dimensionGroups(displayPage).map(group => {
       const override = group.itemIds.map(id => displayOverrides?.get(id)).find(Boolean)
       const isSelected = selectedItemIds.some(id => group.itemIds.includes(id))
       const markerPrecision = override?.precision ?? (isSelected ? precision : 'default')
       const markerDecimals = override?.decimalPlaces ?? (isSelected ? decimalPlaces : 1)
       const marker = imageDimensionMarkerLayout(group, displayPage, assets, markerPrecision, markerDecimals)
-      return marker ? <Marker key={`${group.id}-${marker.range[0]}-${marker.range[1]}`} marker={marker} onChangeRuler={onChangeRuler}/> : null
+      return marker ? <Marker key={`${group.id}-${marker.range[0]}-${marker.range[1]}`} marker={marker} onChangeRuler={onChangeRuler} onEditRuler={onEditRuler}/> : null
     })}
   </Group>
 }

@@ -203,3 +203,51 @@ test('switching a restored free group follower changes only that member product'
   expect(saved.map(asset => asset.productGroupPosition)).toEqual(original.map(asset => asset.productGroupPosition))
   expect(saved.map(asset => asset.note)).toEqual(original.map(asset => asset.note))
 })
+
+test('confirming one image does not carry its product or options into the next blank image', async () => {
+  const first = { ...savedAssets()[0], productGroupId: '', productId: 'keychain', attributes: { Size: 'small', QT: '7' } }
+  const blank = { ...first, id: 'blank', productId: 'a', attributes: {}, attributeImages: {} }
+  const saved = { ...first, id: 'saved', attributes: { Size: 'large', QT: '2' } }
+  const assets = [first, blank, saved]
+  const confirm = vi.fn(async () => {})
+  const panel = (id: string) => <ConfigProvider theme={{ token: { motion: false } }}><ProductAttributesPanel allowGrouping={false} assets={assets} selectedAssetIds={new Set([id])} onConfirmAttributes={confirm}/></ConfigProvider>
+  const { rerender } = render(panel(first.id))
+  await ready()
+  fireEvent.click(screen.getByRole('button', { name: /^确\s*认$/ }))
+  await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1))
+  rerender(panel(blank.id))
+  expect(input('产品').closest('.ant-select')?.textContent).not.toContain('Clear Acrylic Keychains')
+  expect(screen.queryByRole('combobox', { name: '尺寸' })).toBeNull()
+  expect((screen.getByRole('spinbutton', { name: 'QT（数量）' }) as HTMLInputElement).value).toBe('')
+  await choose('产品', 'Clear Acrylic Keychains')
+  expect(input('尺寸').closest('.ant-select')?.textContent).not.toContain('small')
+  rerender(panel(saved.id))
+  expect(input('尺寸').closest('.ant-select')?.textContent).toContain('large')
+  expect((screen.getByRole('spinbutton', { name: 'QT（数量）' }) as HTMLInputElement).value).toBe('2')
+})
+
+test('moving from a custom product to a blank image clears the inactive custom editor too', async () => {
+  const first = { ...savedAssets()[0], productGroupId: '' }
+  const blank = { ...first, id: 'blank', productId: '', attributes: {}, attributeImages: {} }
+  const assets = [first, blank]
+  const panel = (id: string) => <ProductAttributesPanel allowGrouping={false} assets={assets} selectedAssetIds={new Set([id])} onConfirmAttributes={async () => {}}/>
+  const { rerender } = render(panel(first.id))
+  await ready()
+  expect(input('自定义产品').value).toBe('Custom Shaker')
+  rerender(panel(blank.id))
+  fireEvent.click(screen.getByRole('tab', { name: '自定义' }))
+  expect(input('自定义产品').value).toBe('')
+  expect((screen.getByRole('spinbutton', { name: '自定义QT（数量）' }) as HTMLInputElement).value).toBe('1')
+})
+
+test('switching an ungrouped custom product clears the previous product options on confirmation', async () => {
+  const first = { ...savedAssets()[0], productGroupId: '' }
+  const confirm = vi.fn(async (_patch: unknown) => {})
+  render(<ProductAttributesPanel allowGrouping={false} assets={[first]} selectedAssetIds={new Set([first.id])} onConfirmAttributes={confirm}/>)
+  await ready()
+  await choose('自定义产品', 'Custom Shaker Deluxe')
+  fireEvent.click(screen.getByRole('button', { name: /^确\s*认$/ }))
+  await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1))
+  expect(confirm.mock.calls[0][0]).toMatchObject({ productId: 'custom:9', attributes: { QT: '1' }, attributeImages: {}, note: first.note })
+  expect((confirm.mock.calls[0][0] as { attributes: object }).attributes).toEqual({ QT: '1' })
+})

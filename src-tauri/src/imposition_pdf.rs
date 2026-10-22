@@ -5,14 +5,24 @@ use serde::Serialize;
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    io::Write,
+    io::Read,
+    panic::{catch_unwind, AssertUnwindSafe},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU64, AtomicUsize, Ordering},
         Arc, Mutex,
     },
+    thread,
 };
 use tauri::Emitter;
+
+fn pdf_worker_count(page_count: usize, requested: Option<usize>) -> usize {
+    use crate::imposition_pdf_runtime::{automatic_workers, memory_workers, worker_memory};
+    let target = requested
+        .unwrap_or_else(automatic_workers)
+        .clamp(1, automatic_workers());
+    memory_workers(page_count, target, worker_memory())
+}
 
 fn page_size(width_mm: f64, height_mm: f64) -> Result<(f32, f32), String> {
     if !width_mm.is_finite()
@@ -90,16 +100,17 @@ pub async fn export_imposition_pdf(
     page_ids: Vec<String>,
     width_mm: f64,
     height_mm: f64,
+    worker_count: Option<usize>,
 ) -> Result<(), String> {
     // The file id is only a progress key. Each page resource must independently
     // pass the stage identifier allowlist before any filesystem reads happen.
     if page_ids.is_empty() {
         return Err("没有可导出的拼版页面".into());
     }
-    let staged: Vec<PathBuf> = page_ids
-        .iter()
-        .map(|id| crate::staged_artwork::path(id))
-        .collect::<Result<_, _>>()?;
+    for id in &page_ids {
+        crate::staged_artwork::path(id)?;
+    }
+    let page_count = page_ids.len();
     let size = page_size(width_mm, height_mm)?;
     tauri::async_runtime::spawn_blocking(move || {
         let report = |page_index: usize, phase: &str| {
@@ -109,16 +120,24 @@ pub async fn export_imposition_pdf(
                     id: &id,
                     phase,
                     page_index,
-                    page_count: staged.len(),
+                    page_count,
                 },
             );
         };
-        export_staged_pdf(&output, &staged, size, report)
+        let output = checked_output(&output)?;
+        crate::imposition_pdf_runtime::export_isolated(
+            &output,
+            page_ids,
+            size,
+            worker_count,
+            report,
+        )
     })
     .await
     .map_err(|error| error.to_string())?
 }
 
+#[cfg(test)]
 fn export_staged_pdf(
     output: &str,
     staged: &[PathBuf],
@@ -126,7 +145,31 @@ fn export_staged_pdf(
     report: impl Fn(usize, &str),
 ) -> Result<(), String> {
     let output = checked_output(output)?;
-    let bytes = render_pdf_pages(
+    let bytes = render_staged_pdf(staged, size, &report, None)?;
+    report(staged.len(), "write");
+    commit_pdf(&output, &bytes)
+}
+
+pub(crate) fn render_staged_pdf(
+    staged: &[PathBuf],
+    size: (f32, f32),
+    report: impl Fn(usize, &str),
+    workers: Option<usize>,
+) -> Result<Vec<u8>, String> {
+    let costs = staged
+        .iter()
+        .map(|path| {
+            fs::metadata(path)
+                .map(|m| {
+                    usize::try_from(m.len())
+                        .unwrap_or(usize::MAX)
+                        .saturating_mul(24)
+                        .max(crate::imposition_pdf_runtime::PER_WORKER)
+                })
+                .map_err(|e| format!("读取拼版页面大小失败：{e}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    render_pdf_pages_with_costs(
         staged.len(),
         |index| {
             fs::read_to_string(&staged[index])
@@ -134,50 +177,147 @@ fn export_staged_pdf(
         },
         size,
         &report,
-    )?;
-    report(staged.len(), "write");
-    commit_pdf(&output, &bytes)
+        workers,
+        Some(&costs),
+    )
 }
 
-/// Only the current page's SVG tree and decoded images are retained. Encoded
-/// PDF objects accumulate until all pages succeed and can be published atomically.
+/// Convert SVG pages in bounded parallel batches, then append their PDF chunks
+/// in the original order. Only the current batch is retained, and a worker
+/// panic becomes an ordinary export error instead of unwinding the Tauri task.
+#[cfg(test)]
 fn render_pdf_pages(
+    page_count: usize,
+    load_page: impl FnMut(usize) -> Result<String, String>,
+    size: (f32, f32),
+    report: impl Fn(usize, &str),
+) -> Result<Vec<u8>, String> {
+    render_pdf_pages_with_workers(page_count, load_page, size, report, None)
+}
+
+#[cfg(test)]
+fn render_pdf_pages_with_workers(
+    page_count: usize,
+    load_page: impl FnMut(usize) -> Result<String, String>,
+    size: (f32, f32),
+    report: impl Fn(usize, &str),
+    requested_workers: Option<usize>,
+) -> Result<Vec<u8>, String> {
+    render_pdf_pages_with_costs(page_count, load_page, size, report, requested_workers, None)
+}
+
+fn render_pdf_pages_with_costs(
     page_count: usize,
     mut load_page: impl FnMut(usize) -> Result<String, String>,
     size: (f32, f32),
     report: impl Fn(usize, &str),
+    requested_workers: Option<usize>,
+    costs: Option<&[usize]>,
 ) -> Result<Vec<u8>, String> {
     if page_count == 0 {
         return Err("没有可导出的拼版页面".into());
     }
     let count = i32::try_from(page_count).map_err(|_| "拼版 PDF 页面数量过多")?;
-    let client = reqwest::blocking::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(4))
-        .timeout(std::time::Duration::from_secs(20))
-        .build()
-        .map_err(|error| error.to_string())?;
+    let client = Arc::new(
+        reqwest::blocking::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(4))
+            .timeout(std::time::Duration::from_secs(20))
+            .build()
+            .map_err(|error| error.to_string())?,
+    );
     let mut pdf = pdf_writer::Pdf::new();
     let catalog = pdf_writer::Ref::new(1);
     let pages = pdf_writer::Ref::new(2);
     let mut next_ref = 3;
     let mut page_refs = Vec::with_capacity(page_count);
     pdf.catalog(catalog).pages(pages);
-    for index in 0..page_count {
-        let page = load_page(index)
-            .and_then(|svg| {
-                append_pdf_page(
-                    &mut pdf,
-                    pages,
-                    &mut next_ref,
-                    svg,
-                    size,
-                    &client,
-                    |phase| report(index + 1, phase),
-                )
-            })
-            .map_err(|error| format!("第 {} / {page_count} 页导出失败：{error}", index + 1))?;
-        page_refs.push(page);
+
+    let mut batch_start = 0;
+    while batch_start < page_count {
+        // Re-evaluate each batch, so memory pressure can lower concurrency and
+        // recovered memory can raise it again within the shared CPU allocation.
+        let workers = pdf_worker_count(page_count - batch_start, requested_workers);
+        let maximum_end = (batch_start + workers).min(page_count);
+        let mut batch_end = batch_start;
+        let mut inputs = Vec::with_capacity(maximum_end - batch_start);
+        let budget = crate::imposition_pdf_runtime::worker_memory()
+            .unwrap_or(0)
+            .saturating_sub(crate::imposition_pdf_runtime::RESERVE);
+        let mut reserved = 0usize;
+        for index in batch_start..maximum_end {
+            let cost = costs.map_or(crate::imposition_pdf_runtime::PER_WORKER, |costs| {
+                costs[index]
+            });
+            if !inputs.is_empty() && reserved.saturating_add(cost) > budget {
+                break;
+            }
+            report(index + 1, "resources");
+            let svg = load_page(index)
+                .map_err(|error| format!("第 {} / {page_count} 页导出失败：{error}", index + 1))?;
+            inputs.push((index, svg));
+            reserved = reserved.saturating_add(cost);
+            batch_end = index + 1;
+        }
+
+        enum Message {
+            Phase(usize, &'static str),
+            Done(usize, Result<PreparedPdfPage, String>),
+        }
+        let prepared = thread::scope(|scope| {
+            let (sender, receiver) = std::sync::mpsc::channel();
+            let mut handles = Vec::new();
+            let mut thread_error = None;
+            for (index, svg) in inputs {
+                let client = Arc::clone(&client);
+                let sender = sender.clone();
+                match thread::Builder::new()
+                    .name(format!("pdf-page-{}", index + 1))
+                    .spawn_scoped(scope, move || {
+                        let result = catch_unwind(AssertUnwindSafe(|| {
+                            prepare_pdf_page(svg, size, &client, |phase| {
+                                let _ = sender.send(Message::Phase(index, phase));
+                            })
+                        }))
+                        .map_err(|_| "PDF 页面转换线程异常，已安全停止本批任务".to_string())
+                        .and_then(|value| value);
+                        let _ = sender.send(Message::Done(index, result));
+                    }) {
+                    Ok(handle) => handles.push(handle),
+                    Err(error) => {
+                        thread_error = Some(format!("无法创建 PDF 转换线程：{error}"));
+                        break;
+                    }
+                }
+            }
+            drop(sender);
+            let mut results = Vec::with_capacity(handles.len());
+            // Forward live progress from one receiver; report need not be Sync.
+            for message in receiver {
+                match message {
+                    Message::Phase(index, phase) => report(index + 1, phase),
+                    Message::Done(index, value) => results.push((index, value)),
+                }
+            }
+            for handle in handles {
+                if handle.join().is_err() {
+                    thread_error = Some("PDF 页面转换线程异常".into());
+                }
+            }
+            results.sort_by_key(|(index, _)| *index);
+            thread_error.map_or(Ok(results), Err)
+        })?;
+
+        for (index, result) in prepared {
+            let prepared = result
+                .map_err(|error| format!("第 {} / {page_count} 页导出失败：{error}", index + 1))?;
+            let page = append_prepared_pdf_page(&mut pdf, pages, &mut next_ref, prepared, size)
+                .map_err(|error| format!("第 {} / {page_count} 页导出失败：{error}", index + 1))?;
+            report(index + 1, "merge");
+            page_refs.push(page);
+        }
+        batch_start = batch_end;
     }
+
     pdf.pages(pages).kids(page_refs).count(count);
     Ok(pdf.finish())
 }
@@ -193,25 +333,23 @@ fn render_pdf(svg: String, size: (f32, f32), report: impl Fn(&str)) -> Result<Ve
     )
 }
 
-fn append_pdf_page(
-    pdf: &mut pdf_writer::Pdf,
-    pages: pdf_writer::Ref,
-    next_ref: &mut i32,
+struct PreparedPdfPage {
+    chunk: pdf_writer::Chunk,
+    svg_ref: pdf_writer::Ref,
+}
+
+fn prepare_pdf_page(
     svg: String,
     size: (f32, f32),
     client: &reqwest::blocking::Client,
-    report: impl Fn(&str),
-) -> Result<pdf_writer::Ref, String> {
+    report: impl Fn(&'static str),
+) -> Result<PreparedPdfPage, String> {
     report("resources");
     let embedded = crate::embed_external_raster_images(svg, client, &mut Default::default())?;
-    report("flatten");
     // Keep <image> intact. Replacing it with <g> loses image-local clipping,
     // opacity, masks and viewport/preserveAspectRatio semantics.
-    report("fonts");
     report("parse");
     let tree = parse_board_svg(&embedded)?;
-    // Reject a mismatching SVG aspect ratio instead of stretching positions and
-    // paths when the caller accidentally provides a different board size.
     let svg_ratio = tree.size().width() / tree.size().height();
     if (svg_ratio / (size.0 / size.1) - 1.0).abs() > 0.0001 {
         return Err("SVG 页面比例与板材毫米宽高不一致，已停止导出以避免缩放变形".into());
@@ -219,6 +357,17 @@ fn append_pdf_page(
     report("convert");
     let (chunk, svg_ref) = svg2pdf::to_chunk(&tree, Default::default())
         .map_err(|error| format!("拼版矢量 PDF 转换失败：{error}"))?;
+    Ok(PreparedPdfPage { chunk, svg_ref })
+}
+
+fn append_prepared_pdf_page(
+    pdf: &mut pdf_writer::Pdf,
+    pages: pdf_writer::Ref,
+    next_ref: &mut i32,
+    prepared: PreparedPdfPage,
+    size: (f32, f32),
+) -> Result<pdf_writer::Ref, String> {
+    let PreparedPdfPage { chunk, svg_ref } = prepared;
     // Every page, content stream and converted SVG object shares one allocator.
     // SVG chunks restart their local ids, so each needs a fresh local mapping.
     let page_ref = pdf_writer::Ref::new(*next_ref);
@@ -235,15 +384,12 @@ fn append_pdf_page(
     });
     let svg_ref = *refs.get(&svg_ref).ok_or("拼版 PDF 图层资源引用丢失")?;
     pdf.extend(&chunk);
-    // svg2pdf::to_chunk returns a normalized form. Scaling to physical points
-    // once preserves the SVG viewBox (including transformed/rotated products).
     let mut content = pdf_writer::Content::new();
     content
         .save_state()
         .transform([size.0, 0.0, 0.0, size.1, 0.0, 0.0])
         .x_object(pdf_writer::Name(b"BoardSvg"))
         .restore_state();
-    // Draw the board outline in physical points after restoring the SVG scale.
     // Half-width inset keeps the complete 0.2 mm stroke inside the media box.
     let border_width = (0.2 * 72.0 / 25.4) as f32;
     content
@@ -371,7 +517,21 @@ impl Drop for PendingFile {
 
 /// Build a complete file in the same directory, then publish it without ever
 /// replacing another file (including one created after the batch preflight).
+#[cfg(test)]
 fn commit_pdf(output: &Path, bytes: &[u8]) -> Result<(), String> {
+    commit_pdf_reader(output, &mut std::io::Cursor::new(bytes))
+}
+
+pub(crate) fn commit_pdf_file(output: &Path, source: &Path) -> Result<(), String> {
+    let mut source = fs::File::open(source).map_err(|e| format!("读取已完成 PDF 失败：{e}"))?;
+    commit_pdf_reader(output, &mut source)
+}
+
+fn commit_pdf_reader(output: &Path, source: &mut impl Read) -> Result<(), String> {
+    // Conversion may overlap, but destination disk writes and publication cannot.
+    static COMMIT: Mutex<()> = Mutex::new(());
+    let _commit = COMMIT.lock().map_err(|_| "PDF 写盘调度器异常")?;
+    checked_output(&output.to_string_lossy())?;
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let parent = output.parent().ok_or("PDF 导出目录无效")?;
     let stamp = std::time::SystemTime::now()
@@ -389,7 +549,8 @@ fn commit_pdf(output: &Path, bytes: &[u8]) -> Result<(), String> {
         .open(&temp)
         .map_err(|error| format!("创建 PDF 临时文件失败：{error}"))?;
     let pending = PendingFile(temp);
-    file.write_all(bytes)
+    std::io::copy(source, &mut file)
+        .map(|_| ())
         .and_then(|_| file.sync_all())
         .map_err(|error| format!("写入 PDF 失败：{error}"))?;
     drop(file);
@@ -629,19 +790,26 @@ mod tests {
             "each page must refer to its own converted SVG"
         );
         let events = events.borrow();
-        for index in 1..3 {
-            let converted = events
-                .iter()
-                .position(|event| event == &format!("convert:{index}"))
-                .unwrap();
-            let next_load = events
-                .iter()
-                .position(|event| event == &format!("load:{index}"))
-                .unwrap();
-            assert!(
-                converted < next_load,
-                "load only the next SVG after converting the current page"
-            );
+        let load_positions: Vec<_> = (0..3)
+            .map(|index| {
+                events
+                    .iter()
+                    .position(|event| event == &format!("load:{index}"))
+            })
+            .collect();
+        let convert_positions: Vec<_> = (1..=3)
+            .map(|index| {
+                events
+                    .iter()
+                    .position(|event| event == &format!("merge:{index}"))
+            })
+            .collect();
+        assert!(load_positions.iter().all(Option::is_some));
+        assert!(convert_positions.iter().all(Option::is_some));
+        assert!(load_positions.windows(2).all(|pair| pair[0] < pair[1]));
+        assert!(convert_positions.windows(2).all(|pair| pair[0] < pair[1]));
+        for index in 0..3 {
+            assert!(load_positions[index] < convert_positions[index]);
         }
     }
     #[test]
@@ -739,6 +907,66 @@ mod tests {
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
         assert!(checked_output(output.to_str().unwrap()).is_err());
         fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn concurrent_publication_cannot_overwrite_and_failed_copy_leaves_no_partial_pdf() {
+        let dir = scratch();
+        let output = dir.join("competing.pdf");
+        let barrier = std::sync::Barrier::new(2);
+        let results = thread::scope(|scope| {
+            let handles: Vec<_> = [b"first".as_slice(), b"second".as_slice()]
+                .into_iter()
+                .map(|bytes| {
+                    let output = &output;
+                    let barrier = &barrier;
+                    scope.spawn(move || {
+                        barrier.wait();
+                        commit_pdf(output, bytes)
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+        let data = fs::read(&output).unwrap();
+        assert!(data == b"first" || data == b"second");
+        struct Failing;
+        impl Read for Failing {
+            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("simulated disk read failure"))
+            }
+        }
+        let failed = dir.join("failed.pdf");
+        assert!(commit_pdf_reader(&failed, &mut Failing).is_err());
+        assert!(!failed.exists());
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn parallel_conversion_merges_pages_in_input_order() {
+        let sources: Vec<_> = (0..8)
+            .map(|index| {
+                nested_svg_fixture().replace("rotate(90)", &format!("rotate({})", index * 45))
+            })
+            .collect();
+        let merged = std::cell::RefCell::new(Vec::new());
+        let bytes = render_pdf_pages_with_workers(
+            sources.len(),
+            |i| Ok(sources[i].clone()),
+            page_size(300.0, 464.0).unwrap(),
+            |index, phase| {
+                if phase == "merge" {
+                    merged.borrow_mut().push(index);
+                }
+            },
+            Some(4),
+        )
+        .unwrap();
+        assert_eq!(*merged.borrow(), (1..=8).collect::<Vec<_>>());
+        assert!(String::from_utf8_lossy(&bytes).contains("/Count 8"));
     }
     #[test]
     #[ignore = "Set PRINTFLOW_IMPOSITION_PDF_FIXTURE and PRINTFLOW_IMPOSITION_PDF_OUTPUT for a real export/render check"]

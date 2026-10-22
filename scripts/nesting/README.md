@@ -8,6 +8,26 @@
 
 所有输入输出使用毫米 JSON；每种基础图片只提交一份轮廓和 QT 数量。无效轮廓按资产返回原因并继续处理其余图片，不生成矩形兜底结果。
 
+## 纯线条 SVG 单独开板
+
+点击重新计算时，`load_imposition_geometry` 使用同一次 usvg 解析返回毫米轮廓和 `lineOnly`。分类读取解析后的样式、继承和 `use` 引用：有可见描边、没有图片或可见填充的 SVG 属于纯线条；颜色、渐变、图案填充及图片归入其他图片。隐藏图层、零透明度内容及未使用的定义不参与分类；有滤镜的内容保守归入其他图片。
+
+三种策略都会按这两类分别求解，随后合并连续板号与数量统计。纯线条 SVG 之间可以混排，同一板材不会混入其他图片；每类内部继续进行旋转、补空隙和版式优化。QT 副本共享基础轮廓，跨类别相同几何也共享掩码缓存。最终校验同时检查分类、完整 QT、有效区域及配置间距。
+
+同类跨方案拖动只重算所属类别，保留另一类板材的位置、角度和生产份数；跨这两类版式拖动会被拒绝并保留原结果。画布折叠和 PDF 导出继续按图片身份区分版式，不会因为两类形状相同而合并。
+
+回归入口：`test_line_only_nesting.py` 覆盖三种策略、1802 QT、缓存复用和跨方案重排；Rust 的 `svg_content::tests` 验证 SVG 分类，`line_only_svg_geometry_reaches_solver_as_separate_sheets` 验证原生读取到实际求解的完整链路（需本地运行时，使用 `--ignored`）。前端分类与选中范围回归位于 `tests/imposition.test.tsx`。
+
+## SVG 占用轮廓与重叠校验
+
+`src-tauri/src/imposition_svg_footprint.rs` 提取实际引用的图片裁剪路径和可见矢量路径，应用引用对象、裁剪路径和路径自身的变换，并裁剪到 SVG 画布边界。未使用的 `defs` 和隐藏内容不占用面积。不能仅因文件含有一个闭合挂孔，就把该挂孔作为整张图片的碰撞轮廓。
+
+优先保留能包住所有有效部分的完整外轮廓及其凹形。缺少完整外轮廓、包含分离部件或自交时，使用覆盖全部已提取部分的保守凸包；这可能增加占用面积，但不会只保留局部小轮廓。未裁剪的位图仍依赖 SVG 中的显式产品轮廓，本次没有增加位图透明通道描边功能。`imposition_svg_outline.rs` 在毫米坐标中按 0.03 mm 曲线误差自适应采样；超过安全点数时返回资产错误，不再截断路径后继续拼版。
+
+2026-10-21 使用 `Backup_of_Raine Gaming` 的 18 张真实 SVG、250 份实际 QT 回归。第 7、10 张图片原来仅提取了约 7.06 mm² 的挂孔，遗漏了图片引用的裁剪轮廓；修复后全部图片参与拼版。节省板材、切割方案优先、综合最少均放入 250/250 份、使用 10 块板材；后两种策略得到 2 个版式，各生产 5 块。按原始 SVG 独立渲染检查全部不同版式，三种策略均未检测到图案重叠或越出版材（3 px/mm，透明度阈值 32/255）。另用 Edge 的原始 SVG 图像渲染复核切割方案优先结果，两个版式均无重叠像素；这是求解结果渲染验证，不是桌面应用截图。
+
+回归入口为 `imposition_algorithms::real_nesting_overlap_test::real_job_artwork_does_not_overlap`（`--ignored --nocapture`，需要本地运行时及真实 SVG）。`PRINTFLOW_OVERLAP_JOB` 指定只读任务快照，`PRINTFLOW_OVERLAP_OBJECTIVE` 可选 `least-material`、`least-cutting`、`combined`；报告和预览写入系统临时目录 `printflow-overlap-repro`。常规单元测试覆盖裁剪变换、分离部件、自交轮廓、画布边界和曲线采样；Konva 回归覆盖 24 个旋转角度及移动后的碰撞索引。
+
 ## 源码与运行时
 
 - `src-tauri/src/imposition/local_nesting/local_tools_engine.py`：毫米 JSON 入口、进度与最终几何校验。
@@ -28,7 +48,11 @@
 
 本地三种策略共用 release Rust 位图搜索核心；Python 保留轮廓准备、策略调度、最终几何校验及可切换的参考搜索。安装脚本同时构建独立 DLL，不需要将整个 Tauri 应用切换到 release。仅安装 Python 可加 `-PythonOnly`；候选 DLL 单独构建使用 `build_rust_core.ps1 -SkipDeploy`。
 
-默认 `PRINTFLOW_NESTING_CORE=auto`。可设为 `python` 或 `rust` 做同输入对照，`PRINTFLOW_NESTING_THREADS` 控制 1/2/4 个搜索线程（默认 2，低内存降为 1）。`PRINTFLOW_NESTING_CORE_LIBRARY` 可指定候选库。实际核心和回退原因写入结果 `searchCore` 及算法说明，原生失败不会被误报成 Rust 结果。完整实现与测量方法见 `docs/本地拼版Rust搜索核心与性能验收-2026-10-13.md`。
+默认 `PRINTFLOW_NESTING_CORE=auto`。可设为 `python` 或 `rust` 做同输入对照。拼版设置中的“使用核心数”默认使用可用逻辑核心数的一半（向下取整，至少 1），也可手动选择 1 至本机可用逻辑核心数；偏好在本机保存，切换到核心更少的电脑时会收敛到其上限。修改并行数在下一次计算或跨方案重排时生效，不会清空当前版式。
+
+应用通过 `get_imposition_compute_info` 读取原生 CPU 信息，`NestRequest.threadCount` 缺省表示自动；Tauri 仅设置该次求解子进程的 `PRINTFLOW_NESTING_THREADS`，不改桌面进程全局环境。独立 Python CLI 可直接用此环境变量指定任意整数线程数，缺省同样自动使用半数逻辑核心。Python 和 Rust 会依据可用内存、共享轮廓缓存、线程栈预算及可并行角度数降低实际线程数，低内存时降为 1；QT 不会因此重复复制轮廓。并行仅用于同一放置步骤的角度搜索，最终按固定顺序选取结果，线程多不保证成比例提速。
+
+`PRINTFLOW_NESTING_CORE_LIBRARY` 可指定候选库。实际核心、线程数和回退原因写入结果 `searchCore` 及算法说明，原生失败不会被误报成 Rust 结果。完整实现与原始测量方法见 `docs/本地拼版Rust搜索核心与性能验收-2026-10-13.md`。可用 `benchmark_thread_scaling.py --input <固定毫米请求.json>` 重复比较 1/2/4/8 线程；基准串行执行、共用预热缓存，并校验 QT、间距、板数、版式及坐标一致性，输出写入系统临时目录。
 
 输入 stdin 为 `{ "engine": "local-tools", "request": { ... } }`，每种图片仅提交一个 `polygon` 和 `quantity`。`least-material` 调用节省板材策略，`least-cutting` 调用切割方案优先策略，`combined` 调用综合最少策略。跨方案重排保持手动指定的位置，在既有方案补排后，新增尾版继续使用所选策略。stdout 只有毫米 `NestResult` JSON；stderr 的 `PRINTFLOW_PROGRESS` 行由 Tauri 实时转发。
 

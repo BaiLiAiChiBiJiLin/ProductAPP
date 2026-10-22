@@ -34,9 +34,9 @@ function SvgLayerThumbnail({ svg, layerId }: { svg: string; layerId: string }) {
   return <img ref={imageRef} className="artwork-layer-thumbnail" data-layer-id={layerId} src={src} alt="" draggable={false} decoding="async" />
 }
 
-export default function ArtworkContextMenu({ target, item, asset, onClose, onChange, onReplace }: {
+export default function ArtworkContextMenu({ target, item, asset, onClose, onChange, onReplace, onHorizontal }: {
   target: ArtworkMenuTarget; item: Item; asset: Asset; onClose: () => void
-  onChange: (item: Item) => void; onReplace?: (itemId: string) => Promise<void>
+  onHorizontal?: (itemId: string) => void; onChange: (item: Item) => void; onReplace?: (itemId: string) => Promise<void>
 }) {
   // Enumerate only when the user opens the menu, always against the original
   // document so switching one layer never discards the other choices.
@@ -80,9 +80,11 @@ export default function ArtworkContextMenu({ target, item, asset, onClose, onCha
           ...layers.map(layer => layerOption(layer.id, layer.label)),
           { type: 'group', key: 'layer-actions', className: 'artwork-layer-actions', label: <Button type="primary" aria-label="确认" disabled={!selectedIds.length} onClick={confirm}>确认</Button> },
         ] },
+        { key: 'horizontal', label: '横排', disabled: !onHorizontal },
         { key: 'replace', label: '更换图片', icon: <ImageUp size={14}/>, disabled: !onReplace },
       ],
       onClick: ({ key }) => {
+        if (key === 'horizontal') { onClose(); onHorizontal?.(item.id); return }
         if (key === 'replace') { onClose(); void onReplace?.(item.id); return }
         if (!key.startsWith('layer:')) return
         const layerId = key.slice('layer:'.length)

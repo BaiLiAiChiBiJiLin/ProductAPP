@@ -6,6 +6,8 @@ use std::{collections::BTreeMap, fs, path::Path};
 mod asset_images;
 #[path = "asset_notes.rs"]
 mod asset_notes;
+#[path = "asset_import_parallel.rs"]
+mod import_parallel;
 #[path = "svg_modes/mod.rs"]
 mod svg_modes;
 pub use asset_images::SourceImage;
@@ -710,6 +712,28 @@ pub fn import_with_stage(
     progress: impl Fn(&str, usize, usize),
     on_asset: impl Fn(&Asset),
 ) -> Result<Vec<Asset>, String> {
+    import_with_stage_workers(
+        path,
+        product_id,
+        mode,
+        request_id,
+        import_parallel::default_workers(),
+        progress,
+        on_asset,
+    )
+}
+
+/// Explicit worker count for importer verification. Desktop uploads use half
+/// the available logical CPUs through `import_with_stage`.
+pub fn import_with_stage_workers(
+    path: &Path,
+    product_id: &str,
+    mode: &str,
+    request_id: &str,
+    workers: usize,
+    progress: impl Fn(&str, usize, usize),
+    on_asset: impl Fn(&Asset),
+) -> Result<Vec<Asset>, String> {
     let extension = path
         .extension()
         .unwrap_or_default()
@@ -811,7 +835,7 @@ pub fn import_with_stage(
                 svg_modes::top_groups::sources(svg_text, &progress)?
             }
             svg_modes::classifier::SvgKind::SceneTree => {
-                svg_modes::scene::split_sources_with_progress(svg_text, true, &progress)?
+                svg_modes::scene::split_sources_with_workers(svg_text, true, workers, &progress)?
             }
         }
     } else {
@@ -819,9 +843,10 @@ pub fn import_with_stage(
     };
     let options = options();
     let total = sources.len();
+    log::info!(target: "printflow::import", "SVG 资源生成 request={} assets={} workers={}", request_id, total, workers.max(1).min(total.max(1)));
     progress("generate", 0, total.max(1));
     let mut assets = Vec::new();
-    for (index, (part_name, source)) in sources.into_iter().enumerate() {
+    let generate = |index, (part_name, source): (String, String)| {
         let tree =
             usvg::Tree::from_str(&source, &options).map_err(|e| format!("图形解析失败：{e}"))?;
         if !tree.root().children().is_empty() {
@@ -933,11 +958,21 @@ pub fn import_with_stage(
                 product_group_mode: String::new(),
                 product_group_position: 0,
             };
+            Ok(Some(asset))
+        } else {
+            Ok(None)
+        }
+    };
+    // Only CPU work runs concurrently. Delivery, file writes and progress keep
+    // the original source order on this thread, including skipped empty groups.
+    import_parallel::for_each_ordered(sources, workers, generate, |index, asset| {
+        if let Some(asset) = asset {
             on_asset(&asset);
             assets.push(asset);
         }
         progress("generate", index + 1, total.max(1));
-    }
+        Ok(())
+    })?;
     if assets.is_empty() {
         return Err("没有找到可渲染的图形，请检查 SVG 内容和字体".into());
     }

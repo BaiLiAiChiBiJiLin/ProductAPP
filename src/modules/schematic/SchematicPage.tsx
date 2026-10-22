@@ -1,3 +1,7 @@
+import { recolorBackground } from './services/canvasAnnotationService'
+import { imageGroupsForPage } from './services/groupBackgroundService'
+import { createHorizontalGroupReflowRequest, applyHorizontalGroupReflow } from './services/horizontalGroupReflowService'
+import { calculateHorizontalReflow } from './services/horizontalReflowWorkerService'
 import { exportFileName } from './services/exportFileName'
 import { removeCanvasGroups } from './services/removeCanvasGroups'
 import { updateSelectedRulers } from './services/canvasSelectionService'
@@ -65,6 +69,8 @@ export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingC
   const [defaultArrangementIds, setDefaultArrangementIds] = useState<string[]>(initialRecord?.defaultArrangementIds ?? [])
   const [displayState, setDisplayState] = useState(() => initialRecord ? restoreArrangementDisplay(initialRecord.display) : emptyArrangementDisplayState())
   const [sourceRecordId, setSourceRecordId] = useState(initialRecord?.id)
+  const [reflowing, setReflowing] = useState(false)
+  const reflowLock = useRef(false)
   const reviewIdentity = useRef<ReviewRecordIdentity | undefined>(initialRecord ? { id: initialRecord.id, sourceRecordId: initialRecord.sourceRecordId, paymentStatus: initialRecord.paymentStatus } : undefined)
   const reviewSaveNotice = useRef<(() => void) | null>(null)
   const closeReviewSaveNotice = () => { const notice = reviewSaveNotice.current; reviewSaveNotice.current = null; notice?.() }
@@ -105,7 +111,7 @@ export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingC
     return () => { cancelled = true }
   }, [])
   useEffect(() => { if (batchOpen && !sourceRecordId) setAssets(current => repairLegacyProductGroups(current, productConfigs)) }, [batchOpen, productConfigs, sourceRecordId])
-  useEffect(() => { onWorkingChange?.(busy || exporting || savingBatch || transferring || confirmingReview || classifying || Boolean(loadingBatchId)) }, [busy, exporting, savingBatch, transferring, confirmingReview, classifying, loadingBatchId, onWorkingChange])
+  useEffect(() => { onWorkingChange?.(reflowing || busy || exporting || savingBatch || transferring || confirmingReview || classifying || Boolean(loadingBatchId)) }, [reflowing, busy, exporting, savingBatch, transferring, confirmingReview, classifying, loadingBatchId, onWorkingChange])
   const saveBatch = async (confirmedAssets?: Asset[]) => {
     if (saveLock.current) throw new Error('批次正在保存，请稍候')
     const savingAssets = repairLegacyProductGroups(confirmedAssets ?? assets, productConfigs)
@@ -119,7 +125,7 @@ export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingC
       setCurrentBatchId(result.batchId)
       const persisted = mergePersistedAssetMetadata(savingAssets, result.assets)
       setAssets(persisted)
-      if (screen === 'arrange') setPages(current => autoArrangePages(current, activePage, assetsForArrangement(current, arrangementSort, persisted), layoutBounds, productConfigs))
+      if (screen === 'arrange') setPages(current => autoArrangePages(current, activePage, assetsForArrangement(current, arrangementSort, persisted), layoutBounds, productConfigs, [], displayState.visualScales))
       if (category) setSelectedAssetIds(current => new Set([...current].filter(id => persisted.some(asset => asset.id === id && matchesProductCategory(asset, category)))))
       if (category && category !== UNASSIGNED_PRODUCT_CATEGORY && !persisted.some(asset => asset.productId === category)) setCategory('')
       setBatchMetadata(result.metadata ?? batchMetadata)
@@ -147,9 +153,9 @@ export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingC
     const after = next.find(asset => asset.id === assetId)
     await saveBatch(next)
     if (!after) return
-    const nextPages = autoArrangePages(pages, activePage, assetsForArrangement(pages, arrangementSort, next), layoutBounds, productConfigs)
+    const nextPages = autoArrangePages(pages, activePage, assetsForArrangement(pages, arrangementSort, next), layoutBounds, productConfigs, [], displayState.visualScales)
     setPages(nextPages)
-    setActivePage(current => Math.min(current, Math.max(1, nextPages.length)))
+    setActivePage(current => nextPages.some(page => page.id === current) ? current : nextPages[0]?.id ?? 1)
     setSelectedItem(null)
     setSelectedGroupIds([])
     toast.success('图片属性已保存并重新排列')
@@ -331,7 +337,7 @@ export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingC
   const changeLayoutBounds = (value: LayoutBounds) => {
     const next = normalizeLayoutBounds(value)
     try {
-      const nextPages = autoArrangePages(pages, activePage, assetsForArrangement(pages, arrangementSort), next, productConfigs)
+      const nextPages = autoArrangePages(pages, activePage, assetsForArrangement(pages, arrangementSort), next, productConfigs, [], displayState.visualScales)
       setLayoutBounds(next)
       setPages(nextPages)
       if (!nextPages.some(page => page.id === activePage)) setActivePage(nextPages.at(-1)?.id ?? 1)
@@ -356,7 +362,7 @@ export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingC
     const asset = assets.find(item => item.id === assetId)
     if (!asset) return
     try {
-      const nextPages = autoArrangePages(pages, activePage, assetsForArrangement(pages, arrangementSort), layoutBounds, productConfigs, [assetId])
+      const nextPages = autoArrangePages(pages, activePage, assetsForArrangement(pages, arrangementSort), layoutBounds, productConfigs, [assetId], displayState.visualScales)
       setPages(nextPages)
       setActivePage(nextPages.find(page => page.items.some(item => item.assetId === assetId))?.id ?? 1)
     } catch (error) { toast.error(String(error)) }
@@ -365,6 +371,26 @@ export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingC
     setPages(current => removeCanvasGroups(current, ids))
     setSelectedItem(null)
     setSelectedGroupIds([])
+  }
+  const reorderPages = (source: number, target: number) => setPages(current => {
+    const from = current.findIndex(page => page.id === source), to = current.findIndex(page => page.id === target)
+    if (from < 0 || to < 0 || from === to) return current
+    const next = [...current]; const [moved] = next.splice(from, 1); next.splice(to, 0, moved); return next
+  })
+  const horizontalGroup = async (itemId: string) => {
+    if (reflowLock.current || exportLock.current || busy) return
+    const currentPage = pages.find(page => page.id === activePage)
+    const group = currentPage && imageGroupsForPage(currentPage).find(group => group.itemIds.includes(itemId))
+    if (!group) return
+    reflowLock.current = true; setReflowing(true)
+    try {
+      const request = createHorizontalGroupReflowRequest(pages, activePage, group.id, layoutBounds, displayState.visualScales)
+      const plan = await calculateHorizontalReflow(request)
+      const next = applyHorizontalGroupReflow(pages, plan)
+      setPages(current => current === pages ? next : current)
+      setActivePage(plan.horizontal.pageId); setSelectedItem(itemId); setSelectedGroupIds([])
+    } catch (error) { toast.error(`横排失败：${String(error)}`) }
+    finally { reflowLock.current = false; setReflowing(false) }
   }
   const addPage = () => { const id = Math.max(0, ...pages.map(page => page.id)) + 1; setPages(current => [...current, { id, name: `页面 ${id}`, items: [] }]); setActivePage(id) }
   const selectGroup = (id: string, ctrlKey: boolean) => {
@@ -378,7 +404,7 @@ export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingC
       const selections = selectedGroupIds.map(groupId => pages.flatMap(page => (page.imageGroups ?? []).map(group => ({ pageId: page.id, groupId: group.id }))).find(selection => selection.groupId === groupId)).filter(Boolean) as { pageId: number; groupId: string }[]
       const next = combineImageGroupsAcrossPages(pages, selections, assets)
       const start = Math.min(...selections.map(selection => next.findIndex(page => page.id === selection.pageId)))
-      const nextPages = autoArrangePages(next, start, assetsForArrangement(next, arrangementSort), layoutBounds, productConfigs)
+      const nextPages = autoArrangePages(next, start, assetsForArrangement(next, arrangementSort), layoutBounds, productConfigs, [], displayState.visualScales)
       setPages(nextPages)
       setSelectedGroupIds([])
       setSelectedItem(null)
@@ -400,7 +426,7 @@ export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingC
     try {
       setArrangementSort(requestedMode)
       const orderedAssets = assetsForArrangement(pages, requestedMode)
-      const nextPages = autoArrangePages(pages, activePage, orderedAssets, layoutBounds, productConfigs)
+      const nextPages = autoArrangePages(pages, activePage, orderedAssets, layoutBounds, productConfigs, [], displayState.visualScales)
       setPages(nextPages)
       if (!nextPages.some(page => page.id === activePage)) setActivePage(nextPages.at(-1)?.id ?? 1)
       setSelectedItem(null)
@@ -409,7 +435,7 @@ export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingC
     catch (error) { toast.error(String(error)) }
   }
   const exportCurrent = async (format: 'jpg' | 'png' | 'svg' | 'pdf', displayOverrides: ReadonlyMap<string, DimensionDisplayOverride>) => {
-    if (exportLock.current) return
+    if (exportLock.current || reflowLock.current) return
     const page = pages.find(item => item.id === activePage)
     if (!page) return
     exportLock.current = true
@@ -426,7 +452,7 @@ export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingC
       reviewIdentity.current = { id: record.id, sourceRecordId: record.sourceRecordId, paymentStatus: record.paymentStatus }
       const result = await exportAndRecord(record, () => format === 'pdf'
         ? exportPdf(pages, assets, output, batchMetadata, setExportProgress, displayOverrides, layoutBounds, displayState.accessoryVisuals, displayState.visualScales)
-        : exportPage(page, assets, output, format, batchMetadata, pages.length, displayOverrides, layoutBounds, displayState.accessoryVisuals, displayState.visualScales))
+        : exportPage({ ...page, id: pages.findIndex(candidate => candidate.id === page.id) + 1 }, assets, output, format, batchMetadata, pages.length, displayOverrides, layoutBounds, displayState.accessoryVisuals, displayState.visualScales))
       if (result.saved) {
         // The failed-save notice can be created while the export is in flight.
         // Clear it after the persistence result is known so a successful retry
@@ -449,7 +475,7 @@ export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingC
     } catch (error) { toast.error(String(error)) }
     finally { exportLock.current = false; setExporting(false) }
   }
-  if (screen === 'arrange') return <ProductGroupingContext.Provider value={grouping}>{externalImportDialog}<ArrangePage displayState={displayState} onDisplayStateChange={setDisplayState} context={context} assets={assets} pages={pages} activePage={activePage} selectedItem={selectedItem} selectedGroupIds={selectedGroupIds} sortMode={arrangementSort} onSelectPage={id => { setActivePage(id); setSelectedItem(null) }} onSelectItem={id => { setSelectedItem(id); setSelectedGroupIds([]) }} onSelectGroup={selectGroup} onChangeRulers={(ids, patch) => setPages(current => current.map(page => page.id === activePage ? updateSelectedRulers(page, ids, patch, new Map(assets.map(asset => [asset.id, asset]))) : page))} onChangeRuler={changeRuler} onEditText={editCanvasText} onChangeItem={updatePageItem} onReplaceArtwork={replaceCanvasImage} replacingArtwork={busy} onDropAsset={addAssetToPage} onDeleteGroups={deleteCanvasGroups} onConfirmAssetAttributes={confirmArrangeAttributes} onAddPage={addPage} onAutoArrange={autoArrange} onCombine={combineSelectedGroups} onBack={() => { setSelectedGroupIds([]); setUploadFromArrange(true); setScreen('upload') }} onBackToHistory={discardBatch} onExport={exportCurrent} exporting={exporting} exportProgress={exportProgress} metadata={batchMetadata} onMetadataChange={value => setBatchMetadata(current => ({ ...current, ...value }))} layoutBounds={layoutBounds} onBoundsChange={changeLayoutBounds} onAddHeaderBlock={addHeaderBlock} onChangeHeaderBlock={changeHeaderBlock} onRemoveHeaderBlock={removeHeaderBlock}/></ProductGroupingContext.Provider>
+  if (screen === 'arrange') return <ProductGroupingContext.Provider value={grouping}>{externalImportDialog}<ArrangePage onChangePage={next => setPages(current => current.map(page => page.id === next.id ? next : page))} onReorderPages={reorderPages} onBackgroundChange={(scope, color, ids) => setPages(current => recolorBackground(current, activePage, ids, scope, color))} onHorizontalGroup={itemId => void horizontalGroup(itemId)} processingLabel={reflowing ? '正在横排并调整后续页面…' : undefined} displayState={displayState} onDisplayStateChange={setDisplayState} context={context} assets={assets} pages={pages} activePage={activePage} selectedItem={selectedItem} selectedGroupIds={selectedGroupIds} sortMode={arrangementSort} onSelectPage={id => { setActivePage(id); setSelectedItem(null) }} onSelectItem={id => { setSelectedItem(id); setSelectedGroupIds([]) }} onSelectGroup={selectGroup} onChangeRulers={(ids, patch) => setPages(current => current.map(page => page.id === activePage ? updateSelectedRulers(page, ids, patch, new Map(assets.map(asset => [asset.id, asset]))) : page))} onChangeRuler={changeRuler} onEditText={editCanvasText} onChangeItem={updatePageItem} onReplaceArtwork={replaceCanvasImage} replacingArtwork={busy || reflowing} onDropAsset={addAssetToPage} onDeleteGroups={deleteCanvasGroups} onConfirmAssetAttributes={confirmArrangeAttributes} onAddPage={addPage} onAutoArrange={autoArrange} onCombine={combineSelectedGroups} onBack={() => { setSelectedGroupIds([]); setUploadFromArrange(true); setScreen('upload') }} onBackToHistory={discardBatch} onExport={exportCurrent} exporting={exporting} exportProgress={exportProgress} metadata={batchMetadata} onMetadataChange={value => setBatchMetadata(current => ({ ...current, ...value }))} layoutBounds={layoutBounds} onBoundsChange={changeLayoutBounds} onAddHeaderBlock={addHeaderBlock} onChangeHeaderBlock={changeHeaderBlock} onRemoveHeaderBlock={removeHeaderBlock}/></ProductGroupingContext.Provider>
   return <ProductGroupingContext.Provider value={grouping}>{externalImportDialog}<main className={`product-upload-page ${showProductCategories ? 'has-product-categories' : ''} ${uploadFromArrange ? 'upload-page-enter-left' : ''} history-transition-${historyTransition}`}>{context}{showProductCategories && <ProductCategoryNav assets={assets} products={productConfigs} value={category} onChange={changeCategory} disabled={busy || savingBatch || guideActive}/>}<section className="uploaded-assets-panel" inert={savingBatch || transferring}><div className="upload-page-title">{batchOpen && <Button className="batch-back-button" type="text" icon={<ArrowLeft size={18}/>} aria-label="返回批次列表" title="返回批次列表并清除未保存内容" onClick={discardBatch} disabled={busy || savingBatch || confirmingReview || classifying || guideActive}/>}<div><h1>{batchOpen ? '当前批次图片' : schematicCopy.recent}</h1>{batchOpen ? <Tag color="blue">共 {assets.length} 张</Tag> : <p>默认不加载历史记录，请直接上传图片。</p>}</div>{batchOpen && <div className="batch-summary"><Button type="default" size="small" onClick={() => selectAssets(allAssetsSelected ? new Set() : new Set(visibleAssets.map(asset => asset.id)))} disabled={!assets.length || busy || savingBatch || confirmingReview || classifying || guideActive}>{allAssetsSelected ? '取消全选' : '全选'}</Button><Button type="default" size="small" onClick={() => guideActive ? grouping.cancelGuide() : setSelectedAssetIds(new Set())} title={guideActive ? "退出引导并放弃未保存的修改，保留已保存内容" : undefined} disabled={!selectedAssetIds.size || busy || savingBatch || confirmingReview || classifying || grouping.saving}>取消选择</Button><Button type="primary" size="small" loading={savingBatch} onClick={() => void (guideActive ? grouping.persist(false) : saveBatch())} disabled={!assets.length || busy || savingBatch || confirmingReview || classifying || grouping.saving}>保存批次</Button></div>}</div>{batchOpen && <UploadImageList assets={visibleAssets} allAssets={assets} products={productConfigs} selectedIds={selectedAssetIds} onSelectionChange={selectAssets} disabled={busy || savingBatch || transferring} onDelete={deleteAssetFromBatch} onReplace={replaceImage}/>}<BatchHistoryPanel active={!batchOpen} openingId={loadingBatchId} progress={batchLoadProgress} onOpen={record => void openBatch(record)} userName={userName} onSharedRecordsChanged={onSharedRecordsChanged} onTransferringChange={setTransferring}/></section><div className="upload-column"><UploadPanel busy={busy || savingBatch || transferring || Boolean(loadingBatchId)} dropActive={dropActive} progress={progress} metadata={batchMetadata} onMetadataChange={setBatchMetadata} onUpload={() => void upload()} batchOpen={batchOpen} activeTab={uploadPanelTab} onTabChange={setUploadPanelTab} selectedAssetIds={selectedAssetIds} onConfirmAttributes={confirmAttributes} assets={assets}/><Button className="generate-schematic-button" type="primary" size="large" icon={classifying ? <Loading size="small" inline /> : undefined} disabled={!assets.length || busy || savingBatch || confirmingReview || classifying || guideActive} onClick={() => void openReview()}>{classifying ? '正在分类…' : '生成示意图'}</Button></div><ReviewAssetPicker open={reviewOpen} assets={orderAssetsByProductGroup(assets)} selectedIds={reviewSelectedIds} confirming={confirmingReview} onChange={setReviewSelectedIds} onCancel={() => { if (!confirmingReview) { setReviewOpen(false); setClassifiedAssets(null); setReviewSelectedIds(new Set()) } }} onConfirm={() => void confirmReview()} /></main></ProductGroupingContext.Provider> }
 
 

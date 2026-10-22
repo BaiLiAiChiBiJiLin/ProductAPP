@@ -163,20 +163,44 @@ def _available_memory():
     return 384 * _MIB
 
 
+def _available_cpu_count():
+    """Honor process CPU availability when supported, with a one-CPU fallback."""
+    process_count = getattr(os, 'process_cpu_count', None)
+    affinity = getattr(os, 'sched_getaffinity', None)
+    readers = ([process_count] if process_count is not None else [])
+    if affinity is not None:
+        readers.append(lambda: len(affinity(0)))
+    readers.append(os.cpu_count)
+    for reader in readers:
+        try:
+            count = reader()
+            if count is not None and count > 0:
+                return int(count)
+        except (OSError, ValueError, NotImplementedError):
+            pass
+    return 1
+
+
 def _resource_limits(estimated_bank):
-    value = os.environ.get('PRINTFLOW_NESTING_THREADS', '2')
-    try:
-        requested = max(1, min(4, int(value)))
-    except ValueError as exc:
-        raise ValueError('PRINTFLOW_NESTING_THREADS must be an integer from 1 to 4') from exc
-    # The native pool deliberately has only these bounded sizes.
-    workers = 1 if requested == 1 else (4 if requested == 4 else 2)
+    available_cpus = _available_cpu_count()
+    value = os.environ.get('PRINTFLOW_NESTING_THREADS')
+    if value is None:
+        workers = max(1, available_cpus // 2)
+    else:
+        try:
+            workers = max(1, min(available_cpus, int(value)))
+        except ValueError as exc:
+            raise ValueError('PRINTFLOW_NESTING_THREADS must be a positive integer CPU count') from exc
     available = _available_memory()
     budget = max(0, available - 256 * _MIB)
     if estimated_bank + 4 * _MIB > budget:
         raise NativeCoreError('Insufficient available physical/commit memory for the Rust mask bank')
-    if available < 768 * _MIB or budget - estimated_bank < workers * 32 * _MIB:
+    if available < 768 * _MIB:
         workers = 1
+    else:
+        # Masks are shared, but retain headroom for stacks, allocator overhead,
+        # Python validation and the UI instead of multiplying copies per QT.
+        workers = min(workers, max(1, (budget - estimated_bank) // (32 * _MIB)))
     return workers, budget
 
 

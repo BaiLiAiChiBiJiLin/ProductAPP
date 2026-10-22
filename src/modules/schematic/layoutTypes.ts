@@ -1,6 +1,8 @@
 import type { NoteImage } from '../../model.ts'
 
 export type ImageGroup = {
+  layoutMode?: 'horizontal'
+  backgroundColor?: string
   id: string
   itemIds: string[]
   x: number
@@ -18,7 +20,8 @@ export type ImageGroup = {
   /** Pages containing this group must keep their free regions out of cross-product packing. */
   protectPageFill?: boolean
   imageColumns?: number
-  imageCells?: Array<{ itemId: string; x: number; y: number; width: number; height: number; label?: string }>
+  detailColumns?: number
+  imageCells?: Array<{ itemId: string; x: number; y: number; width: number; height: number; label?: string; labelColor?: string }>
   /** The fixed Example slot can be intentionally left empty for holder/shaker groups. */
   emptyExample?: boolean
   /** Empty Example is merged into the Front/Inside/Back row instead of reserving a slot. */
@@ -31,6 +34,10 @@ export type ImageGroup = {
   /** A combined group keeps its source images stacked vertically. */
   stacked?: 'vertical'
 }
+
+export type CanvasAnnotation =
+  | { id: string; kind: 'text'; x: number; y: number; text: string; color: string; fontSize: number }
+  | { id: string; kind: 'ruler'; x: number; y: number; x2: number; y2: number; color: string; measuredMm: number; sourceItemId?: string }
 
 export type ImageDetails = {
   sizes?: Array<{ itemId: string; label: string }>

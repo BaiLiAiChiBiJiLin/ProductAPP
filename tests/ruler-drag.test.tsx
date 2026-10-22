@@ -21,9 +21,10 @@ const asset = { id: 'a', name: 'a', productId: '', width: 80, height: 100, svg: 
 const assets = new Map([['a', asset]])
 const initial: Item = { id: 'i', assetId: 'a', x: 160, y: 130, w: 80, h: 100, rotation: 0 }
 
-function mountRuler(axis: 'width' | 'height', zoom: number, range?: [number, number], source: Asset = asset) {
+function mountRuler(axis: 'width' | 'height', zoom: number, range?: [number, number], source: Asset = asset, editable = false) {
   const stage = createRef<Konva.Stage>()
   const commit = vi.fn()
+  const edit = vi.fn()
   const current: { value?: Page } = {}
   const last = source.productName === 'Chained Charms' ? { ...initial, id: 'last', assetId: 'last', suppressRuler: true } : undefined
   const sourceAssets = new Map([[source.id, source], ...(last ? [['last', { ...source, id: 'last' }] as const] : [])])
@@ -32,14 +33,14 @@ function mountRuler(axis: 'width' | 'height', zoom: number, range?: [number, num
     const [page, setPage] = useState<Page>({ id: 1, name: 'test', items: [{ ...initial, rulerWidth: axis === 'width', rulerHeight: axis === 'height', ...rulerPatch }, ...(last ? [last] : [])], imageGroups: [{ id: 'g', itemIds: ['i', ...(last ? ['last'] : [])], x: 90, y: 50, width: 180, height: 180, imageCells: last ? ['i', 'last'].map(itemId => ({ itemId, x: 90, y: 50, width: 90, height: 180 })) : undefined }] })
     current.value = page
     return <Stage ref={stage} width={1000} height={700}><Layer><Group x={80} y={40} scaleX={zoom} scaleY={zoom}>
-      <ImageDimensionMarkers page={page} assets={source === asset ? assets : sourceAssets} onChangeRuler={(id, patch) => {
+      <ImageDimensionMarkers page={page} assets={source === asset ? assets : sourceAssets} onEditRuler={editable ? edit : undefined} onChangeRuler={(id, patch) => {
         commit(id, patch)
         setPage(value => ({ ...value, items: value.items.map(item => item.id === id ? { ...item, ...patch } : item) }))
       }}/>
     </Group></Layer></Stage>
   }
   render(<Harness/> )
-  return { stage: stage.current!, commit, page: () => current.value! }
+  return { stage: stage.current!, commit, edit, page: () => current.value! }
 }
 
 function press(node: Konva.Node) {
@@ -107,6 +108,31 @@ it('standee height starts 3.4 mm shorter and still permits dragging to the real 
 })
 
 describe.each(['width', 'height'] as const)('%s ruler drag', axis => {
+  it('double-clicks a full-length label without enabling free dragging or selecting the canvas', () => {
+    const { stage, edit, commit } = mountRuler(axis, 1.6, undefined, asset, true)
+    const label = stage.find('.ruler-label')[0]
+    const canvasClick = vi.fn()
+    stage.on('dblclick', canvasClick)
+    expect(label.draggable()).toBe(false)
+    expect(label.isListening()).toBe(true)
+    act(() => { label.fire('dblclick', { evt: new MouseEvent('dblclick') }, true) })
+    expect(edit).toHaveBeenCalledWith('i', axis)
+    expect(canvasClick).not.toHaveBeenCalled()
+    expect(commit).not.toHaveBeenCalled()
+    expect(stage.find('.ruler-arrow')[0].getZIndex()).toBeGreaterThan(label.getZIndex())
+  })
+  it('keeps edited labels movable only through the existing constrained ruler range', () => {
+    const { stage, edit, commit, page } = mountRuler(axis, 1.6, [0.2, 0.8], asset, true)
+    const label = stage.find('.ruler-label')[0]
+    const origin = press(label)
+    const delta = 8 * 1.6
+    move(origin.x + (axis === 'width' ? delta : 0), origin.y + (axis === 'height' ? delta : 0))
+    release(origin.x + (axis === 'width' ? delta : 0), origin.y + (axis === 'height' ? delta : 0))
+    expect(commit).toHaveBeenCalledTimes(1)
+    expect(edit).not.toHaveBeenCalled()
+    const range = page().items[0][axis === 'width' ? 'rulerWidthRange' : 'rulerHeightRange']!
+    expect(range[1] - range[0]).toBeCloseTo(0.6)
+  })
   it.each([0.7, 1.6, 2.5])('both arrows track the pointer at zoom %s without sideways jumps or snapping back', zoom => {
     const { stage, commit, page } = mountRuler(axis, zoom)
     const dimension = axis === 'width' ? 80 : 100

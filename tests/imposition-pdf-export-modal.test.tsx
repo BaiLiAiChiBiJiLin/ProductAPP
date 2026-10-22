@@ -97,11 +97,12 @@ it('shows the common loading animation before parsing and exports repeated board
     expect(root.querySelectorAll('g[data-placement-id]')).toHaveLength(1)
     expect(root.querySelector('g[data-placement-id]')?.getAttribute('transform')).toBe('translate(15 22) rotate(90) translate(-10 -5)')
     const holes = root.querySelector('[data-board-holes]')!
-    expect(holes.getAttribute('fill')).toBe('none')
+    expect(holes.getAttribute('fill')).toBe(index === 0 ? 'none' : '#000000')
+    expect(holes.getAttribute('stroke')).toBe(index === 0 ? '#2563eb' : 'none')
     expect(holes.querySelectorAll('path')).toHaveLength(2)
     expect(Array.from(holes.querySelectorAll('path'), path => path.getAttribute('d'))).toEqual([
-      'M 4 130.266 A 1.5 1.5 0 1 0 7 130.266 A 1.5 1.5 0 1 0 4 130.266 Z',
-      'M 4 333.734 A 1.5 1.5 0 1 0 7 333.734 A 1.5 1.5 0 1 0 4 333.734 Z',
+      'M 4 131.766 A 1.5 1.5 0 1 0 7 131.766 A 1.5 1.5 0 1 0 4 131.766 Z',
+      'M 4 332.234 A 1.5 1.5 0 1 0 7 332.234 A 1.5 1.5 0 1 0 4 332.234 Z',
     ])
   }
   expect(rendered[0]).toContain('magenta')

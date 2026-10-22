@@ -10,8 +10,13 @@ use std::{
     time::Duration,
 };
 use tauri::{Emitter, Manager};
-use tiny_skia::{PathSegment, Point};
-use usvg::Node;
+
+#[path = "imposition_svg_content.rs"]
+mod svg_content;
+#[path = "imposition_svg_footprint.rs"]
+mod svg_footprint;
+#[path = "imposition_svg_outline.rs"]
+mod svg_outline;
 
 // Cap malformed-input diagnostics without expanding corrupt QT values. Valid
 // quantities remain compact metadata for the local Python/Rust search core.
@@ -84,6 +89,9 @@ pub struct NestItem {
     /// asset; engines expand placements after solving.
     #[serde(default = "default_quantity")]
     pub quantity: u32,
+    /// Pure stroke SVGs must use separate boards from printed/fill artwork.
+    #[serde(default)]
+    pub line_only: bool,
     #[serde(default)]
     pub polygon: Option<Vec<[f64; 2]>>,
 }
@@ -106,6 +114,9 @@ pub struct NestRequest {
     pub irregular_algorithm: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub template_repack: Option<TemplateRepackRequest>,
+    /// None selects half the available logical CPUs; bounded again by the core.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_count: Option<u32>,
     pub items: Vec<NestItem>,
 }
 
@@ -629,6 +640,7 @@ fn pack_local_irregular(
     }))
     .map_err(|error| error.to_string())?;
     let mut command = Command::new(python);
+    crate::imposition_compute::configure_search_threads(&mut command, request.thread_count);
     command
         .arg("-X")
         .arg("utf8")
@@ -729,96 +741,6 @@ fn collect_adapter_output(
     })
 }
 
-fn map_point(transform: tiny_skia::Transform, point: Point) -> Point {
-    let mut mapped = point;
-    transform.map_point(&mut mapped);
-    mapped
-}
-
-fn sampled_paths(path: &usvg::Path) -> Vec<Vec<[f64; 2]>> {
-    let transform = path.abs_transform();
-    let mut subpaths = Vec::new();
-    let mut points = Vec::new();
-    let mut current = Point::from_xy(0.0, 0.0);
-    let mut start = current;
-    for segment in path.data().segments() {
-        if points.len() > MAX_IRREGULAR_VERTICES_PER_ITEM {
-            break;
-        }
-        match segment {
-            PathSegment::MoveTo(point) => {
-                if points.len() >= 3 {
-                    subpaths.push(std::mem::take(&mut points));
-                }
-                current = point;
-                start = point;
-                points.push(map_point(transform, point));
-            }
-            PathSegment::LineTo(point) => {
-                current = point;
-                points.push(map_point(transform, point));
-            }
-            PathSegment::QuadTo(control, point) => {
-                let from = current;
-                for step in 1..=8 {
-                    if points.len() > MAX_IRREGULAR_VERTICES_PER_ITEM {
-                        break;
-                    }
-                    let t = step as f32 / 8.0;
-                    let inverse = 1.0 - t;
-                    let sampled = Point::from_xy(
-                        inverse * inverse * from.x
-                            + 2.0 * inverse * t * control.x
-                            + t * t * point.x,
-                        inverse * inverse * from.y
-                            + 2.0 * inverse * t * control.y
-                            + t * t * point.y,
-                    );
-                    points.push(map_point(transform, sampled));
-                }
-                current = point;
-            }
-            PathSegment::CubicTo(control_a, control_b, point) => {
-                let from = current;
-                for step in 1..=12 {
-                    if points.len() > MAX_IRREGULAR_VERTICES_PER_ITEM {
-                        break;
-                    }
-                    let t = step as f32 / 12.0;
-                    let inverse = 1.0 - t;
-                    let sampled = Point::from_xy(
-                        inverse.powi(3) * from.x
-                            + 3.0 * inverse.powi(2) * t * control_a.x
-                            + 3.0 * inverse * t.powi(2) * control_b.x
-                            + t.powi(3) * point.x,
-                        inverse.powi(3) * from.y
-                            + 3.0 * inverse.powi(2) * t * control_a.y
-                            + 3.0 * inverse * t.powi(2) * control_b.y
-                            + t.powi(3) * point.y,
-                    );
-                    points.push(map_point(transform, sampled));
-                }
-                current = point;
-            }
-            PathSegment::Close => {
-                current = start;
-            }
-        }
-    }
-    if points.len() >= 3 {
-        subpaths.push(points);
-    }
-    subpaths
-        .into_iter()
-        .map(|points| {
-            points
-                .into_iter()
-                .map(|point| [point.x as f64, point.y as f64])
-                .collect()
-        })
-        .collect()
-}
-
 fn polygon_area(polygon: &[[f64; 2]]) -> f64 {
     polygon
         .iter()
@@ -832,11 +754,18 @@ fn polygon_area(polygon: &[[f64; 2]]) -> f64 {
         / 2.0
 }
 
-fn extract_svg_polygon(
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImpositionGeometry {
+    polygon: Vec<[f64; 2]>,
+    line_only: bool,
+}
+
+fn extract_svg_geometry(
     path: &Path,
     width_mm: f64,
     height_mm: f64,
-) -> Result<Vec<[f64; 2]>, String> {
+) -> Result<ImpositionGeometry, String> {
     let byte_length = fs::metadata(path)
         .map_err(|error| format!("读取 SVG 轮廓失败：{error}"))?
         .len();
@@ -850,45 +779,11 @@ fn extract_svg_polygon(
     let options = crate::assets::options();
     let tree = usvg::Tree::from_data(&bytes, &options)
         .map_err(|error| format!("解析 SVG 轮廓失败：{error}"))?;
-    let mut paths = Vec::new();
-    fn visit(node: &Node, paths: &mut Vec<Vec<[f64; 2]>>) {
-        match node {
-            Node::Group(group) => group
-                .children()
-                .iter()
-                .for_each(|child| visit(child, paths)),
-            Node::Path(path)
-                if path.is_visible() && (path.fill().is_some() || path.stroke().is_some()) =>
-            {
-                for polygon in sampled_paths(path) {
-                    let polygon = clean_polygon(polygon);
-                    if polygon.len() >= 3 {
-                        paths.push(polygon);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    tree.root()
-        .children()
-        .iter()
-        .for_each(|child| visit(child, &mut paths));
-    let mut polygon = paths
-        .into_iter()
-        .max_by(|left, right| polygon_area(left).total_cmp(&polygon_area(right)))
-        .ok_or("SVG 中没有可用于异形拼版的闭合路径".to_owned())?;
-    let scale_x = width_mm / tree.size().width() as f64;
-    let scale_y = height_mm / tree.size().height() as f64;
-    // Keep the SVG viewport origin: the canvas displays the full source image,
-    // including transparent margins. Moving the outline to (0, 0) here would
-    // shift collision geometry away from that image, especially after rotation.
-    // Solvers that need origin-normalized geometry do so in their own adapter.
-    for point in &mut polygon {
-        point[0] *= scale_x;
-        point[1] *= scale_y;
-    }
-    Ok(polygon)
+    let polygon = svg_footprint::extract(&tree, width_mm, height_mm)?;
+    Ok(ImpositionGeometry {
+        polygon,
+        line_only: svg_content::is_line_only(&tree),
+    })
 }
 
 #[tauri::command]
@@ -944,17 +839,17 @@ pub async fn pack_imposition_irregular(
 }
 
 #[tauri::command]
-pub async fn load_imposition_polygon(
+pub async fn load_imposition_geometry(
     path: String,
     width_mm: f64,
     height_mm: f64,
-) -> Result<Vec<[f64; 2]>, String> {
+) -> Result<ImpositionGeometry, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let _outline_guard = OUTLINE_LOCK
             .get_or_init(|| Mutex::new(()))
             .lock()
             .map_err(|_| "SVG 轮廓计算锁已损坏".to_string())?;
-        extract_svg_polygon(Path::new(&path), width_mm, height_mm)
+        extract_svg_geometry(Path::new(&path), width_mm, height_mm)
     })
     .await
     .map_err(|error| error.to_string())?
@@ -979,13 +874,16 @@ mod tests {
             }
         });
         let request: NestRequest = serde_json::from_value(payload.clone()).unwrap();
+        assert_eq!(request.thread_count, None);
         let forwarded = serde_json::to_value(request).unwrap();
         assert_eq!(forwarded["templateRepack"], payload["templateRepack"]);
         let mut combined = payload.clone();
         combined["objective"] = serde_json::json!("combined");
+        combined["threadCount"] = serde_json::json!(7);
         let request: NestRequest = serde_json::from_value(combined.clone()).unwrap();
         let forwarded = serde_json::to_value(request).unwrap();
         assert_eq!(forwarded["objective"], "combined");
+        assert_eq!(forwarded["threadCount"], 7);
         assert_eq!(forwarded["templateRepack"], combined["templateRepack"]);
         let mut normal = payload;
         normal.as_object_mut().unwrap().remove("templateRepack");
@@ -1023,13 +921,157 @@ mod tests {
             std::process::id()
         ));
         fs::write(&path, r#"<svg xmlns="http://www.w3.org/2000/svg" width="20mm" height="10mm" viewBox="0 0 20 10"><path d="M2 3 L18 3 L18 9 L2 9 Z"/></svg>"#).unwrap();
-        let polygon = extract_svg_polygon(&path, 20.0, 10.0).unwrap();
+        let geometry = extract_svg_geometry(&path, 20.0, 10.0).unwrap();
+        assert!(!geometry.line_only);
+        let polygon = geometry.polygon;
         let _ = fs::remove_file(path);
         let (min_x, min_y, max_x, max_y) = rotated_polygon_bounds(&polygon, 0.0);
         assert!((min_x - 2.0).abs() < 1e-5);
         assert!((min_y - 3.0).abs() < 1e-5);
         assert!((max_x - 18.0).abs() < 1e-5);
         assert!((max_y - 9.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn clipped_image_cannot_use_its_small_hanging_hole_as_the_collision_outline() {
+        let file =
+            std::env::temp_dir().join(format!("printflow-clipped-hole-{}.svg", std::process::id()));
+        fs::write(&file, r##"<svg xmlns="http://www.w3.org/2000/svg" width="20mm" height="20mm" viewBox="0 0 20 20"><defs><clipPath id="body"><path d="M2 4H18V12H10V18H2Z"/></clipPath></defs><g clip-path="url(#body)"><image width="20" height="20" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6rCkAAAAASUVORK5CYII="/></g><circle cx="10" cy="2" r="1" fill="none" stroke="red"/></svg>"##).unwrap();
+        let geometry = extract_svg_geometry(&file, 20.0, 20.0).unwrap();
+        fs::remove_file(file).unwrap();
+        assert!(
+            polygon_area(&geometry.polygon) >= 176.0,
+            "clipped body omitted; collision area is only {} mm²",
+            polygon_area(&geometry.polygon)
+        );
+    }
+
+    #[test]
+    #[ignore = "reads the local Raine Gaming SVG regression assets"]
+    fn real_raine_contours_cover_visible_artwork() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../printflow-data/assets/Backup_of_Raine Gaming_202610211803");
+        let mut failures = Vec::new();
+        for suffix in [6, 9] {
+            let file = root.join(format!("f00bf77d-d799-4458-a421-adf881811644-{suffix}.svg"));
+            let bytes = fs::read(&file).unwrap();
+            let tree = usvg::Tree::from_data(&bytes, &crate::assets::options()).unwrap();
+            let width = tree.size().width() as f64 * 25.4 / 96.0;
+            let height = tree.size().height() as f64 * 25.4 / 96.0;
+            let geometry = extract_svg_geometry(&file, width, height).unwrap();
+            let scale = 240.0 / tree.size().width().max(tree.size().height());
+            let mut artwork = tiny_skia::Pixmap::new(
+                (tree.size().width() * scale).ceil() as u32,
+                (tree.size().height() * scale).ceil() as u32,
+            )
+            .unwrap();
+            resvg::render(
+                &tree,
+                tiny_skia::Transform::from_scale(scale, scale),
+                &mut artwork.as_mut(),
+            );
+            let mm_scale = scale * 96.0 / 25.4;
+            let mut builder = tiny_skia::PathBuilder::new();
+            for (index, point) in geometry.polygon.iter().enumerate() {
+                let x = point[0] as f32 * mm_scale;
+                let y = point[1] as f32 * mm_scale;
+                if index == 0 {
+                    builder.move_to(x, y);
+                } else {
+                    builder.line_to(x, y);
+                }
+            }
+            builder.close();
+            let contour = builder.finish().unwrap();
+            let mut coverage = tiny_skia::Pixmap::new(artwork.width(), artwork.height()).unwrap();
+            let paint = tiny_skia::Paint::default();
+            coverage.fill_path(
+                &contour,
+                &paint,
+                tiny_skia::FillRule::Winding,
+                tiny_skia::Transform::identity(),
+                None,
+            );
+            coverage.stroke_path(
+                &contour,
+                &paint,
+                &tiny_skia::Stroke {
+                    width: mm_scale * 0.6,
+                    ..Default::default()
+                },
+                tiny_skia::Transform::identity(),
+                None,
+            );
+            let visible = artwork.pixels().iter().filter(|p| p.alpha() > 128).count();
+            let missing = artwork
+                .pixels()
+                .iter()
+                .zip(coverage.pixels())
+                .filter(|(a, c)| a.alpha() > 128 && c.alpha() == 0)
+                .count();
+            eprintln!("asset={suffix} contour_area_mm2={:.2} visible_pixels={visible} uncovered_pixels={missing}", polygon_area(&geometry.polygon));
+            if missing > visible / 1000 {
+                failures.push(suffix);
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "collision contours do not cover visible artwork: {failures:?}"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires the local tools Python runtime"]
+    fn line_only_svg_geometry_reaches_solver_as_separate_sheets() {
+        let path =
+            std::env::temp_dir().join(format!("printflow-line-only-{}.svg", std::process::id()));
+        let mut items = Vec::new();
+        for (id, style, line_only) in [
+            ("outline", "fill:none;stroke:red", true),
+            ("color", "fill:blue;stroke:red", false),
+        ] {
+            fs::write(&path, format!(r#"<svg xmlns="http://www.w3.org/2000/svg" width="10mm" height="8mm" viewBox="0 0 10 8"><g style="{style}"><path d="M1 1H9V7H1Z"/></g></svg>"#)).unwrap();
+            let geometry = extract_svg_geometry(&path, 10.0, 8.0).unwrap();
+            assert_eq!(geometry.line_only, line_only);
+            items.push(NestItem {
+                id: id.into(),
+                width_mm: 10.0,
+                height_mm: 8.0,
+                quantity: 3,
+                polygon: Some(geometry.polygon),
+                line_only: geometry.line_only,
+            });
+        }
+        fs::remove_file(path).unwrap();
+        let request = NestRequest {
+            plate_width_mm: 80.0,
+            plate_height_mm: 60.0,
+            effective_width_mm: 65.0,
+            effective_height_mm: 40.0,
+            effective_right_mm: 5.0,
+            spacing_mm: 3.0,
+            objective: "least-material".into(),
+            irregular_algorithm: "local-tools".into(),
+            template_repack: None,
+            thread_count: None,
+            items,
+        };
+        let payload = serde_json::to_value(&request).unwrap();
+        assert_eq!(payload["items"][0]["lineOnly"], true);
+        assert_eq!(payload["items"][1]["lineOnly"], false);
+        let result = pack_irregular(serde_json::from_value(payload).unwrap()).unwrap();
+        assert_eq!(result.placements.len(), 6);
+        assert_eq!(result.sheets_used, 2);
+        assert!(result.unplaced.is_empty());
+        for sheet in 0..result.sheets_used {
+            let kinds: HashSet<_> = result
+                .placements
+                .iter()
+                .filter(|p| p.sheet_index == sheet)
+                .map(|p| p.id.starts_with("outline"))
+                .collect();
+            assert_eq!(kinds.len(), 1);
+        }
     }
 
     #[test]
@@ -1080,11 +1122,13 @@ mod tests {
                     objective: objective.into(),
                     irregular_algorithm: "local-tools".into(),
                     template_repack: None,
+                    thread_count: None,
                     items: vec![NestItem {
                         id: "安装测试".into(),
                         width_mm: 10.0,
                         height_mm: 8.0,
                         quantity: 4,
+                        line_only: false,
                         polygon: Some(vec![[1.0, 1.0], [9.0, 1.0], [5.0, 7.0]]),
                     }],
                 },
@@ -1192,11 +1236,13 @@ mod tests {
                 objective: "least-material".into(),
                 irregular_algorithm: "local-tools".into(),
                 template_repack: None,
+                thread_count: None,
                 items: vec![NestItem {
                     id: "tools-probe".into(),
                     width_mm: 10.0,
                     height_mm: 8.0,
                     quantity: 5,
+                    line_only: false,
                     polygon: Some(vec![[1.0, 1.0], [9.0, 1.0], [5.0, 7.0]]),
                 }],
             },
@@ -1234,12 +1280,14 @@ mod tests {
             objective: "combined".into(),
             irregular_algorithm: "local-tools".into(),
             template_repack: None,
+            thread_count: None,
             items: vec![
                 NestItem {
                     id: "valid".into(),
                     width_mm: 20.0,
                     height_mm: 20.0,
                     quantity: 1,
+                    line_only: false,
                     polygon: Some(vec![[0.0, 0.0], [20.0, 0.0], [20.0, 20.0], [0.0, 20.0]]),
                 },
                 NestItem {
@@ -1247,6 +1295,7 @@ mod tests {
                     width_mm: 20.0,
                     height_mm: 20.0,
                     quantity: 2,
+                    line_only: false,
                     polygon: Some(vec![[0.0, 0.0], [20.0, 20.0], [20.0, 0.0], [0.0, 20.0]]),
                 },
             ],
@@ -1275,12 +1324,14 @@ mod tests {
             objective: "least-sheets".into(),
             irregular_algorithm: "local-tools".into(),
             template_repack: None,
+            thread_count: None,
             items: vec![
                 NestItem {
                     id: "valid-dimension".into(),
                     width_mm: 20.0,
                     height_mm: 20.0,
                     quantity: 1,
+                    line_only: false,
                     polygon: Some(vec![[0.0, 0.0], [20.0, 0.0], [20.0, 20.0], [0.0, 20.0]]),
                 },
                 NestItem {
@@ -1288,6 +1339,7 @@ mod tests {
                     width_mm: f64::NAN,
                     height_mm: 20.0,
                     quantity: u32::MAX,
+                    line_only: false,
                     polygon: Some(vec![[0.0, 0.0], [20.0, 0.0], [20.0, 20.0]]),
                 },
             ],
@@ -1310,11 +1362,13 @@ mod tests {
             objective: "least-material".into(),
             irregular_algorithm: "not-a-real-engine".into(),
             template_repack: None,
+            thread_count: None,
             items: vec![NestItem {
                 id: "external-tool-probe".into(),
                 width_mm: 20.0,
                 height_mm: 20.0,
                 quantity: 1,
+                line_only: false,
                 polygon: Some(vec![[0.0, 0.0], [20.0, 0.0], [20.0, 20.0], [0.0, 20.0]]),
             }],
         })
@@ -1344,3 +1398,7 @@ mod tests {
 #[cfg(test)]
 #[path = "real_nesting_job_test.rs"]
 mod real_nesting_job_test;
+
+#[cfg(test)]
+#[path = "real_nesting_overlap_test.rs"]
+mod real_nesting_overlap_test;

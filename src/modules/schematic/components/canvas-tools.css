@@ -1,0 +1,15 @@
+.canvas-editor-surface { flex: 1; min-height: 0; position: relative; display: flex; padding-left: 76px; }
+.canvas-editor-surface > .stage-wrap { flex: 1; }
+.canvas-floating-tools { position: absolute; top: 16px; left: 8px; width: 64px; z-index: 5; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px 4px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 6px 18px #0f172a18; }
+.canvas-floating-tools .ant-btn { width: 36px; height: 36px; }
+.canvas-floating-tools .ant-select { width: 60px; }
+.canvas-floating-tools .ant-select-selector { padding: 0 4px !important; font-size: 11px; }
+.canvas-tool-label { font-size: 10px; color: #475569; }
+.canvas-tool-hint { position: absolute; bottom: 12px; left: 88px; right: 12px; z-index: 4; pointer-events: none; text-align: center; font-size: 12px; color: #475569; }
+.canvas-tool-hint span { padding: 6px 10px; background: #ffffffed; border-radius: 6px; }
+.stage-wrap.is-drawing-mode { cursor: crosshair; }
+.page-sort-item { touch-action: none; user-select: none; position: relative; border-radius: 8px; }
+.page-sort-item.is-drag-over { outline: 2px solid #1677ff; outline-offset: 2px; }
+.page-sort-controls { display: flex; justify-content: flex-end; gap: 4px; margin: -4px 0 8px; }
+.page-sort-controls button { color: #64748b; border: 0; background: transparent; cursor: pointer; }
+.page-sort-controls button:disabled { opacity: .3; cursor: default; }

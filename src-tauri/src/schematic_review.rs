@@ -69,7 +69,7 @@ fn required_text(record: &Value, key: &str) -> Result<String, String> {
 }
 
 // Keep large artwork out of both the JSON manifest and the WebView IPC response.
-// Resources live in the same SQLite transaction as their immutable revision.
+// Resources live in the same SQLite transaction as their export snapshot.
 fn externalize(
     conn: &Connection,
     id: &str,
@@ -119,6 +119,30 @@ fn externalize(
     Ok(changed)
 }
 
+// A loaded manifest may still contain references to the previous snapshot.
+// Resolve them before replacing resources so a failed save can roll back both.
+fn restore_resource_contents(conn: &Connection, id: &str, value: &mut Value) -> Result<(), String> {
+    match value {
+        Value::String(text) if text.starts_with(RESOURCE_PREFIX) => {
+            let resource_id = text.strip_prefix(RESOURCE_PREFIX).unwrap();
+            *text = String::from_utf8(load_resource(conn, id, resource_id)?)
+                .map_err(|error| format!("示意图图片内容无效：{error}"))?;
+        }
+        Value::Array(values) => {
+            for entry in values {
+                restore_resource_contents(conn, id, entry)?;
+            }
+        }
+        Value::Object(values) => {
+            for entry in values.values_mut() {
+                restore_resource_contents(conn, id, entry)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 pub(super) fn save_record(conn: &Connection, mut record: Value) -> Result<(), String> {
     ensure_store(conn)?;
     let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)
@@ -132,17 +156,16 @@ pub(super) fn save_record(conn: &Connection, mut record: Value) -> Result<(), St
         }
     }
     let id = required_text(&record, "id")?;
-    crate::shared_transfers::store::ensure_editable(&transaction,"review",&id)?;
-    let exists: bool = transaction
+    crate::production_imposition::ensure_review_editable(&transaction, &id)?;
+    let saved_payment_status: Option<String> = transaction
         .query_row(
-            "SELECT EXISTS(SELECT 1 FROM schematic_reviews WHERE id = ?1)",
+            "SELECT COALESCE(p.payment_status, 'unpaid') FROM schematic_reviews r
+            LEFT JOIN schematic_review_payment_states p ON p.record_id = r.id WHERE r.id = ?1",
             [&id],
             |row| row.get(0),
         )
+        .optional()
         .map_err(|error| error.to_string())?;
-    if exists {
-        return Ok(());
-    }
     if record["schemaVersion"].as_u64() != Some(1) {
         return Err("不支持的示意图记录版本".into());
     }
@@ -167,16 +190,19 @@ pub(super) fn save_record(conn: &Connection, mut record: Value) -> Result<(), St
             .to_owned(),
         page_count,
         image_count,
-        payment_status: record
-            .get("paymentStatus")
-            .map(|value| serde_json::from_value(value.clone()).map_err(|error| error.to_string()))
-            .transpose()?
-            .unwrap_or_default(),
+        payment_status: match saved_payment_status {
+            Some(value) => PaymentStatus::from_text(&value)?,
+            None => record
+                .get("paymentStatus")
+                .map(|value| serde_json::from_value(value.clone()).map_err(|error| error.to_string()))
+                .transpose()?
+                .unwrap_or_default(),
+        },
         imposition_job_id: None,
         returned: false,
     };
     // Store independent SVG contents so deleting or editing a source batch
-    // cannot change a previously exported revision. Keep all other JSON fields.
+    // cannot change the exported snapshot. Keep all other JSON fields.
     let assets = record["assets"]
         .as_array_mut()
         .filter(|assets| !assets.is_empty())
@@ -200,13 +226,18 @@ pub(super) fn save_record(conn: &Connection, mut record: Value) -> Result<(), St
         object.insert("previewUrl".into(), Value::String(String::new()));
         object.insert("thumbnailUrl".into(), Value::String(String::new()));
     }
+    restore_resource_contents(&transaction, &id, &mut record)?;
+    transaction.execute("DELETE FROM schematic_review_resources WHERE record_id = ?1", [&id])
+        .map_err(|error| error.to_string())?;
+    record["paymentStatus"] = Value::String(summary.payment_status.as_str().into());
     externalize(&transaction, &id, &mut record, &mut 0, &mut HashMap::new())?;
     let payload = serde_json::to_string(&record).map_err(|error| error.to_string())?;
     let summary_json = serde_json::to_string(&summary).map_err(|error| error.to_string())?;
-    // A retry with the same ID is harmless; saved revisions stay immutable.
-    transaction.execute("INSERT INTO schematic_reviews (id, saved_at, summary, payload) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(id) DO NOTHING",
+    // Re-exporting the same arrangement updates one review and its resources atomically.
+    transaction.execute("INSERT INTO schematic_reviews (id, saved_at, summary, payload) VALUES (?1, ?2, ?3, ?4)
+        ON CONFLICT(id) DO UPDATE SET saved_at = excluded.saved_at, summary = excluded.summary, payload = excluded.payload",
         params![summary.id, summary.saved_at, summary_json, payload]).map_err(|error| error.to_string())?;
-    transaction.execute("INSERT INTO schematic_review_payment_states (record_id, payment_status) VALUES (?1, ?2)",
+    transaction.execute("INSERT INTO schematic_review_payment_states (record_id, payment_status) VALUES (?1, ?2) ON CONFLICT(record_id) DO NOTHING",
         params![summary.id, summary.payment_status.as_str()]).map_err(|error| error.to_string())?;
     transaction.commit().map_err(|error| error.to_string())
 }
@@ -337,7 +368,7 @@ fn update_payment_status(
     let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)
         .map_err(|error| error.to_string())?;
     crate::production_imposition::ensure_review_editable(&transaction, id)?;
-    // Mutable payment metadata stays separate from the immutable artwork snapshot.
+    // Payment metadata stays separate from the replaceable artwork snapshot.
     // INSERT ... SELECT also ensures missing/deleted records cannot gain orphan states.
     let changed = transaction
         .execute(
@@ -775,10 +806,6 @@ mod tests {
             );
             assert!(load_resource(&conn, "other-record", resource_id).is_err());
         }
-        // Retrying cannot mutate artwork already saved under this revision ID.
-        original["assets"][0]["svg"] = json!("changed");
-        save_record(&conn, original.clone()).unwrap();
-        assert_eq!(load_record(&conn, "large").unwrap(), manifest);
         original["id"] = json!("legacy");
         original["assets"][0]["svg"] = json!(svg);
         conn.execute(
@@ -796,6 +823,113 @@ mod tests {
         let count: usize = conn.query_row("SELECT COUNT(*) FROM schematic_review_resources WHERE record_id='invalid-resources'", [], |row| row.get(0)).unwrap();
         assert_eq!(count, 0);
         assert!(load_record(&conn, "invalid-resources").is_err());
+    }
+
+    #[test]
+    fn reexport_replaces_one_review_and_its_resources_preserving_database_payment() {
+        let conn = Connection::open_in_memory().unwrap();
+        let mut original = record("reexport");
+        original["assets"][0]["svg"] = json!("original".repeat(20_000));
+        original["pages"][0]["items"][0]["backSvg"] = json!("back".repeat(20_000));
+        save_record(&conn, original).unwrap();
+        let mut updated = load_record(&conn, "reexport").unwrap();
+        let retained_back = load_resource(&conn, "reexport", "r2").unwrap();
+        update_payment_status(&conn, "reexport", PaymentStatus::Paid).unwrap();
+
+        // The renderer may submit a stale payment field and a retained resource reference.
+        updated["savedAt"] = json!("2026-10-22T12:00:00Z");
+        updated["output"] = json!("changed.pdf");
+        updated["metadata"]["customerName"] = json!("新客户");
+        updated["assets"][0]["svg"] = json!("replacement".repeat(20_000));
+        updated["pages"][0]["items"][0]["x"] = json!(88);
+        updated["display"]["visualScales"] = json!([["one", 2.0]]);
+        save_record(&conn, updated.clone()).unwrap();
+
+        let saved = load_record(&conn, "reexport").unwrap();
+        assert_eq!(saved["pages"], updated["pages"]);
+        assert_eq!(saved["display"], updated["display"]);
+        assert_eq!(saved["paymentStatus"], "paid");
+        assert_eq!(load_resource(&conn, "reexport", "r1").unwrap(), "replacement".repeat(20_000).as_bytes());
+        assert_eq!(load_resource(&conn, "reexport", "r2").unwrap(), retained_back);
+        let listed = list_records(&conn, &ReviewListQuery::default()).unwrap();
+        assert_eq!(listed.total, 1);
+        assert_eq!(listed.records[0].saved_at, "2026-10-22T12:00:00Z");
+        assert_eq!(listed.records[0].output, "changed.pdf");
+        assert_eq!(listed.records[0].customer_name, "新客户");
+        assert_eq!(listed.records[0].payment_status, PaymentStatus::Paid);
+
+        // Repeated saves are idempotent and replacing large artwork with small artwork removes old blobs.
+        save_record(&conn, saved.clone()).unwrap();
+        assert_eq!(load_record(&conn, "reexport").unwrap(), saved);
+        updated["assets"][0]["svg"] = json!("<svg>small</svg>");
+        updated["pages"][0]["items"][0].as_object_mut().unwrap().remove("backSvg");
+        save_record(&conn, updated).unwrap();
+        let resources: usize = conn.query_row("SELECT COUNT(*) FROM schematic_review_resources WHERE record_id = 'reexport'", [], |row| row.get(0)).unwrap();
+        assert_eq!(resources, 0);
+        assert_eq!(list_records(&conn, &ReviewListQuery::default()).unwrap().total, 1);
+    }
+
+    #[test]
+    fn failed_reexport_restores_previous_snapshot_summary_and_resources() {
+        let conn = Connection::open_in_memory().unwrap();
+        let mut original = record("rollback");
+        original["assets"][0]["svg"] = json!("original".repeat(20_000));
+        save_record(&conn, original).unwrap();
+        update_payment_status(&conn, "rollback", PaymentStatus::Paid).unwrap();
+        let manifest = load_record(&conn, "rollback").unwrap();
+        let artwork = load_resource(&conn, "rollback", "r1").unwrap();
+        let summary: String = conn.query_row("SELECT summary FROM schematic_reviews WHERE id = 'rollback'", [], |row| row.get(0)).unwrap();
+
+        let mut updated = manifest.clone();
+        updated["output"] = json!("failed.pdf");
+        updated["assets"][0]["svg"] = json!("new artwork".repeat(20_000));
+        updated["pages"][0]["items"][0]["backSvg"] = json!("printflow-export:missing");
+        assert!(save_record(&conn, updated.clone()).is_err());
+        assert_eq!(load_record(&conn, "rollback").unwrap(), manifest);
+        assert_eq!(load_resource(&conn, "rollback", "r1").unwrap(), artwork);
+        assert!(load_resource(&conn, "rollback", "r2").is_err());
+
+        updated["pages"][0]["items"][0].as_object_mut().unwrap().remove("backSvg");
+        conn.execute_batch("CREATE TRIGGER reject_overwrite BEFORE UPDATE ON schematic_reviews BEGIN SELECT RAISE(ABORT, 'disk failure'); END;").unwrap();
+        assert!(save_record(&conn, updated.clone()).is_err());
+        assert_eq!(load_record(&conn, "rollback").unwrap(), manifest);
+        assert_eq!(load_resource(&conn, "rollback", "r1").unwrap(), artwork);
+        let retained: String = conn.query_row("SELECT summary FROM schematic_reviews WHERE id = 'rollback'", [], |row| row.get(0)).unwrap();
+        assert_eq!(retained, summary);
+        conn.execute_batch("DROP TRIGGER reject_overwrite").unwrap();
+
+        updated["assets"][0]["svg"] = json!("printflow-review:missing");
+        assert!(save_record(&conn, updated).is_err());
+        assert_eq!(load_resource(&conn, "rollback", "r1").unwrap(), artwork);
+        assert_eq!(load_record(&conn, "rollback").unwrap(), manifest);
+    }
+
+    #[test]
+    fn reexport_respects_production_and_transfer_locks_and_allows_returned_reviews() {
+        let conn = Connection::open_in_memory().unwrap();
+        let mut updated = record("locked");
+        updated["sourceBatchId"] = json!("source-batch");
+        updated["sourceRecordId"] = json!("source-review");
+        save_record(&conn, updated.clone()).unwrap();
+        updated["pages"][0]["items"][0]["x"] = json!(99);
+        conn.execute("INSERT INTO production_imposition_jobs VALUES ('job', 'locked', '', 'test.pdf', 'now', 'unpaid', 'pending', 1, '[]')", []).unwrap();
+        assert!(save_record(&conn, updated.clone()).unwrap_err().contains("生产拼版"));
+        conn.execute("UPDATE production_imposition_jobs SET status = 'returned' WHERE id = 'job'", []).unwrap();
+        assert_eq!(load_record(&conn, "locked").unwrap()["pages"][0]["items"][0]["x"], 23);
+        save_record(&conn, updated.clone()).unwrap();
+        assert_eq!(load_record(&conn, "locked").unwrap()["pages"][0]["items"][0]["x"], 99);
+
+        for (batch, ids) in [
+            ("other-batch", json!({"reviews":["locked"]})),
+            ("source-batch", json!({})),
+            ("other-batch", json!({"assets":["asset"]})),
+            ("other-batch", json!({"reviews":["source-review"]})),
+        ] {
+            conn.execute("INSERT INTO shared_transfer_outbox (task_id,batch_id,sender,recipient,status,record_ids) VALUES ('transfer',?1,'sender','recipient','published',?2)", params![batch, ids.to_string()]).unwrap();
+            assert!(save_record(&conn, updated.clone()).unwrap_err().contains("转移"));
+            conn.execute("DELETE FROM shared_transfer_outbox WHERE task_id = 'transfer'", []).unwrap();
+        }
+        assert_eq!(list_records(&conn, &ReviewListQuery::default()).unwrap().total, 1);
     }
 
     fn record(id: &str) -> Value {
@@ -841,7 +975,7 @@ mod tests {
             let mut updated = record("first");
             updated["pages"][0]["items"][0]["x"] = json!(99);
             save_record(&conn, updated).unwrap();
-            assert_eq!(load_record(&conn, "first").unwrap(), restored);
+            assert_eq!(load_record(&conn, "first").unwrap()["pages"][0]["items"][0]["x"], 99);
             save_record(&conn, record("second")).unwrap();
             let summaries = list_records(&conn, &ReviewListQuery::default())
                 .unwrap()

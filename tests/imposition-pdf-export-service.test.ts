@@ -44,7 +44,7 @@ test('stages ordered layers and creates one PDF per board with page progress and
   const result = await exportImpositionPdfs('D:\\导出', boards, progress)
   expect(result.completedFiles).toHaveLength(2)
   expect(result.error).toBeUndefined()
-  expect(mocks.invoke.mock.calls.map(call => call[0])).toEqual(['check_imposition_pdf_outputs', ...layers.map(() => 'stage_pdf_page'), 'export_imposition_pdf', 'clear_pdf_pages', 'stage_pdf_page', 'export_imposition_pdf', 'clear_pdf_pages'])
+  expect(mocks.invoke.mock.calls.map(call => call[0])).toEqual(['check_imposition_pdf_outputs', 'get_imposition_compute_info', ...layers.map(() => 'stage_pdf_page'), 'export_imposition_pdf', 'clear_pdf_pages', 'stage_pdf_page', 'export_imposition_pdf', 'clear_pdf_pages'])
   const transferred = mocks.invoke.mock.calls.filter(call => call[0] === 'stage_pdf_page').map(call => call[1])
   layers.forEach((label, index) => expect(transferred[index].svg).toContain(`<title>${label}</title>`))
   const exports = mocks.invoke.mock.calls.filter(call => call[0] === 'export_imposition_pdf').map(call => call[1])
@@ -103,4 +103,71 @@ test('failed middle page cleans every attempted stage without exporting an incom
   expect(mocks.invoke.mock.calls.some(call => call[0] === 'export_imposition_pdf')).toBe(false)
   const ids = mocks.invoke.mock.calls.filter(call => call[0] === 'stage_pdf_page').map(call => call[1].id)
   expect(mocks.invoke).toHaveBeenLastCalledWith('clear_pdf_pages', { ids })
+})
+
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no })
+  return { promise, resolve, reject }
+}
+
+test('shares the automatic 80% CPU budget across two layouts and returns out-of-order completions in board order', async () => {
+  const boards = [entry('一.pdf', ['轮廓', '图片1', '彩窗', '白墨']), entry('二.pdf'), entry('三.pdf')]
+  const jobs = [deferred(), deferred(), deferred()]
+  const args: Array<{ id: string; pageIds: string[]; workerCount: number }> = []
+  const progress = vi.fn()
+  mocks.invoke.mockImplementation(async (command, parameters) => {
+    if (command === 'get_imposition_compute_info') return { logicalCores: 10 }
+    if (command === 'export_imposition_pdf') {
+      const index = args.length
+      args.push(parameters)
+      return jobs[index].promise
+    }
+  })
+  const pending = exportImpositionPdfs('D:/导出', boards, progress)
+  await vi.waitFor(() => expect(args).toHaveLength(2))
+  expect(args.map(arg => arg.workerCount)).toEqual([4, 4])
+  expect(boards[2].pages[0].renderSvg).not.toHaveBeenCalled()
+  expect(mocks.invoke.mock.calls.filter(call => call[0] === 'clear_pdf_pages')).toHaveLength(0)
+  mocks.listener?.({ payload: { id: args[0].id, phase: 'merge', pageIndex: 3 } })
+  expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ fileName: '一.pdf', pageName: '彩窗', phase: 'merge' }))
+  jobs[1].resolve()
+  await vi.waitFor(() => expect(args).toHaveLength(3))
+  jobs[2].resolve()
+  jobs[0].resolve()
+  expect(await pending).toMatchObject({ completedFiles: ['D:/导出/一.pdf', 'D:/导出/二.pdf', 'D:/导出/三.pdf'] })
+  expect(mocks.invoke.mock.calls.filter(call => call[0] === 'clear_pdf_pages')).toHaveLength(3)
+})
+
+test('parallel failure stops queued layouts and drains the other native job before releasing resources', async () => {
+  const boards = [entry('一.pdf'), entry('二.pdf'), entry('三.pdf')]
+  const first = deferred(), second = deferred()
+  let exports = 0
+  mocks.invoke.mockImplementation(async command => {
+    if (command === 'get_imposition_compute_info') return { logicalCores: 16 }
+    if (command === 'export_imposition_pdf') return (++exports === 1 ? first : second).promise
+  })
+  const pending = exportImpositionPdfs('D:/导出', boards)
+  await vi.waitFor(() => expect(exports).toBe(2))
+  first.reject(new Error('PDF 后台进程退出'))
+  await vi.waitFor(() => expect(mocks.invoke.mock.calls.filter(call => call[0] === 'clear_pdf_pages')).toHaveLength(1))
+  expect(mocks.unlisten).not.toHaveBeenCalled()
+  expect(boards[2].pages[0].renderSvg).not.toHaveBeenCalled()
+  second.resolve()
+  expect(await pending).toMatchObject({ completedFiles: ['D:/导出/二.pdf'], failedFile: '一.pdf', error: 'PDF 后台进程退出' })
+  expect(mocks.invoke.mock.calls.filter(call => call[0] === 'clear_pdf_pages')).toHaveLength(2)
+  expect(mocks.unlisten).toHaveBeenCalledOnce()
+})
+
+test('generates/transfers only one SVG at a time even when file conversion is parallel', async () => {
+  const firstRender = deferred<string>()
+  const first = { ...entry('一.pdf'), pages: [{ label: '轮廓', renderSvg: vi.fn(() => firstRender.promise) }] }
+  const second = entry('二.pdf')
+  mocks.invoke.mockImplementation(async command => command === 'get_imposition_compute_info' ? { logicalCores: 8 } : undefined)
+  const pending = exportImpositionPdfs('D:/导出', [first, second])
+  await vi.waitFor(() => expect(first.pages[0].renderSvg).toHaveBeenCalledOnce())
+  expect(second.pages[0].renderSvg).not.toHaveBeenCalled()
+  firstRender.resolve('<svg/>')
+  expect((await pending).completedFiles).toHaveLength(2)
 })

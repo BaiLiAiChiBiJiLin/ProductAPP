@@ -1,6 +1,6 @@
 import type { Asset, Page } from '../../../model.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
-import { refreshStandeeDefaultSize, rulerDimensionAxis, rulerDimensionLabel, type DimensionDisplayOverride, type DimensionDisplayPrecision } from './imageDimensionService.ts'
+import { refreshStandeeDefaultSize, rulerDimensionAxis, rulerDimensionLabel, rulerSizeAxis, type DimensionDisplayOverride, type DimensionDisplayPrecision } from './imageDimensionService.ts'
 
 function detailsForDisplay(details: NonNullable<ImageGroup['details']>, page: Page, assets: Map<string, Asset>, itemIds: string[], selected: Set<string>, precision: DimensionDisplayPrecision, decimalPlaces: number, displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>) {
   const labels = new Map<string, string>()
@@ -15,11 +15,13 @@ function detailsForDisplay(details: NonNullable<ImageGroup['details']>, page: Pa
     }
     if (asset) {
       const override = displayOverrides?.get(item.id)
-      const explicitDisplay = selected.has(item.id) || Boolean(override)
+      const sizeAxis = rulerSizeAxis(asset, item)
+      const sizeOverrideMm = sizeAxis === 'width' ? item.rulerWidthMm : sizeAxis === 'height' ? item.rulerHeightMm : undefined
       const currentLabel = details.sizes?.length ? details.sizes.find(value => value.itemId === item.id)?.label
         : item.id === firstItem ? details.size : undefined
+      const explicitDisplay = selected.has(item.id) || Boolean(override) || (currentLabel !== undefined && sizeOverrideMm !== undefined && Number.isFinite(sizeOverrideMm) && sizeOverrideMm > 0)
       const label = explicitDisplay
-        ? rulerDimensionLabel(asset, item, override?.precision ?? precision, override?.decimalPlaces ?? decimalPlaces)
+        ? rulerDimensionLabel(asset, item, override?.precision ?? (selected.has(item.id) ? precision : 'default'), override?.decimalPlaces ?? (selected.has(item.id) ? decimalPlaces : 1))
         : currentLabel !== undefined ? refreshStandeeDefaultSize(asset, item, currentLabel) : undefined
       if (label && (explicitDisplay || label !== currentLabel)) labels.set(item.id, label)
     }

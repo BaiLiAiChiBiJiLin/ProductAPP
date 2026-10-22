@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button, Modal, Progress, message } from 'antd'
 import { Download, RefreshCw } from 'lucide-react'
 import { isTauri } from '@tauri-apps/api/core'
@@ -12,6 +12,7 @@ export default function UpdateButton({ autoCheck = false, showButton = true }: P
   const [update, setUpdate] = useState<Awaited<ReturnType<typeof checkForUpdate>>>(null)
   const [downloading, setDownloading] = useState(false)
   const [progress, setProgress] = useState<UpdateProgress>({ downloaded: 0 })
+  const actionInFlight = useRef(false)
   useEffect(() => {
     if (!autoCheck || !isTauri()) return
     const timer = window.setTimeout(() => {
@@ -20,7 +21,8 @@ export default function UpdateButton({ autoCheck = false, showButton = true }: P
     return () => window.clearTimeout(timer)
   }, [autoCheck])
   const checkUpdate = async () => {
-    if (!isTauri() || checking || downloading) return
+    if (!isTauri() || actionInFlight.current) return
+    actionInFlight.current = true
     setChecking(true)
     try {
       const result = await checkForUpdate()
@@ -28,23 +30,29 @@ export default function UpdateButton({ autoCheck = false, showButton = true }: P
       else setUpdate(result)
     } catch (error) {
       notice.error(`检查更新失败：${String(error)}`)
-    } finally { setChecking(false) }
+    } finally { actionInFlight.current = false; setChecking(false) }
   }
   const install = async () => {
-    if (!update || downloading) return
+    if (!update || actionInFlight.current) return
+    actionInFlight.current = true
     setDownloading(true)
-    setProgress({ downloaded: 0, total: undefined })
+    setProgress({ downloaded: 0, phase: 'connecting' })
     try { await downloadAndInstallUpdate(update, setProgress) }
-    catch (error) { setDownloading(false); notice.error(`下载更新失败：${String(error)}`) }
+    catch (error) { notice.error(`下载更新失败：${error instanceof Error ? error.message : String(error)}`) }
+    finally { actionInFlight.current = false; setDownloading(false) }
   }
   const percent = progress.total ? Math.min(100, Math.round(progress.downloaded / progress.total * 100)) : undefined
+  const statusText = progress.phase === 'connecting' ? '正在连接下载服务器…'
+    : progress.phase === 'retrying' ? `连接中断，正在重试${progress.attempt && progress.maxAttempts ? `（${progress.attempt}/${progress.maxAttempts}）` : ''}…`
+    : progress.phase === 'installing' ? '正在安装…'
+    : percent === undefined ? '正在下载…' : `${percent}%`
   return <>
     {contextHolder}
     {showButton && <Button className="update-button" icon={checking ? <RefreshCw className="update-spin" size={14}/> : <Download size={14}/>} loading={checking} disabled={downloading} onClick={checkUpdate}>检查更新</Button>}
-    <Modal open={Boolean(update)} title={`发现新版本 ${update?.version ?? ''}`} closable={!downloading} maskClosable={!downloading} onCancel={() => !downloading && setUpdate(null)} okText={downloading ? '正在下载…' : '下载并安装'} cancelText="稍后更新" onOk={install} okButtonProps={{ loading: downloading, disabled: downloading }} cancelButtonProps={{ disabled: downloading }}>
+    <Modal open={Boolean(update)} title={`发现新版本 ${update?.version ?? ''}`} closable={!downloading} maskClosable={!downloading} onCancel={() => !downloading && setUpdate(null)} okText={downloading ? '更新中…' : '下载并安装'} cancelText="稍后更新" onOk={install} okButtonProps={{ loading: downloading, disabled: downloading }} cancelButtonProps={{ disabled: downloading }}>
       <p>当前版本：{update?.currentVersion}</p>
       {update?.body && <div className="update-notes">{update.body}</div>}
-      {downloading && <div className="update-download-progress"><Progress percent={percent} status="active" showInfo={false}/><div className="update-download-progress-label"><span>{percent === undefined ? '正在下载…' : `${percent}%`}</span><span>{formatBytes(progress.downloaded)}{progress.total ? ` / ${formatBytes(progress.total)}` : ''}</span></div></div>}
+      {downloading && <div className="update-download-progress"><Progress percent={percent} status="active" showInfo={false}/><div className="update-download-progress-label" role="status"><span>{statusText}</span><span>{formatBytes(progress.downloaded)}{progress.total ? ` / ${formatBytes(progress.total)}` : ''}</span></div></div>}
     </Modal>
   </>
 }

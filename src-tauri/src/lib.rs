@@ -9,7 +9,10 @@ mod finish_matching;
 mod fonts;
 mod geometry;
 mod imposition_algorithms;
+mod imposition_compute;
 mod imposition_pdf;
+mod imposition_pdf_runtime;
+pub use imposition_pdf_runtime::run_pdf_worker_if_requested;
 mod imposition_import;
 mod local_api;
 mod product_config_cache;
@@ -1612,7 +1615,8 @@ pub fn run() {
             imposition_import::import_imposition_svg,
             production_imposition::return_imposition_to_review,
             imposition_algorithms::pack_imposition_irregular,
-            imposition_algorithms::load_imposition_polygon,
+            imposition_algorithms::load_imposition_geometry,
+            imposition_compute::get_imposition_compute_info,
             import_assets,
             load_workspace,
             save_workspace,

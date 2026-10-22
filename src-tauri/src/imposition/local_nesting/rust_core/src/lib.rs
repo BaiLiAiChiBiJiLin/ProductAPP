@@ -11,6 +11,9 @@ use std::sync::{Condvar, Mutex, MutexGuard, RwLock};
 const DEFAULT_BUDGET: usize = 128 * 1024 * 1024;
 const ERROR_BYTES: usize = 256;
 const THREAD_STACK: usize = 256 * 1024;
+const MIB: usize = 1024 * 1024;
+const PROCESS_RESERVE: usize = 256 * MIB;
+const WORKER_HEADROOM: usize = 32 * MIB;
 type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Clone, Copy, Debug)]
@@ -150,8 +153,33 @@ unsafe fn context<'a>(ctx: *mut NcContext) -> Result<&'a mut NcContext> {
     }
 }
 
+fn available_cpu_count() -> usize {
+    std::thread::available_parallelism().map_or(1, |count| count.get())
+}
+
+fn cpu_workers(requested: usize, available_cpus: usize) -> usize {
+    let available_cpus = available_cpus.max(1);
+    if requested == 0 {
+        (available_cpus / 2).max(1)
+    } else {
+        requested.min(available_cpus)
+    }
+}
+
+fn limited_workers(
+    requested: usize,
+    available_cpus: usize,
+    available_bytes: Option<usize>,
+) -> usize {
+    let requested = cpu_workers(requested, available_cpus);
+    let Some(available) = available_bytes.filter(|bytes| *bytes >= 768 * MIB) else {
+        return 1;
+    };
+    requested.min(((available - PROCESS_RESERVE) / WORKER_HEADROOM).max(1))
+}
+
 #[cfg(windows)]
-fn memory_workers(requested: usize) -> usize {
+fn available_memory() -> Option<usize> {
     #[repr(C)]
     struct MemoryStatus {
         length: u32,
@@ -179,19 +207,32 @@ fn memory_workers(requested: usize) -> usize {
         avail_virtual: 0,
         avail_extended_virtual: 0,
     };
-    // Failure to read available commit conservatively selects one worker.
-    if unsafe { GlobalMemoryStatusEx(&mut status) } == 0
-        || status.avail_phys.min(status.avail_page_file) < 768 * 1024 * 1024
-    {
-        1
-    } else {
-        requested
-    }
+    (unsafe { GlobalMemoryStatusEx(&mut status) } != 0)
+        .then(|| usize::try_from(status.avail_phys.min(status.avail_page_file)).ok())
+        .flatten()
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+fn available_memory() -> Option<usize> {
+    let info = std::fs::read_to_string("/proc/meminfo").ok()?;
+    let line = info
+        .lines()
+        .find(|line| line.starts_with("MemAvailable:"))?;
+    line.split_whitespace()
+        .nth(1)?
+        .parse::<usize>()
+        .ok()?
+        .checked_mul(1024)
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+fn available_memory() -> Option<usize> {
+    None
+}
+
 fn memory_workers(requested: usize) -> usize {
-    requested
+    // Check on each sheet as process affinity and physical/commit headroom may change.
+    limited_workers(requested, available_cpu_count(), available_memory())
 }
 
 #[no_mangle]
@@ -206,11 +247,7 @@ pub unsafe extern "C" fn nc_create(workers: u32, max_bytes: u64, out: *mut *mut 
             return Err(INVALID);
         }
         *out = ptr::null_mut();
-        let requested_workers = match workers {
-            0 => 2,
-            1 | 2 | 4 => workers as usize,
-            _ => return Err(INVALID),
-        };
+        let requested_workers = cpu_workers(workers as usize, available_cpu_count());
         let budget = if max_bytes == 0 {
             DEFAULT_BUDGET
         } else {
@@ -988,6 +1025,94 @@ pub unsafe extern "C" fn nc_destroy(ctx: *mut NcContext) {
 mod tests {
     use super::*;
 
+    #[test]
+    fn worker_policy_defaults_to_half_cpus_and_accepts_arbitrary_counts() {
+        for (cpus, expected) in [(0, 1), (1, 1), (3, 1), (7, 3), (8, 4), (24, 12)] {
+            assert_eq!(cpu_workers(0, cpus), expected);
+        }
+        assert_eq!(cpu_workers(7, 8), 7);
+        assert_eq!(cpu_workers(8, 8), 8);
+        assert_eq!(cpu_workers(999, 8), 8);
+        assert_eq!(cpu_workers(7, 1), 1);
+    }
+
+    #[test]
+    fn worker_policy_reserves_memory_and_handles_unknown_availability() {
+        assert_eq!(limited_workers(8, 16, None), 1);
+        assert_eq!(limited_workers(8, 16, Some(400 * MIB)), 1);
+        assert_eq!(limited_workers(64, 64, Some(1024 * MIB)), 24);
+        assert_eq!(limited_workers(7, 16, Some(4096 * MIB)), 7);
+        assert_eq!(limited_workers(64, 3, Some(4096 * MIB)), 3);
+    }
+
+    #[test]
+    fn ffi_accepts_non_power_of_two_counts_and_clamps_to_host() {
+        unsafe {
+            for requested in [0, 3, 7, 8, u32::MAX] {
+                let mut ctx = ptr::null_mut();
+                assert_eq!(nc_create(requested, 0, &mut ctx), 0);
+                assert_eq!(
+                    (*ctx).requested_workers,
+                    cpu_workers(requested as usize, available_cpu_count())
+                );
+                assert!(nc_worker_count(ctx) >= 1);
+                assert!(nc_worker_count(ctx) as usize <= available_cpu_count());
+                nc_destroy(ctx);
+            }
+        }
+    }
+
+    #[test]
+    fn small_job_budget_reduces_worker_pool_without_losing_placements() {
+        unsafe {
+            let mut ctx = ptr::null_mut();
+            assert_eq!(nc_create(8, 4096, &mut ctx), 0);
+            let mut mask_index = 0;
+            assert_eq!(
+                nc_add_mask(ctx, [1_u8; 4].as_ptr(), 4, 2, 2, &mut mask_index),
+                0
+            );
+            let config = NcPackConfig {
+                cols: 4,
+                rows: 4,
+                lookahead: 1,
+                reserved: 0,
+                weight: 0.01,
+                height_weight: 1.0,
+            };
+            let sources = [NcSource {
+                first_mask: 0,
+                mask_count: 8,
+            }];
+            let indexes = [0_u32; 8];
+            let limits = [NcLimit { max_x: 2, max_y: 2 }];
+            let mut quantities = [4_u64];
+            assert_eq!(
+                nc_pack(
+                    ctx,
+                    &config,
+                    sources.as_ptr(),
+                    1,
+                    indexes.as_ptr(),
+                    8,
+                    limits.as_ptr(),
+                    1,
+                    [0_u32].as_ptr(),
+                    1,
+                    quantities.as_mut_ptr(),
+                    1,
+                    None,
+                    ptr::null_mut()
+                ),
+                0
+            );
+            assert_eq!(nc_worker_count(ctx), 1);
+            assert_eq!(quantities, [0]);
+            assert_eq!(nc_placement_count(ctx), 4);
+            nc_destroy(ctx);
+        }
+    }
+
     fn mask(width: usize, height: usize, data: &[u8]) -> Mask {
         let stride = width.div_ceil(64);
         let mut words = vec![0; stride * height];
@@ -1300,7 +1425,7 @@ mod tests {
             words: vec![0; 12],
             occupied: true,
         });
-        for workers in [1, 2, 4] {
+        for workers in [1, 2, 4, 7, 8] {
             let shared = Shared {
                 job: Mutex::new(Job {
                     epoch: 0,

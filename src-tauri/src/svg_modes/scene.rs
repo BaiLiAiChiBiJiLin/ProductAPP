@@ -23,6 +23,20 @@ pub(crate) fn split_sources_with_progress<F: Fn(&str, usize, usize)>(
     split: bool,
     progress: F,
 ) -> Result<Vec<(String, String)>, String> {
+    split_sources_with_workers(
+        data,
+        split,
+        super::super::import_parallel::default_workers(),
+        progress,
+    )
+}
+
+pub(crate) fn split_sources_with_workers<F: Fn(&str, usize, usize)>(
+    data: &str,
+    split: bool,
+    workers: usize,
+    progress: F,
+) -> Result<Vec<(String, String)>, String> {
     // CorelDRAW and Illustrator commonly include the standard SVG DOCTYPE.
     // roxmltree does not fetch the external DTD.
     let doc = roxmltree::Document::parse_with_options(
@@ -172,28 +186,36 @@ pub(crate) fn split_sources_with_progress<F: Fn(&str, usize, usize)>(
     let prefix = &data[..root.range().start];
     let render_options = options();
     let mut parsed = Vec::with_capacity(candidate_specs.len());
-    for (order, (node, wrapper)) in candidate_specs.into_iter().enumerate() {
-        let raw_xml = data[node.range()].to_owned();
-        let xml = wrap_candidate_xml(wrapper.as_deref(), &raw_xml);
-        let has_image = node
-            .descendants()
-            .any(|n| n.is_element() && n.tag_name().name() == "image");
-        let candidate_source = scene_source(prefix, opening, &shared, None, &xml);
-        let bounds = rendered_bounds(&candidate_source, &render_options);
-        let name = node
-            .attribute("data-name")
-            .or_else(|| node.attribute("id"))
-            .map(str::to_owned)
-            .unwrap_or_else(|| format!("图形 {}", order + 1));
-        parsed.push(SplitCandidate {
-            name,
-            xml,
-            order,
-            has_image,
-            bounds,
-        });
-        progress("parse", order + 1, candidate_total.max(1));
-    }
+    super::super::import_parallel::for_each_ordered(
+        candidate_specs,
+        workers,
+        |order, (node, wrapper)| {
+            let raw_xml = data[node.range()].to_owned();
+            let xml = wrap_candidate_xml(wrapper.as_deref(), &raw_xml);
+            let has_image = node
+                .descendants()
+                .any(|n| n.is_element() && n.tag_name().name() == "image");
+            let candidate_source = scene_source(prefix, opening, &shared, None, &xml);
+            let bounds = rendered_bounds(&candidate_source, &render_options);
+            let name = node
+                .attribute("data-name")
+                .or_else(|| node.attribute("id"))
+                .map(str::to_owned)
+                .unwrap_or_else(|| format!("图形 {}", order + 1));
+            Ok(SplitCandidate {
+                name,
+                xml,
+                order,
+                has_image,
+                bounds,
+            })
+        },
+        |order, candidate| {
+            parsed.push(candidate);
+            progress("parse", order + 1, candidate_total.max(1));
+            Ok(())
+        },
+    )?;
 
     // First form image groups by their rendered global bounding boxes. Then
     // attach standalone paths/lines to the nearest image group. This is what

@@ -1,11 +1,18 @@
+import { StrictMode } from 'react'
 import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import Konva from 'konva'
 import ImpositionKonvaCanvas, { type PackedImpositionItem } from '../src/modules/imposition/ImpositionKonvaCanvas'
 import type { ProductionImage } from '../src/modules/imposition/impositionRecords'
+import { ImpositionCanvasImages, canvasPreviewEdge } from '../src/modules/imposition/impositionCanvasImages'
+import { transformedPolygon } from '../src/modules/imposition/impositionGeometry'
+
+const native = vi.hoisted(() => ({ invoke: vi.fn() }))
+vi.mock('@tauri-apps/api/core', () => ({ invoke: native.invoke }))
 
 // Exercise real Konva nodes and React commits; only canvas painting is stubbed.
 beforeEach(() => {
+  native.invoke.mockReset()
   Konva.autoDrawEnabled = false
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => new Proxy({
     measureText: (text: string) => ({ width: text.length * 4 }),
@@ -26,7 +33,7 @@ function mount(pages: PackedImpositionItem[][], polygons: Record<string, Array<[
   const onSelect = vi.fn()
   const onPagesChange = vi.fn()
   const onEdit = vi.fn()
-  const canvas = (collapsed: boolean) => <ImpositionKonvaCanvas pages={pages} imageSources={{}} polygons={polygons} collapseRepeatedLayouts={collapsed} boardWidth={100} boardHeight={100} boardScale={1} effectiveX={5} effectiveY={5} effectiveWidth={90} effectiveHeight={90} spacing={3} holeCount={0} holeSize={3} holeLeft={2} holeStart={10} holeGap={20} zoom={1} panOffset={{ x: 0, y: 0 }} panMode={false} onSelectImage={onSelect} onPagesChange={onPagesChange} onEdit={onEdit}/>
+  const canvas = (collapsed: boolean) => <ImpositionKonvaCanvas pages={pages} imageSources={{}} polygons={polygons} collapseRepeatedLayouts={collapsed} boardWidth={100} boardHeight={100} boardScale={1} effectiveX={5} effectiveY={5} effectiveWidth={90} effectiveHeight={90} spacing={3} holeCount={0} holeSize={3} holeLeft={2} holeGap={20} zoom={1} panOffset={{ x: 0, y: 0 }} panMode={false} onSelectImage={onSelect} onPagesChange={onPagesChange} onEdit={onEdit}/>
   const view = render(canvas(collapseRepeatedLayouts))
   const stage = Konva.stages.at(-1)!
   const image = stage.find<Konva.Image>('Image')[0]
@@ -38,8 +45,37 @@ function begin(node: Konva.Image) { act(() => { node.fire('dragstart') }) }
 function move(node: Konva.Image, x: number, y: number) { act(() => { node.absolutePosition({ x, y }); node.fire('dragmove') }) }
 function end(node: Konva.Image) { act(() => { node.fire('dragend') }) }
 
-it('draws unfilled board hole paths at the configured millimetre size after canvas scaling', () => {
-  const canvas = (diameter: number) => <ImpositionKonvaCanvas pages={[[item('art', 20, 20)]]} imageSources={{}} boardWidth={100} boardHeight={100} boardScale={2} effectiveX={5} effectiveY={5} effectiveWidth={90} effectiveHeight={90} spacing={3} holeCount={2} holeSize={diameter} holeLeft={4} holeStart={10} holeGap={20} zoom={1.5} panOffset={{ x: 0, y: 0 }} panMode={false} onSelectImage={() => {}}/>
+it.each(Array.from({ length: 24 }, (_, index) => index * 15))('matches rendered contour coordinates to collision coordinates at %s degrees', rotation => {
+  const polygon: Array<[number, number]> = [[1, 2], [19, 3], [14, 27], [4, 22]]
+  const packed = { ...item('rotated', 35, 40, 20, 30, polygon), rotation }
+  const { image } = mount([[packed]])
+  const transform = image.getTransform()
+  const expected = transformedPolygon(packed, rotation)
+  polygon.forEach(([x, y], index) => {
+    const rendered = transform.point({ x, y })
+    expect(rendered.x).toBeCloseTo(expected[index].x, 8)
+    expect(rendered.y).toBeCloseTo(expected[index].y, 8)
+  })
+})
+
+it('checks the committed sibling position when moving a second image after the first', () => {
+  const { image, stage, origin, onPagesChange } = mount([[item('first', 10, 20), item('second', 50, 20)]])
+  begin(image)
+  move(image, origin.x + 35, origin.y + 25)
+  end(image)
+  const second = stage.find<Konva.Image>('Image').find(node => node.id() === 'second')!
+  begin(second)
+  move(second, origin.x + 48, origin.y + 25)
+  move(second, origin.x + 40, origin.y + 25)
+  end(second)
+  const committed = onPagesChange.mock.calls.at(-1)![0] as PackedImpositionItem[][]
+  expect(committed[0].map(value => value.x)).toEqual([30, 43])
+  expect(image.x()).toBeCloseTo(35)
+  expect(second.x()).toBeCloseTo(48)
+})
+
+it('draws centered unfilled holes with an outer-edge span independent of diameter and canvas scaling', () => {
+  const canvas = (diameter: number) => <ImpositionKonvaCanvas pages={[[item('art', 20, 20)]]} imageSources={{}} boardWidth={100} boardHeight={100} boardScale={2} effectiveX={5} effectiveY={5} effectiveWidth={90} effectiveHeight={90} spacing={3} holeCount={2} holeSize={diameter} holeLeft={4} holeGap={20} zoom={1.5} panOffset={{ x: 0, y: 0 }} panMode={false} onSelectImage={() => {}}/>
   const view = render(canvas(3))
   const stage = Konva.stages.at(-1)!
   for (const diameter of [3, 5]) {
@@ -53,7 +89,7 @@ it('draws unfilled board hole paths at the configured millimetre size after canv
       expect(bounds.width).toBeCloseTo(diameter * 2, 3)
       expect(bounds.height).toBeCloseTo(diameter * 2, 3)
       expect(bounds.x).toBeCloseTo(8, 3)
-      expect(bounds.y).toBeCloseTo((10 + index * 20) * 2, 3)
+      expect(bounds.y).toBeCloseTo((40 + index * (20 - diameter)) * 2, 3)
     })
   }
   view.rerender(canvas(0))
@@ -295,4 +331,106 @@ it.each([0, 90, 180, 270])('keeps the complete image frame inside the effective 
   move(image, bottomRight.x, bottomRight.y + 1)
   expect(image.absolutePosition()).toEqual(bottomRight)
   end(image)
+})
+
+it('decodes one shared image for 200 QT copies while the source is still loading', () => {
+  const decoded: HTMLImageElement[] = []
+  vi.spyOn(window, 'Image').mockImplementation(function () {
+    const image = document.createElement('img')
+    decoded.push(image)
+    return image
+  })
+  const pages = [Array.from({ length: 200 }, (_, index) => {
+    const packed = item(`qt-memory-${index}`, 10 + index % 10 * 5, 10 + Math.floor(index / 10) * 3, 2, 2)
+    packed.image.sourceImageId = 'shared-memory-source'
+    return packed
+  })]
+  const view = render(<ImpositionKonvaCanvas pages={pages} imageSources={{ 'shared-memory-source': 'data:image/png;base64,c2hhcmVkLW1lbW9yeS1zb3VyY2U=' }} boardWidth={100} boardHeight={100} boardScale={1} effectiveX={5} effectiveY={5} effectiveWidth={90} effectiveHeight={90} spacing={3} holeCount={0} holeSize={3} holeLeft={2} holeGap={20} zoom={1} panOffset={{ x: 0, y: 0 }} panMode={false} onSelectImage={() => {}}/>)
+  expect(decoded).toHaveLength(1)
+  act(() => decoded[0].dispatchEvent(new Event('load')))
+  const nodes = Konva.stages.at(-1)!.find<Konva.Image>('Image')
+  expect(nodes).toHaveLength(200)
+  expect(new Set(nodes.map(node => node.image())).size).toBe(1)
+  view.unmount()
+  expect(decoded[0].getAttribute('src')).toBeNull()
+})
+
+function previewDecoder() {
+  const images: HTMLImageElement[] = []
+  vi.spyOn(window, 'Image').mockImplementation(function () {
+    const image = document.createElement('img')
+    images.push(image)
+    return image
+  })
+  return images
+}
+const settlePreviews = async () => { for (let index = 0; index < 8; index++) await Promise.resolve() }
+
+it('queues unique native previews, skips abandoned offscreen work, and continues after a bad source', async () => {
+  const decoded = previewDecoder()
+  native.invoke.mockImplementation(async (_command, args) => {
+    if (args.path === 'bad.svg') throw new Error('bad SVG')
+    return 'data:image/png;base64,AQ=='
+  })
+  const store = new ImpositionCanvasImages()
+  const first = vi.fn(), second = vi.fn()
+  const releases = Array.from({ length: 1028 }, () => store.acquire('shared.svg', undefined, 256, image => first(image)))
+  const releaseOffscreen = store.acquire('offscreen.svg', undefined, 256, vi.fn())
+  store.acquire('bad.svg', undefined, 256, vi.fn())
+  store.acquire('next.svg', undefined, 256, second)
+  releaseOffscreen()
+  await settlePreviews()
+  expect(native.invoke.mock.calls.map(([, args]) => args.path)).toEqual(['shared.svg'])
+  expect(decoded).toHaveLength(1)
+  decoded[0].dispatchEvent(new Event('load'))
+  await settlePreviews()
+  expect(native.invoke.mock.calls.map(([, args]) => args.path)).toEqual(['shared.svg', 'bad.svg', 'next.svg'])
+  expect(native.invoke).toHaveBeenCalledWith('load_imposition_thumbnail', { path: 'shared.svg', maxEdgePx: 256 })
+  decoded[1].dispatchEvent(new Event('load'))
+  await settlePreviews()
+  expect(first).toHaveBeenLastCalledWith(decoded[0])
+  expect(second).toHaveBeenLastCalledWith(decoded[1])
+  releases.forEach(release => release())
+  store.dispose()
+  expect(decoded.every(image => image.getAttribute('src') === null)).toBe(true)
+})
+
+it('bounds idle decoded caches and releases all image URLs on canvas disposal', async () => {
+  const decoded = previewDecoder()
+  const store = new ImpositionCanvasImages()
+  for (let index = 0; index < 45; index++) {
+    const release = store.acquire(undefined, `data:image/png;base64,${index}`, 128, vi.fn())
+    decoded[index].dispatchEvent(new Event('load'))
+    await settlePreviews()
+    release()
+  }
+  expect(decoded.filter(image => image.hasAttribute('src'))).toHaveLength(32)
+  store.dispose()
+  expect(decoded.filter(image => image.hasAttribute('src'))).toHaveLength(0)
+})
+
+it('keeps native image loading restricted to visible boards and survives StrictMode cleanup', async () => {
+  const decoded = previewDecoder()
+  native.invoke.mockResolvedValue('data:image/png;base64,AQ==')
+  const pages = Array.from({ length: 80 }, (_, index) => [item(`visible-memory-${index}`, 10, 10)])
+  const paths = Object.fromEntries(pages.map(([piece]) => [piece.image.id, piece.image.filePath]))
+  const canvas = (panY: number) => <StrictMode><ImpositionKonvaCanvas pages={pages} imagePaths={paths} boardWidth={100} boardHeight={100} boardScale={1} effectiveX={5} effectiveY={5} effectiveWidth={90} effectiveHeight={90} spacing={3} holeCount={0} holeSize={3} holeLeft={2} holeGap={20} zoom={1} panOffset={{ x: 0, y: panY }} panMode={false} onSelectImage={() => {}}/></StrictMode>
+  const view = render(canvas(0))
+  await act(settlePreviews)
+  for (let index = 0; index < 20; index++) {
+    await act(async () => { decoded.at(-1)?.dispatchEvent(new Event('load')); await settlePreviews() })
+  }
+  const loadedPaths = native.invoke.mock.calls.map(([, args]) => args.path)
+  expect(new Set(loadedPaths).size).toBeLessThan(20)
+  expect(loadedPaths).not.toContain('visible-memory-79.svg')
+  expect(Konva.stages.at(-1)!.find<Konva.Image>('Image').every(node => node.image())).toBe(true)
+  view.rerender(canvas(-2200))
+  await act(settlePreviews)
+  expect(native.invoke.mock.calls.some(([, args]) => args.path === 'visible-memory-68.svg')).toBe(true)
+  view.unmount()
+  expect(decoded.every(image => !image.hasAttribute('src'))).toBe(true)
+})
+
+it('caps preview resolution independently of print dimensions and extreme zoom', () => {
+  expect([40, 128, 129, 256, 257, 20000].map(canvasPreviewEdge)).toEqual([128, 128, 256, 256, 512, 512])
 })

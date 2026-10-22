@@ -408,8 +408,13 @@ pub async fn return_imposition_to_review(app: tauri::AppHandle, id: String) -> R
 }
 
 #[tauri::command]
-pub async fn load_imposition_thumbnail(path: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || crate::batch_thumbnails::load_path(Path::new(&path)))
+pub async fn load_imposition_thumbnail(path: String, max_edge_px: Option<u32>) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        match max_edge_px {
+            Some(edge) => crate::batch_thumbnails::load_path_at_size(Path::new(&path), edge),
+            None => crate::batch_thumbnails::load_path(Path::new(&path)),
+        }
+    })
         .await
         .map_err(|error| error.to_string())?
 }

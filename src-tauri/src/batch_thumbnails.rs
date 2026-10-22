@@ -120,18 +120,24 @@ pub fn load(conn: &Connection, batch_id: &str) -> Result<Vec<BatchThumbnail>, St
 /// Individual lazy previews share the history renderer's lock so expanding
 /// a nesting task cannot decode dozens of original SVGs simultaneously.
 pub fn load_path(path: &Path) -> Result<String, String> {
+    load_path_at_size(path, 128)
+}
+
+/// Canvas previews share the serial renderer, with a hard decoded-pixel bound.
+pub fn load_path_at_size(path: &Path, max_edge_px: u32) -> Result<String, String> {
     let _guard = RENDER_LOCK.lock().map_err(|error| error.to_string())?;
+    let edge = max_edge_px.clamp(128, 512);
     let source = fs::read(path).map_err(|error| error.to_string())?;
     let png = if path
         .extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("svg"))
     {
-        render(&source, path)?
+        render_at_size(&source, path, edge)?
     } else {
         let image = image::load_from_memory(&source).map_err(|error| error.to_string())?;
         let mut output = std::io::Cursor::new(Vec::new());
         image
-            .thumbnail(128, 128)
+            .thumbnail(edge, edge)
             .write_to(&mut output, image::ImageFormat::Png)
             .map_err(|error| error.to_string())?;
         output.into_inner()
@@ -140,10 +146,14 @@ pub fn load_path(path: &Path) -> Result<String, String> {
 }
 
 fn render(source: &[u8], path: &Path) -> Result<Vec<u8>, String> {
+    render_at_size(source, path, 128)
+}
+
+fn render_at_size(source: &[u8], path: &Path, edge: u32) -> Result<Vec<u8>, String> {
     let mut options = crate::assets::export_options()?;
     options.resources_dir = path.parent().map(Path::to_owned);
     let tree = usvg::Tree::from_data(source, &options).map_err(|error| error.to_string())?;
-    let scale = 128.0 / tree.size().width().max(tree.size().height());
+    let scale = edge as f32 / tree.size().width().max(tree.size().height());
     let mut pixmap = tiny_skia::Pixmap::new(
         (tree.size().width() * scale).ceil().max(1.0) as u32,
         (tree.size().height() * scale).ceil().max(1.0) as u32,
@@ -251,6 +261,13 @@ mod tests {
         let bitmap = tiny_skia::Pixmap::decode_png(&bytes).unwrap();
         assert_eq!(bitmap.height(), 128);
         assert!(bitmap.width() < 128);
+        for requested in [0, 256, 512, u32::MAX] {
+            let preview = load_path_at_size(&path, requested).unwrap();
+            let bytes = STANDARD.decode(preview.strip_prefix("data:image/png;base64,").unwrap()).unwrap();
+            let bitmap = tiny_skia::Pixmap::decode_png(&bytes).unwrap();
+            assert_eq!(bitmap.height(), requested.clamp(128, 512));
+            assert!(bitmap.width() <= 512);
+        }
         assert_eq!(fs::read(&path).unwrap(), svg.as_bytes());
         assert_eq!(
             conn.query_row("SELECT payload FROM batches", [], |row| row

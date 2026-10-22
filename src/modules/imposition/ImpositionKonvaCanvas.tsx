@@ -6,32 +6,23 @@ export type { PackedImpositionItem } from './impositionGeometry'
 import { groupRepeatedPackingPages } from './packingAlgorithms'
 import { constrainRotation } from './impositionRotation'
 import { applyPackingEdit, type PackingEdit } from './packingEdits'
-import { BOARD_HOLE_COLOR, BOARD_HOLE_STROKE_MM, boardHolePath } from './impositionHoles'
+import { ImpositionCanvasImages, canvasPreviewEdge } from './impositionCanvasImages'
+import { BOARD_HOLE_COLOR, BOARD_HOLE_STROKE_MM, boardHoleLayout, boardHolePath } from './impositionHoles'
 
 type Polygon = Array<[number, number]>
-type Props = { pages: PackedImpositionItem[][]; imageSources: Record<string, string>; polygons?: Record<string, Polygon>; collapseRepeatedLayouts?: boolean; boardWidth: number; boardHeight: number; boardScale: number; effectiveX: number; effectiveY: number; effectiveWidth: number; effectiveHeight: number; spacing: number; holeCount: number; holeSize: number; holeLeft: number; holeStart: number; holeGap: number; zoom: number; panOffset: { x: number; y: number }; panMode: boolean; selectedImageId?: string; onSelectImage: (id: string) => void; onPagesChange?: (pages: PackedImpositionItem[][]) => void; onEdit?: (pages: PackedImpositionItem[][], edit: PackingEdit) => void; onInteractionHint?: (hint: string) => void }
+type Props = { pages: PackedImpositionItem[][]; imageSources?: Record<string, string>; imagePaths?: Record<string, string>; polygons?: Record<string, Polygon>; collapseRepeatedLayouts?: boolean; boardWidth: number; boardHeight: number; boardScale: number; effectiveX: number; effectiveY: number; effectiveWidth: number; effectiveHeight: number; spacing: number; holeCount: number; holeSize: number; holeLeft: number; holeGap: number; zoom: number; panOffset: { x: number; y: number }; panMode: boolean; selectedImageId?: string; onSelectImage: (id: string) => void; onPagesChange?: (pages: PackedImpositionItem[][]) => void; onEdit?: (pages: PackedImpositionItem[][], edit: PackingEdit) => void; onInteractionHint?: (hint: string) => void }
 
-const imageCache = new Map<string, HTMLImageElement>()
-function useSourceImage(source?: string) {
+function useSourceImage(store: ImpositionCanvasImages, path: string | undefined, source: string | undefined, edge: number) {
   const [image, setImage] = useState<HTMLImageElement>()
-  useEffect(() => {
-    if (!source) { setImage(undefined); return }
-    const cached = imageCache.get(source)
-    if (cached) { setImage(cached); return }
-    const next = new window.Image()
-    let cancelled = false
-    next.onload = () => { imageCache.set(source, next); if (!cancelled) setImage(next) }
-    next.src = source
-    return () => { cancelled = true; next.onload = null }
-  }, [source])
+  useEffect(() => store.acquire(path, source, edge, setImage), [store, path, source, edge])
   return image
 }
 
 type ResolvedMove = { valid: boolean; pageIndex: number; item: PackedImpositionItem; stagePosition: Point }
 type DragTransaction = { itemId: string; sourcePageIndex: number; original: PackedImpositionItem; lastValid: ResolvedMove; lastStagePosition: Point }
 
-function CanvasImage({ item, source, scale, editable, onSelect, onDragStart, onDragMove, onDragEnd, onTransformStart, onTransform, onTransformEnd, nodeRef }: { item: PackedImpositionItem; source?: string; scale: number; editable: boolean; onSelect: () => void; onDragStart: (node: Konva.Image) => void; onDragMove: (node: Konva.Image) => ResolvedMove; onDragEnd: (node: Konva.Image) => void; onTransformStart: (node: Konva.Image) => void; onTransform: (node: Konva.Image) => void; onTransformEnd: (node: Konva.Image) => void; nodeRef: (node: Konva.Image | null) => void }) {
-  const image = useSourceImage(source)
+function CanvasImage({ item, source, path, imageStore, previewEdge, scale, editable, onSelect, onDragStart, onDragMove, onDragEnd, onTransformStart, onTransform, onTransformEnd, nodeRef }: { item: PackedImpositionItem; source?: string; path?: string; imageStore: ImpositionCanvasImages; previewEdge: number; scale: number; editable: boolean; onSelect: () => void; onDragStart: (node: Konva.Image) => void; onDragMove: (node: Konva.Image) => ResolvedMove; onDragEnd: (node: Konva.Image) => void; onTransformStart: (node: Konva.Image) => void; onTransform: (node: Konva.Image) => void; onTransformEnd: (node: Konva.Image) => void; nodeRef: (node: Konva.Image | null) => void }) {
+  const image = useSourceImage(imageStore, path, source, previewEdge)
   const rotation = item.rotation ?? 0
   const visual = bounds(item, rotation, 0, 0)
   const lastValidPosition = useRef<Point>({ x: 0, y: 0 })
@@ -47,7 +38,10 @@ function CanvasImage({ item, source, scale, editable, onSelect, onDragStart, onD
 }
 
 export default function ImpositionKonvaCanvas(props: Props) {
-  const { pages, imageSources, polygons = {}, collapseRepeatedLayouts = false, boardWidth, boardHeight, boardScale, effectiveX, effectiveY, effectiveWidth, effectiveHeight, spacing, holeCount, holeSize, holeLeft, holeStart, holeGap, zoom, panOffset, panMode, selectedImageId, onSelectImage } = props
+  const { pages, imageSources = {}, imagePaths = {}, polygons = {}, collapseRepeatedLayouts = false, boardWidth, boardHeight, boardScale, effectiveX, effectiveY, effectiveWidth, effectiveHeight, spacing, holeCount, holeSize, holeLeft, holeGap, zoom, panOffset, panMode, selectedImageId, onSelectImage } = props
+  const imageStore = useMemo(() => new ImpositionCanvasImages(), [])
+  useEffect(() => () => imageStore.dispose(), [imageStore])
+  const { startMm: holeStart, pitchMm: holePitch } = boardHoleLayout(boardHeight, holeCount, holeSize, holeGap)
   const [localPages, setLocalPages] = useState(pages)
   const pagesChangedRef = useRef(props.onPagesChange)
   pagesChangedRef.current = props.onPagesChange
@@ -198,10 +192,10 @@ export default function ImpositionKonvaCanvas(props: Props) {
     {visiblePages.map(({ pageIndex, x: pageX, y: pageY }) => <Group key={pageIndex} x={pageX} y={pageY}>
       <Rect width={pageWidth} height={pageHeight} fill="#fff" stroke="#cbd5e1" strokeWidth={1}/>
       <Rect x={effectiveX * boardScale} y={effectiveY * boardScale} width={effectiveWidth * boardScale} height={effectiveHeight * boardScale} stroke="#ef4444" dash={[2 * boardScale, 2 * boardScale]} strokeWidth={.8} listening={false}/>
-      {holeSize > 0 && Array.from({ length: Math.max(0, holeCount) }).map((_, index) => <Path key={index} data={boardHolePath(holeLeft, holeStart + index * holeGap, holeSize)} scaleX={boardScale} scaleY={boardScale} fillEnabled={false} stroke={BOARD_HOLE_COLOR} strokeWidth={BOARD_HOLE_STROKE_MM} listening={false}/>) }
+      {holeSize > 0 && Array.from({ length: Math.max(0, holeCount) }).map((_, index) => <Path key={index} data={boardHolePath(holeLeft, holeStart + index * holePitch, holeSize)} scaleX={boardScale} scaleY={boardScale} fillEnabled={false} stroke={BOARD_HOLE_COLOR} strokeWidth={BOARD_HOLE_STROKE_MM} listening={false}/>) }
     </Group>)}
     {visiblePages.map(({ pageIndex, displayIndex, repeatCount, x: pageX, y: pageY }) => <Text key={`utilization-${pageIndex}`} x={pageX + pageWidth / 2} y={pageY - 18} width={pageWidth} align="center" offsetX={pageWidth / 2} text={`${collapseRepeatedLayouts ? `方案 ${displayIndex + 1} · 需生产 ${repeatCount} 块 · ` : ''}利用率 ${Math.round(pageUtilizations[pageIndex] ?? 0)}%`} fontSize={11} fill="#dc2626" listening={false}/>) }
-    {visiblePages.flatMap(({ page, pageIndex, x: pageX, y: pageY }) => page.map(item => <Group key={`page-${pageIndex}-image-${item.image.id}`} x={pageX} y={pageY}><CanvasImage item={{ ...item, polygon: item.polygon ?? polygons[item.image.id] ?? polygons[item.image.sourceImageId ?? ''] }} source={imageSources[item.image.sourceImageId ?? item.image.id]} scale={boardScale} editable={!panMode} onSelect={() => onSelectImage(item.image.id)} onDragStart={node => beginTransaction(pageIndex, item, node)} onDragMove={node => moveTransaction(pageIndex, item, node)} onDragEnd={endTransaction} onTransformStart={() => beginTransform(pageIndex, item)} onTransform={node => previewTransform(pageIndex, item, node)} onTransformEnd={node => commitTransform(pageIndex, item, node)} nodeRef={node => { nodeRefs.current[item.image.id] = node }}/></Group>))}
+    {visiblePages.flatMap(({ page, pageIndex, x: pageX, y: pageY }) => page.map(item => <Group key={`page-${pageIndex}-image-${item.image.id}`} x={pageX} y={pageY}><CanvasImage item={{ ...item, polygon: item.polygon ?? polygons[item.image.id] ?? polygons[item.image.sourceImageId ?? ''] }} source={imageSources[item.image.sourceImageId ?? item.image.id]} path={imagePaths[item.image.sourceImageId ?? item.image.id]} imageStore={imageStore} previewEdge={canvasPreviewEdge(Math.max(item.width, item.height) * boardScale * zoom * pixelRatio)} scale={boardScale} editable={!panMode} onSelect={() => onSelectImage(item.image.id)} onDragStart={node => beginTransaction(pageIndex, item, node)} onDragMove={node => moveTransaction(pageIndex, item, node)} onDragEnd={endTransaction} onTransformStart={() => beginTransform(pageIndex, item)} onTransform={node => previewTransform(pageIndex, item, node)} onTransformEnd={node => commitTransform(pageIndex, item, node)} nodeRef={node => { nodeRefs.current[item.image.id] = node }}/></Group>))}
     <Transformer ref={transformerRef} resizeEnabled={false} rotateEnabled={!panMode} rotateAnchorOffset={22} borderStroke="#2563eb" visible={Boolean(selectedNode)} />
   </Group></Layer></Stage></div>
 }

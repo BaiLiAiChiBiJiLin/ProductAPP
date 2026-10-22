@@ -5,6 +5,7 @@ import { pictureRulerBottomRatio } from './pictureRulerBoundsService.ts'
 
 const GROUP_GAP = 1.8 * 500 / 210
 export const RULER_STROKE_WIDTH = 0.3
+export const RULER_COLOR = '#2f6fa3'
 // Baseline anchor before the requested leftward visual adjustment.
 const VERTICAL_MARKER_INSET = 8
 const VERTICAL_MARKER_GAP = 2
@@ -23,7 +24,7 @@ export type ImageDimension = {
   horizontal: boolean
 }
 
-type DimensionItem = Pick<Item, 'rulerUnit' | 'rulerWidth' | 'rulerHeight' | 'sizeAxis' | 'caption'>
+type DimensionItem = Pick<Item, 'rulerUnit' | 'rulerWidth' | 'rulerHeight' | 'sizeAxis' | 'caption' | 'rulerWidthMm' | 'rulerHeightMm'>
 
 export type RulerDimensionAxis = 'width' | 'height' | 'both' | 'none'
 
@@ -231,10 +232,10 @@ export function imageDimensionMarkersSvg(page: Page, assets: Map<string, Asset>,
     const marker = imageDimensionMarkerLayout(group, page, assets, override?.precision ?? 'default', override?.decimalPlaces ?? 1)
     if (!marker) return []
     const line = marker.horizontal
-      ? `<line x1="${marker.x1}" y1="${marker.y1}" x2="${marker.textX - marker.gap}" y2="${marker.y1}"/><line x1="${marker.textX + marker.gap}" y1="${marker.y1}" x2="${marker.x2}" y2="${marker.y1}"/><path d="M${marker.x1} ${marker.y1}l5 -2v4Z" fill="#2f6fa3"/><path d="M${marker.x2} ${marker.y1}l-5 -2v4Z" fill="#2f6fa3"/>`
-      : `<line x1="${marker.x1}" y1="${marker.y1}" x2="${marker.x1}" y2="${marker.textY - marker.gap}"/><line x1="${marker.x1}" y1="${marker.textY + marker.gap}" x2="${marker.x1}" y2="${marker.y2}"/><path d="M${marker.x1} ${marker.y1}l-2 5h4Z" fill="#2f6fa3"/><path d="M${marker.x1} ${marker.y2}l-2 -5h4Z" fill="#2f6fa3"/>`
+      ? `<line x1="${marker.x1}" y1="${marker.y1}" x2="${marker.textX - marker.gap}" y2="${marker.y1}"/><line x1="${marker.textX + marker.gap}" y1="${marker.y1}" x2="${marker.x2}" y2="${marker.y1}"/><path d="M${marker.x1} ${marker.y1}l5 -2v4Z" fill="${RULER_COLOR}"/><path d="M${marker.x2} ${marker.y1}l-5 -2v4Z" fill="${RULER_COLOR}"/>`
+      : `<line x1="${marker.x1}" y1="${marker.y1}" x2="${marker.x1}" y2="${marker.textY - marker.gap}"/><line x1="${marker.x1}" y1="${marker.textY + marker.gap}" x2="${marker.x1}" y2="${marker.y2}"/><path d="M${marker.x1} ${marker.y1}l-2 5h4Z" fill="${RULER_COLOR}"/><path d="M${marker.x1} ${marker.y2}l-2 -5h4Z" fill="${RULER_COLOR}"/>`
     const extensions = marker.extension.map(([x1, y1, x2, y2]) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`).join('')
-    return [`<g data-printflow-dimension="true" data-item-id="${escape(group.itemIds[0])}" fill="none" stroke="#2f6fa3" stroke-width="${RULER_STROKE_WIDTH}" stroke-linecap="round" stroke-linejoin="round">${extensions}${line}<text x="${marker.textX}" y="${marker.textY}" text-anchor="middle" stroke="none" fill="#2f6fa3" font-family="Arial, Microsoft YaHei, sans-serif" font-size="7" transform="${marker.textRotation ? `rotate(${marker.textRotation} ${marker.textX} ${marker.textY})` : ''}">${escape(marker.label)}</text></g>`]
+    return [`<g data-printflow-dimension="true" data-item-id="${escape(group.itemIds[0])}" fill="none" stroke="${RULER_COLOR}" stroke-width="${RULER_STROKE_WIDTH}" stroke-linecap="round" stroke-linejoin="round">${extensions}${line}<text x="${marker.textX}" y="${marker.textY}" text-anchor="middle" stroke="none" fill="${RULER_COLOR}" font-family="Arial, Microsoft YaHei, sans-serif" font-size="7" transform="${marker.textRotation ? `rotate(${marker.textRotation} ${marker.textX} ${marker.textY})` : ''}">${escape(marker.label)}</text></g>`]
   }).join('')
 }
 
@@ -252,9 +253,17 @@ function dimensionMeasurement(asset: Asset, item: DimensionItem, axis?: 'width' 
 
 /** Source size determines the physical scale; an optional axis selects width or height. */
 export function dimensionForItem(asset: Asset, item: DimensionItem, axis?: 'width' | 'height', precision: DimensionDisplayPrecision = 'default', decimalPlaces = 1): ImageDimension {
-  const { horizontal, displayMm } = dimensionMeasurement(asset, item, axis)
+  const { horizontal } = dimensionMeasurement(asset, item, axis)
   const unit = item.rulerUnit ?? 'mm'
-  return { horizontal, label: `${formatDimensionNumber(displayMm / (unit === 'cm' ? 10 : unit === 'in' ? 25.4 : 1), precision, decimalPlaces)} ${unit}` }
+  return { horizontal, label: `${formatDimensionNumber(rulerDimensionValue(asset, item, axis), precision, decimalPlaces)} ${unit}` }
+}
+
+/** The editable value is stored in millimetres, so changing units remains lossless. */
+export function rulerDimensionValue(asset: Asset, item: DimensionItem, axis?: 'width' | 'height') {
+  const { horizontal, displayMm } = dimensionMeasurement(asset, item, axis)
+  const overrideMm = horizontal ? item.rulerWidthMm : item.rulerHeightMm
+  const valueMm = overrideMm !== undefined && Number.isFinite(overrideMm) && overrideMm > 0 ? overrideMm : displayMm
+  return valueMm / (item.rulerUnit === 'cm' ? 10 : item.rulerUnit === 'in' ? 25.4 : 1)
 }
 
 /** Resolve the axis represented by the currently visible ruler selection. */
@@ -270,13 +279,16 @@ export function rulerDimensionAxis(asset: Asset, item: Pick<Page['items'][number
 
 /** Return the Size text for the selected ruler axis without changing source dimensions. */
 export function rulerDimensionLabel(asset: Asset, item: DimensionItem, precision: DimensionDisplayPrecision = 'default', decimalPlaces = 1) {
+  const axis = rulerSizeAxis(asset, item)
+  return axis ? dimensionForItem(asset, item, axis, precision, decimalPlaces).label : undefined
+}
+
+/** Only the selected Size axis changes its details when both rulers are visible. */
+export function rulerSizeAxis(asset: Asset, item: DimensionItem): 'width' | 'height' | undefined {
   const axis = rulerDimensionAxis(asset, item)
-  if (axis === 'both') {
-    const selectedAxis = item.sizeAxis ?? (dimensionForItem(asset, item).horizontal ? 'width' : 'height')
-    return dimensionForItem(asset, item, selectedAxis, precision, decimalPlaces).label
-  }
+  if (axis === 'both') return item.sizeAxis ?? (dimensionForItem(asset, item).horizontal ? 'width' : 'height')
   if (axis === 'none') return undefined
-  return dimensionForItem(asset, item, axis, precision, decimalPlaces).label
+  return axis
 }
 
 /** Old saved layouts contain generated Size strings. Refresh only a matching old default. */

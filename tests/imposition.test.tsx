@@ -6,6 +6,7 @@ import ImpositionThumbnail from '../src/modules/imposition/ImpositionThumbnail'
 import { expandImpositionImages, getImpositionQuantity, type ImpositionJob, type ImpositionRecord } from '../src/modules/imposition/impositionRecords'
 import type { PackedImpositionItem } from '../src/modules/imposition/ImpositionKonvaCanvas'
 import { applyPackingEdit, type PackingEdit } from '../src/modules/imposition/packingEdits'
+import { IMPOSITION_THREADS_STORAGE_KEY } from '../src/modules/imposition/useImpositionThreads'
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), canvas: vi.fn((_props: { pages: PackedImpositionItem[][]; collapseRepeatedLayouts?: boolean; onEdit?: (pages: PackedImpositionItem[][], edit: PackingEdit) => void }) => null) }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke, isTauri: () => false }))
@@ -23,6 +24,90 @@ async function selectWholeJobAndCalculate(job: ImpositionJob) {
   fireEvent.click(calculate)
 }
 
+it('detects native logical cores, preserves results when changing concurrency, and persists the manual choice', async () => {
+  const job = jobs[0]
+  vi.spyOn(navigator, 'hardwareConcurrency', 'get').mockReturnValue(2)
+  let finish!: (value: unknown) => void
+  const result = { placements: [{ id: `${job.id}::asset`, sheetIndex: 0, xMm: 15, yMm: 15, widthMm: 20, heightMm: 20, rotationDeg: 0 }], unplaced: [], sheetsUsed: 1, utilization: .1, algorithm: 'local-tools' }
+  mocks.invoke.mockImplementation(async command => {
+    if (command === 'get_imposition_compute_info') return { logicalCores: 13, defaultThreads: 6 }
+    if (command === 'list_pending_impositions') return { records: [job], total: 1, page: 1, pageSize: 20 }
+    if (command === 'load_imposition_job') return { ...job, images: [{ ...detail.images[0], widthMm: 20, heightMm: 20, attributes: { QT: '1' } }] }
+    if (command === 'load_imposition_geometry') return { polygon: [[0, 0], [20, 0], [20, 20], [0, 20]], lineOnly: false }
+    if (command === 'load_imposition_image') return 'data:image/svg+xml,<svg/>'
+    if (command === 'pack_imposition_irregular') return new Promise(resolve => { finish = resolve })
+  })
+  const view = render(<ConfigProvider theme={{ token: { motion: false } }}><ImpositionPage active revision={0}/></ConfigProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: '开始拼版' }))
+  await screen.findByText('自动（6 核）')
+  expect(screen.getByText(/检测到 13 个逻辑核心/)).toBeTruthy()
+  expect(mocks.invoke).toHaveBeenCalledWith('get_imposition_compute_info')
+  await selectWholeJobAndCalculate(job)
+  await waitFor(() => expect(finish).toBeTypeOf('function'))
+  expect((screen.getByRole('combobox', { name: '使用核心数' }) as HTMLInputElement).disabled).toBe(true)
+  const solverCalls = () => mocks.invoke.mock.calls.filter(call => call[0] === 'pack_imposition_irregular')
+  expect(solverCalls().at(-1)![1].request.threadCount).toBeUndefined()
+  await act(async () => finish(result))
+  await screen.findByText(/1 个版面/)
+  const previousPages = mocks.canvas.mock.calls.at(-1)![0].pages
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: '使用核心数' }))
+  fireEvent.click(await screen.findByText('4 核'))
+  expect(localStorage.getItem(IMPOSITION_THREADS_STORAGE_KEY)).toBe('4')
+  expect(mocks.canvas.mock.calls.at(-1)![0].pages).toBe(previousPages)
+  expect(solverCalls()).toHaveLength(1)
+  expect((screen.getByRole('button', { name: '导出 PDF' }) as HTMLButtonElement).disabled).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: '重新计算' }))
+  await waitFor(() => expect(solverCalls()).toHaveLength(2))
+  expect(solverCalls().at(-1)![1].request.threadCount).toBe(4)
+  await act(async () => finish(result))
+  await screen.findByText(/1 个版面/)
+  view.unmount()
+  render(<ConfigProvider theme={{ token: { motion: false } }}><ImpositionPage active revision={0}/></ConfigProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: '开始拼版' }))
+  await screen.findByText('4 核')
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: '使用核心数' }))
+  fireEvent.click(await screen.findByText('自动（6 核）'))
+  expect(localStorage.getItem(IMPOSITION_THREADS_STORAGE_KEY)).toBe('auto')
+  await selectWholeJobAndCalculate(job)
+  await waitFor(() => expect(solverCalls()).toHaveLength(3))
+  expect(solverCalls().at(-1)![1].request.threadCount).toBeUndefined()
+  await act(async () => finish(result))
+})
+
+it('reports CPU detection failure, keeps automatic packing available, and clamps a saved choice after retry on a smaller computer', async () => {
+  const job = jobs[0]
+  localStorage.setItem(IMPOSITION_THREADS_STORAGE_KEY, '64')
+  let detectSucceeds = false
+  mocks.invoke.mockImplementation(async command => {
+    if (command === 'get_imposition_compute_info') {
+      if (!detectSucceeds) throw new Error('native API unavailable')
+      return { logicalCores: 4, defaultThreads: 2 }
+    }
+    if (command === 'list_pending_impositions') return { records: [job], total: 1, page: 1, pageSize: 20 }
+    if (command === 'load_imposition_job') return { ...job, images: [{ ...detail.images[0], attributes: { QT: '1' } }] }
+    if (command === 'load_imposition_geometry') return { polygon: [[0, 0], [20, 0], [0, 20]], lineOnly: false }
+    if (command === 'pack_imposition_irregular') return { placements: [], unplaced: [`${job.id}::asset`], sheetsUsed: 0, utilization: 0, algorithm: 'local-tools' }
+  })
+  render(<ConfigProvider theme={{ token: { motion: false } }}><ImpositionPage active revision={0}/></ConfigProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: '开始拼版' }))
+  await screen.findByText(/未能读取 CPU 核心数/)
+  expect((screen.getByRole('combobox', { name: '使用核心数' }) as HTMLInputElement).disabled).toBe(true)
+  expect(screen.getByText('自动（计算时检测）')).toBeTruthy()
+  await selectWholeJobAndCalculate(job)
+  await waitFor(() => expect(mocks.invoke.mock.calls.some(call => call[0] === 'pack_imposition_irregular')).toBe(true))
+  expect(mocks.invoke.mock.calls.find(call => call[0] === 'pack_imposition_irregular')![1].request.threadCount).toBeUndefined()
+  await waitFor(() => expect((screen.getByRole('button', { name: '重试' }) as HTMLButtonElement).disabled).toBe(false))
+  detectSucceeds = true
+  fireEvent.click(screen.getByRole('button', { name: '重试' }))
+  await screen.findByText(/检测到 4 个逻辑核心/)
+  expect(localStorage.getItem(IMPOSITION_THREADS_STORAGE_KEY)).toBe('4')
+  expect((screen.getByRole('combobox', { name: '使用核心数' }) as HTMLInputElement).disabled).toBe(false)
+  expect(screen.getByText('4 核')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: '重新计算' }))
+  await waitFor(() => expect(mocks.invoke.mock.calls.filter(call => call[0] === 'pack_imposition_irregular')).toHaveLength(2))
+  expect(mocks.invoke.mock.calls.filter(call => call[0] === 'pack_imposition_irregular').at(-1)![1].request.threadCount).toBe(4)
+})
+
 it('reads QT from production attributes and expands the same real asset for packing', () => {
   const image = { ...detail.images[0], attributes: { QT: '3' } }
   expect(getImpositionQuantity(image)).toBe(3)
@@ -39,7 +124,7 @@ it('uses only irregular packing and surfaces a solver failure without a rectangu
     if (command === 'list_pending_impositions') return { records: [job], total: 1, page: 1, pageSize: 20 }
     if (command === 'load_imposition_job') return record
     if (command === 'load_imposition_image') return 'data:image/svg+xml,<svg/>'
-    if (command === 'load_imposition_polygon') return [[0, 0], [20, 0], [0, 20]]
+    if (command === 'load_imposition_geometry') return { polygon: [[0, 0], [20, 0], [0, 20]], lineOnly: false }
     if (command === 'pack_imposition_irregular') {
       expect(args.request.irregularAlgorithm).toBe('local-tools')
       expect(args.request.objective).toBe('least-material')
@@ -66,7 +151,7 @@ it('locks packing inputs during a job and unlocks them when the solver returns',
   mocks.invoke.mockImplementation(async command => {
     if (command === 'list_pending_impositions') return { records: [job], total: 1, page: 1, pageSize: 20 }
     if (command === 'load_imposition_job') return { ...job, images: [{ ...detail.images[0], attributes: { QT: '3' } }] }
-    if (command === 'load_imposition_polygon') return [[0, 0], [20, 0], [0, 20]]
+    if (command === 'load_imposition_geometry') return { polygon: [[0, 0], [20, 0], [0, 20]], lineOnly: false }
     if (command === 'pack_imposition_irregular') return new Promise(resolve => { finish = resolve })
   })
   render(<ConfigProvider theme={{ token: { motion: false } }}><ImpositionPage active revision={0}/></ConfigProvider>)
@@ -98,7 +183,7 @@ it.each([
   mocks.invoke.mockImplementation(async command => {
     if (command === 'list_pending_impositions') return { records: [job], total: 1, page: 1, pageSize: 20 }
     if (command === 'load_imposition_job') return { ...job, images: [{ ...detail.images[0], widthMm: 20, heightMm: 20, attributes: { QT: '5' } }] }
-    if (command === 'load_imposition_polygon') return [[0, 0], [20, 0], [20, 20], [0, 20]]
+    if (command === 'load_imposition_geometry') return { polygon: [[0, 0], [20, 0], [20, 20], [0, 20]], lineOnly: false }
     if (command === 'load_imposition_image') return 'data:image/svg+xml,<svg/>'
     if (command === 'pack_imposition_irregular') return { placements, unplaced: [], sheetsUsed: 3, utilization: .1, algorithm: 'local-tools' }
   })
@@ -150,14 +235,16 @@ it.each([
 
 it.each([false, true])('automatically replans full QT and atomically replaces the plan (already excluded artwork: %s)', async withExcluded => {
   const job = jobs[0]
+  localStorage.setItem(IMPOSITION_THREADS_STORAGE_KEY, '3')
   let finishCrossPlan!: (value: unknown) => void
   mocks.invoke.mockImplementation(async (command, args) => {
+    if (command === 'get_imposition_compute_info') return { logicalCores: 8, defaultThreads: 4 }
     if (command === 'list_pending_impositions') return { records: [job], total: 1, page: 1, pageSize: 20 }
     if (command === 'load_imposition_job') return { ...job, images: [
-      { ...detail.images[0], widthMm: 20, heightMm: 20, attributes: { QT: '2' } },
+      { ...detail.images[0], filePath: `D:/line-only-cross-plan-${withExcluded}.svg`, widthMm: 20, heightMm: 20, attributes: { QT: '2' } },
       ...(withExcluded ? [{ ...detail.images[0], id: 'oversized', name: 'oversized.svg', widthMm: 1000, heightMm: 1000, attributes: { QT: '1' } }] : []),
     ] }
-    if (command === 'load_imposition_polygon') return [[0, 0], [20, 0], [20, 20], [0, 20]]
+    if (command === 'load_imposition_geometry') return { polygon: [[0, 0], [20, 0], [20, 20], [0, 20]], lineOnly: true }
     if (command === 'load_imposition_image') return 'data:image/svg+xml,<svg/>'
     if (command === 'pack_imposition_irregular' && args.request.templateRepack) return new Promise(resolve => { finishCrossPlan = resolve })
     if (command === 'pack_imposition_irregular') return {
@@ -178,8 +265,10 @@ it.each([false, true])('automatically replans full QT and atomically replaces th
   expect(mocks.canvas.mock.calls.at(-1)![0].pages).toEqual(props.pages)
   expect((screen.getByRole('button', { name: '导出 PDF' }) as HTMLButtonElement).disabled).toBe(true)
   const request = mocks.invoke.mock.calls.filter(call => call[0] === 'pack_imposition_irregular').at(-1)![1].request
-  expect(request.items).toEqual([expect.objectContaining({ id: `${job.id}::asset`, quantity: 2 })])
+  expect(request.items).toEqual([expect.objectContaining({ id: `${job.id}::asset`, quantity: 2, lineOnly: true })])
   expect(request.templateRepack).toEqual(intent.edit.templateRepack)
+  expect(request.threadCount).toBe(3)
+  expect(mocks.invoke.mock.calls.filter(([command, args]) => command === 'load_imposition_geometry' && args.path === `D:/line-only-cross-plan-${withExcluded}.svg`)).toHaveLength(1)
   await act(async () => finishCrossPlan({
     placements: [
       { id: `${job.id}::asset`, sheetIndex: 0, xMm: 45, yMm: 15, widthMm: 20, heightMm: 20, rotationDeg: 180 },
@@ -206,7 +295,7 @@ it.each([false, true])('automatically replans full QT and atomically replaces th
   const normalRequest = mocks.invoke.mock.calls.filter(call => call[0] === 'pack_imposition_irregular').at(-1)![1].request
   expect(normalRequest.templateRepack).toBeUndefined()
   expect(normalRequest.items).toEqual([
-    expect.objectContaining({ id: `${job.id}::asset`, quantity: 2 }),
+    expect.objectContaining({ id: `${job.id}::asset`, quantity: 2, lineOnly: true }),
     ...(withExcluded ? [expect.objectContaining({ id: `${job.id}::oversized`, quantity: 1 })] : []),
   ])
   expect(mocks.canvas.mock.calls.at(-1)![0].pages).toEqual(props.pages)
@@ -235,7 +324,7 @@ it('restores editing after cross-plan failure and only starts another special ca
   mocks.invoke.mockImplementation(async (command, args) => {
     if (command === 'list_pending_impositions') return { records: [job], total: 1, page: 1, pageSize: 20 }
     if (command === 'load_imposition_job') return { ...job, images: [{ ...detail.images[0], widthMm: 20, heightMm: 20, attributes: { QT: '2' } }] }
-    if (command === 'load_imposition_polygon') return [[0, 0], [20, 0], [20, 20], [0, 20]]
+    if (command === 'load_imposition_geometry') return { polygon: [[0, 0], [20, 0], [20, 20], [0, 20]], lineOnly: false }
     if (command === 'load_imposition_image') return 'data:image/svg+xml,<svg/>'
     if (command === 'pack_imposition_irregular') {
       if (args.request.templateRepack) { intents.push(args.request.templateRepack); throw new Error('worker failure') }
@@ -283,9 +372,9 @@ it('skips one invalid outline, keeps valid placements, and marks only that asset
     if (command === 'list_pending_impositions') return { records: [job], total: 1, page: 1, pageSize: 20 }
     if (command === 'load_imposition_job') return record
     if (command === 'load_imposition_image') return 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>'
-    if (command === 'load_imposition_polygon') {
+    if (command === 'load_imposition_geometry') {
       if (args.path === invalidImage.filePath) throw new Error('SVG 轮廓自交')
-      return [[0, 0], [20, 0], [20, 20], [0, 20]]
+      return { polygon: [[0, 0], [20, 0], [20, 20], [0, 20]], lineOnly: false }
     }
     if (command === 'pack_imposition_irregular') {
       expect(args.request.items.map((item: { id: string }) => item.id)).toEqual([`${job.id}::valid`])
@@ -303,6 +392,56 @@ it('skips one invalid outline, keeps valid placements, and marks only that asset
   await waitFor(() => expect(screen.getByText(/已放置/).textContent).toContain('1/2'))
 })
 
+it('classifies selected base SVGs once before packing, preserving QT and excluding invalid contours', async () => {
+  const job = { ...jobs[0], imageCount: 5 }
+  const record: ImpositionRecord = { ...job, images: [
+    ['line', '线条.svg', 3], ['art', '彩图.svg', 2], ['invalid', '无效轮廓.svg', 2], ['unused', '未选中.svg', 4], ['zero', '零份数.svg', 0],
+  ].map(([id, name, quantity]) => ({
+    ...detail.images[0], id: String(id), name: String(name), filePath: `D:/classify-selected/${id}.svg`,
+    widthMm: 20, heightMm: 20, attributes: { QT: String(quantity) },
+  })) }
+  mocks.invoke.mockImplementation(async (command, args) => {
+    if (command === 'list_pending_impositions') return { records: [job], total: 1, page: 1, pageSize: 20 }
+    if (command === 'load_imposition_job') return record
+    if (command === 'load_imposition_geometry') {
+      if (args.path.endsWith('/invalid.svg')) throw new Error('SVG 轮廓无效')
+      return { polygon: [[0, 0], [20, 0], [20, 20], [0, 20]], lineOnly: args.path.endsWith('/line.svg') }
+    }
+    if (command === 'load_imposition_image') return 'data:image/svg+xml,<svg/>'
+    if (command === 'pack_imposition_irregular') {
+      // SVG contents are parsed in native code; embedded raster images are not
+      // loaded into the frontend before the solver has returned placements.
+      expect(mocks.invoke.mock.calls.some(([name]) => name === 'load_imposition_image')).toBe(false)
+      expect(args.request.items).toEqual([
+        expect.objectContaining({ id: 'job-0::line', quantity: 3, lineOnly: true }),
+        expect.objectContaining({ id: 'job-0::art', quantity: 2, lineOnly: false }),
+      ])
+      const placements = args.request.items.flatMap((item: { id: string; quantity: number; lineOnly: boolean }) => Array.from({ length: item.quantity }, (_, index) => ({
+        id: item.id + (index ? `#qt-${index + 1}` : ''), sheetIndex: item.lineOnly ? 1 : 0,
+        xMm: 10 + index * 23, yMm: 12, widthMm: 20, heightMm: 20, rotationDeg: 0,
+      })))
+      return { placements, sheetsUsed: 2, utilization: .1, unplaced: [], algorithm: 'local-tools' }
+    }
+  })
+  render(<ConfigProvider theme={{ token: { motion: false } }}><ImpositionPage active revision={0}/></ConfigProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: '开始拼版' }))
+  fireEvent.click(await screen.findByText(job.customerName))
+  for (const image of record.images.filter(image => image.id !== 'unused')) {
+    fireEvent.click(await screen.findByRole('checkbox', { name: `参与拼版 ${image.name}` }))
+  }
+  expect(mocks.invoke.mock.calls.some(([command]) => command === 'load_imposition_geometry')).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: '重新计算' }))
+  await waitFor(() => expect(screen.getByText(/已放置/).textContent).toContain('5/7'))
+  expect(mocks.invoke.mock.calls.filter(([command]) => command === 'load_imposition_geometry').map(([, args]) => args.path).sort()).toEqual([
+    'D:/classify-selected/art.svg', 'D:/classify-selected/invalid.svg', 'D:/classify-selected/line.svg',
+  ])
+  expect(screen.getByText('无效轮廓.svg').closest('.imposition-job-image')?.classList.contains('is-invalid-outline')).toBe(true)
+  const pages = mocks.canvas.mock.calls.at(-1)![0].pages
+  expect(pages.map(page => page.map(item => item.image.sourceImageId ?? item.image.id))).toEqual([
+    ['job-0::art', 'job-0::art'], ['job-0::line', 'job-0::line', 'job-0::line'],
+  ])
+})
+
 it('shows the rejected contour name and reason while keeping successful sheets', async () => {
   const skipped = { ...detail.images[0], id: 'complex-contour', name: '复杂花边.svg', filePath: 'D:/complex-contour.svg', attributes: { QT: '2' } }
   const placed = { ...detail.images[0], id: 'normal-contour', name: '普通挂件.svg', filePath: 'D:/normal-contour.svg', attributes: { QT: '1' } }
@@ -311,7 +450,7 @@ it('shows the rejected contour name and reason while keeping successful sheets',
   mocks.invoke.mockImplementation(async command => {
     if (command === 'list_pending_impositions') return { records: [job], total: 1, page: 1, pageSize: 20 }
     if (command === 'load_imposition_job') return { ...job, images: [skipped, placed] }
-    if (command === 'load_imposition_polygon') return [[0, 0], [20, 0], [0, 20]]
+    if (command === 'load_imposition_geometry') return { polygon: [[0, 0], [20, 0], [0, 20]], lineOnly: false }
     if (command === 'load_imposition_image') return 'data:image/svg+xml,<svg/>'
     if (command === 'pack_imposition_irregular') return {
       placements: [{ id: `${job.id}::${placed.id}`, sheetIndex: 0, xMm: 0, yMm: 0, widthMm: 20, heightMm: 20, rotationDeg: 0 }],
@@ -340,7 +479,7 @@ it('marks the largest contour red after batching and still counts its placed QT 
   mocks.invoke.mockImplementation(async command => {
     if (command === 'list_pending_impositions') return { records: [job], total: 1, page: 1, pageSize: 20 }
     if (command === 'load_imposition_job') return { ...job, images: [complex, normal] }
-    if (command === 'load_imposition_polygon') return [[0, 0], [20, 0], [0, 20]]
+    if (command === 'load_imposition_geometry') return { polygon: [[0, 0], [20, 0], [0, 20]], lineOnly: false }
     if (command === 'load_imposition_image') return 'data:image/svg+xml,<svg/>'
     if (command === 'pack_imposition_irregular') return {
       placements: [complex.id, `${complex.id}#qt-2`, normal.id].map((id, index) => ({ id: `${job.id}::${id}`, sheetIndex: 0, xMm: 10 + index * 23, yMm: 12, widthMm: 20, heightMm: 20, rotationDeg: 0 })),
@@ -375,7 +514,7 @@ function selectionFixture(prefix: string) {
     if (command === 'load_imposition_job') return records.find(record => record.id === args.id)
     if (command === 'load_imposition_image') return 'data:image/svg+xml,<svg/>'
     if (command === 'load_imposition_thumbnail') return 'data:image/png;base64,AQ=='
-    if (command === 'load_imposition_polygon') return [[0, 0], [20, 0], [20, 20], [0, 20]]
+    if (command === 'load_imposition_geometry') return { polygon: [[0, 0], [20, 0], [20, 20], [0, 20]], lineOnly: false }
     if (command === 'update_imposition_image_quantity') {
       const index = records.findIndex(record => record.id === args.jobId)
       records[index] = { ...records[index], images: records[index].images.map(image => image.id === args.imageId ? { ...image, attributes: { ...image.attributes, QT: String(args.quantity) } } : image) }
@@ -400,18 +539,18 @@ it('opens an empty canvas and loads neither original images nor outlines until s
   expect(screen.queryByText(/导出：/)).toBeNull()
   expect(screen.queryByText('本地拼版')).toBeNull()
   expect((screen.getByRole('button', { name: '重新计算' }) as HTMLButtonElement).disabled).toBe(true)
-  expect(mocks.invoke.mock.calls.filter(([command]) => ['pack_imposition_irregular', 'load_imposition_polygon', 'load_imposition_image'].includes(command))).toHaveLength(0)
+  expect(mocks.invoke.mock.calls.filter(([command]) => ['pack_imposition_irregular', 'load_imposition_geometry', 'load_imposition_image'].includes(command))).toHaveLength(0)
   fireEvent.click(screen.getByRole('checkbox', { name: '参与拼版 首图.svg' }))
   fireEvent.click(screen.getByRole('checkbox', { name: '参与拼版 零数量.svg' }))
   expect(screen.getByText('已选 2/3 张图片')).toBeTruthy()
-  expect(mocks.invoke.mock.calls.filter(([command]) => ['pack_imposition_irregular', 'load_imposition_polygon', 'load_imposition_image'].includes(command))).toHaveLength(0)
+  expect(mocks.invoke.mock.calls.filter(([command]) => ['pack_imposition_irregular', 'load_imposition_geometry', 'load_imposition_image'].includes(command))).toHaveLength(0)
   fireEvent.click(screen.getByRole('button', { name: '重新计算' }))
   await waitFor(() => expect(screen.getByText(/已放置/).textContent).toContain('2/2'))
   const solver = mocks.invoke.mock.calls.filter(([command]) => command === 'pack_imposition_irregular')
   expect(solver).toHaveLength(1)
   expect(solver[0][1].request.items).toEqual([expect.objectContaining({ id: 'job-0::shared', quantity: 2 })])
-  expect(mocks.invoke.mock.calls.filter(([command]) => command === 'load_imposition_polygon').map(([, args]) => args.path)).toEqual([record.images[0].filePath])
-  await waitFor(() => expect(mocks.invoke.mock.calls.filter(([command]) => command === 'load_imposition_image').map(([, args]) => args.path)).toEqual([record.images[0].filePath]))
+  expect(mocks.invoke.mock.calls.filter(([command]) => command === 'load_imposition_geometry').map(([, args]) => args.path)).toEqual([record.images[0].filePath])
+  expect(mocks.invoke.mock.calls.filter(([command]) => command === 'load_imposition_image')).toHaveLength(0)
 })
 
 it('combines selected images across tasks, preserving independent QT counts when source asset IDs are identical', async () => {
@@ -580,6 +719,7 @@ it('limits thumbnail loads to two concurrent requests and skips queued thumbnail
 
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.removeItem(IMPOSITION_THREADS_STORAGE_KEY)
   Object.defineProperty(window, 'matchMedia', { writable: true, value: vi.fn(() => ({ matches: false, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() })) })
   const getStyle = window.getComputedStyle.bind(window)
   vi.spyOn(window, 'getComputedStyle').mockImplementation(element => getStyle(element))

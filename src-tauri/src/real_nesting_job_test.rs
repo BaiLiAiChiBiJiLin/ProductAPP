@@ -20,7 +20,7 @@
 //! Set PRINTFLOW_REAL_BACKFILL=1 for the optional, slower gap/backfill probes.
 
 use super::{
-    extract_svg_polygon, pack_irregular, NestItem, NestPlacement, NestRequest, NestResult,
+    extract_svg_geometry, pack_irregular, NestItem, NestPlacement, NestRequest, NestResult,
 };
 use serde_json::json;
 use std::{
@@ -44,6 +44,7 @@ struct SvgAsset {
     width: f64,
     height: f64,
     polygon: Vec<[f64; 2]>,
+    line_only: bool,
 }
 
 fn attr_mm(source: &str, name: &str) -> f64 {
@@ -59,14 +60,15 @@ fn read_asset(path: PathBuf) -> Result<SvgAsset, String> {
     let source = String::from_utf8_lossy(&bytes);
     let width = attr_mm(&source, "width");
     let height = attr_mm(&source, "height");
-    let polygon = extract_svg_polygon(&path, width, height)?;
+    let geometry = extract_svg_geometry(&path, width, height)?;
     let id = path.file_stem().unwrap().to_string_lossy().to_string();
     Ok(SvgAsset {
         id,
         path,
         width,
         height,
-        polygon,
+        polygon: geometry.polygon,
+        line_only: geometry.line_only,
     })
 }
 
@@ -82,6 +84,7 @@ fn request(items: Vec<NestItem>, algorithm: &str) -> NestRequest {
             .unwrap_or_else(|_| "least-material".into()),
         irregular_algorithm: algorithm.into(),
         template_repack: None,
+        thread_count: None,
         items,
     }
 }
@@ -608,6 +611,7 @@ fn run_fixture(dir: &Path, quantities: bool) {
             } else {
                 1
             },
+            line_only: a.line_only,
             polygon: Some(a.polygon.clone()),
         })
         .collect::<Vec<_>>();
@@ -749,6 +753,7 @@ fn real_result_validation_rejects_an_empty_success() {
         width_mm: 20.0,
         height_mm: 20.0,
         quantity: 1,
+        line_only: false,
         polygon: None,
     }];
     assert_real_result(&result, &items, (0, 0, 0, 0, 0));
@@ -779,6 +784,7 @@ fn real_result_validation_rejects_missing_qt_copies() {
         width_mm: 20.0,
         height_mm: 20.0,
         quantity: 2,
+        line_only: false,
         polygon: None,
     }];
     assert_real_result(&result, &items, (0, 0, 0, 0, 0));
@@ -814,6 +820,7 @@ fn contour_metrics_do_not_flag_rotated_bbox_only_overlap() {
             width_mm: 20.0,
             height_mm: 20.0,
             quantity: 1,
+            line_only: false,
             polygon: Some(polygon.clone()),
         },
         NestItem {
@@ -821,6 +828,7 @@ fn contour_metrics_do_not_flag_rotated_bbox_only_overlap() {
             width_mm: 20.0,
             height_mm: 20.0,
             quantity: 1,
+            line_only: false,
             polygon: Some(polygon),
         },
     ];

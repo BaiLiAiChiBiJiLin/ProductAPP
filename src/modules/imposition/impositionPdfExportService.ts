@@ -17,7 +17,7 @@ export interface ImpositionPdfExportEntry {
 }
 
 export interface ImpositionPdfExportProgress {
-  phase: 'prepare' | 'transfer' | 'resources' | 'flatten' | 'fonts' | 'parse' | 'convert' | 'write' | 'complete'
+  phase: 'prepare' | 'transfer' | 'queue' | 'resources' | 'flatten' | 'fonts' | 'parse' | 'convert' | 'merge' | 'write' | 'complete'
   completed: number
   total: number
   fileName: string
@@ -49,11 +49,36 @@ function outputPath(directory: string, fileName: string): string {
 
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error)
 
+type StagedPdfEntry = {
+  index: number
+  entry: ImpositionPdfExportEntry
+  output: string
+  id: string
+  pageIds: string[]
+}
+
+type PdfExportState = {
+  staged: StagedPdfEntry
+  pageNumber: number
+}
+
+/** Export conversion uses 80% of native logical CPUs without another UI knob. */
+async function automaticExportWorkers(): Promise<number> {
+  try {
+    const info = await invoke<{ logicalCores: number }>('get_imposition_compute_info')
+    if (info && Number.isSafeInteger(info.logicalCores) && info.logicalCores > 0) {
+      return Math.max(1, Math.floor(info.logicalCores * .8))
+    }
+  } catch {
+    return 1
+  }
+  return 1
+}
+
 /**
- * Preflight the entire batch before writing anything, then publish one complete
- * PDF at a time. A later failure returns already completed paths for the dialog.
- * The dialog is busy until this resolves; cancelling directory selection never
- * invokes this function and never writes a file.
+ * Keep at most two layout jobs in flight, sharing one native CPU budget.
+ * SVG generation/transfer stays serial and lazy; conversion overlaps in isolated
+ * workers. Do not clean staged resources until their native job has exited.
  */
 export async function exportImpositionPdfs(
   directory: string,
@@ -61,65 +86,111 @@ export async function exportImpositionPdfs(
   onProgress?: (progress: ImpositionPdfExportProgress) => void,
 ): Promise<ImpositionPdfExportResult> {
   const result: ImpositionPdfExportResult = { completedFiles: [], cancelled: false, cleanupWarnings: [] }
-  let activeId = ''
-  let currentFile = ''
-  let currentEntry: ImpositionPdfExportEntry | undefined
-  let pageNumber = 0
+  const states = new Map<string, PdfExportState>()
+  const completed = new Set<number>()
   let unlisten: (() => void) | undefined
-  const report = (phase: ImpositionPdfExportProgress['phase']) => onProgress?.({
-    phase, completed: result.completedFiles.length, total: entries.length, fileName: currentFile,
-    pageNumber, pageCount: currentEntry?.pages.length ?? 0, pageName: currentEntry?.pages[pageNumber - 1]?.label ?? '',
+  let failedFile = ''
+  const report = (state: PdfExportState, phase: ImpositionPdfExportProgress['phase']) => onProgress?.({
+    phase,
+    completed: completed.size,
+    total: entries.length,
+    fileName: state.staged.entry.fileName,
+    pageNumber: state.pageNumber,
+    pageCount: state.staged.entry.pages.length,
+    pageName: state.staged.entry.pages[state.pageNumber - 1]?.label ?? '',
   })
+  const cleanup = async (state: PdfExportState) => {
+    if (!state.staged.pageIds.length) return
+    await invoke('clear_pdf_pages', { ids: state.staged.pageIds }).catch(error => {
+      result.cleanupWarnings.push(state.staged.entry.fileName + ' 的临时 SVG 清理失败：' + errorText(error))
+    })
+  }
   try {
     if (!isTauri()) throw new Error('请在 Tauri 桌面窗口中导出 PDF')
     if (!directory.trim() || entries.length === 0) throw new Error('请选择导出文件夹和至少一个导出图层')
     const names = new Set<string>()
     const outputs = entries.map(entry => {
       const path = outputPath(directory, entry.fileName)
-      if (names.has(path.toLowerCase())) throw new Error(`导出文件名重复：${entry.fileName}`)
+      if (names.has(path.toLowerCase())) throw new Error('导出文件名重复：' + entry.fileName)
       names.add(path.toLowerCase())
       if (![entry.widthMm, entry.heightMm].every(n => Number.isFinite(n) && n > 0 && n <= 10_000)) throw new Error('板材毫米宽高无效')
-      if (!entry.pages.length) throw new Error(`版式没有可导出的页面：${entry.fileName}`)
+      if (!entry.pages.length) throw new Error('版式没有可导出的页面：' + entry.fileName)
       return path
     })
     await invoke('check_imposition_pdf_outputs', { outputs })
+    const nativeWorkers = await automaticExportWorkers()
     unlisten = await listen<{ id: string; phase: ImpositionPdfExportProgress['phase']; pageIndex?: number }>('imposition-pdf-export-progress', event => {
-      if (event.payload.id !== activeId) return
+      const state = states.get(event.payload.id)
+      if (!state) return
+      if (event.payload.phase === 'queue') state.pageNumber = 0
       const index = event.payload.pageIndex
-      if (index !== undefined && Number.isInteger(index) && index > 0 && index <= (currentEntry?.pages.length ?? 0)) pageNumber = index
-      report(event.payload.phase)
+      if (index !== undefined && Number.isInteger(index) && index > 0 && index <= state.staged.entry.pages.length) state.pageNumber = index
+      report(state, event.payload.phase)
     })
-    for (const [index, entry] of entries.entries()) {
-      currentFile = entry.fileName
-      currentEntry = entry
-      pageNumber = 0
-      activeId = crypto.randomUUID()
-      const pageIds: string[] = []
+
+    const fileWorkers = Math.min(entries.length, nativeWorkers, 2)
+    const workersPerFile = Math.max(1, Math.floor(nativeWorkers / fileWorkers))
+    let cursor = 0
+    let stageTail = Promise.resolve()
+    const stage = async (state: PdfExportState) => {
+      const previous = stageTail
+      let release!: () => void
+      stageTail = new Promise<void>(resolve => { release = resolve })
+      await previous
       try {
-        for (const [pageIndex, page] of entry.pages.entries()) {
-          pageNumber = pageIndex + 1
+        if (result.error) return false
+        states.set(state.staged.id, state)
+        for (const [pageIndex, page] of state.staged.entry.pages.entries()) {
+          if (result.error) return false
+          state.pageNumber = pageIndex + 1
           const pageId = crypto.randomUUID()
-          pageIds.push(pageId)
-          report('prepare')
-          // Yield before generating each large page; release its SVG string
-          // after transfer instead of holding all board layers in a single IPC.
+          state.staged.pageIds.push(pageId)
+          report(state, 'prepare')
           await new Promise<void>(resolve => setTimeout(resolve, 0))
-          await stagePage(pageId, page, () => report('transfer'))
+          if (result.error) return false
+          await stagePage(pageId, page, () => report(state, 'transfer'))
         }
-        await invoke('export_imposition_pdf', { output: outputs[index], id: activeId, pageIds, widthMm: entry.widthMm, heightMm: entry.heightMm })
-        result.completedFiles.push(outputs[index])
-        report('complete')
+        return !result.error
       } finally {
-        await invoke('clear_pdf_pages', { ids: pageIds }).catch(error => {
-          result.cleanupWarnings.push(`${currentFile} 的临时 SVG 清理失败：${errorText(error)}`)
-        })
-        activeId = ''
-        currentEntry = undefined
+        release()
       }
     }
+    const runNext = async () => {
+      while (!result.error) {
+        const index = cursor++
+        if (index >= entries.length) return
+        const state: PdfExportState = {
+          staged: { index, entry: entries[index], output: outputs[index], id: crypto.randomUUID(), pageIds: [] },
+          pageNumber: 0,
+        }
+        try {
+          if (!await stage(state)) return
+          await invoke('export_imposition_pdf', {
+            output: state.staged.output,
+            id: state.staged.id,
+            pageIds: state.staged.pageIds,
+            widthMm: state.staged.entry.widthMm,
+            heightMm: state.staged.entry.heightMm,
+            workerCount: workersPerFile,
+          })
+          completed.add(state.staged.index)
+          report(state, 'complete')
+        } catch (error) {
+          if (!failedFile) failedFile = state.staged.entry.fileName
+          result.error ??= errorText(error)
+        } finally {
+          await cleanup(state)
+          states.delete(state.staged.id)
+        }
+      }
+    }
+    // Drain all in-flight jobs before cleanup/unlisten, even when one fails.
+    await Promise.all(Array.from({ length: fileWorkers }, runNext))
+    result.completedFiles = outputs.filter((_, index) => completed.has(index))
+    if (failedFile) result.failedFile = failedFile
   } catch (error) {
-    result.error = errorText(error)
-    if (currentFile) result.failedFile = currentFile
+    result.error ??= errorText(error)
+    if (failedFile) result.failedFile = failedFile
   } finally {
     unlisten?.()
   }

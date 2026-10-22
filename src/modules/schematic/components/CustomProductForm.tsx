@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 import { AutoComplete, Button, InputNumber } from 'antd'
 import Loading from '../../../components/Loading'
-import { customAttributes, customImages, listCustomProducts, loadCustomProductConfig, addCustomProductName, type CustomProductName, type CustomProduct } from '../services/customProductService'
+import { customAttributes, customImages, emptyCustomProduct, listCustomProducts, loadCustomProductConfig, addCustomProductName, type CustomProductName, type CustomProduct } from '../services/customProductService'
 import type { ProductConfig } from '../services/productConfigService'
 import ProductOptionField from './ProductOptionField'
 import { applyAttributeImages, applyAttributeValues, availableOptionValues, dependentOptionNames } from '../services/productOptionRules'
@@ -55,7 +55,11 @@ export default function CustomProductForm({ draft, onDraftChange: setDraft, prod
         <label className="product-config-field"><span>产品</span><AutoComplete aria-label="自定义产品" placeholder="选择或输入产品名称" disabled={saving || productLocked}
           value={draft.name} options={presets.map(item => ({ value: item.name }))}
           filterOption={(input, option) => String(option?.value ?? '').toLowerCase().includes(input.toLowerCase())}
-          onChange={name => { const item = presets.find(preset => preset.name === name); setDraft(current => ({ ...current, name, id: item?.id ?? (name === current.name ? current.id : null) })); setError(''); setNotice('') }}/></label>
+          onChange={name => {
+            const item = presets.find(preset => preset.name === name)
+            setDraft(current => ({ ...(name === current.name ? current : { ...emptyCustomProduct(), attributeImages: {} }), name, id: item?.id ?? (name === current.name ? current.id : null) }))
+            setError(''); setNotice('')
+          }}/></label>
         <Button loading={saving} disabled={loading || saving || productLocked || nameExists || !draft.name.trim()} onClick={() => void save()}>新增</Button>
       </div>
       <div className="product-config-form custom-product-fields">
