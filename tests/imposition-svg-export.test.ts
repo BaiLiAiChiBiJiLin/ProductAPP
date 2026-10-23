@@ -246,6 +246,11 @@ describe('imposition export physical board identity and positioning', () => {
       expect(Number(group.getAttribute('stroke-width'))).toBeGreaterThan(0)
       const paths = Array.from(group.querySelectorAll('path'))
       expect(paths).toHaveLength(2)
+      expect(paths.map(path => [
+        path.getAttribute('data-hole-center-x-mm'),
+        path.getAttribute('data-hole-center-y-mm'),
+        path.getAttribute('data-hole-radius-mm'),
+      ])).toEqual([['5.5', '131.766', '1.5'], ['5.5', '332.234', '1.5']])
       expect(group.querySelector('circle')).toBeNull()
       expect(paths.map(path => path.getAttribute('d'))).toEqual([
         'M 4 131.766 A 1.5 1.5 0 1 0 7 131.766 A 1.5 1.5 0 1 0 4 131.766 Z',
@@ -350,7 +355,7 @@ describe('imposition export physical board identity and positioning', () => {
     const doc = read(renderImpositionSvgExport(current, entries[0]))
     expect(doc.querySelector('image')).not.toBeNull()
     expect(doc.querySelector('path')).toBeNull()
-    expect(current.assignments.art[source.layers[1].id]).toBe('images')
+    expect(current.assignments.art[source.layers[1].id]).toBe('image-front')
   })
 
   test('writes every type of one board before the next, with one F set for all production copies', () => {

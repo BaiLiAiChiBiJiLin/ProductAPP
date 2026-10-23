@@ -171,3 +171,132 @@ test('generates/transfers only one SVG at a time even when file conversion is pa
   firstRender.resolve('<svg/>')
   expect((await pending).completedFiles).toHaveLength(2)
 })
+
+
+test('exports a same-name DXF from the staged contour page without rendering it twice', async () => {
+  mocks.invoke.mockResolvedValue(undefined)
+  const board = entry('layout.pdf', ['cut', 'image'])
+  board.pages[0].exportDxf = true
+  const result = await exportImpositionPdfs('D:/exports', [board])
+  expect(mocks.invoke).toHaveBeenCalledWith('check_imposition_pdf_outputs', { outputs: ['D:/exports/layout.pdf', 'D:/exports/layout.dxf'] })
+  const staged = mocks.invoke.mock.calls.filter(([name]) => name === 'stage_pdf_page')
+  expect(mocks.invoke).toHaveBeenCalledWith('export_imposition_dxf', { output: 'D:/exports/layout.dxf', pageId: staged[0][1].id, widthMm: 300, heightMm: 464 })
+  expect(board.pages[0].renderSvg).toHaveBeenCalledOnce()
+  expect(result.completedFiles).toEqual(['D:/exports/layout.pdf', 'D:/exports/layout.dxf'])
+  const calls = mocks.invoke.mock.calls.map(([name]) => name)
+  expect(calls.indexOf('export_imposition_dxf')).toBeGreaterThan(calls.indexOf('export_imposition_pdf'))
+  expect(calls.indexOf('clear_pdf_pages')).toBeGreaterThan(calls.indexOf('export_imposition_dxf'))
+})
+
+test('reports a failed DXF separately and retains the completed PDF', async () => {
+  const board = entry('layout.pdf')
+  board.pages[0].exportDxf = true
+  mocks.invoke.mockImplementation(async name => { if (name === 'export_imposition_dxf') throw new Error('DXF failed') })
+  expect(await exportImpositionPdfs('D:/exports', [board])).toMatchObject({ completedFiles: ['D:/exports/layout.pdf'], failedFile: 'layout.dxf', error: 'DXF failed' })
+  expect(mocks.invoke).toHaveBeenLastCalledWith('clear_pdf_pages', { ids: [expect.any(String)] })
+})
+
+test('DXF filename collisions fail preflight before either file is rendered', async () => {
+  const board = entry('layout.pdf')
+  board.pages[0].exportDxf = true
+  mocks.invoke.mockImplementation(async (name, args) => {
+    if (name === 'check_imposition_pdf_outputs' && args.outputs.includes('D:/exports/layout.dxf')) throw new Error('DXF exists')
+  })
+  expect(await exportImpositionPdfs('D:/exports', [board])).toMatchObject({ completedFiles: [], error: 'DXF exists' })
+  expect(board.pages[0].renderSvg).not.toHaveBeenCalled()
+})
+
+const cmyk = (): NonNullable<ImpositionPdfExportEntry['cmyk']> => ({
+  widthMm: 300, heightMm: 464, dpi: 400, differentBack: true, autoAlign: true,
+  sources: [{ key: 'art', label: 'art.svg', widthMm: 20, heightMm: 10,
+    front: vi.fn(() => '<svg><title>front</title></svg>'), back: vi.fn(() => '<svg><title>back</title></svg>'),
+    backOffset: { xMm: 0, yMm: 0 }, windowOffset: { xMm: 0, yMm: 0 } }],
+  placements: [{ sourceKey: 'art', x: 10, y: 10, width: 20, height: 10, rotation: 0 }], holes: [],
+})
+test('exports independent CMYK after PDF and DXF and releases every staged resource only afterwards', async () => {
+  mocks.invoke.mockResolvedValue(undefined)
+  const board = { ...entry('layout.pdf'), cmyk: cmyk() }
+  board.pages[0].exportDxf = true
+  const result = await exportImpositionPdfs('D:/exports', [board])
+  expect(result.completedFiles).toEqual(['D:/exports/layout.pdf', 'D:/exports/layout.dxf', 'D:/exports/CMYK_layout.pdf'])
+  expect(mocks.invoke).toHaveBeenCalledWith('check_imposition_pdf_outputs', { outputs: result.completedFiles })
+  expect(board.cmyk.sources[0].front).toHaveBeenCalledOnce()
+  expect(board.cmyk.sources[0].back).toHaveBeenCalledOnce()
+  const commands = mocks.invoke.mock.calls.map(call => call[0])
+  expect(commands.indexOf('export_imposition_cmyk_pdf')).toBeGreaterThan(commands.indexOf('export_imposition_dxf'))
+  expect(commands.indexOf('clear_pdf_pages')).toBeGreaterThan(commands.indexOf('export_imposition_cmyk_pdf'))
+  const cleanup = mocks.invoke.mock.calls.find(call => call[0] === 'clear_pdf_pages')![1].ids
+  expect(cleanup).toHaveLength(4) // ordinary SVG, front, back, job manifest
+})
+test('a failed CMYK keeps completed PDF/DXF and identifies the CMYK filename', async () => {
+  const board = { ...entry('layout.pdf'), cmyk: cmyk() }
+  board.pages[0].exportDxf = true
+  mocks.invoke.mockImplementation(async name => { if (name === 'export_imposition_cmyk_pdf') throw new Error('art.svg：CMYK 图片不可解析') })
+  expect(await exportImpositionPdfs('D:/exports', [board])).toMatchObject({ completedFiles: ['D:/exports/layout.pdf', 'D:/exports/layout.dxf'], failedFile: 'CMYK_layout.pdf', error: 'art.svg：CMYK 图片不可解析' })
+})
+test('a CMYK collision fails before rendering any original artwork', async () => {
+  const board = { ...entry('layout.pdf'), cmyk: cmyk() }
+  mocks.invoke.mockImplementation(async name => { if (name === 'check_imposition_pdf_outputs') throw new Error('CMYK file exists') })
+  expect(await exportImpositionPdfs('D:/exports', [board])).toMatchObject({ completedFiles: [], error: 'CMYK file exists' })
+  expect(board.pages[0].renderSvg).not.toHaveBeenCalled()
+  expect(board.cmyk.sources[0].front).not.toHaveBeenCalled()
+})
+
+test.each([
+  [true, false, false], [false, true, false], [false, false, true],
+  [true, true, false], [true, false, true], [false, true, true], [true, true, true],
+])('exports only selected file types (PDF=%s, DXF=%s, CMYK=%s)', async (pdf, dxf, spot) => {
+  mocks.invoke.mockResolvedValue(undefined)
+  // Put the contour second to catch wrong staging indices in DXF-only mode.
+  const board = { ...entry('layout.pdf', ['image', 'cut']), exportPdf: pdf, cmyk: spot ? cmyk() : undefined }
+  board.pages[1].exportDxf = dxf
+  const progress = vi.fn()
+  const expected = [pdf ? 'D:/exports/layout.pdf' : '', dxf ? 'D:/exports/layout.dxf' : '', spot ? 'D:/exports/CMYK_layout.pdf' : ''].filter(Boolean)
+  const result = await exportImpositionPdfs('D:/exports', [board], progress)
+  expect(result.error).toBeUndefined()
+  expect(result.completedFiles).toEqual(expected)
+  expect(mocks.invoke).toHaveBeenCalledWith('check_imposition_pdf_outputs', { outputs: expected })
+  const calls = mocks.invoke.mock.calls
+  expect(calls.filter(([name]) => name === 'export_imposition_pdf')).toHaveLength(Number(pdf))
+  expect(calls.filter(([name]) => name === 'export_imposition_dxf')).toHaveLength(Number(dxf))
+  expect(calls.filter(([name]) => name === 'export_imposition_cmyk_pdf')).toHaveLength(Number(spot))
+  expect(board.pages[0].renderSvg).toHaveBeenCalledTimes(Number(pdf))
+  expect(board.pages[1].renderSvg).toHaveBeenCalledTimes(Number(pdf || dxf))
+  if (dxf) {
+    const contour = calls.find(([name, args]) => name === 'stage_pdf_page' && args.svg.includes('<title>cut</title>'))!
+    expect(mocks.invoke).toHaveBeenCalledWith('export_imposition_dxf', expect.objectContaining({ pageId: contour[1].id }))
+  }
+  if (spot) expect(board.cmyk!.sources[0].front).toHaveBeenCalledOnce()
+  expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'complete', fileName: expected.at(-1)!.replace('D:/exports/', '') }))
+  if (!pdf) expect(progress.mock.calls.every(([event]) => event.fileName !== board.fileName)).toBe(true)
+  const stagedIds = [...new Set(calls.filter(([name]) => name === 'stage_pdf_page' || name === 'write_export_resource_chunk').map(([, args]) => args.id))]
+  expect(mocks.invoke).toHaveBeenLastCalledWith('clear_pdf_pages', { ids: stagedIds })
+})
+
+test('no file types selected fails without IPC, rendering or creating temporary files', async () => {
+  const board = { ...entry(), exportPdf: false }
+  expect(await exportImpositionPdfs('D:/exports', [board])).toMatchObject({ completedFiles: [], error: expect.stringContaining('导出文件类型') })
+  expect(mocks.invoke).not.toHaveBeenCalled()
+  expect(board.pages[0].renderSvg).not.toHaveBeenCalled()
+})
+
+test('skips layouts without content for the selected format and permits CMYK without ordinary PDF pages', async () => {
+  mocks.invoke.mockResolvedValue(undefined)
+  const empty = { ...entry('no-contour.pdf'), exportPdf: false }
+  const board = { ...entry('spot.pdf', []), exportPdf: false, cmyk: cmyk() }
+  const progress = vi.fn()
+  const result = await exportImpositionPdfs('D:/exports', [empty, board], progress)
+  expect(result.error).toBeUndefined()
+  expect(result.completedFiles).toEqual(['D:/exports/CMYK_spot.pdf'])
+  expect(empty.pages[0].renderSvg).not.toHaveBeenCalled()
+  expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ completed: 1, total: 1, fileName: 'CMYK_spot.pdf' }))
+})
+
+test('a failed DXF-only transfer identifies the DXF file and cleans the contour staging', async () => {
+  const board = { ...entry('layout.pdf', ['image', 'cut']), exportPdf: false }
+  board.pages[1].exportDxf = true
+  mocks.invoke.mockImplementation(async name => { if (name === 'stage_pdf_page') throw new Error('传输失败') })
+  expect(await exportImpositionPdfs('D:/exports', [board])).toMatchObject({ completedFiles: [], failedFile: 'layout.dxf', error: '传输失败' })
+  expect(board.pages[0].renderSvg).not.toHaveBeenCalled()
+  expect(mocks.invoke).toHaveBeenLastCalledWith('clear_pdf_pages', { ids: [expect.any(String)] })
+})

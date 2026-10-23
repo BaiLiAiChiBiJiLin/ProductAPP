@@ -2,22 +2,28 @@ import { invoke, isTauri } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
 import { writeStagedText } from '../schematic/services/stagedArtworkService'
+import type { CmykExportPlan } from './impositionCmykExport'
 
 /** SVG generation stays lazy: only the current page is generated/transferred. */
 export interface ImpositionPdfExportPage {
   label: string
+  /** Reuse this staged contour page for the layout's companion DXF. */
+  exportDxf?: boolean
   renderSvg: () => string | Promise<string>
 }
 
 export interface ImpositionPdfExportEntry {
   fileName: string
+  /** Ordinary PDF is enabled by default for existing callers. */
+  exportPdf?: boolean
   widthMm: number
   heightMm: number
   pages: readonly ImpositionPdfExportPage[]
+  cmyk?: CmykExportPlan
 }
 
 export interface ImpositionPdfExportProgress {
-  phase: 'prepare' | 'transfer' | 'queue' | 'resources' | 'flatten' | 'fonts' | 'parse' | 'convert' | 'merge' | 'write' | 'complete'
+  phase: 'prepare' | 'transfer' | 'queue' | 'resources' | 'flatten' | 'fonts' | 'parse' | 'convert' | 'merge' | 'write' | 'dxf' | 'cmyk-align' | 'cmyk-color' | 'cmyk-zip' | 'cmyk-photoshop' | 'complete'
   completed: number
   total: number
   fileName: string
@@ -40,9 +46,9 @@ export async function chooseImpositionPdfDirectory(): Promise<string | null> {
   return typeof directory === 'string' ? directory : null
 }
 
-function outputPath(directory: string, fileName: string): string {
-  if (!fileName || !fileName.toLowerCase().endsWith('.pdf') || /[<>:"/\\|?*\u0000-\u001f]/u.test(fileName) || /[. ]$/u.test(fileName)) {
-    throw new Error(`PDF 文件名无效：${fileName}`)
+function outputPath(directory: string, fileName: string, extension = 'pdf'): string {
+  if (!fileName || !fileName.toLowerCase().endsWith(`.${extension}`) || /[<>:"/\\|?*\u0000-\u001f]/u.test(fileName) || /[. ]$/u.test(fileName)) {
+    throw new Error(`${extension.toUpperCase()} 文件名无效：${fileName}`)
   }
   return `${directory.replace(/[\\/]+$/u, '')}/${fileName}`
 }
@@ -52,14 +58,17 @@ const errorText = (error: unknown) => error instanceof Error ? error.message : S
 type StagedPdfEntry = {
   index: number
   entry: ImpositionPdfExportEntry
-  output: string
+  output?: string
   id: string
   pageIds: string[]
+  dxfPageId?: string
 }
 
 type PdfExportState = {
   staged: StagedPdfEntry
+  fileName: string
   pageNumber: number
+  cmyk?: boolean
 }
 
 /** Export conversion uses 80% of native logical CPUs without another UI knob. */
@@ -82,22 +91,27 @@ async function automaticExportWorkers(): Promise<number> {
  */
 export async function exportImpositionPdfs(
   directory: string,
-  entries: readonly ImpositionPdfExportEntry[],
+  requestedEntries: readonly ImpositionPdfExportEntry[],
   onProgress?: (progress: ImpositionPdfExportProgress) => void,
 ): Promise<ImpositionPdfExportResult> {
   const result: ImpositionPdfExportResult = { completedFiles: [], cancelled: false, cleanupWarnings: [] }
+  // A layout without content for any selected format produces no file/job.
+  const entries = requestedEntries.filter(entry => entry.exportPdf !== false || entry.pages.some(page => page.exportDxf) || entry.cmyk)
   const states = new Map<string, PdfExportState>()
   const completed = new Set<number>()
+  const completedDxfs = new Set<number>()
+  const completedCmyks = new Set<number>()
+  const finished = new Set<number>()
   let unlisten: (() => void) | undefined
   let failedFile = ''
   const report = (state: PdfExportState, phase: ImpositionPdfExportProgress['phase']) => onProgress?.({
     phase,
-    completed: completed.size,
+    completed: finished.size,
     total: entries.length,
-    fileName: state.staged.entry.fileName,
+    fileName: state.fileName,
     pageNumber: state.pageNumber,
-    pageCount: state.staged.entry.pages.length,
-    pageName: state.staged.entry.pages[state.pageNumber - 1]?.label ?? '',
+    pageCount: state.cmyk ? state.staged.entry.cmyk?.sources.length : state.staged.entry.pages.length,
+    pageName: state.cmyk ? state.staged.entry.cmyk?.sources[state.pageNumber - 1]?.label : state.staged.entry.pages[state.pageNumber - 1]?.label ?? '',
   })
   const cleanup = async (state: PdfExportState) => {
     if (!state.staged.pageIds.length) return
@@ -107,24 +121,34 @@ export async function exportImpositionPdfs(
   }
   try {
     if (!isTauri()) throw new Error('请在 Tauri 桌面窗口中导出 PDF')
-    if (!directory.trim() || entries.length === 0) throw new Error('请选择导出文件夹和至少一个导出图层')
-    const names = new Set<string>()
+    if (!directory.trim() || entries.length === 0) throw new Error('请选择导出文件夹和至少一种有内容的导出文件类型')
     const outputs = entries.map(entry => {
       const path = outputPath(directory, entry.fileName)
-      if (names.has(path.toLowerCase())) throw new Error('导出文件名重复：' + entry.fileName)
-      names.add(path.toLowerCase())
       if (![entry.widthMm, entry.heightMm].every(n => Number.isFinite(n) && n > 0 && n <= 10_000)) throw new Error('板材毫米宽高无效')
-      if (!entry.pages.length) throw new Error('版式没有可导出的页面：' + entry.fileName)
-      return path
+      if (entry.exportPdf !== false && !entry.pages.length) throw new Error('版式没有可导出的页面：' + entry.fileName)
+      return entry.exportPdf !== false ? path : undefined
     })
-    await invoke('check_imposition_pdf_outputs', { outputs })
+    const dxfOutputs = entries.map(entry => {
+      const contours = entry.pages.filter(page => page.exportDxf)
+      if (contours.length > 1) throw new Error('每种版式只能有一个轮廓 DXF 页面')
+      return contours.length ? outputPath(directory, entry.fileName.replace(/\.pdf$/iu, '.dxf'), 'dxf') : undefined
+    })
+    const cmykOutputs = entries.map(entry => entry.cmyk ? outputPath(directory, `CMYK_${entry.fileName}`) : undefined)
+    const selectedOutputs = outputs.flatMap((path, index) => [...(path ? [path] : []), ...(dxfOutputs[index] ? [dxfOutputs[index]!] : []), ...(cmykOutputs[index] ? [cmykOutputs[index]!] : [])])
+    const names = new Set<string>()
+    for (const path of selectedOutputs) {
+      if (names.has(path.toLowerCase())) throw new Error('导出文件名重复：' + path)
+      names.add(path.toLowerCase())
+    }
+    await invoke('check_imposition_pdf_outputs', { outputs: selectedOutputs })
     const nativeWorkers = await automaticExportWorkers()
     unlisten = await listen<{ id: string; phase: ImpositionPdfExportProgress['phase']; pageIndex?: number }>('imposition-pdf-export-progress', event => {
       const state = states.get(event.payload.id)
       if (!state) return
       if (event.payload.phase === 'queue') state.pageNumber = 0
       const index = event.payload.pageIndex
-      if (index !== undefined && Number.isInteger(index) && index > 0 && index <= state.staged.entry.pages.length) state.pageNumber = index
+      const count = state.cmyk ? state.staged.entry.cmyk?.sources.length ?? 0 : state.staged.entry.pages.length
+      if (index !== undefined && Number.isInteger(index) && index > 0 && index <= count) state.pageNumber = index
       report(state, event.payload.phase)
     })
 
@@ -141,10 +165,12 @@ export async function exportImpositionPdfs(
         if (result.error) return false
         states.set(state.staged.id, state)
         for (const [pageIndex, page] of state.staged.entry.pages.entries()) {
+          if (!state.staged.output && !page.exportDxf) continue
           if (result.error) return false
           state.pageNumber = pageIndex + 1
           const pageId = crypto.randomUUID()
           state.staged.pageIds.push(pageId)
+          if (page.exportDxf) state.staged.dxfPageId = pageId
           report(state, 'prepare')
           await new Promise<void>(resolve => setTimeout(resolve, 0))
           if (result.error) return false
@@ -161,22 +187,70 @@ export async function exportImpositionPdfs(
         if (index >= entries.length) return
         const state: PdfExportState = {
           staged: { index, entry: entries[index], output: outputs[index], id: crypto.randomUUID(), pageIds: [] },
+          fileName: outputs[index] ? entries[index].fileName : dxfOutputs[index] ? entries[index].fileName.replace(/\.pdf$/iu, '.dxf') : `CMYK_${entries[index].fileName}`,
           pageNumber: 0,
         }
         try {
           if (!await stage(state)) return
-          await invoke('export_imposition_pdf', {
-            output: state.staged.output,
-            id: state.staged.id,
-            pageIds: state.staged.pageIds,
-            widthMm: state.staged.entry.widthMm,
-            heightMm: state.staged.entry.heightMm,
-            workerCount: workersPerFile,
-          })
-          completed.add(state.staged.index)
+          if (state.staged.output) {
+            await invoke('export_imposition_pdf', {
+              output: state.staged.output,
+              id: state.staged.id,
+              pageIds: [...state.staged.pageIds],
+              widthMm: state.staged.entry.widthMm,
+              heightMm: state.staged.entry.heightMm,
+              workerCount: workersPerFile,
+            })
+            completed.add(state.staged.index)
+          }
+          const dxfOutput = dxfOutputs[index]
+          if (dxfOutput) {
+            state.fileName = state.staged.entry.fileName.replace(/\.pdf$/iu, '.dxf')
+            state.pageNumber = state.staged.entry.pages.findIndex(page => page.exportDxf) + 1
+            report(state, 'dxf')
+            await invoke('export_imposition_dxf', {
+              output: dxfOutput, pageId: state.staged.dxfPageId,
+              widthMm: state.staged.entry.widthMm, heightMm: state.staged.entry.heightMm,
+            })
+            completedDxfs.add(index)
+          }
+          const cmykOutput = cmykOutputs[index]
+          const cmyk = state.staged.entry.cmyk
+          if (cmykOutput && cmyk) {
+            state.fileName = `CMYK_${state.staged.entry.fileName}`
+            state.cmyk = true
+            const previous = stageTail
+            let release!: () => void
+            stageTail = new Promise<void>(resolve => { release = resolve })
+            await previous
+            let jobId = ''
+            try {
+              const { sources, ...metadata } = cmyk
+              const stagedSources = []
+              for (const [sourceIndex, source] of sources.entries()) {
+                state.pageNumber = sourceIndex + 1
+                const { front, back, window, ...details } = source
+                const stageSource = async (render: () => string) => {
+                  const id = crypto.randomUUID()
+                  state.staged.pageIds.push(id)
+                  report(state, 'prepare')
+                  await new Promise<void>(resolve => setTimeout(resolve, 0))
+                  await stagePage(id, { label: source.label, renderSvg: render }, () => report(state, 'transfer'))
+                  return id
+                }
+                stagedSources.push({ ...details, frontId: await stageSource(front), backId: back ? await stageSource(back) : null, windowId: window ? await stageSource(window) : null })
+              }
+              jobId = crypto.randomUUID()
+              state.staged.pageIds.push(jobId)
+              await writeStagedText(jobId, JSON.stringify({ ...metadata, sources: stagedSources }))
+            } finally { release() }
+            await invoke('export_imposition_cmyk_pdf', { output: cmykOutput, id: state.staged.id, jobId })
+            completedCmyks.add(index)
+          }
+          finished.add(index)
           report(state, 'complete')
         } catch (error) {
-          if (!failedFile) failedFile = state.staged.entry.fileName
+          if (!failedFile) failedFile = state.fileName
           result.error ??= errorText(error)
         } finally {
           await cleanup(state)
@@ -186,7 +260,7 @@ export async function exportImpositionPdfs(
     }
     // Drain all in-flight jobs before cleanup/unlisten, even when one fails.
     await Promise.all(Array.from({ length: fileWorkers }, runNext))
-    result.completedFiles = outputs.filter((_, index) => completed.has(index))
+    result.completedFiles = outputs.flatMap((path, index) => [...(completed.has(index) ? [path!] : []), ...(completedDxfs.has(index) ? [dxfOutputs[index]!] : []), ...(completedCmyks.has(index) ? [cmykOutputs[index]!] : [])])
     if (failedFile) result.failedFile = failedFile
   } catch (error) {
     result.error ??= errorText(error)

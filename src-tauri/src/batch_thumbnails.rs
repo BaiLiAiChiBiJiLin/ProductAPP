@@ -155,8 +155,8 @@ fn render_at_size(source: &[u8], path: &Path, edge: u32) -> Result<Vec<u8>, Stri
     let tree = usvg::Tree::from_data(source, &options).map_err(|error| error.to_string())?;
     let scale = edge as f32 / tree.size().width().max(tree.size().height());
     let mut pixmap = tiny_skia::Pixmap::new(
-        (tree.size().width() * scale).ceil().max(1.0) as u32,
-        (tree.size().height() * scale).ceil().max(1.0) as u32,
+        (tree.size().width() * scale).ceil().clamp(1.0, edge as f32) as u32,
+        (tree.size().height() * scale).ceil().clamp(1.0, edge as f32) as u32,
     )
     .ok_or("无法创建缩略图")?;
     resvg::render(
@@ -183,6 +183,29 @@ pub fn remove(conn: &Connection, batch_id: &str) -> Result<(), String> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    #[ignore = "Set PRINTFLOW_CANVAS_PREVIEW_DIR to a directory of real SVG assets"]
+    fn real_canvas_previews_are_bounded() {
+        let directory = std::env::var("PRINTFLOW_CANVAS_PREVIEW_DIR").unwrap();
+        let started = std::time::Instant::now();
+        let mut count = 0;
+        let mut original_bytes = 0u64;
+        let mut preview_bytes = 0usize;
+        for entry in fs::read_dir(directory).unwrap() {
+            let path = entry.unwrap().path();
+            if !path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("svg")) { continue; }
+            original_bytes += fs::metadata(&path).unwrap().len();
+            let url = load_path_at_size(&path, 256).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+            let png = STANDARD.decode(url.strip_prefix("data:image/png;base64,").unwrap()).unwrap();
+            let bitmap = tiny_skia::Pixmap::decode_png(&png).unwrap();
+            assert!(bitmap.width() <= 256 && bitmap.height() <= 256);
+            preview_bytes += png.len();
+            count += 1;
+        }
+        assert!(count > 0);
+        eprintln!("canvas preview benchmark: sources={count} original_bytes={original_bytes} preview_png_bytes={preview_bytes} elapsed_ms={}", started.elapsed().as_millis());
+    }
 
     #[test]
     fn only_first_four_are_rendered_and_cached_without_altering_originals() {

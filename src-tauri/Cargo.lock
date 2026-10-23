@@ -84,12 +84,14 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "app"
-version = "0.1.30"
+version = "0.1.31"
 dependencies = [
  "base64 0.22.1",
  "chrono",
+ "flate2",
  "image 0.24.9",
  "image 0.25.10",
+ "lcms2",
  "log",
  "pdf-writer 0.12.1",
  "printpdf",
@@ -2206,6 +2208,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "lcms2"
+version = "6.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b75877b724685dd49310bdbadbf973fc69b1d01992a6d4a861b928fc3943f87b"
+dependencies = [
+ "bytemuck",
+ "foreign-types",
+ "lcms2-sys",
+]
+
+[[package]]
+name = "lcms2-sys"
+version = "4.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "264db0b78119c5a37d78bb41fb355daab29b3b29430b53cd92e3da51f0ab06cc"
+dependencies = [
+ "cc",
+ "dunce",
+ "libc",
+ "pkg-config",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.189"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4110,18 +4135,19 @@ dependencies = [
 [[package]]
 name = "svg2pdf"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e50dc062439cc1a396181059c80932a6e6bd731b130e674c597c0c8874b6df22"
 dependencies = [
+ "flate2",
  "fontdb 0.23.0",
  "image 0.25.10",
  "log",
  "miniz_oxide 0.8.9",
  "once_cell",
  "pdf-writer 0.12.1",
+ "png 0.17.16",
  "resvg",
  "siphasher 1.0.3",
  "subsetter",
+ "tempfile",
  "tiny-skia",
  "ttf-parser 0.25.1",
  "usvg 0.45.1",
@@ -4650,7 +4676,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",

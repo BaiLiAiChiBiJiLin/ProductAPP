@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.1.30"
+version = "0.1.31"
 description = "PrintFlow production layout desktop app"
 authors = ["PrintFlow"]
 edition = "2021"
@@ -37,7 +37,9 @@ roxmltree = "0.20"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 printpdf = { version = "0.7", default-features = false, features = ["embedded_images", "svg"] }
 pdf-writer = "0.12.1"
-svg2pdf = "0.13"
+svg2pdf = { version = "0.13", path = "vendor/svg2pdf" }
+lcms2 = { version = "6.1.1", features = ["static"] }
+flate2 = "1"
 image24 = { package = "image", version = "0.24.9", default-features = false, features = ["png"] }
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"

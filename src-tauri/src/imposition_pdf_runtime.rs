@@ -179,6 +179,8 @@ struct Manifest {
     width: f32,
     height: f32,
     workers: usize,
+    #[serde(default)]
+    cmyk_job: Option<String>,
 }
 #[derive(Serialize, Deserialize)]
 struct Event {
@@ -257,6 +259,41 @@ fn export_with_executable(
     requested: Option<usize>,
     report: impl Fn(usize, &str),
 ) -> Result<(), String> {
+    export_job_with_executable(executable, output, page_ids, size, requested, None, report)
+}
+
+pub(crate) fn export_cmyk_isolated(
+    output: &Path,
+    job_id: String,
+    job: &crate::imposition_cmyk::Job,
+    report: impl Fn(usize, &str),
+) -> Result<(), String> {
+    let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+    let mut ids = job.ids();
+    ids.push(job_id.clone());
+    export_job_with_executable(
+        &executable,
+        output,
+        ids,
+        (
+            (job.width_mm * 72. / 25.4) as f32,
+            (job.height_mm * 72. / 25.4) as f32,
+        ),
+        Some(automatic_workers().min(job.sources.len())),
+        Some(job_id),
+        report,
+    )
+}
+
+fn export_job_with_executable(
+    executable: &Path,
+    output: &Path,
+    page_ids: Vec<String>,
+    size: (f32, f32),
+    requested: Option<usize>,
+    cmyk_job: Option<String>,
+    report: impl Fn(usize, &str),
+) -> Result<(), String> {
     report(0, "queue");
     let sizes = page_ids
         .iter()
@@ -299,6 +336,7 @@ fn export_with_executable(
             width: size.0,
             height: size.1,
             workers: permit.workers,
+            cmyk_job,
         },
     )
     .map_err(|e| e.to_string())?;
@@ -433,15 +471,23 @@ pub fn run_pdf_worker_if_requested() -> Option<i32> {
                 .iter()
                 .map(|id| crate::staged_artwork::path(id))
                 .collect::<Result<Vec<_>, _>>()?;
-            let bytes = crate::imposition_pdf::render_staged_pdf(
-                &staged,
-                (job.width, job.height),
-                |page, phase| {
+            let bytes = if let Some(id) = &job.cmyk_job {
+                let cmyk = crate::imposition_cmyk::Job::load(id)?;
+                crate::imposition_cmyk::render_job(&cmyk, job.workers, |page, phase| {
                     last_page.set(page);
                     emit(page, phase, None);
-                },
-                Some(job.workers),
-            )?;
+                })?
+            } else {
+                crate::imposition_pdf::render_staged_pdf(
+                    &staged,
+                    (job.width, job.height),
+                    |page, phase| {
+                        last_page.set(page);
+                        emit(page, phase, None);
+                    },
+                    Some(job.workers),
+                )?
+            };
             // Private scratch only. Destination writing is exclusively in the parent.
             fs::write(path.with_file_name("result.pdf"), bytes)
                 .map_err(|e| format!("暂存 PDF 失败：{e}"))
@@ -674,6 +720,30 @@ mod tests {
         }
         result.unwrap();
     }
+    #[test]
+    #[ignore = "set PRINTFLOW_PDF_WORKER_EXE, PRINTFLOW_CMYK_JOB_ID and PRINTFLOW_CMYK_OUTPUT"]
+    fn actual_isolated_cmyk_export() {
+        let exe = PathBuf::from(std::env::var("PRINTFLOW_PDF_WORKER_EXE").unwrap());
+        let output = PathBuf::from(std::env::var("PRINTFLOW_CMYK_OUTPUT").unwrap());
+        let id = std::env::var("PRINTFLOW_CMYK_JOB_ID").unwrap();
+        let job = crate::imposition_cmyk::Job::load(&id).unwrap();
+        let mut ids = job.ids();
+        ids.push(id.clone());
+        export_job_with_executable(
+            &exe,
+            &output,
+            ids,
+            (
+                (job.width_mm * 72. / 25.4) as f32,
+                (job.height_mm * 72. / 25.4) as f32,
+            ),
+            Some(automatic_workers().min(job.sources.len())),
+            Some(id),
+            |i, p| eprintln!("{i}:{p}"),
+        )
+        .unwrap();
+        assert_eq!(&fs::read(&output).unwrap()[..5], b"%PDF-");
+    }
     #[cfg(windows)]
     #[test]
     #[ignore = "set PRINTFLOW_PDF_WORKER_EXE; deliberately exhaust a tiny child-only Windows Job limit"]
@@ -690,6 +760,7 @@ mod tests {
                 width: 850.3937,
                 height: 1315.2756,
                 workers: 1,
+                cmyk_job: None,
             })
             .unwrap(),
         )

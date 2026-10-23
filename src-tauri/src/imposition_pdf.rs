@@ -41,21 +41,26 @@ fn page_size(width_mm: f64, height_mm: f64) -> Result<(f32, f32), String> {
 }
 
 fn checked_output(output: &str) -> Result<PathBuf, String> {
+    checked_export_output(output, "pdf")
+}
+
+pub(crate) fn checked_export_output(output: &str, extension: &str) -> Result<PathBuf, String> {
+    let format_name = extension.to_ascii_uppercase();
     let path = PathBuf::from(output);
     if !path.is_absolute() || !path.parent().is_some_and(Path::is_dir) {
-        return Err("请选择已存在的 PDF 导出文件夹".into());
+        return Err(format!("请选择已存在的 {format_name} 导出文件夹"));
     }
     let name = path
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or("PDF 文件名无效")?;
-    if !name.to_ascii_lowercase().ends_with(".pdf")
+        .ok_or_else(|| format!("{format_name} 文件名无效"))?;
+    if !name.to_ascii_lowercase().ends_with(&format!(".{extension}"))
         || name.chars().any(|c| {
             c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*')
         })
         || name.ends_with([' ', '.'])
     {
-        return Err(format!("PDF 文件名无效：{name}"));
+        return Err(format!("{format_name} 文件名无效：{name}"));
     }
     if path.exists() {
         return Err(format!("文件已存在，请修改文件名或选择其他文件夹：{name}"));
@@ -71,7 +76,12 @@ pub async fn check_imposition_pdf_outputs(outputs: Vec<String>) -> Result<(), St
         }
         let mut names = HashSet::new();
         for output in outputs {
-            let path = checked_output(&output)?;
+            let extension = if output.to_ascii_lowercase().ends_with(".dxf") {
+                "dxf"
+            } else {
+                "pdf"
+            };
+            let path = checked_export_output(&output, extension)?;
             let key = path.to_string_lossy().to_lowercase();
             if !names.insert(key) {
                 return Err("导出文件名重复，请调整版式文件名".into());
@@ -453,7 +463,7 @@ impl ImageResolverState {
     }
 }
 
-fn parse_board_svg(svg: &str) -> Result<usvg::Tree, String> {
+pub(crate) fn parse_board_svg(svg: &str) -> Result<usvg::Tree, String> {
     let mut options = crate::assets::export_options()?;
     let state = Arc::new(ImageResolverState::default());
     let data_state = state.clone();
@@ -528,18 +538,27 @@ pub(crate) fn commit_pdf_file(output: &Path, source: &Path) -> Result<(), String
 }
 
 fn commit_pdf_reader(output: &Path, source: &mut impl Read) -> Result<(), String> {
+    commit_export_reader(output, source, "pdf")
+}
+
+pub(crate) fn commit_dxf(output: &Path, bytes: &[u8]) -> Result<(), String> {
+    commit_export_reader(output, &mut std::io::Cursor::new(bytes), "dxf")
+}
+
+fn commit_export_reader(output: &Path, source: &mut impl Read, extension: &str) -> Result<(), String> {
+    let format_name = extension.to_ascii_uppercase();
     // Conversion may overlap, but destination disk writes and publication cannot.
     static COMMIT: Mutex<()> = Mutex::new(());
-    let _commit = COMMIT.lock().map_err(|_| "PDF 写盘调度器异常")?;
-    checked_output(&output.to_string_lossy())?;
+    let _commit = COMMIT.lock().map_err(|_| format!("{format_name} 写盘调度器异常"))?;
+    checked_export_output(&output.to_string_lossy(), extension)?;
     static NEXT: AtomicU64 = AtomicU64::new(0);
-    let parent = output.parent().ok_or("PDF 导出目录无效")?;
+    let parent = output.parent().ok_or_else(|| format!("{format_name} 导出目录无效"))?;
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|error| error.to_string())?
         .as_nanos();
     let temp = parent.join(format!(
-        ".printflow-pdf-{}-{stamp}-{}.tmp",
+        ".printflow-{extension}-{}-{stamp}-{}.tmp",
         std::process::id(),
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
@@ -547,12 +566,12 @@ fn commit_pdf_reader(output: &Path, source: &mut impl Read) -> Result<(), String
         .write(true)
         .create_new(true)
         .open(&temp)
-        .map_err(|error| format!("创建 PDF 临时文件失败：{error}"))?;
+        .map_err(|error| format!("创建 {format_name} 临时文件失败：{error}"))?;
     let pending = PendingFile(temp);
     std::io::copy(source, &mut file)
         .map(|_| ())
         .and_then(|_| file.sync_all())
-        .map_err(|error| format!("写入 PDF 失败：{error}"))?;
+        .map_err(|error| format!("写入 {format_name} 失败：{error}"))?;
     drop(file);
     // std::fs::rename also replaces an existing Windows destination. Invoke
     // MoveFileExW without REPLACE_EXISTING for an atomic create-if-absent commit.
@@ -564,7 +583,7 @@ fn commit_pdf_reader(output: &Path, source: &mut impl Read) -> Result<(), String
         if output.exists() {
             format!("文件已存在，未覆盖：{}", output.display())
         } else {
-            format!("提交 PDF 文件失败：{error}")
+            format!("提交 {format_name} 文件失败：{error}")
         }
     })
 }
@@ -653,6 +672,53 @@ mod tests {
             String::from_utf8_lossy(&pdf).contains("/Subtype /Image"),
             "nested PNG must reach PDF conversion"
         );
+    }
+    #[test]
+    fn repeated_png_copies_share_one_lossless_image_and_alpha_resource() {
+        let mut pixels = tiny_skia::Pixmap::new(2, 1).unwrap();
+        pixels.data_mut().copy_from_slice(&[255, 0, 0, 255, 0, 128, 0, 128]);
+        let png = base64::engine::general_purpose::STANDARD.encode(pixels.encode_png().unwrap());
+        let svg = format!(
+            r##"<svg xmlns="http://www.w3.org/2000/svg" width="300mm" height="464mm"><defs><g id="art"><image width="20" height="10" href="data:image/png;base64,{png}"/></g></defs><use href="#art"/><use href="#art" x="30"/><use href="#art" x="60" transform="rotate(90 60 0)"/></svg>"##
+        );
+        let pdf = render_pdf(svg, page_size(300., 464.).unwrap(), |_| {}).unwrap();
+        let text = String::from_utf8_lossy(&pdf);
+        assert_eq!(text.matches("/Subtype /Image").count(), 2,
+            "QT copies must share one lossless RGB image and one alpha mask");
+        assert_eq!(text.matches("/SMask ").count(), 1);
+    }
+    #[test]
+    fn interlaced_png_preserves_palette_alpha_and_sixteen_bit_samples() {
+        use sha2::{Digest, Sha256};
+        // Independently encoded Adam7 fixtures: 1-bit grayscale, indexed with
+        // tRNS, and 16-bit RGBA. 9 x 7 exercises all seven uneven-sized passes.
+        let cases = [
+            ("iVBORw0KGgoAAAANSUhEUgAAAAkAAAAHAQAAAAGF52pbAAAAEklEQVR4nGNgQAEfoHBVAwQBAEDVBz/8XSdyAAAAAElFTkSuQmCC", 8,
+             "47fe02fd7e8d2b62d6c36c68951a99ecfe1ca1ae228fd5c0efb2ddfa9cc37fdb", None),
+            ("iVBORw0KGgoAAAANSUhEUgAAAAkAAAAHAQMAAAGXUsW1AAAABlBMVEX/AAAA/wDSh+9xAAAAAnRSTlP/QJNrcdoAAAASSURBVHicY2BAAR+gcFUDBAEAQNUHP/xdJ3IAAAAASUVORK5CYII=", 8,
+             "26ca963c1b74128928ed44f00786c2d7d660fb1be4985d9be73d023b1733ac2c", Some("9bffe0576b4600a6d099d55ce2b31ba8e6e86eb8cfcdf4bb4fd9bbb2474cecaa")),
+            ("iVBORw0KGgoAAAANSUhEUgAAAAkAAAAHEAYAAAH9DIu1AAABW0lEQVR4nC3Qj0edcRiH4fv+jkTKyIgcRmJkZBOJkRhHRGKaSMQRkZhNpMRETGSJLJGIiWwiSyQikc3IEhmRkWVkMzIi7fW8/8DnxwXQxCBL/LRgl1PwklVOrYY5DrjxseU+8YXvHXPd81QLLQyzwgkf+GGNHfDVOzY7ZJsjrnkG7UywwQWTbHFpHTv89YG9/POh/c77yAEXPSQrsuh4FuNrN7MFbvvHaXe9Sg3ue50aUwkKdDHFNt1Ms8sVb9nn2kY+i00OwgCLHFrGMsdW2Mp37/rUUe/Z7oQbsM65tXbyy/s+84319jjjnn3OeeANWZwlF7I4lzxy2BVPUpWrnqbqVIR6ephhjzZGWOOMviBiLLJ5FxB8ig6+BR2/867KACL4rIorNgS4xbhkKVj/e5BvKeQuLbHJ7vAhdH0el30Vys7m1z/m2l+CwItQT2VOuuVlqnPZ41SRWm8BE/J+Z9WoZ7cAAAAASUVORK5CYII=", 16,
+             "bde63801092d2803eefe867e5d5fc65200067f1cfc299e9c39614ef86b2f558e", Some("ef74991e42356f2190ef2e0abc04abe0aaa26aeede3a4d31c22930cad901f749")),
+        ];
+        for (png, bits, rgb, alpha) in cases {
+            let svg = format!(r#"<svg xmlns="http://www.w3.org/2000/svg" width="300mm" height="464mm"><image width="90" height="70" href="data:image/png;base64,{png}"/></svg>"#);
+            let pdf = render_pdf(svg, page_size(300., 464.).unwrap(), |_| {}).unwrap();
+            let mut remaining = pdf.as_slice();
+            let mut hashes = Vec::new();
+            while let Some(image) = remaining.windows(15).position(|p| p == b"/Subtype /Image") {
+                let start = remaining[..image].windows(2).rposition(|p| p == b"<<").unwrap();
+                let stream = image + remaining[image..].windows(7).position(|p| p == b"stream\n").unwrap() + 7;
+                let header = std::str::from_utf8(&remaining[start..stream]).unwrap();
+                assert!(header.contains(&format!("/BitsPerComponent {bits}")));
+                let length: usize = header.split("/Length ").nth(1).unwrap().split_whitespace().next().unwrap().parse().unwrap();
+                let mut decoded = Vec::new();
+                flate2::read::ZlibDecoder::new(&remaining[stream..stream + length]).read_to_end(&mut decoded).unwrap();
+                hashes.push(format!("{:x}", Sha256::digest(&decoded)));
+                remaining = &remaining[stream + length..];
+            }
+            let expected: Vec<_> = alpha.into_iter().chain(std::iter::once(rgb)).collect();
+            assert_eq!(hashes, expected, "PNG samples must survive PDF conversion exactly");
+        }
     }
     #[test]
     fn invalid_embedded_svg_fails_instead_of_silently_dropping_an_image() {

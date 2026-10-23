@@ -11,6 +11,10 @@ mod geometry;
 mod imposition_algorithms;
 mod imposition_compute;
 mod imposition_pdf;
+mod imposition_cmyk;
+mod imposition_cmyk_pdf;
+mod imposition_cmyk_photoshop;
+mod imposition_dxf;
 mod imposition_pdf_runtime;
 pub use imposition_pdf_runtime::run_pdf_worker_if_requested;
 mod imposition_import;
@@ -1635,6 +1639,8 @@ pub fn run() {
             export_staged_pdf,
             imposition_pdf::check_imposition_pdf_outputs,
             imposition_pdf::export_imposition_pdf,
+            imposition_cmyk::export_imposition_cmyk_pdf,
+            imposition_dxf::export_imposition_dxf,
             load_product_configs,
             fetch_remote_image,
             load_finish_names,
