@@ -185,7 +185,7 @@ def _resource_limits(estimated_bank):
     available_cpus = _available_cpu_count()
     value = os.environ.get('PRINTFLOW_NESTING_THREADS')
     if value is None:
-        workers = max(1, available_cpus // 2)
+        workers = available_cpus
     else:
         try:
             workers = max(1, min(available_cpus, int(value)))

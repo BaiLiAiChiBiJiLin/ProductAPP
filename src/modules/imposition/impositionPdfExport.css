@@ -9,8 +9,6 @@
 .imposition-export-cmyk-roles .ant-select { flex: 1; min-width: 0; }
 .imposition-export-cmyk-offset { display: grid; grid-template-columns: minmax(80px, 1fr) 100px 100px; align-items: center; gap: 6px; font-size: 12px; }
 .imposition-export-cmyk-offset .ant-input-number-group-wrapper { width: 100%; }
-.imposition-export-alignment-preview { height: 150px; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #fff; border: 1px solid #e2e8f0; }
-.imposition-export-alignment-preview img { width: 100%; height: 148px; max-height: 148px; min-width: 0; object-fit: contain; }
 .imposition-export-summary { display: flex; align-items: center; justify-content: space-between; gap: 20px; color: #64748b; font-size: 12px; }
 .imposition-export-grid { display: grid; grid-template-columns: 205px minmax(240px, 1fr) minmax(360px, 440px); min-height: 420px; height: min(67vh, 780px); border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
 .imposition-export-grid > section { min-width: 0; padding: 14px; display: flex; flex-direction: column; gap: 10px; overflow: auto; }
@@ -18,6 +16,9 @@
 .imposition-export-board-list { min-height: 95px; overflow: auto; flex: 1; }
 .imposition-export-board { display: flex; align-items: center; gap: 10px; border: 1px solid transparent; border-radius: 6px; padding: 8px; }
 .imposition-export-board.active { background: #eff6ff; border-color: #93c5fd; }
+.imposition-export-board.has-issues { border-color: #fca5a5; background: #fef2f2; }
+.imposition-export-board.has-issues.active { box-shadow: inset 3px 0 #dc2626; }
+.imposition-export-board .ant-tag { margin: 4px 0 0; font-size: 11px; }
 .imposition-export-board button { flex: 1; border: 0; background: transparent; text-align: left; cursor: pointer; color: #334155; }
 .imposition-export-board small { display: block; margin-top: 3px; color: #64748b; }
 .imposition-export-section-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; }

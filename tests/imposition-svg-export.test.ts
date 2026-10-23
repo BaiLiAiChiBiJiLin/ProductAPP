@@ -16,6 +16,18 @@ const date = new Date(2026, 9, 14, 9, 30, 58)
 const model = (pages = [[item()]], sources = { art: source }) => createImpositionExportModel({ pages, sources, plateWidthMm: 300, plateHeightMm: 464 })
 
 describe('imposition export SVG layers', () => {
+  test('reports an unpainted closed contour beside artwork even when a hanging hole is stroked', () => {
+    const source = parseSource('<style>.fil0{fill:none}.str0{stroke:#EC2A90}</style><g><image width="400" height="200" href="data:image/png;base64,AQ=="/><path id="trace" class="fil0" d="M10 20h400v200H10z"/><circle class="fil0 str0" cx="210" cy="30" r="4"/></g>')
+    expect(source.contourWarnings).toEqual(['图层“trace”的闭合路径没有填充和描边，原始 SVG 缺少可见外轮廓；PDF / DXF 不会输出该路径，挂孔不代表外轮廓完整。'])
+    const staged = read(buildImpositionSvgExports(model([[item()]], { art: source }))[0].svg)
+    expect(staged.querySelector('[id$="-trace"]')?.getAttribute('style')).toBe('fill:none')
+  })
+
+  test('does not confuse transparent image clipping traces with an existing visible cut outline', () => {
+    const source = parseSource('<image width="400" height="200" href="data:image/png;base64,AQ=="/><path fill="none" d="M10 20h400v200H10z"/><g stroke="magenta" fill="none"><path id="outer" d="M10 20h400v200H10z"/></g>')
+    expect(source.contourWarnings).toEqual([])
+  })
+
   test('classifies inherited and CSS paint, gradients and combined fill/stroke without duplicating paint', () => {
     const source = parseSource('<style>.filled{fill:url(#gradient)} .stroke {fill:none;stroke:blue}</style><defs><linearGradient id="gradient"><stop offset="0" stop-color="red"/></linearGradient></defs><g fill="none"><path id="a" d="M0 0h1" stroke="red"/><g fill="green"><path id="b" d="M0 0h1" stroke="red"/></g><path id="c" class="filled" d="M0 0h1"/><path id="d" class="stroke" d="M0 0h1"/></g><text id="note">manual</text>')
     expect(source.layers.map(layer => [layer.label, layer.category, layer.defaultGroupId])).toEqual([['a', 'paths', 'paths'], ['b', 'fills', 'fills'], ['c', 'fills', 'fills'], ['d', 'paths', 'paths'], ['note', 'unknown', undefined]])
@@ -46,7 +58,7 @@ describe('imposition export SVG layers', () => {
     expect(() => enumerateImpositionSvgExports(current)).toThrow('导出类型无效')
   })
 
-  test('numbered image channels combine different SVGs, retain QT/rotation/holes, and omit sources missing that channel', () => {
+  test('numbered image channels combine different SVGs, retain QT/rotation/holes, and reuse same-face sources on the back page', () => {
     const art = parseSource('<image id="print-front" href="data:image/png;base64,AQ==" width="400" height="200"/><image id="print-back" href="data:image/png;base64,Ag==" width="400" height="200"/><path id="cut" fill="none" stroke="red" d="M0 0h40v20z"/>')
     const other = parseSource('<g><path fill="none" stroke="blue" d="M0 0h40v20z"/><image id="other-image" href="data:image/png;base64,Aw==" width="400" height="200"/></g>', 'other')
     const placements = [item('art', { rotation: 90 }), item('art', { x: 80, rotation: 180, image: { ...image(), id: 'art#qt-2', sourceImageId: 'art' } }), item('other', { x: 140, rotation: 37 }), item('other', { x: 180, y: 100, image: { ...image('other'), id: 'other#qt-2', sourceImageId: 'other' } })]
@@ -58,10 +70,10 @@ describe('imposition export SVG layers', () => {
     const imageEntries = entries.filter(entry => entry.groupId === 'images')
     expect(imageEntries.map(entry => [entry.imageLayerIndex, entry.groupName, entry.productionCopies])).toEqual([[0, '图片 1（全板）', 2], [1, '图片 2（全板）', 2]])
     expect(imageEntries[0].imageLayerMembers).toEqual({ art: art.layers[0].id, other: other.layers[1].id })
-    expect(imageEntries[1].imageLayerMembers).toEqual({ art: art.layers[1].id })
+    expect(imageEntries[1].imageLayerMembers).toEqual({ art: art.layers[1].id, other: other.layers[1].id })
     for (const entry of imageEntries) {
       const doc = read(entry.svg)
-      expect(doc.querySelectorAll('image')).toHaveLength(entry.imageLayerIndex === 0 ? 2 : 1)
+      expect(doc.querySelectorAll('image')).toHaveLength(2)
       expect(doc.querySelector('defs path')).toBeNull()
       expect(doc.querySelectorAll('[data-board-holes] path')).toHaveLength(2)
       const nodes = Array.from(doc.querySelectorAll('[data-placement-id]'))
@@ -70,7 +82,7 @@ describe('imposition export SVG layers', () => {
       nodes.forEach((node, index) => expect(node.getAttribute('transform')).toBe(impositionPlacementTransform(expected[index])))
     }
     expect(read(imageEntries[0].svg).querySelector('[id$="-print-back"]')).toBeNull()
-    expect(read(imageEntries[1].svg).querySelector('[data-source-id="other"]')).toBeNull()
+    expect(read(imageEntries[1].svg).querySelectorAll('[data-source-id="other"]')).toHaveLength(2)
     expect(read(entries[0].svg).querySelectorAll('[data-placement-id]')).toHaveLength(4)
     const full = read(buildImpositionTemplatePreview(current, current.templates[0].id))
     expect(full.querySelectorAll('image')).toHaveLength(3)
@@ -79,10 +91,40 @@ describe('imposition export SVG layers', () => {
     expect(pictures.querySelectorAll('image')).toHaveLength(3)
     expect(pictures.querySelector('defs path')).toBeNull()
     const secondChannel = read(buildImpositionTemplatePreview(current, current.templates[0].id, 'images', 1))
-    expect(secondChannel.querySelectorAll('image')).toHaveLength(1)
-    expect(secondChannel.querySelectorAll('[data-placement-id]')).toHaveLength(2)
+    expect(secondChannel.querySelectorAll('image')).toHaveLength(2)
+    expect(secondChannel.querySelectorAll('[data-placement-id]')).toHaveLength(4)
     expect(secondChannel.querySelector('[id$="-print-back"]')).not.toBeNull()
-    expect(secondChannel.querySelector('[data-source-id="other"]')).toBeNull()
+    expect(secondChannel.querySelectorAll('[data-source-id="other"]')).toHaveLength(2)
+  })
+
+  test('mixed face pages follow assigned roles, merge face layers and leave extra images separate', () => {
+    const art = parseSource('<image id="back" href="data:image/png;base64,AQ=="/><image id="front" href="data:image/png;base64,Ag=="/><image id="front-detail" href="data:image/png;base64,Aw=="/><image id="extra" href="data:image/png;base64,BA=="/>')
+    const other = parseSource('<image id="same" href="data:image/png;base64,BQ=="/>', 'other')
+    const current = model([[item(), item('other', { x: 80, rotation: 180 })], [item('other', { x: 90 })]], { art, other })
+    current.assignments.art[art.layers[0].id] = 'image-back'
+    current.assignments.art[art.layers[1].id] = 'image-front'
+    current.assignments.art[art.layers[2].id] = 'image-front'
+    const entries = enumerateImpositionPdfExports(current, { date })
+    expect(entries[0].pages).toHaveLength(3)
+    const [front, back, extra] = entries[0].pages.map(entry => read(renderImpositionSvgExport(current, entry)))
+    expect(front.querySelector('[id$="-back"]')).toBeNull()
+    expect(front.querySelector('[id$="-front"]')).not.toBeNull()
+    expect(front.querySelector('[id$="-front-detail"]')).not.toBeNull()
+    expect(back.querySelector('[id$="-back"]')).not.toBeNull()
+    expect(back.querySelector('[id$="-front"]')).toBeNull()
+    for (const doc of [front, back]) {
+      expect(doc.querySelector('[id$="-extra"]')).toBeNull()
+      expect(doc.querySelector('[data-source-id="other"]')?.getAttribute('transform')).toBe(impositionPlacementTransform(current.templates[0].placements[1]))
+    }
+    expect(extra.querySelector('[id$="-extra"]')).not.toBeNull()
+    expect(extra.querySelector('[data-source-id="other"]')).toBeNull()
+    expect(entries[1].pages).toHaveLength(1) // Same-face-only boards don't gain a redundant page.
+    const preview = read(buildImpositionTemplatePreview(current, current.templates[0].id, 'image-back'))
+    expect(preview.querySelector('[id$="-same"]')).not.toBeNull()
+    expect(preview.querySelector('[id$="-back"]')).not.toBeNull()
+    current.templateAssignments = { 'template-1': { other: { [other.layers[0].id]: null } } }
+    const changed = enumerateImpositionPdfExports(current, { date })
+    expect(read(renderImpositionSvgExport(current, changed[0].pages[1])).querySelector('[data-source-id="other"]')).toBeNull()
   })
 
   test('image channels follow current type assignments in document order and honor per-template overrides', () => {

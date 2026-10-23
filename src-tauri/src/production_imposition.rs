@@ -526,6 +526,18 @@ fn update_image_quantity(
     image_id: &str,
     quantity: u32,
 ) -> Result<ImpositionRecord, String> {
+    update_image_quantities(conn, job_id, &[image_id.to_owned()], quantity)
+}
+
+fn update_image_quantities(
+    conn: &Connection,
+    job_id: &str,
+    image_ids: &[String],
+    quantity: u32,
+) -> Result<ImpositionRecord, String> {
+    if image_ids.is_empty() || quantity > 10_000 {
+        return Err("请选择图片，QT 数量必须在 0 至 10000 之间".into());
+    }
     ensure_store(conn)?;
     let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)
         .map_err(|error| error.to_string())?;
@@ -551,11 +563,13 @@ fn update_image_quantity(
         .map_err(|error| error.to_string())?;
     let mut images: Vec<ProductionImage> =
         serde_json::from_str(&images_json).map_err(|error| error.to_string())?;
-    let image = images
-        .iter_mut()
-        .find(|image| image.id == image_id)
-        .ok_or("生产拼版图片不存在")?;
-    image.attributes.insert("QT".into(), quantity.to_string());
+    let ids: HashSet<&str> = image_ids.iter().map(String::as_str).collect();
+    if ids.iter().any(|id| !images.iter().any(|image| image.id == *id)) {
+        return Err("生产拼版图片不存在，批量修改未保存".into());
+    }
+    for image in images.iter_mut().filter(|image| ids.contains(image.id.as_str())) {
+        image.attributes.insert("QT".into(), quantity.to_string());
+    }
     let serialized = serde_json::to_string(&images).map_err(|error| error.to_string())?;
     transaction.execute("UPDATE production_imposition_jobs SET images = ?1 WHERE id = ?2 AND status = 'pending'", params![serialized, job_id]).map_err(|error| error.to_string())?;
     transaction.commit().map_err(|error| error.to_string())?;
@@ -611,6 +625,20 @@ pub async fn update_imposition_image_quantity(
 ) -> Result<ImpositionRecord, String> {
     tauri::async_runtime::spawn_blocking(move || {
         update_image_quantity(&super::database(&app)?, &job_id, &image_id, quantity)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn update_imposition_image_quantities(
+    app: tauri::AppHandle,
+    job_id: String,
+    image_ids: Vec<String>,
+    quantity: u32,
+) -> Result<ImpositionRecord, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        update_image_quantities(&super::database(&app)?, &job_id, &image_ids, quantity)
     })
     .await
     .map_err(|error| error.to_string())?
@@ -863,6 +891,26 @@ mod tests {
         assert!(update_image_quantity(&conn, &job.id, "missing", 2).is_err());
         let resolved = fs::canonicalize(&root).unwrap();
         fs::remove_dir_all(resolved).unwrap();
+    }
+
+    #[test]
+    fn batch_quantity_updates_are_atomic_and_preserve_unselected_images() {
+        let conn = Connection::open_in_memory().unwrap();
+        ensure_store(&conn).unwrap();
+        let image = |id: &str| json!({"id":id,"name":id,"sourceFileName":"original.svg","filePath":"original.svg","widthMm":20,"heightMm":30,"productId":"","productName":"","attributes":{"QT":"1","Finish":"original"},"attributeImages":{},"note":"","noteImage":null,"productGroupId":"","productGroupLeaderId":"","productGroupPosition":0});
+        conn.execute("INSERT INTO production_imposition_jobs VALUES ('batch-qt','review-qt','test','','2026-10-23','unpaid','pending',3,?1)", [json!([image("a"), image("b"), image("c")]).to_string()]).unwrap();
+        let ids = vec!["a".to_owned(), "c".to_owned()];
+        let updated = update_image_quantities(&conn, "batch-qt", &ids, 7).unwrap();
+        assert_eq!(updated.images.iter().map(|image| image.attributes["QT"].as_str()).collect::<Vec<_>>(), ["7", "1", "7"]);
+        assert_eq!(updated.images[0].attributes["Finish"], "original");
+        assert!(update_image_quantities(&conn, "batch-qt", &["a".into(), "missing".into()], 2).is_err());
+        assert_eq!(load_job(&conn, "batch-qt").unwrap().images[0].attributes["QT"], "7");
+        assert!(update_image_quantities(&conn, "batch-qt", &ids, 10_001).is_err());
+        assert!(update_image_quantities(&conn, "batch-qt", &[], 0).is_err());
+        let zeroed = update_image_quantities(&conn, "batch-qt", &ids, 0).unwrap();
+        assert_eq!(zeroed.images[0].attributes["QT"], "0");
+        conn.execute("UPDATE production_imposition_jobs SET status='returned'", []).unwrap();
+        assert!(update_image_quantities(&conn, "batch-qt", &ids, 4).is_err());
     }
 
     #[test]

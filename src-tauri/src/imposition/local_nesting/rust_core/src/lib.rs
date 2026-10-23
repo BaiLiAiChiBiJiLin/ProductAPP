@@ -160,7 +160,7 @@ fn available_cpu_count() -> usize {
 fn cpu_workers(requested: usize, available_cpus: usize) -> usize {
     let available_cpus = available_cpus.max(1);
     if requested == 0 {
-        (available_cpus / 2).max(1)
+        available_cpus
     } else {
         requested.min(available_cpus)
     }
@@ -1026,8 +1026,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn worker_policy_defaults_to_half_cpus_and_accepts_arbitrary_counts() {
-        for (cpus, expected) in [(0, 1), (1, 1), (3, 1), (7, 3), (8, 4), (24, 12)] {
+    fn worker_policy_defaults_to_all_cpus_and_accepts_arbitrary_counts() {
+        for (cpus, expected) in [(0, 1), (1, 1), (3, 3), (7, 7), (8, 8), (24, 24)] {
             assert_eq!(cpu_workers(0, cpus), expected);
         }
         assert_eq!(cpu_workers(7, 8), 7);

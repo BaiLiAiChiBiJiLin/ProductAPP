@@ -9,13 +9,13 @@ const SHAPE_TAGS = new Set(['path', 'rect', 'circle', 'ellipse', 'polygon', 'pol
 export type SvgLayerCategory = 'paths' | 'images' | 'fills' | 'unknown'
 export type SvgLayerAssignment = string | null | undefined
 export const isImageAssignment = (value: SvgLayerAssignment) => value === 'images' || value === 'image-front' || value === 'image-back'
-/** Front/back roles share the ordinary image-page pipeline. Preserve the
- * original SVG layer order; CMYK selects faces by their assigned role. */
+/** Preserve source paint order within a face; board page membership is
+ * resolved separately so front/back can be selected by their assigned role. */
 export function orderedImageLayers(source: ExportSvgSource, assigned: Record<string, SvgLayerAssignment>) {
   return source.layers.filter(layer => isImageAssignment(assigned[layer.id]))
 }
 export type ExportSvgLayer = { id: string; label: string; tagName: string; category: SvgLayerCategory; defaultGroupId: SvgLayerAssignment; nodePath: number[] }
-export type ExportSvgSource = { sourceId: string; fileName: string; svgText: string; layers: ExportSvgLayer[]; warnings: string[] }
+export type ExportSvgSource = { sourceId: string; fileName: string; svgText: string; layers: ExportSvgLayer[]; warnings: string[]; contourWarnings?: string[] }
 export type ExportGroup = { id: string; name: string }
 export const IMPOSITION_EXPORT_TYPES: ExportGroup[] = [{ id: 'paths', name: '轮廓 / 路径' }, { id: 'images', name: '图片' }, { id: 'fills', name: '彩窗' }, { id: 'white', name: '白墨' }]
 export type ImpositionExportHoles = { count: number; sizeMm: number; gapMm: number; leftMm: number }
@@ -29,8 +29,8 @@ export type ImpositionExportModel = {
 export type ImpositionSvgExportMetadata = {
   fileName: string; widthMm: number; heightMm: number; templateId: string; templateNumber: number
   groupId: string; groupName: string; groupNumber: number; productionCopies: number
-  /** Zero-based channel among each source's currently assigned image layers. */
-  imageLayerIndex?: number; imageLayerMembers?: Record<string, string>
+  /** Zero-based whole-board image page (front/back first on mixed-face boards). */
+  imageLayerIndex?: number; imageLayerMembers?: Record<string, string | string[]>
 }
 export type ImpositionSvgExportPage = ImpositionSvgExportMetadata & { svg: string }
 export type ImpositionPdfExportMetadata = {
@@ -216,7 +216,17 @@ export function parseImpositionSvgSource(input: { sourceId: string; fileName: st
   const warnings: string[] = []
   if (layers.some(layer => layer.category === 'unknown')) warnings.push('未知图层需要选择导出类型，或明确选择不导出。')
   if (root.querySelector('use')) warnings.push('引用图层 use 会作为一个完整图层处理，保留它引用的原始资源。')
-  return { sourceId: input.sourceId, fileName: input.fileName, svgText: serialize(root), layers, warnings }
+  // Corel exports can retain an invisible clipping trace alongside a stroked
+  // hanging hole. Calling both "paths" does not make the trace printable.
+  // Diagnose the original paint; never invent a cutting stroke or replace the
+  // customer's curve with the solver's simplified collision polygon.
+  const closedPaths = layers.filter(layer => layer.tagName.toLowerCase() === 'path').map(layer => ({ layer, element: resolveNode(root, layer.nodePath) }))
+    .filter(({ element }) => /z/i.test(element.getAttribute('d') ?? ''))
+  const hasStrokedContour = closedPaths.some(({ element }) => paintProperty(element, 'stroke', rules) !== 'none')
+  const contourWarnings = images.length && !hasStrokedContour ? closedPaths
+    .filter(({ element }) => paintProperty(element, 'fill', rules) === 'none' && paintProperty(element, 'stroke', rules) === 'none')
+    .map(({ layer }) => `图层“${layer.label}”的闭合路径没有填充和描边，原始 SVG 缺少可见外轮廓；PDF / DXF 不会输出该路径，挂孔不代表外轮廓完整。`) : []
+  return { sourceId: input.sourceId, fileName: input.fileName, svgText: serialize(root), layers, warnings, contourWarnings }
 }
 
 function resolveNode(root: Element, path: number[]) { return path.reduce((node, index) => children(node)[index], root) }
@@ -398,25 +408,49 @@ export function applySourceAssignmentsToSameName(model: ImpositionExportModel, t
   return { model: { ...model, templateAssignments }, appliedSources: matches.size, skippedSources }
 }
 
+/** Ordinary PDF pages and their previews share the same face membership.
+ * Use explicit faces when the board has valid front/back artwork. Unrelated
+ * image layers keep separate numbered pages instead of entering either face. */
+export function impositionImageChannels(model: ImpositionExportModel, templateId: string): Record<string, string | string[]>[] {
+  const template = model.templates.find(board => board.id === templateId)
+  if (!template) return []
+  const sources = template.sourceIds.map(id => {
+    const layers = model.sources[id].layers
+    const assigned = Object.fromEntries(layers.map(layer => [layer.id, assignment(model, templateId, id, layer.id)]))
+    return { id, images: orderedImageLayers(model.sources[id], assigned),
+      front: layers.filter(layer => assigned[layer.id] === 'image-front'),
+      back: layers.filter(layer => assigned[layer.id] === 'image-back'), assigned }
+  })
+  const faces = sources.some(source => source.back.length && source.front.length)
+    && sources.every(source => !source.images.length || source.front.length)
+  const channels: Record<string, string | string[]>[] = []
+  const add = (index: number, id: string, ids: string[]) => {
+    if (ids.length) (channels[index] ??= {})[id] = ids.length === 1 ? ids[0] : ids
+  }
+  for (const source of sources) {
+    if (faces) {
+      add(0, source.id, source.front.map(layer => layer.id))
+      add(1, source.id, (source.back.length ? source.back : source.front).map(layer => layer.id))
+      source.images.filter(layer => source.assigned[layer.id] === 'images').forEach((layer, index) => add(index + 2, source.id, [layer.id]))
+    } else source.images.forEach((layer, index) => add(index, source.id, [layer.id]))
+  }
+  return channels
+}
+
+const imageChannelIncludes = (member: string | string[] | undefined, layerId: string) => Array.isArray(member) ? member.includes(layerId) : member === layerId
+
 /** Metadata is small; render each SVG only immediately before its PDF write. */
 export function enumerateImpositionSvgExports(model: ImpositionExportModel, options: ExportOptions = {}): ImpositionSvgExportMetadata[] {
   const timestamp = exportTimestamp(options.date ?? new Date())
   const result: Omit<ImpositionSvgExportMetadata, 'fileName'>[] = []
   const groupIds = new Set(IMPOSITION_EXPORT_TYPES.map(group => group.id))
-  // Channels are ordinal within each source's currently assigned image layers,
-  // not keyed by SVG id or label. Reserve stable numbers across templates so
-  // selecting fewer boards never changes the color/white output numbers.
-  let imageChannelCount = 0
-  for (const template of model.templates) for (const sourceId of template.sourceIds) {
-    imageChannelCount = Math.max(imageChannelCount, model.sources[sourceId].layers.filter(layer => isImageAssignment(assignment(model, template.id, sourceId, layer.id))).length)
-  }
+  const channelsByTemplate = new Map(model.templates.map(template => [template.id, impositionImageChannels(model, template.id)]))
+  const imageChannelCount = Math.max(0, ...[...channelsByTemplate.values()].map(channels => channels.length))
   model.templates.forEach((template, index) => {
     if (options.templateIds && !options.templateIds.includes(template.id)) return
     const present = new Set<string>()
-    const imageChannels: Array<Array<[string, string]>> = []
+    const imageChannels = channelsByTemplate.get(template.id)!
     for (const sourceId of template.sourceIds) {
-      const assigned = Object.fromEntries(model.sources[sourceId].layers.map(layer => [layer.id, assignment(model, template.id, sourceId, layer.id)]))
-      orderedImageLayers(model.sources[sourceId], assigned).forEach((layer, index) => { (imageChannels[index] ??= []).push([sourceId, layer.id]) })
       for (const layer of model.sources[sourceId].layers) {
         const value = assignment(model, template.id, sourceId, layer.id)
         const group = isImageAssignment(value) ? 'images' : value
@@ -428,7 +462,7 @@ export function enumerateImpositionSvgExports(model: ImpositionExportModel, opti
     }
     const add = (groupId: string, groupName: string, groupNumber: number, imageLayerIndex?: number) => {
       if (!present.has(groupId) || options.groupIds && !options.groupIds.includes(groupId)) return
-      result.push({ widthMm: model.plateWidthMm, heightMm: model.plateHeightMm, templateId: template.id, templateNumber: index + 1, groupId, groupName, groupNumber, productionCopies: template.productionCopies, ...(imageLayerIndex === undefined ? {} : { imageLayerIndex, imageLayerMembers: Object.fromEntries(imageChannels[imageLayerIndex]) }) })
+      result.push({ widthMm: model.plateWidthMm, heightMm: model.plateHeightMm, templateId: template.id, templateNumber: index + 1, groupId, groupName, groupNumber, productionCopies: template.productionCopies, ...(imageLayerIndex === undefined ? {} : { imageLayerIndex, imageLayerMembers: imageChannels[imageLayerIndex] }) })
     }
     add('paths', '轮廓 / 路径', 1)
     imageChannels.forEach((_members, imageIndex) => add('images', `图片 ${imageIndex + 1}（全板）`, imageIndex + 2, imageIndex))
@@ -562,18 +596,23 @@ export function renderImpositionSvgExport(model: ImpositionExportModel, entry: I
   return renderBoardLayers(model, entry.templateId, `${entry.templateNumber}-${entry.groupNumber}`, (sourceId, layerId) => {
     const value = assignment(model, entry.templateId, sourceId, layerId)
     if ((isImageAssignment(value) ? 'images' : value) !== entry.groupId) return false
-    return entry.groupId !== 'images' || entry.imageLayerMembers?.[sourceId] === layerId
+    return entry.groupId !== 'images' || imageChannelIncludes(entry.imageLayerMembers?.[sourceId], layerId)
   }, entry.groupId !== 'paths')
 }
 
 /** A combined board preview is independent of the numbered image channels. */
 export function buildImpositionTemplatePreview(model: ImpositionExportModel, templateId: string, type = 'all', imageLayerIndex?: number) {
-  let imageMembers: Map<string, string | undefined> | undefined
+  let imageMembers: Record<string, string | string[]> | undefined
   if (type === 'images' && imageLayerIndex !== undefined) {
     if (!Number.isInteger(imageLayerIndex) || imageLayerIndex < 0) throw new Error('图片图层序号无效')
-    imageMembers = new Map((model.templates.find(template => template.id === templateId)?.sourceIds ?? []).map(sourceId => [sourceId, orderedImageLayers(model.sources[sourceId], Object.fromEntries(model.sources[sourceId].layers.map(layer => [layer.id, assignment(model, templateId, sourceId, layer.id)])))[imageLayerIndex]?.id]))
+    imageMembers = impositionImageChannels(model, templateId)[imageLayerIndex] ?? {}
   }
-  return renderBoardLayers(model, templateId, 'preview', (sourceId, layerId) => imageMembers ? imageMembers.get(sourceId) === layerId : type === 'all' || (type === 'images' ? isImageAssignment(assignment(model, templateId, sourceId, layerId)) : assignment(model, templateId, sourceId, layerId) === type), type !== 'all' && type !== 'paths')
+  const faces = type === 'image-front' ? 0 : type === 'image-back' ? 1 : undefined
+  if (faces !== undefined && impositionImageChannels(model, templateId).length > 1) {
+    const assignedSources = (model.templates.find(board => board.id === templateId)?.sourceIds ?? []).map(id => model.sources[id].layers.map(layer => assignment(model, templateId, id, layer.id)))
+    if (assignedSources.some(values => values.includes('image-back')) && assignedSources.every(values => !values.some(isImageAssignment) || values.includes('image-front'))) imageMembers = impositionImageChannels(model, templateId)[faces]
+  }
+  return renderBoardLayers(model, templateId, 'preview', (sourceId, layerId) => imageMembers ? imageChannelIncludes(imageMembers[sourceId], layerId) : type === 'all' || (type === 'images' ? isImageAssignment(assignment(model, templateId, sourceId, layerId)) : assignment(model, templateId, sourceId, layerId) === type), type !== 'all' && type !== 'paths')
 }
 
 export function buildImpositionSvgExports(model: ImpositionExportModel, options: ExportOptions = {}): ImpositionSvgExportPage[] {

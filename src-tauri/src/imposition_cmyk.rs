@@ -25,6 +25,8 @@ pub(crate) struct Source {
     pub width_mm: f64,
     pub height_mm: f64,
     pub front_id: String,
+    // None means this product is double-sided with the same artwork, even
+    // when other products on the board have distinct front and back layers.
     pub back_id: Option<String>,
     pub window_id: Option<String>,
     #[serde(default)]
@@ -93,7 +95,6 @@ impl Job {
         for source in &self.sources {
             if !keys.insert(&source.key)
                 || !valid_size(source.width_mm, source.height_mm)
-                || self.different_back && source.back_id.is_none()
                 || ![
                     source.back_offset.x_mm,
                     source.back_offset.y_mm,
@@ -426,6 +427,7 @@ fn convert_source(
         None
     };
     let back = back.as_ref().unwrap_or(&front);
+    let different_back = job.different_back && source.back_id.is_some();
     // Every picture needs an independent layer if any product on the board
     // has a window, including products without their own window.
     let mut image_layer = preserve_layers.then(LayerEncoder::new);
@@ -456,7 +458,7 @@ fn convert_source(
                 rgb_over_white(front_pixel)
             };
             image_alpha[x] = front_pixel[3];
-            if job.different_back {
+            if different_back {
                 let back_pixel = &back.data()[p..p + 4];
                 back_rgb[x] = if preserve_layers {
                     straight_rgb(back_pixel)
@@ -471,7 +473,7 @@ fn convert_source(
             }
         }
         transform.transform_pixels(&front_rgb, &mut front_cmyk);
-        if job.different_back {
+        if different_back {
             transform.transform_pixels(&back_rgb, &mut back_cmyk);
         }
         if window.is_some() {
@@ -499,7 +501,7 @@ fn convert_source(
             } else {
                 front_cmyk[x]
             };
-            let back_inks = if job.different_back {
+            let back_inks = if different_back {
                 if preserve_layers {
                     layered_cmyk(
                         back_cmyk[x],
@@ -912,14 +914,44 @@ mod tests {
         assert!(inflate(&layers.image.planes[4]).contains(&255));
     }
     #[test]
-    fn invalid_missing_back_and_out_of_board_placements_are_rejected() {
+    fn same_face_products_are_valid_on_different_face_boards_but_out_of_board_placements_are_rejected() {
         let mut f = Fixture::new();
         let mut job = f.job(false, false);
         job.different_back = true;
-        assert!(job.validate().unwrap_err().contains("正背图层"));
+        job.validate().unwrap();
         job.different_back = false;
         job.placements[0].x = 299.;
         assert!(job.validate().unwrap_err().contains("超出板材"));
+    }
+    #[test]
+    fn mixed_same_and_different_faces_reuse_front_for_back_inks_and_white() {
+        let mut f = Fixture::new();
+        let mut job = f.job(true, true);
+        let mut same = job.sources[0].clone();
+        same.key = "same-face".into();
+        same.back_id = None;
+        // Stale back offsets must not move a same-face product's reused raster.
+        same.back_offset.x_mm = 2.;
+        job.sources.push(same);
+        let mut placement = job.placements[1].clone();
+        placement.source_key = "same-face".into();
+        placement.x = 70.;
+        placement.rotation = 180.;
+        job.placements.push(placement);
+        job.validate().unwrap();
+        let client = reqwest::blocking::Client::new();
+        let transform = color_transform().unwrap();
+        let different = convert_source(&job, &job.sources[0], &client, &transform, |_| {}).unwrap();
+        let reused = convert_source(&job, &job.sources[1], &client, &transform, |_| {}).unwrap();
+        let different_inks = inflate(&different.inks);
+        let reused_inks = inflate(&reused.inks);
+        assert!(different_inks.chunks_exact(9).any(|p| p[..4] != p[5..9]));
+        assert!(reused_inks.chunks_exact(9).all(|p| p[..4] == p[5..9]));
+        job.different_back = false;
+        let same_mode = convert_source(&job, &job.sources[1], &client, &transform, |_| {}).unwrap();
+        assert_eq!(reused_inks, inflate(&same_mode.inks), "mixed mode preserves all same-face ink and White values");
+        assert_eq!(reused.mask, same_mode.mask);
+        assert!(reused.layers.as_ref().unwrap().window.is_some(), "window remains a separate layer");
     }
     #[test]
     #[ignore = "Exports four real nine-ink PDF fixtures or an externally staged job"]

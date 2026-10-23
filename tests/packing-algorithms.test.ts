@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { checkExportTemplate } from '../src/modules/imposition/impositionExportDiagnostics'
 import { groupRepeatedPackingPages, summarizePackingResult } from '../src/modules/imposition/packingAlgorithms'
 import { expandImpositionImages, type ProductionImage, type NestResult } from '../src/modules/imposition/impositionRecords'
 
@@ -100,4 +101,19 @@ describe('irregular solver result display', () => {
     expect(plan.sheetsUsed).toBe(0)
     expect(plan.unplacedCount).toBe(1300)
   })
+})
+
+
+it('export diagnostics accepts interlocked true contours and checks the actual spacing', () => {
+  const a = image('a', 20, 20)
+  const b = image('b', 20, 20)
+  const makeBoard = (offset: number) => ({ id: 'board', pageIndices: [0], productionCopies: 1, sourceIds: ['a', 'b'], placements: [
+    { image: a, x: 0, y: 0, width: 20, height: 20, rotation: 0 },
+    { image: b, x: offset, y: offset, width: 20, height: 20, rotation: 0 },
+  ] })
+  const geometry = { polygons: { a: [[0, 0], [20, 0], [0, 20]] as Array<[number, number]>, b: [[20, 0], [20, 20], [0, 20]] as Array<[number, number]> }, region: { left: 0, top: 0, right: 100, bottom: 100 }, spacing: 3 }
+  // Image frames overlap, but the two triangular contours are 4.24 mm apart.
+  expect(checkExportTemplate(makeBoard(3), 100, 100, geometry)).toEqual([])
+  expect(checkExportTemplate(makeBoard(2), 100, 100, geometry)).toEqual([expect.stringContaining('间距小于 3 mm')])
+  expect(checkExportTemplate(makeBoard(90), 100, 100, geometry)).toEqual([expect.stringContaining('超出版面有效区域')])
 })

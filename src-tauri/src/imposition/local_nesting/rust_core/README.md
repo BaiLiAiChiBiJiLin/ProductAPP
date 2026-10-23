@@ -57,8 +57,8 @@ size_t nc_last_error(const NcContext *, uint8_t *out, size_t capacity);
 void nc_destroy(NcContext *);
 ```
 
-`nc_create` accepts workers 0 (automatic: half of available logical CPUs,
-rounded down and at least 1) or any positive integer. An explicit count is
+`nc_create` accepts workers 0 (automatic: all available logical CPUs,
+at least 1) or any positive integer. An explicit count is
 capped to the CPUs available to the process. `max_bytes=0` selects a
 128 MiB budget. A context uploads each unique Python **item object** once,
 in row-major contiguous uint8 format with values 0 or 1. Repeated source
@@ -124,8 +124,8 @@ every horizontal bit offset. Results grow only with pieces actually placed.
 `nc_memory_used` reports retained allocations; temporary board allocations and
 result growth are checked against the same context budget. Fallible vector
 reservation reports memory errors instead of invoking Rust's allocation-failure
-handler. Thread startup failures reduce parallelism. Python defaults to half
-the available logical CPU count; `PRINTFLOW_NESTING_THREADS` overrides it with
+handler. Thread startup failures reduce parallelism. Python defaults to all
+available logical CPUs; `PRINTFLOW_NESTING_THREADS` overrides it with
 any positive integer, capped to available CPUs. Before allocating the shared
 mask bank, Python reserves 256 MiB for the process and allows 32 MiB of remaining
 headroom per worker. Rust independently checks CPU availability and available

@@ -48,9 +48,9 @@
 
 本地三种策略共用 release Rust 位图搜索核心；Python 保留轮廓准备、策略调度、最终几何校验及可切换的参考搜索。安装脚本同时构建独立 DLL，不需要将整个 Tauri 应用切换到 release。仅安装 Python 可加 `-PythonOnly`；候选 DLL 单独构建使用 `build_rust_core.ps1 -SkipDeploy`。
 
-默认 `PRINTFLOW_NESTING_CORE=auto`。可设为 `python` 或 `rust` 做同输入对照。拼版设置中的“使用核心数”默认使用可用逻辑核心数的一半（向下取整，至少 1），也可手动选择 1 至本机可用逻辑核心数；偏好在本机保存，切换到核心更少的电脑时会收敛到其上限。修改并行数在下一次计算或跨方案重排时生效，不会清空当前版式。
+默认 `PRINTFLOW_NESTING_CORE=auto`。可设为 `python` 或 `rust` 做同输入对照。拼版设置中的“使用核心数”默认使用全部可用逻辑核心（至少 1），也可手动选择 1 至本机可用逻辑核心数；偏好在本机保存，切换到核心更少的电脑时会收敛到其上限。修改并行数在下一次计算或跨方案重排时生效，不会清空当前版式。
 
-应用通过 `get_imposition_compute_info` 读取原生 CPU 信息，`NestRequest.threadCount` 缺省表示自动；Tauri 仅设置该次求解子进程的 `PRINTFLOW_NESTING_THREADS`，不改桌面进程全局环境。独立 Python CLI 可直接用此环境变量指定任意整数线程数，缺省同样自动使用半数逻辑核心。Python 和 Rust 会依据可用内存、共享轮廓缓存、线程栈预算及可并行角度数降低实际线程数，低内存时降为 1；QT 不会因此重复复制轮廓。并行仅用于同一放置步骤的角度搜索，最终按固定顺序选取结果，线程多不保证成比例提速。
+应用通过 `get_imposition_compute_info` 读取原生 CPU 信息，`NestRequest.threadCount` 缺省表示自动；Tauri 仅设置该次求解子进程的 `PRINTFLOW_NESTING_THREADS`，不改桌面进程全局环境。独立 Python CLI 可直接用此环境变量指定任意整数线程数，缺省同样自动使用全部可用逻辑核心。Python 和 Rust 会依据可用内存、共享轮廓缓存、线程栈预算及可并行角度数降低实际线程数，低内存时降为 1；QT 不会因此重复复制轮廓。并行仅用于同一放置步骤的角度搜索，最终按固定顺序选取结果，线程多不保证成比例提速。
 
 `PRINTFLOW_NESTING_CORE_LIBRARY` 可指定候选库。实际核心、线程数和回退原因写入结果 `searchCore` 及算法说明，原生失败不会被误报成 Rust 结果。完整实现与原始测量方法见 `docs/本地拼版Rust搜索核心与性能验收-2026-10-13.md`。可用 `benchmark_thread_scaling.py --input <固定毫米请求.json>` 重复比较 1/2/4/8 线程；基准串行执行、共用预热缓存，并校验 QT、间距、板数、版式及坐标一致性，输出写入系统临时目录。
 
@@ -82,3 +82,20 @@
 每次打包都会从项目目录外验证三种策略使用内置 Rust 核心，并验证切割方案优先和综合最少的跨方案重排；运行时还会被复制到含空格和中文的临时安装目录验证搬迁。正式版优先使用 Tauri `resource_dir()/imposition-runtime`，不从当前工作目录查找源码，也不依赖目标电脑的系统 Python。Python 使用相对 `._pth` 隔离模块路径，缓存写入用户数据目录。
 
 打包：`npm run tauri -- build --bundles nsis`。重新生成并安装新版安装包后生效；已经生成的旧安装包不会自动补齐资源。
+
+
+### 三方案比较
+
+默认策略为“全部”：一次提取基础图片轮廓，然后按节省板材、切割方案优先、综合最少的顺序串行运行求解器。一个策略失败不影响后续策略。比较阶段保留坐标与版面数、切割线数，不加载其他策略的画布图片；用户选定后清除其他策略结果，再建立可编辑画布。重新智能拼版会重新比较，不沿用未选方案缓存。
+
+开发环境可查看版面配置、选择单个策略与手动核心数；生产环境隐藏这三项，默认比较全部策略，并自动使用全部可用逻辑核心。Python/Rust 的内存预算仍可降低实际并发。
+
+导出窗口会逐版式检查尺寸、有效区域和真实轮廓间距，并标记未确认图层、SVG 读取失败、CMYK 配置错误及导出失败的对应版式。问题版式显示“需检查”和详情；取消勾选该版式可继续导出其他正常版式。
+
+### 重复统一版式回归
+
+`fixtures/repeated-mixed-contours.json` 是生产 SVG 经实际 Rust 导入/提取流程生成的匿名轮廓，不包含嵌入图片。8 款各 QT 30 的回归必须得到 5 张相同板材，每板各款 6 件，且通过独立边界和 3 mm 间距检查。切割策略先完成密排，再按整批 QT 公约数搜索不增加板材数的统一配额，避免只按单板件数淘汰更优整批方案。
+
+运行：`python -B -m unittest discover -s scripts/nesting -p test_local_tools_engine.py -k test_uniform`。设置 `PRINTFLOW_NESTING_CORE=rust` 或 `python` 可分别验证原生和参考搜索。
+
+本机原始 SVG 重放可用忽略测试 `real_production_svg_import`：`PRINTFLOW_IMPORT_TEST_SVG` 指定输入，`PRINTFLOW_IMPORT_TEST_COUNT` 指定拆分数量；可选 `PRINTFLOW_IMPORT_TEST_REQUEST` 指定系统临时目录内的 JSON 输出，`PRINTFLOW_IMPORT_TEST_QT` 指定测试 QT。该测试导出实际毫米轮廓请求及同目录下的拆分 SVG，原始文件不变。随后以此 JSON 调用 `local_tools_engine.py` 即可复现生产求解链路。

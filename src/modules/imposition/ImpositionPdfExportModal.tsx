@@ -5,16 +5,30 @@ import Loading from '../../components/Loading'
 import ImpositionThumbnail from './ImpositionThumbnail'
 import { loadImpositionImage } from './impositionRecords'
 import type { PackedItem } from './packingAlgorithms'
-import { applySourceAssignmentsToSameName, buildImpositionTemplatePreview, buildSourceLayerPreview, createImpositionExportModel, enumerateImpositionPdfExports, parseImpositionSvgSource, renderImpositionSvgExport, orderedImageLayers, isImageAssignment } from './impositionSvgExport'
+import { applySourceAssignmentsToSameName, buildImpositionTemplatePreview, buildSourceLayerPreview, createImpositionExportModel, enumerateImpositionPdfExports, parseImpositionSvgSource, renderImpositionSvgExport, impositionImageChannels } from './impositionSvgExport'
 import type { ExportSvgSource } from './impositionSvgExport'
 import { chooseImpositionPdfDirectory, exportImpositionPdfs, type ImpositionPdfExportProgress } from './impositionPdfExportService'
 import './impositionPdfExport.css'
-import { cmykChoiceKey, cmykImageLayers, createCmykExportPlan, type CmykChoices, type CmykSettings, type CmykExportPlan } from './impositionCmykExport'
-import { buildCmykAlignmentPreview } from './impositionCmykPreview'
+import { cmykChoiceKey, createCmykExportPlan, type CmykChoices, type CmykSettings, type CmykExportPlan } from './impositionCmykExport'
+import { checkExportTemplate, type ExportGeometryCheck } from './impositionExportDiagnostics'
 
 type ExportModel = ReturnType<typeof createImpositionExportModel>
-type Props = { pages: PackedItem[][]; imageSources: Record<string, string>; widthMm: number; heightMm: number; holes?: { count: number; sizeMm: number; gapMm: number; leftMm: number }; onClose: () => void }
+type Props = { geometry?: ExportGeometryCheck; pages: PackedItem[][]; imageSources: Record<string, string>; widthMm: number; heightMm: number; holes?: { count: number; sizeMm: number; gapMm: number; leftMm: number }; onClose: () => void }
 const OMIT = '__omit__'
+const EXPORT_FORMATS_KEY = 'printflow.imposition.export-formats.v1'
+const DEFAULT_EXPORT_FORMATS = { includePdf: true, includeDxf: true, includeCmyk: true }
+
+function readExportFormats(): typeof DEFAULT_EXPORT_FORMATS {
+  try {
+    const saved = JSON.parse(localStorage.getItem(EXPORT_FORMATS_KEY) ?? '{}')
+    return {
+      includePdf: typeof saved?.includePdf === 'boolean' ? saved.includePdf : true,
+      includeDxf: typeof saved?.includeDxf === 'boolean' ? saved.includeDxf : true,
+      includeCmyk: typeof saved?.includeCmyk === 'boolean' ? saved.includeCmyk : true,
+    }
+  } catch { return { ...DEFAULT_EXPORT_FORMATS } }
+}
+
 const CATEGORIES = { paths: '轮廓 / 路径', images: '图片', fills: '彩窗', white: '白墨', unknown: '待确认' }
 const TYPE_OPTIONS = [{ value: 'paths', label: '轮廓 / 路径' }, { value: 'image-front', label: '图片正' }, { value: 'image-back', label: '图片背' }, { value: 'images', label: '其他图片' }, { value: 'fills', label: '彩窗' }, { value: 'white', label: '白墨' }, { value: OMIT, label: '不导出' }]
 const PHASES: Record<ImpositionPdfExportProgress['phase'], string> = { prepare: '组合图层', transfer: '传输 SVG', queue: '等待 CPU / 内存额度', resources: '读取图片资源', flatten: '处理渐变和透明度', fonts: '加载字体', parse: '解析 SVG', convert: '生成 PDF', merge: '合并版式资源', write: '写入文件', dxf: '生成轮廓 DXF', 'cmyk-align': '检查正背与彩窗对齐', 'cmyk-color': 'ICC 转色与生成白墨', 'cmyk-zip': '无损压缩专色通道', 'cmyk-photoshop': '生成 Photoshop 整板专色通道', complete: '已完成' }
@@ -91,7 +105,7 @@ function assignmentsFor(model: ExportModel, templateId: string, sourceId: string
 }
 
 /** Opened with a snapshot of the committed canvas, including manual edits. */
-export default function ImpositionPdfExportModal({ pages, imageSources, widthMm, heightMm, holes, onClose }: Props) {
+export default function ImpositionPdfExportModal({ pages, imageSources, widthMm, heightMm, holes, geometry, onClose }: Props) {
   const [model, setModel] = useState<ExportModel>()
   const [preparing, setPreparing] = useState({ completed: 0, total: 0, fileName: '' })
   const [activeTemplateId, setActiveTemplateId] = useState('')
@@ -106,12 +120,17 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
   const [completedFiles, setCompletedFiles] = useState<string[]>([])
   const [cleanupWarnings, setCleanupWarnings] = useState<string[]>([])
   const [date, setDate] = useState(() => new Date())
-  const [includePdf, setIncludePdf] = useState(true)
-  const [includeDxf, setIncludeDxf] = useState(true)
-  const [includeCmyk, setIncludeCmyk] = useState(true)
-  const [cmykSettings, setCmykSettings] = useState<CmykSettings>({ dpi: 400, differentBack: false, includeWindow: false, autoAlign: false })
+  const [exportFormats, setExportFormats] = useState(readExportFormats)
+  const { includePdf, includeDxf, includeCmyk } = exportFormats
+  useEffect(() => {
+    try { localStorage.setItem(EXPORT_FORMATS_KEY, JSON.stringify(exportFormats)) }
+    catch { /* Unavailable preference storage must not prevent exporting. */ }
+  }, [exportFormats])
+  const [cmykSettings, setCmykSettings] = useState<CmykSettings>({ dpi: 400, autoAlign: false })
   const [cmykChoices, setCmykChoices] = useState<CmykChoices>({})
-  const [alignmentPreview, setAlignmentPreview] = useState(false)
+  const [runtimeIssues, setRuntimeIssues] = useState<Record<string, string>>({})
+  const [sourceErrors, setSourceErrors] = useState<Record<string, string>>({})
+  const [geometryChecks, setGeometryChecks] = useState<{ templates: ExportModel['templates']; issues: Record<string, string[]> }>()
   const operationLock = useRef(false)
   const holeCount = holes?.count ?? 0
   const holeSize = holes?.sizeMm ?? 0
@@ -123,8 +142,10 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
     let cancelled = false
     setModel(undefined)
     setError('')
+    setSourceErrors({}); setRuntimeIssues({})
     void (async () => {
       const sources: ExportModel['sources'] = {}
+      const failures: Record<string, string> = {}
       const unique = new Map(pages.flatMap(page => page.map(item => [item.image.sourceImageId ?? item.image.id.split('#qt-')[0], item.image] as const)))
       setPreparing({ completed: 0, total: unique.size, fileName: '' })
       await yieldToPaint()
@@ -135,15 +156,23 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
         setPreparing({ completed, total: unique.size, fileName })
         await yieldToPaint()
         if (cancelled) return
-        const svgText = imageSources[sourceId] ?? await loadImpositionImage(image.filePath)
-        if (cancelled) return
-        sources[sourceId] = parseImpositionSvgSource({ sourceId, fileName, svgText, widthMm: image.widthMm, heightMm: image.heightMm })
+        try {
+          const svgText = imageSources[sourceId] ?? await loadImpositionImage(image.filePath)
+          if (cancelled) return
+          sources[sourceId] = parseImpositionSvgSource({ sourceId, fileName, svgText, widthMm: image.widthMm, heightMm: image.heightMm })
+        } catch (reason) {
+          failures[sourceId] = `${fileName}：读取 SVG 图层失败，${reason instanceof Error ? reason.message : String(reason)}`
+          // Retain the affected template in the list so it can be identified
+          // and deselected without blocking unrelated templates.
+          sources[sourceId] = parseImpositionSvgSource({ sourceId, fileName, svgText: '<svg xmlns="http://www.w3.org/2000/svg"/>', widthMm: image.widthMm, heightMm: image.heightMm })
+        }
         completed++
         setPreparing({ completed, total: unique.size, fileName })
       }
       await yieldToPaint()
       if (cancelled) return
       const next = createImpositionExportModel({ pages, sources, plateWidthMm: widthMm, plateHeightMm: heightMm, holes: { count: holeCount, sizeMm: holeSize, gapMm: holeGap, leftMm: holeLeft } })
+      setSourceErrors(failures)
       setModel(next)
       setTemplateIds(next.templates.map(value => value.id))
       setActiveTemplateId(next.templates[0]?.id ?? '')
@@ -152,14 +181,32 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
     return () => { cancelled = true }
   }, [pages, imageSources, widthMm, heightMm, holeCount, holeSize, holeGap, holeLeft])
 
+  const templates = model?.templates
+  useEffect(() => {
+    if (!templates) return
+    let cancelled = false
+    void (async () => {
+      const issues: Record<string, string[]> = {}
+      for (const board of templates) {
+        await yieldToPaint()
+        if (cancelled) return
+        issues[board.id] = checkExportTemplate(board, widthMm, heightMm, geometry)
+      }
+      if (!cancelled) setGeometryChecks({ templates, issues })
+    })()
+    return () => { cancelled = true }
+  }, [templates, widthMm, heightMm, geometry])
+  const geometryChecking = !!templates && geometryChecks?.templates !== templates
   const template = model?.templates.find(value => value.id === activeTemplateId)
   const source = model?.sources[activeSourceId]
   const assignments = model && template && source ? assignmentsFor(model, template.id, source.sourceId) : {}
-  const sourceImageChannels = new Map((source ? orderedImageLayers(source, assignments) : []).map((layer, index) => [layer.id, index + 1]))
-  const imageChannelCount = model && template ? Math.max(0, ...template.sourceIds.map(id => {
-    const current = assignmentsFor(model, template.id, id)
-    return model.sources[id].layers.filter(layer => isImageAssignment(current[layer.id])).length
-  })) : 0
+  const imageChannels = model && template ? impositionImageChannels(model, template.id) : []
+  const sourceImageChannels = new Map<string, number>()
+  imageChannels.forEach((members, index) => {
+    const ids = source ? members[source.sourceId] : undefined
+    for (const id of Array.isArray(ids) ? ids : ids ? [ids] : []) if (!sourceImageChannels.has(id)) sourceImageChannels.set(id, index + 1)
+  })
+  const imageChannelCount = imageChannels.length
   const imageChannelIndex = previewType.startsWith('image-channel-') ? Number(previewType.slice('image-channel-'.length)) : undefined
   useEffect(() => {
     if (imageChannelIndex !== undefined && imageChannelIndex >= imageChannelCount) setPreviewType('images')
@@ -190,11 +237,31 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
     setModel(result.model)
     setAppliedMessage(`已应用到 ${result.appliedSources} 处同名 SVG${result.skippedSources ? `；${result.skippedSources} 处图层结构不同，请单独确认` : ''}`)
   }
-  const cmykPlan = useMemo<{ plans: Map<string, CmykExportPlan | undefined>; issue: string }>(() => {
-    try { return { plans: new Map(includeCmyk && model ? exportPlan.entries.map(entry => [entry.templateId, createCmykExportPlan(model, entry.templateId, cmykSettings, cmykChoices)]) : []), issue: '' } }
-    catch (reason) { return { plans: new Map(), issue: reason instanceof Error ? reason.message : String(reason) } }
-  }, [includeCmyk, model, exportPlan.entries, cmykSettings, cmykChoices])
-  const cmykCount = [...cmykPlan.plans.values()].filter(Boolean).length
+  const cmykPlan = useMemo(() => {
+    const plans = new Map<string, CmykExportPlan | undefined>()
+    const issues: Record<string, string> = {}
+    if (includeCmyk && model) for (const board of model.templates) {
+      try { plans.set(board.id, createCmykExportPlan(model, board.id, cmykSettings, cmykChoices)) }
+      catch (reason) { issues[board.id] = reason instanceof Error ? reason.message : String(reason) }
+    }
+    return { plans, issues, issue: templateIds.map(id => issues[id]).filter(Boolean).join('；') }
+  }, [includeCmyk, model, templateIds, cmykSettings, cmykChoices])
+  const boardIssues = useMemo(() => Object.fromEntries((model?.templates ?? []).map(board => {
+    const issues = [...(geometryChecks?.templates === model?.templates ? geometryChecks?.issues[board.id] ?? [] : [])]
+    for (const sourceId of board.sourceIds) {
+      if (sourceErrors[sourceId]) issues.push(sourceErrors[sourceId])
+      for (const warning of model!.sources[sourceId].contourWarnings ?? []) issues.push(`${model!.sources[sourceId].fileName}：${warning}`)
+      const assigned = assignmentsFor(model!, board.id, sourceId)
+      const pending = model!.sources[sourceId].layers.filter(layer => assigned[layer.id] === undefined)
+      if (pending.length) issues.push(`${model!.sources[sourceId].fileName}：${pending.length} 个待确认图层`)
+    }
+    if (cmykPlan.issues[board.id]) issues.push(cmykPlan.issues[board.id])
+    if (runtimeIssues[board.id]) issues.push(runtimeIssues[board.id])
+    return [board.id, issues]
+  })), [model, geometryChecks, cmykPlan.issues, runtimeIssues, sourceErrors])
+  const selectedSourceIssue = model?.templates.some(board => templateIds.includes(board.id) && board.sourceIds.some(id => !!sourceErrors[id]))
+  const selectedGeometryIssue = templateIds.some(id => !!geometryChecks?.issues[id]?.length)
+  const cmykCount = templateIds.filter(id => !!cmykPlan.plans.get(id)).length
   const dxfCount = includeDxf ? exportPlan.entries.filter(entry => entry.pages.some(page => page.groupId === 'paths')).length : 0
   const pdfCount = includePdf ? exportPlan.entries.length : 0
   const outputCount = pdfCount + dxfCount + cmykCount
@@ -203,23 +270,16 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
   const exportedCmykCount = completedFiles.filter(path => /[/\\]CMYK_[^/\\]+\.pdf$/iu.test(path)).length
   const exportedPdfCount = completedFiles.filter(path => /\.pdf$/iu.test(path)).length - exportedCmykCount
   const completedSummary = [[exportedPdfCount, 'PDF'], [exportedDxfCount, 'DXF'], [exportedCmykCount, 'CMYK PDF']].filter(([count]) => count).map(([count, type]) => `${count} 个 ${type}`).join('、')
-  const currentImages = model && template && source ? cmykImageLayers(model, template.id, source.sourceId) : []
+  const currentCmykPlan = template ? cmykPlan.plans.get(template.id) : undefined
+  const currentPlacement = template?.placements.find(p => (p.image.sourceImageId ?? p.image.id.replace(/#qt-\d+$/u, '')) === source?.sourceId)
+  const currentCmykSource = currentPlacement && currentCmykPlan?.sources.find(item => item.key === JSON.stringify([source?.sourceId, currentPlacement.width, currentPlacement.height]))
   const currentChoiceKey = template && source ? cmykChoiceKey(template.id, source.sourceId) : ''
   const currentChoice = cmykChoices[currentChoiceKey] ?? {}
   const changeChoice = (change: Partial<typeof currentChoice>) => setCmykChoices(current => ({ ...current, [currentChoiceKey]: { ...current[currentChoiceKey], ...change } }))
-  const alignmentBuilder = useMemo(() => {
-    if (!alignmentPreview || !includeCmyk || !template || !source) return undefined
-    const plan = cmykPlan.plans.get(template.id)
-    const placement = template.placements.find(p => (p.image.sourceImageId ?? p.image.id.replace(/#qt-\d+$/u, '')) === source.sourceId)
-    const selected = placement && plan?.sources.find(item => item.key === JSON.stringify([source.sourceId, placement.width, placement.height]))
-    return selected ? () => buildCmykAlignmentPreview(selected, cmykSettings.autoAlign, cmykSettings.dpi) : undefined
-  }, [alignmentPreview, includeCmyk, template, source, cmykPlan.plans, cmykSettings.autoAlign, cmykSettings.dpi])
-  const alignment = useDeferredSvg(alignmentBuilder)
-  const alignmentUrl = useSvgUrl(alignment.svg)
   async function exportPdf() {
-    if (operationLock.current || !selectedModel || !outputCount || exportPlan.issue || cmykPlan.issue || pendingCount > 0) return
+    if (operationLock.current || !selectedModel || !outputCount || exportPlan.issue || cmykPlan.issue || pendingCount > 0 || geometryChecking || selectedGeometryIssue || selectedSourceIssue) return
     operationLock.current = true
-    setBusy(true); setProgress(undefined); setError(''); setCompletedFiles([]); setCleanupWarnings([])
+    setBusy(true); setProgress(undefined); setError(''); setCompletedFiles([]); setCleanupWarnings([]); setRuntimeIssues({})
     try {
       const directory = await chooseImpositionPdfDirectory()
       if (!directory) return
@@ -232,25 +292,31 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
         pages: entry.pages.map(page => ({ label: page.groupName, exportDxf: includeDxf && page.groupId === 'paths', renderSvg: () => renderImpositionSvgExport(selectedModel, page) })) })), setProgress)
       setCompletedFiles(result.completedFiles)
       setCleanupWarnings(result.cleanupWarnings)
-      if (result.error) setError(`${result.failedFile ? `导出 ${result.failedFile} 失败：` : ''}${result.error}`)
+      if (result.error) {
+        setError(`${result.failedFile ? `导出 ${result.failedFile} 失败：` : ''}${result.error}`)
+        const basename = (path: string) => path.split(/[\\/]/).pop()!.replace(/^CMYK_/u, '').replace(/\.dxf$/iu, '.pdf')
+        const failed = entries.find(entry => basename(entry.fileName) === basename(result.failedFile ?? ''))
+        if (failed) setRuntimeIssues(current => ({ ...current, [failed.templateId]: result.error! }))
+      }
     } catch (reason) { setError(String(reason)) }
     finally { setBusy(false); operationLock.current = false }
   }
 
-  return <Modal open title={<div className="imposition-export-heading"><span>导出 PDF · 图层管理</span><div><Checkbox checked={includePdf} disabled={busy} onChange={e => setIncludePdf(e.target.checked)}>导出 PDF</Checkbox><Checkbox checked={includeDxf} disabled={busy} onChange={e => setIncludeDxf(e.target.checked)}>导出 DXF</Checkbox><Checkbox checked={includeCmyk} disabled={busy} onChange={e => setIncludeCmyk(e.target.checked)}>导出 CMYK PDF</Checkbox></div></div>} className="imposition-export-modal" width="min(1480px, 96vw)" style={{ top: 24 }} maskClosable={!busy} keyboard={!busy} closable={!busy} onCancel={() => { if (!busy) onClose() }} footer={<div className="imposition-export-footer"><span>{templateIds.length} 种版式 · {pdfCount} 个 PDF · {dxfCount} 个轮廓 DXF · {cmykCount} 个 CMYK PDF · F 表示生产板材数量</span><Button disabled={busy} onClick={onClose}>关闭</Button><Button type="primary" icon={<Download size={15}/>} loading={busy} disabled={!outputCount || !!exportPlan.issue || !!cmykPlan.issue || pendingCount > 0} onClick={() => void exportPdf()}>选择文件夹并导出</Button></div>}>
+  return <Modal open title={<div className="imposition-export-heading"><span>导出 PDF · 图层管理</span><div><Checkbox checked={includePdf} disabled={busy} onChange={e => { const checked = e.target.checked; setExportFormats(current => ({ ...current, includePdf: checked })) }}>导出 PDF</Checkbox><Checkbox checked={includeDxf} disabled={busy} onChange={e => { const checked = e.target.checked; setExportFormats(current => ({ ...current, includeDxf: checked })) }}>导出 DXF</Checkbox><Checkbox checked={includeCmyk} disabled={busy} onChange={e => { const checked = e.target.checked; setExportFormats(current => ({ ...current, includeCmyk: checked })) }}>导出 CMYK PDF</Checkbox></div></div>} className="imposition-export-modal" width="min(1480px, 96vw)" style={{ top: 24 }} maskClosable={!busy} keyboard={!busy} closable={!busy} onCancel={() => { if (!busy) onClose() }} footer={<div className="imposition-export-footer"><span>{templateIds.length} 种版式 · {pdfCount} 个 PDF · {dxfCount} 个轮廓 DXF · {cmykCount} 个 CMYK PDF · F 表示生产板材数量</span><Button disabled={busy} onClick={onClose}>关闭</Button><Button type="primary" icon={<Download size={15}/>} loading={busy} disabled={!outputCount || !!exportPlan.issue || !!cmykPlan.issue || pendingCount > 0 || geometryChecking || selectedGeometryIssue || selectedSourceIssue} onClick={() => void exportPdf()}>选择文件夹并导出</Button></div>}>
     {error && <Alert type="error" showIcon message={error}/>}
     {!model ? (!error && <div className="imposition-export-preparing" aria-busy="true"><Loading size="large" text="读取已拼版的 SVG 图层…"/><Progress percent={preparing.total ? Math.round(preparing.completed / preparing.total * 100) : 0}/><span>已解析 {preparing.completed}/{preparing.total} 个原始 SVG</span><small>{preparing.fileName || '准备板材与图层信息…'}</small></div>) : <>
       <div className="imposition-export-summary"><span>板材 {widthMm} × {heightMm} mm、版面孔与图片当前位置；相同版式只导出一份。</span></div>
       {includeCmyk && <div className="imposition-export-cmyk-settings" aria-label="CMYK 导出设置">
-        <label>印刷模式<Select aria-label="CMYK 印刷模式" disabled={busy} value={cmykSettings.differentBack ? 'different' : 'same'} options={[{ value: 'same', label: '双面同图' }, { value: 'different', label: '双面不同图' }]} onChange={value => setCmykSettings(s => ({ ...s, differentBack: value === 'different' }))}/></label>
         <label>分辨率<Select aria-label="CMYK 分辨率" disabled={busy} value={cmykSettings.dpi} options={[{ value: 400, label: '400 ppi' }, { value: 300, label: '300 ppi' }]} onChange={dpi => setCmykSettings(s => ({ ...s, dpi }))}/></label>
-        <Checkbox disabled={busy} checked={cmykSettings.includeWindow} onChange={e => setCmykSettings(s => ({ ...s, includeWindow: e.target.checked }))}>包含彩窗</Checkbox>
         <Checkbox disabled={busy} checked={cmykSettings.autoAlign} onChange={e => setCmykSettings(s => ({ ...s, autoAlign: e.target.checked }))}>按可见区域居中对齐</Checkbox>
+        {currentCmykPlan && <span role="status" aria-label="CMYK 自动识别">本版：{currentCmykPlan.differentBack ? '双面不同图' : '双面同图'} · {currentCmykPlan.sources.some(item => !!item.window) ? '有彩窗' : '无彩窗'}{currentCmykPlan.differentBack && currentCmykPlan.sources.some(item => !item.back) ? ' · 同图图片自动补入背面' : ''}</span>}
         <small>250.icm · White 收缩 1 像素 · ZIP 无损</small>
       </div>}
+      {geometryChecking && <Loading size="small" inline text="检查各版式的边界、轮廓和图片间距…"/>}
+      {template && !!boardIssues[template.id]?.length && <Alert type="warning" showIcon message={`版式 ${model.templates.indexOf(template) + 1} 需要检查`} description={<ul>{boardIssues[template.id].map((issue, index) => <li key={index}>{issue}</li>)}</ul>}/>}
       <div className="imposition-export-grid" aria-busy={busy}>
         <section className="imposition-export-boards"><strong>选择版式</strong><Checkbox disabled={busy} checked={templateIds.length === model.templates.length} indeterminate={!!templateIds.length && templateIds.length !== model.templates.length} onChange={event => setTemplateIds(event.target.checked ? model.templates.map(board => board.id) : [])}>全部版式</Checkbox>
-          <div className="imposition-export-board-list">{model.templates.map((board, index) => <div className={`imposition-export-board ${board.id === activeTemplateId ? 'active' : ''}`} key={board.id}><Checkbox aria-label={`导出版式 ${index + 1}`} checked={templateIds.includes(board.id)} disabled={busy} onChange={event => setTemplateIds(current => event.target.checked ? [...current, board.id] : current.filter(id => id !== board.id))}/><button disabled={busy} onClick={() => { setActiveTemplateId(board.id); setActiveSourceId(board.sourceIds[0] ?? ''); setLayerIds([]); setAppliedMessage('') }}><strong>版式 {index + 1}</strong><small>{board.placements.length} 张图片 · {board.productionCopies}F</small></button></div>)}</div>
+          <div className="imposition-export-board-list">{model.templates.map((board, index) => <div className={`imposition-export-board ${board.id === activeTemplateId ? 'active' : ''}${boardIssues[board.id]?.length ? ' has-issues' : ''}`} title={boardIssues[board.id]?.join('；')} key={board.id}><Checkbox aria-label={`导出版式 ${index + 1}`} checked={templateIds.includes(board.id)} disabled={busy} onChange={event => setTemplateIds(current => event.target.checked ? [...current, board.id] : current.filter(id => id !== board.id))}/><button disabled={busy} onClick={() => { setActiveTemplateId(board.id); setActiveSourceId(board.sourceIds[0] ?? ''); setLayerIds([]); setAppliedMessage('') }}><strong>版式 {index + 1}</strong>{!!boardIssues[board.id]?.length && <Tag color="error">需检查 · {boardIssues[board.id].length}</Tag>}<small>{board.placements.length} 张图片 · {board.productionCopies}F</small></button></div>)}</div>
 
         </section>
         <section className="imposition-export-preview"><div className="imposition-export-section-title"><strong>板材预览</strong><Select aria-label="预览类型" disabled={busy} value={previewType} onChange={setPreviewType} options={[{ value: 'all', label: '完整原图' }, { value: 'images', label: '全部图片图层' }, ...Array.from({ length: imageChannelCount }, (_, index) => ({ value: `image-channel-${index}`, label: `图片 ${index + 1}（全板）` })), ...TYPE_OPTIONS.filter(value => value.value !== OMIT && value.value !== 'images')]}/></div><div className="imposition-export-sheet" aria-busy={preview.loading}>{preview.loading ? <Loading text="生成板材预览…"/> : preview.error ? <span role="alert">板材预览失败：{preview.error}</span> : previewUrl ? <img src={previewUrl} alt="当前版式的导出位置预览"/> : <span>该类型没有图层</span>}</div>
@@ -262,10 +328,8 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
             <div className="imposition-export-source-caption"><span>{layerIds.length ? `选中 ${layerIds.length} 个图层` : '勾选图层可单独预览'}</span><span>同一 SVG 在本版式中的所有副本同步修改</span>{layerPreview.error && <small role="alert">图层预览失败：{layerPreview.error}</small>}</div>
           </div>
             <div className="imposition-export-layer-actions"><Checkbox aria-label="选择全部图层" checked={layerIds.length === source.layers.length} indeterminate={!!layerIds.length && layerIds.length !== source.layers.length} disabled={busy} onChange={event => setLayerIds(event.target.checked ? source.layers.map(layer => layer.id) : [])}>全选</Checkbox></div>
-            {includeCmyk && currentImages.length > 0 && <div className="imposition-export-cmyk-roles">
-              {cmykSettings.differentBack && <div className="imposition-export-cmyk-offset"><span>背面偏移 mm</span>{(['backX', 'backY'] as const).map((key, i) => <InputNumber key={key} aria-label={`背面偏移 ${i ? 'Y' : 'X'}`} addonBefore={i ? 'Y' : 'X'} disabled={busy} value={currentChoice[key] ?? 0} step={0.05} onChange={value => changeChoice({ [key]: value ?? 0 })}/>)}</div>}
-              {cmykSettings.includeWindow && <div className="imposition-export-cmyk-offset"><span>彩窗偏移 mm</span>{(['windowX', 'windowY'] as const).map((key, i) => <InputNumber key={key} aria-label={`彩窗偏移 ${i ? 'Y' : 'X'}`} addonBefore={i ? 'Y' : 'X'} disabled={busy} value={currentChoice[key] ?? 0} step={0.05} onChange={value => changeChoice({ [key]: value ?? 0 })}/>)}</div>}
-              {(cmykSettings.differentBack || cmykSettings.includeWindow) && <><Checkbox disabled={busy} checked={alignmentPreview} onChange={e => setAlignmentPreview(e.target.checked)}>查看正背 / 彩窗叠加对齐</Checkbox>{alignmentPreview && <div className="imposition-export-alignment-preview">{alignment.loading ? <Loading size="small" text="生成对齐预览…"/> : alignment.error ? <span role="alert">{alignment.error}</span> : alignmentUrl && <img src={alignmentUrl} alt="正背和彩窗叠加对齐预览"/>}</div>}</>}
+            {includeCmyk && currentCmykSource?.window && <div className="imposition-export-cmyk-roles">
+              <div className="imposition-export-cmyk-offset"><span>彩窗偏移 mm</span>{(['windowX', 'windowY'] as const).map((key, i) => <InputNumber key={key} aria-label={`彩窗偏移 ${i ? 'Y' : 'X'}`} addonBefore={i ? 'Y' : 'X'} disabled={busy} value={currentChoice[key] ?? 0} step={0.05} onChange={value => changeChoice({ [key]: value ?? 0 })}/>)}</div>
             </div>}
             <div className="imposition-export-layer-list">{source.layers.map(layer => {
               const displayName = layerDisplayName(layer.label)

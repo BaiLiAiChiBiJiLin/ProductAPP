@@ -15,6 +15,14 @@ struct ImportProgress {
     total: usize,
 }
 
+fn valid_request_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 80
+        && id
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_'))
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TemporaryImpositionRecord {
@@ -71,12 +79,7 @@ fn import_to_directory(
     {
         return Err("仅支持 SVG 文件".into());
     }
-    if request_id.is_empty()
-        || request_id.len() > 80
-        || !request_id
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_'))
-    {
+    if !valid_request_id(request_id) {
         return Err("临时拼版请求标识无效".into());
     }
     fs::create_dir_all(temporary_root).map_err(|error| format!("创建临时图片目录失败：{error}"))?;
@@ -133,6 +136,48 @@ fn import_to_directory(
         }
     }
     result
+}
+
+fn delete_from_directory(temporary_root: &Path, job_id: &str) -> Result<(), String> {
+    let request_id = job_id
+        .strip_prefix("imposition-import-")
+        .filter(|id| valid_request_id(id))
+        .ok_or("临时拼版标识无效")?;
+    let directory = temporary_root.join(request_id);
+    let metadata = match fs::symlink_metadata(&directory) {
+        Ok(value) => value,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(format!("读取临时拼版目录失败：{error}")),
+    };
+    let root = temporary_root
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    let target = directory
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    // Resolve and verify the exact absolute target before recursive removal.
+    // Never accept a caller-provided path or follow a linked job directory.
+    if !metadata.is_dir()
+        || metadata.file_type().is_symlink()
+        || target.parent() != Some(root.as_path())
+    {
+        return Err("临时拼版目录超出允许清理的范围".into());
+    }
+    fs::remove_dir_all(&target).map_err(|error| format!("删除临时拼版文件失败：{error}"))
+}
+
+#[tauri::command]
+pub async fn delete_imposition_import(job_id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        delete_from_directory(
+            &crate::project_data_dir()
+                .join("temp-assets")
+                .join("imposition-imports"),
+            &job_id,
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -199,6 +244,50 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn deletion_removes_only_the_named_temporary_job_and_keeps_the_source() {
+        let fixture = Fixture::new();
+        let source = fixture.source(r#"<svg xmlns="http://www.w3.org/2000/svg" width="20mm" height="10mm"><path d="M0 0H20V10H0Z" fill="red"/></svg>"#);
+        let first = fixture.import(&source, "first").unwrap();
+        let second = fixture.import(&source, "second").unwrap();
+        let root = fixture.0.join("staging");
+        delete_from_directory(&root, &first.id).unwrap();
+        assert!(!root.join("first").exists());
+        let second = serde_json::to_value(second).unwrap();
+        assert!(Path::new(second["images"][0]["filePath"].as_str().unwrap()).exists());
+        assert!(source.exists());
+        // A repeated click or already-cleaned staging directory is harmless.
+        delete_from_directory(&root, &first.id).unwrap();
+    }
+
+    #[test]
+    fn deletion_rejects_regular_records_paths_and_invalid_request_ids() {
+        let fixture = Fixture::new();
+        let root = fixture.0.join("staging");
+        fs::create_dir(&root).unwrap();
+        for id in [
+            "regular-job",
+            "imposition-import-",
+            "imposition-import-..",
+            "imposition-import-../staging",
+            "imposition-import-C:\\data",
+            "imposition-import-test/name",
+        ] {
+            assert!(delete_from_directory(&root, id).is_err(), "{id}");
+            assert!(root.exists());
+        }
+    }
+
+    #[test]
+    fn deletion_refuses_a_file_in_place_of_a_job_directory() {
+        let fixture = Fixture::new();
+        let root = fixture.0.join("staging");
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("file"), "preserve").unwrap();
+        assert!(delete_from_directory(&root, "imposition-import-file").is_err());
+        assert_eq!(fs::read_to_string(root.join("file")).unwrap(), "preserve");
     }
 
     #[test]
@@ -292,6 +381,44 @@ mod tests {
         let result = fixture.import(source, "real-production").unwrap();
         assert_eq!(result.image_count, expected);
         let value = serde_json::to_value(result).unwrap();
+        // Optional real-data solver fixture: use the production splitter and
+        // outline extractor, without retaining the source's embedded artwork
+        // in a checked-in fixture or changing the original file.
+        if let Some(output) = std::env::var_os("PRINTFLOW_IMPORT_TEST_REQUEST") {
+            let quantity: usize = std::env::var("PRINTFLOW_IMPORT_TEST_QT")
+                .unwrap_or_else(|_| "1".into())
+                .parse()
+                .unwrap();
+            let mut items = Vec::new();
+            for image in value["images"].as_array().unwrap() {
+                let geometry = tauri::async_runtime::block_on(
+                    crate::imposition_algorithms::load_imposition_geometry(
+                        image["filePath"].as_str().unwrap().to_owned(),
+                        image["widthMm"].as_f64().unwrap(),
+                        image["heightMm"].as_f64().unwrap(),
+                    ),
+                )
+                .unwrap();
+                let geometry = serde_json::to_value(geometry).unwrap();
+                let mut item = image.clone();
+                item["quantity"] = serde_json::json!(quantity);
+                item["polygon"] = geometry["polygon"].clone();
+                item["lineOnly"] = geometry["lineOnly"].clone();
+                // Retain split artwork only when explicitly requested in Temp.
+                let asset = Path::new(&output)
+                    .with_file_name(format!("nesting-source-{}.svg", items.len()));
+                fs::copy(image["filePath"].as_str().unwrap(), &asset).unwrap();
+                item["filePath"] = serde_json::json!(asset);
+                items.push(item);
+            }
+            let request = serde_json::json!({
+                "plateWidthMm": 300, "plateHeightMm": 464,
+                "effectiveWidthMm": 285, "effectiveHeightMm": 440,
+                "effectiveRightMm": 5, "spacingMm": 3,
+                "objective": "least-cutting", "items": items
+            });
+            fs::write(output, serde_json::to_vec(&request).unwrap()).unwrap();
+        }
         for image in value["images"].as_array().unwrap() {
             let svg = fs::read_to_string(image["filePath"].as_str().unwrap()).unwrap();
             assert!(!usvg::Tree::from_str(&svg, &assets::options())

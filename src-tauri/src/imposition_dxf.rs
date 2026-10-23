@@ -14,9 +14,9 @@ use tiny_skia::{PathSegment, Point, Rect, Transform};
 mod format;
 
 type XY = [f64; 2];
-// Millimetres, after all viewport and placement transforms. Some drawing
-// importers (including LibreOffice) silently discard SPLINE entities.
-const CURVE_TOLERANCE_MM: f64 = 0.005;
+// Only a subpath explicitly closed by SVG Z may snap its almost-identical end
+// back to its start. This removes f32 transform noise, not real open geometry.
+const CLOSURE_TOLERANCE_MM: f64 = 0.0001;
 
 #[tauri::command]
 pub async fn export_imposition_dxf(
@@ -66,7 +66,7 @@ impl Dxf {
         self.count += 1;
         write!(
             self.entities,
-            "0\n{kind}\n5\n{:X}\n330\n{}\n100\nAcDbEntity\n8\n{layer}\n100\n{subclass}\n",
+            "0\n{kind}\n5\n{:X}\n330\n{}\n100\nAcDbEntity\n8\n{layer}\n62\n1\n100\n{subclass}\n",
             0x1000 + self.count,
             format::MODEL_SPACE
         )
@@ -85,39 +85,34 @@ impl Dxf {
         .unwrap();
     }
 
-    fn contour(&mut self, controls: &[XY], lines_only: bool, closed: bool) -> Result<(), String> {
+    fn contour(&mut self, controls: &[XY], closed: bool) -> Result<(), String> {
         if controls.len() < 4 {
             return Ok(());
         }
-        let mut vertices = if lines_only {
-            controls.iter().step_by(3).copied().collect()
-        } else {
-            let mut vertices = vec![controls[0]];
-            for segment in controls.windows(4).step_by(3) {
-                flatten_cubic(
-                    [segment[0], segment[1], segment[2], segment[3]],
-                    &mut vertices,
-                    0,
-                )?;
-            }
-            vertices
-        };
-        if closed && close(vertices[0], *vertices.last().unwrap()) {
-            vertices.pop();
+        if (controls.len() - 1) % 3 != 0 || !controls.iter().flatten().all(|v| v.is_finite()) {
+            return Err("DXF 曲线控制点无效".into());
         }
-        if vertices.len() < 2 {
-            return Ok(());
-        }
-        self.entity("LWPOLYLINE", "CUT", "AcDbPolyline");
+        // Each cubic SVG Bezier is exactly one degree-three B-spline span.
+        // Repeated interior knots preserve corners and the original controls;
+        // there is no flattening, smoothing, or curve-fitting approximation.
+        let spans = (controls.len() - 1) / 3;
+        self.entity("SPLINE", "CUT", "AcDbSpline");
         write!(
             self.entities,
-            "90\n{}\n70\n{}\n",
-            vertices.len(),
-            u8::from(closed)
+            "210\n0\n220\n0\n230\n1\n70\n{}\n71\n3\n72\n{}\n73\n{}\n74\n0\n42\n0.0000000001\n43\n0.0000000001\n",
+            8 | u8::from(closed), // planar + closed; clamped, not periodic
+            controls.len() + 4,
+            controls.len()
         )
         .unwrap();
-        for p in vertices {
-            write!(self.entities, "10\n{}\n20\n{}\n", n(p[0]), n(p[1])).unwrap();
+        for knot in 0..=spans {
+            let multiplicity = if knot == 0 || knot == spans { 4 } else { 3 };
+            for _ in 0..multiplicity {
+                writeln!(self.entities, "40\n{knot}").unwrap();
+            }
+        }
+        for p in controls {
+            write!(self.entities, "10\n{}\n20\n{}\n30\n0\n", n(p[0]), n(p[1])).unwrap();
         }
         Ok(())
     }
@@ -153,13 +148,11 @@ impl Dxf {
             }
         }
         let mut controls = Vec::new();
-        let mut lines_only = true;
         for segment in path.data().segments() {
             match segment {
                 PathSegment::MoveTo(p) => {
-                    self.contour(&controls, lines_only, false)?;
+                    self.contour(&controls, false)?;
                     controls = vec![self.point(path.abs_transform(), p)];
-                    lines_only = true;
                 }
                 PathSegment::LineTo(p) => {
                     add_line(&mut controls, self.point(path.abs_transform(), p))
@@ -169,7 +162,6 @@ impl Dxf {
                     let a = self.point(path.abs_transform(), a);
                     let b = self.point(path.abs_transform(), b);
                     controls.extend([lerp(start, a, 2.0 / 3.0), lerp(b, a, 2.0 / 3.0), b]);
-                    lines_only = false;
                 }
                 PathSegment::CubicTo(a, b, c) => {
                     controls.extend([
@@ -177,19 +169,27 @@ impl Dxf {
                         self.point(path.abs_transform(), b),
                         self.point(path.abs_transform(), c),
                     ]);
-                    lines_only = false;
                 }
                 PathSegment::Close => {
                     if let Some(&start) = controls.first() {
-                        add_line(&mut controls, start);
+                        let end = controls.len() - 1;
+                        let delta = [start[0] - controls[end][0], start[1] - controls[end][1]];
+                        if delta[0].hypot(delta[1]) <= CLOSURE_TOLERANCE_MM {
+                            controls[end] = start;
+                            if end >= 3 {
+                                controls[end - 1][0] += delta[0];
+                                controls[end - 1][1] += delta[1];
+                            }
+                        } else {
+                            add_line(&mut controls, start);
+                        }
                     }
-                    self.contour(&controls, lines_only, true)?;
+                    self.contour(&controls, true)?;
                     controls.clear();
-                    lines_only = true;
                 }
             }
         }
-        self.contour(&controls, lines_only, false)?;
+        self.contour(&controls, false)?;
         Ok(())
     }
 
@@ -243,43 +243,6 @@ fn lerp(a: XY, b: XY, t: f64) -> XY {
     [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
 }
 
-fn distance_to_segment(p: XY, a: XY, b: XY) -> f64 {
-    let ab = [b[0] - a[0], b[1] - a[1]];
-    let len2 = ab[0] * ab[0] + ab[1] * ab[1];
-    let t = if len2 == 0.0 {
-        0.0
-    } else {
-        (((p[0] - a[0]) * ab[0] + (p[1] - a[1]) * ab[1]) / len2).clamp(0.0, 1.0)
-    };
-    let nearest = lerp(a, b, t);
-    (p[0] - nearest[0]).hypot(p[1] - nearest[1])
-}
-
-fn flatten_cubic(p: [XY; 4], out: &mut Vec<XY>, depth: u8) -> Result<(), String> {
-    // Distance to the segment (not its infinite supporting line) also detects
-    // collinear backtracking and tiny closed loops. The Bezier convex hull
-    // bounds the deviation from every accepted chord in physical millimetres.
-    let deviation =
-        distance_to_segment(p[1], p[0], p[3]).max(distance_to_segment(p[2], p[0], p[3]));
-    if !deviation.is_finite() {
-        return Err("DXF 曲线包含无效坐标".into());
-    }
-    if out.len() >= 262_144 || depth >= 24 {
-        return Err("DXF 单条轮廓过于复杂，无法在 0.005 mm 误差内转换；PDF 已保留".into());
-    }
-    if deviation <= CURVE_TOLERANCE_MM {
-        out.push(p[3]);
-        return Ok(());
-    }
-    let a = lerp(p[0], p[1], 0.5);
-    let b = lerp(p[1], p[2], 0.5);
-    let c = lerp(p[2], p[3], 0.5);
-    let d = lerp(a, b, 0.5);
-    let e = lerp(b, c, 0.5);
-    let middle = lerp(d, e, 0.5);
-    flatten_cubic([p[0], a, d, middle], out, depth + 1)?;
-    flatten_cubic([middle, e, c, p[3]], out, depth + 1)
-}
 fn add_line(controls: &mut Vec<XY>, end: XY) {
     if let Some(&start) = controls.last() {
         if !close(start, end) {
@@ -442,13 +405,98 @@ mod tests {
         )
     }
     #[test]
+    fn native_splines_preserve_cubic_controls_closure_and_open_paths() {
+        let dxf = read_dxf(&svg(r#"<path fill="none" stroke="black" d="M10 10C20 0 30 20 40 10L10 10Z M60 20L70 20L70 30Z M80 20Q85 5 90 20"/>"#), 300., 464.).unwrap();
+        assert!(!dxf.contains("0\nLWPOLYLINE\n"));
+        let splines: Vec<_> = dxf.split("0\nSPLINE\n").skip(1).collect();
+        assert_eq!(splines.len(), 3, "each SVG subpath must remain one SPLINE");
+        for (spline, (expected_count, flags)) in splines.iter().zip([(7, 9), (10, 9), (4, 8)]) {
+            let lines: Vec<_> = spline
+                .split("0\nENDSEC\n")
+                .next()
+                .unwrap()
+                .lines()
+                .collect();
+            let pairs: Vec<_> = lines.chunks_exact(2).map(|p| (p[0], p[1])).collect();
+            let value = |code| {
+                pairs
+                    .iter()
+                    .find(|p| p.0 == code)
+                    .unwrap()
+                    .1
+                    .parse::<usize>()
+                    .unwrap()
+            };
+            assert_eq!(value("70"), flags);
+            assert_eq!(value("71"), 3);
+            assert_eq!(value("73"), expected_count);
+            assert_eq!(value("72"), expected_count + 4);
+            let xs: Vec<f64> = pairs
+                .iter()
+                .filter(|p| p.0 == "10")
+                .map(|p| p.1.parse().unwrap())
+                .collect();
+            let ys: Vec<f64> = pairs
+                .iter()
+                .filter(|p| p.0 == "20")
+                .map(|p| p.1.parse().unwrap())
+                .collect();
+            assert_eq!(xs.len(), expected_count);
+            if flags & 1 != 0 {
+                assert_eq!((xs[0], ys[0]), (*xs.last().unwrap(), *ys.last().unwrap()));
+            } else {
+                assert_ne!(xs[0], *xs.last().unwrap());
+            }
+        }
+        let first: Vec<_> = splines[0]
+            .lines()
+            .collect::<Vec<_>>()
+            .chunks_exact(2)
+            .map(|p| (p[0], p[1]))
+            .collect();
+        let xs: Vec<f64> = first
+            .iter()
+            .filter(|p| p.0 == "10")
+            .map(|p| p.1.parse().unwrap())
+            .collect();
+        let ys: Vec<f64> = first
+            .iter()
+            .filter(|p| p.0 == "20")
+            .map(|p| p.1.parse().unwrap())
+            .collect();
+        for (index, expected) in [(1, [20., 464.]), (2, [30., 444.])] {
+            assert!(
+                (xs[index] - expected[0]).abs() < 0.0001
+                    && (ys[index] - expected[1]).abs() < 0.0001,
+                "native Bezier control was lost: {expected:?}"
+            );
+        }
+    }
+    #[test]
+    fn closing_snap_removes_transform_noise_without_flattening_loops_or_open_paths() {
+        let dxf = read_dxf(&svg(r#"<path fill="none" stroke="black" d="M10 10C15 5 15 15 10.00005 10Z M30 30C30 60 60 60 30 30Z M80 80C100 80 60 80 80 80"/>"#), 300., 464.).unwrap();
+        let splines: Vec<_> = dxf.split("0\nSPLINE\n").skip(1).collect();
+        assert_eq!(splines.len(), 3);
+        for spline in &splines {
+            assert!(
+                spline.contains("73\n4\n74\n0"),
+                "the original single cubic must not be split"
+            );
+            assert!(spline.contains("72\n8\n73\n4"));
+        }
+        assert!(splines[0].contains("70\n9\n"));
+        assert!(splines[1].contains("70\n9\n"));
+        // Identical end coordinates alone do not make an SVG path closed.
+        assert!(splines[2].contains("70\n8\n"));
+    }
+    #[test]
     fn millimeters_qt_transforms_closed_paths_and_circles() {
         let source = svg(
             r##"<defs><g id="art"><svg width="40" height="20" viewBox="10 20 400 200"><path fill="none" stroke="red" d="M10 20H410V220H10Z"/></svg></g></defs><g transform="translate(30 40) rotate(90)"><use href="#art"/></g><g transform="translate(80 100)"><use href="#art"/></g><g data-board-holes="true"><path data-hole-center-x-mm="5.5" data-hole-center-y-mm="131.766" data-hole-radius-mm="1.5" d="M4 131.766 A1.5 1.5 0 1 0 7 131.766Z"/></g>"##,
         );
         let dxf = read_dxf(&source, 300.0, 464.0).unwrap();
         assert!(dxf.contains("$INSUNITS\n70\n4"));
-        assert_eq!(dxf.matches("0\nLWPOLYLINE\n").count(), 2);
+        assert_eq!(dxf.matches("0\nSPLINE\n").count(), 2);
         let pairs: Vec<_> = dxf
             .lines()
             .collect::<Vec<_>>()
@@ -471,42 +519,20 @@ mod tests {
         }
         assert!(dxf.contains("0\nCIRCLE\n"));
         assert!(dxf.contains("10\n5.500000\n20\n332.234000\n30\n0\n40\n1.500000"));
-    }
-    #[test]
-    fn curves_and_separate_closed_subpaths_use_compatible_polylines() {
-        let dxf = read_dxf(&svg(r#"<path fill="none" stroke="black" d="M10 10C20 0 30 20 40 10L10 10Z M60 20L70 20L70 30Z"/>"#), 300.0, 464.0).unwrap();
-        assert!(!dxf.contains("0\nSPLINE\n"));
-        assert_eq!(dxf.matches("0\nLWPOLYLINE\n").count(), 2);
-        assert_eq!(dxf.matches("70\n1\n10\n").count(), 2);
-    }
-    #[test]
-    fn adaptive_chords_stay_within_five_microns_including_loops_and_backtracking() {
-        for p in [
-            [[10., 10.], [20., 0.], [30., 20.], [40., 10.]],
-            [[20., 20.], [20., 50.], [50., 50.], [20., 20.]],
-            [[0., 0.], [100., 0.], [-100., 0.], [0., 0.]],
-            [[0., 0.], [10000., 0.], [0., 10000.], [10000., 10000.]],
-        ] {
-            let mut vertices = vec![p[0]];
-            flatten_cubic(p, &mut vertices, 0).unwrap();
-            assert_eq!(vertices[0], p[0]);
-            assert_eq!(*vertices.last().unwrap(), p[3]);
-            for step in 0..=1000 {
-                let t = step as f64 / 1000.;
-                let ab = lerp(p[0], p[1], t);
-                let bc = lerp(p[1], p[2], t);
-                let cd = lerp(p[2], p[3], t);
-                let sample = lerp(lerp(ab, bc, t), lerp(bc, cd, t), t);
-                let error = vertices
-                    .windows(2)
-                    .map(|v| distance_to_segment(sample, v[0], v[1]))
-                    .fold(f64::INFINITY, f64::min);
-                assert!(
-                    error <= CURVE_TOLERANCE_MM + 1e-9,
-                    "curve deviation {error} mm"
-                );
-            }
+        // Both imported curves and registration holes must remain red even
+        // when a CAD importer overrides the layer's default color.
+        assert_eq!(dxf.matches("62\n1\n100\nAcDbSpline\n").count(), 2);
+        assert!(dxf.contains("62\n1\n100\nAcDbCircle\n"));
+        for layer in ["0", "CUT", "HOLES"] {
+            assert!(dxf.contains(&format!("2\n{layer}\n70\n0\n62\n1\n")));
         }
+    }
+    #[test]
+    fn curves_and_separate_closed_subpaths_use_native_splines() {
+        let dxf = read_dxf(&svg(r#"<path fill="none" stroke="black" d="M10 10C20 0 30 20 40 10L10 10Z M60 20L70 20L70 30Z"/>"#), 300.0, 464.0).unwrap();
+        assert!(!dxf.contains("0\nLWPOLYLINE\n"));
+        assert_eq!(dxf.matches("0\nSPLINE\n").count(), 2);
+        assert_eq!(dxf.matches("70\n9\n71\n3\n").count(), 2);
     }
     #[test]
     fn cad_document_has_standard_tables_model_space_ownership_and_crlf() {
@@ -539,7 +565,7 @@ mod tests {
     #[test]
     fn honors_invisible_content_and_accepts_in_bounds_viewport_clipping() {
         let dxf = read_dxf(&svg(r#"<g opacity="0"><path d="M200 200h30v30z"/></g><g transform="translate(40 50) rotate(180)"><svg width="20" height="10" viewBox="0 0 20 10" overflow="hidden"><path d="M1 1h18v8h-18z"/></svg></g>"#), 300.0, 464.0).unwrap();
-        assert_eq!(dxf.matches("0\nLWPOLYLINE\n").count(), 1);
+        assert_eq!(dxf.matches("0\nSPLINE\n").count(), 1);
         assert!(read_dxf(
             &svg(
                 r#"<svg width="20" height="10" overflow="hidden"><path d="M1 1h30v8h-30z"/></svg>"#
@@ -552,7 +578,7 @@ mod tests {
     #[test]
     fn empty_clipped_groups_do_not_block_exports_and_curve_bounds_use_the_actual_curve() {
         let dxf = read_dxf(&svg(r##"<defs><clipPath id="unused"><circle cx="15" cy="15" r="10"/></clipPath></defs><g clip-path="url(#unused)"><g/></g><svg width="30" height="30" overflow="hidden"><path stroke="black" fill="none" d="M1 15C5 -5 25 -5 29 15"/></svg>"##), 300.0, 464.0).unwrap();
-        assert_eq!(dxf.matches("0\nLWPOLYLINE\n").count(), 1);
+        assert_eq!(dxf.matches("0\nSPLINE\n").count(), 1);
     }
     #[test]
     fn images_assigned_to_contours_fail_without_raster_decoding_or_silent_loss() {
@@ -585,70 +611,6 @@ mod tests {
         assert_eq!(fs::read_to_string(output).unwrap(), dxf);
     }
 
-    /// Test the actual consumer, since an ezdxf audit cannot detect unsupported
-    /// entities silently discarded by a drawing application's import filter.
-    #[test]
-    #[ignore = "set PRINTFLOW_DXF_LIBREOFFICE to soffice.com for import regression"]
-    fn libreoffice_import_keeps_curved_contours() {
-        let executable =
-            std::env::var("PRINTFLOW_DXF_LIBREOFFICE").expect("set PRINTFLOW_DXF_LIBREOFFICE");
-        let dir = std::env::temp_dir().join(format!(
-            "printflow-dxf-import-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir(&dir).unwrap();
-        let dxf = super::render_dxf(&svg(r#"<path stroke="black" fill="none" d="M10 10C20 0 30 20 40 10L10 10Z M60 20Q65 5 70 20L70 30Z"/>"#), 300.0, 464.0).unwrap();
-        let input = dir.join("curves.dxf");
-        fs::write(&input, dxf).unwrap();
-        let profile = reqwest::Url::from_directory_path(dir.join("profile")).unwrap();
-        let converted = std::process::Command::new(executable)
-            .arg(format!("-env:UserInstallation={profile}"))
-            .args([
-                "--headless",
-                "--convert-to",
-                "svg:draw_svg_Export",
-                "--outdir",
-            ])
-            .arg(&dir)
-            .arg(&input)
-            .output()
-            .unwrap();
-        assert!(
-            converted.status.success(),
-            "{}",
-            String::from_utf8_lossy(&converted.stderr)
-        );
-        let exported = fs::read_to_string(dir.join("curves.svg")).unwrap();
-        let doc = roxmltree::Document::parse_with_options(
-            &exported,
-            roxmltree::ParsingOptions {
-                allow_dtd: true,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        let paths = doc
-            .descendants()
-            .filter(|n| {
-                n.has_tag_name("path")
-                    && n.ancestors()
-                        .any(|a| a.attribute("class") == Some("Graphic"))
-            })
-            .count();
-        assert_eq!(
-            paths,
-            2,
-            "LibreOffice silently lost curved contours; fixtures: {}",
-            dir.display()
-        );
-        // Only remove our own generated, unique fixture folder after success.
-        fs::remove_dir_all(dir).unwrap();
-    }
-
     #[cfg(windows)]
     #[test]
     #[ignore = "requires installed CorelDRAW COM; temporarily opens a generated test document"]
@@ -677,6 +639,11 @@ try {
     if ($null -eq $doc) { throw 'CorelDRAW returned no document' }
     $doc.Unit = 3
     if ($doc.ActivePage.Shapes.Count -ne 2) { throw 'CorelDRAW lost cutting contours' }
+    foreach ($shape in $doc.ActivePage.Shapes) {
+        foreach ($subpath in $shape.Curve.SubPaths) {
+            if (-not $subpath.Closed) { throw 'CorelDRAW imported an open cutting contour' }
+        }
+    }
     if ([Math]::Abs($doc.ActivePage.Shapes.All().SizeWidth - 60) -gt 0.01) { throw 'CorelDRAW imported at the wrong millimetre scale' }
 } finally {
     if ($doc) { $doc.Dirty = $false; $doc.Close() }

@@ -16,7 +16,7 @@ function savePreference(value: ThreadPreference) {
   try { localStorage.setItem(IMPOSITION_THREADS_STORAGE_KEY, String(value)) } catch { /* A blocked preference store must not block packing. */ }
 }
 
-export function useImpositionThreads() {
+export function useImpositionThreads(forceAutomatic = false) {
   const [preference, setPreference] = useState<ThreadPreference>(readPreference)
   const [info, setInfo] = useState<ImpositionComputeInfo>()
   const [failed, setFailed] = useState(false)
@@ -48,10 +48,10 @@ export function useImpositionThreads() {
   return {
     info,
     failed,
-    preference: info ? preference : 'auto' as const,
+    preference: info && !forceAutomatic ? preference : 'auto' as const,
     // Omission delegates automatic CPU detection to the native worker. In
     // particular, a failed read must never use a browser's privacy-capped CPU count.
-    threadCount: info && preference !== 'auto' ? Math.min(preference, info.logicalCores) : undefined,
+    threadCount: !forceAutomatic && info && preference !== 'auto' ? Math.min(preference, info.logicalCores) : undefined,
     changePreference,
     retry: () => { setFailed(false); setRevision(current => current + 1) },
   }

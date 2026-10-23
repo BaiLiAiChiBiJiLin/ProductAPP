@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ConfigProvider } from 'antd'
 import ImpositionPdfExportModal from '../src/modules/imposition/ImpositionPdfExportModal'
+import type { ExportGeometryCheck } from '../src/modules/imposition/impositionExportDiagnostics'
 import type { ProductionImage } from '../src/modules/imposition/impositionRecords'
 import type { PackedItem } from '../src/modules/imposition/packingAlgorithms'
 import type { ImpositionPdfExportEntry, ImpositionPdfExportProgress, ImpositionPdfExportResult } from '../src/modules/imposition/impositionPdfExportService'
@@ -30,9 +31,9 @@ const image: ProductionImage = {
 function piece(index = 0, x = 10): PackedItem {
   return { image: { ...image, id: index ? `art#qt-${index + 1}` : 'art', sourceImageId: 'art' }, x, y: 12, width: 20, height: 10, rotation: 90 }
 }
-function mount(pages: PackedItem[][], svg = knownSvg, options: { load?: boolean; onClose?: () => void; holes?: boolean; sources?: Record<string, string> } = {}) {
+function mount(pages: PackedItem[][], svg = knownSvg, options: { load?: boolean; onClose?: () => void; holes?: boolean; sources?: Record<string, string>; geometry?: ExportGeometryCheck } = {}) {
   mocks.loadImage.mockResolvedValue(svg)
-  return render(<ConfigProvider theme={{ token: { motion: false } }}><ImpositionPdfExportModal pages={pages} imageSources={options.load ? {} : options.sources ?? { art: svg }} widthMm={300} heightMm={464} holes={options.holes ? { count: 2, sizeMm: 3, gapMm: 203.468, leftMm: 4 } : undefined} onClose={options.onClose ?? vi.fn()}/></ConfigProvider>)
+  return render(<ConfigProvider theme={{ token: { motion: false } }}><ImpositionPdfExportModal geometry={options.geometry} pages={pages} imageSources={options.load ? {} : options.sources ?? { art: svg }} widthMm={300} heightMm={464} holes={options.holes ? { count: 2, sizeMm: 3, gapMm: 203.468, leftMm: 4 } : undefined} onClose={options.onClose ?? vi.fn()}/></ConfigProvider>)
 }
 const exportButton = () => screen.getByRole('button', { name: /选择文件夹并导出/ }) as HTMLButtonElement
 async function choose(name: string, label: string) {
@@ -44,7 +45,10 @@ async function choose(name: string, label: string) {
   })
   fireEvent.click(option)
 }
-async function ready() { await screen.findByRole('checkbox', { name: '选择图层 cut' }) }
+async function ready() {
+  await screen.findByRole('checkbox', { name: '选择图层 cut' })
+  await waitFor(() => expect(screen.queryByText('检查各版式的边界、轮廓和图片间距…')).toBeNull())
+}
 function entries() { return mocks.exportPdfs.mock.calls.at(-1)![1] as ImpositionPdfExportEntry[] }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done }); return { promise, resolve } }
 const blobs = new Map<string, Blob>()
@@ -55,6 +59,7 @@ async function svgFromPreview() {
 }
 
 beforeEach(() => {
+  localStorage.clear()
   vi.clearAllMocks()
   blobs.clear()
   mocks.chooseDirectory.mockResolvedValue('D:/exports')
@@ -68,6 +73,15 @@ beforeEach(() => {
 })
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
+
+it('marks the board and identifies an invisible source contour without silently creating a cutting line', async () => {
+  mount([[piece()]], knownSvg.replace('fill="none" stroke="magenta"', 'fill="none"'))
+  await ready()
+  expect(await screen.findByText('版式 1 需要检查')).toBeTruthy()
+  expect(screen.getByText(/原始挂件.svg：图层“cut”的闭合路径没有填充和描边/)).toBeTruthy()
+  expect(screen.getByText(/需检查 · 1/)).toBeTruthy()
+  expect(exportButton().disabled).toBe(false)
+})
 
 it('defaults to PDF, DXF and CMYK, and each option actually controls the export plan', async () => {
   mount([[piece()]])
@@ -87,6 +101,34 @@ it('defaults to PDF, DXF and CMYK, and each option actually controls the export 
   await waitFor(() => expect(mocks.exportPdfs).toHaveBeenCalledTimes(2))
   expect(entries()[0].cmyk).toBeUndefined()
   expect(entries()[0].pages.some(page => page.exportDxf)).toBe(false)
+})
+
+it('restores the last file type selection when reopened and uses it for export', async () => {
+  const first = mount([[piece()]])
+  fireEvent.click(screen.getByRole('checkbox', { name: '导出 PDF' }))
+  fireEvent.click(screen.getByRole('checkbox', { name: '导出 CMYK PDF' }))
+  first.unmount()
+
+  const second = mount([[piece()]])
+  await ready()
+  expect((screen.getByRole('checkbox', { name: '导出 PDF' }) as HTMLInputElement).checked).toBe(false)
+  expect((screen.getByRole('checkbox', { name: '导出 DXF' }) as HTMLInputElement).checked).toBe(true)
+  expect((screen.getByRole('checkbox', { name: '导出 CMYK PDF' }) as HTMLInputElement).checked).toBe(false)
+  fireEvent.click(exportButton())
+  await waitFor(() => expect(mocks.exportPdfs).toHaveBeenCalledOnce())
+  expect(entries()[0].exportPdf).toBe(false)
+  expect(entries()[0].pages.some(page => page.exportDxf)).toBe(true)
+  expect(entries()[0].cmyk).toBeUndefined()
+  await waitFor(() => expect((screen.getByRole('checkbox', { name: '导出 DXF' }) as HTMLInputElement).disabled).toBe(false))
+  fireEvent.click(screen.getByRole('checkbox', { name: '导出 PDF' }))
+  fireEvent.click(screen.getByRole('checkbox', { name: '导出 DXF' }))
+  fireEvent.click(screen.getByRole('checkbox', { name: '导出 CMYK PDF' }))
+  second.unmount()
+
+  mount([[piece()]])
+  expect((screen.getByRole('checkbox', { name: '导出 PDF' }) as HTMLInputElement).checked).toBe(true)
+  expect((screen.getByRole('checkbox', { name: '导出 DXF' }) as HTMLInputElement).checked).toBe(false)
+  expect((screen.getByRole('checkbox', { name: '导出 CMYK PDF' }) as HTMLInputElement).checked).toBe(true)
 })
 
 it.each(['DXF', 'CMYK PDF'])('allows %s-only output with matching counts and filenames', async type => {
@@ -128,14 +170,22 @@ it('disables export when all file types are unchecked or the chosen type has no 
   expect(exportButton().disabled).toBe(false)
 })
 
-it('requires a second image for different-back mode and permits ordinary export when CMYK is unchecked', async () => {
+it('detects same-face printing and windows from SVG types without manual mode switches', async () => {
   mount([[piece()]])
   await ready()
-  await choose('CMYK 印刷模式', '双面不同图')
-  expect(exportButton().disabled).toBe(true)
-  expect(screen.getByText(/双面不同图需要分别指定图片正、图片背/)).toBeTruthy()
-  fireEvent.click(screen.getByRole('checkbox', { name: '导出 CMYK PDF' }))
-  expect(exportButton().disabled).toBe(false)
+  expect(screen.queryByRole('combobox', { name: 'CMYK 印刷模式' })).toBeNull()
+  expect(screen.queryByRole('checkbox', { name: '包含彩窗' })).toBeNull()
+  expect(screen.getByLabelText('CMYK 自动识别').textContent).toContain('双面同图 · 有彩窗')
+  fireEvent.click(exportButton())
+  await waitFor(() => expect(mocks.exportPdfs).toHaveBeenCalledOnce())
+  expect(entries()[0].cmyk!.differentBack).toBe(false)
+  expect(entries()[0].cmyk!.sources[0].window!()).toContain('id="white"')
+  await waitFor(() => expect(exportButton().disabled).toBe(false))
+  await choose('图层 white 类型', '白墨')
+  expect(screen.getByLabelText('CMYK 自动识别').textContent).toContain('无彩窗')
+  fireEvent.click(exportButton())
+  await waitFor(() => expect(mocks.exportPdfs).toHaveBeenCalledTimes(2))
+  expect(entries()[0].cmyk!.sources[0].window).toBeUndefined()
 })
 
 it('selects front and back in SVG layer types without duplicate face selectors', async () => {
@@ -147,11 +197,29 @@ it('selects front and back in SVG layer types without duplicate face selectors',
   expect(screen.getByRole('combobox', { name: '图层 reverse 类型' }).closest('.ant-select')!.textContent).toContain('图片背')
   await choose('图层 artwork 类型', '图片背')
   await choose('图层 reverse 类型', '图片正')
-  await choose('CMYK 印刷模式', '双面不同图')
   fireEvent.click(exportButton())
   await waitFor(() => expect(mocks.exportPdfs).toHaveBeenCalledOnce())
   expect(entries()[0].cmyk!.sources[0].front()).toContain('QkFDSw==')
   expect(entries()[0].cmyk!.sources[0].back!()).toContain('iVBORw0KGgo=')
+})
+
+it('exports a mixed board in different-face mode while keeping same-face products at their original placements', async () => {
+  const differentSvg = knownSvg.replace('</svg>', '<image id="reverse" width="20" height="10" href="data:image/png;base64,QkFDSw=="/></svg>')
+  const different = { ...piece(1, 40), image: { ...image, id: 'different', sourceImageId: 'different', sourceFileName: '不同图.svg', filePath: 'D:/assets/不同图.svg' }, rotation: 180 }
+  mount([[piece(), different]], knownSvg, { sources: { art: knownSvg, different: differentSvg } })
+  await ready()
+  expect(screen.getByLabelText('CMYK 自动识别').textContent).toContain('双面不同图 · 有彩窗 · 同图图片自动补入背面')
+  expect(screen.queryByRole('spinbutton', { name: '背面偏移 X' })).toBeNull()
+  await choose('选择 SVG', '不同图.svg')
+  expect(screen.queryByRole('spinbutton', { name: '背面偏移 X' })).toBeNull()
+  expect(screen.queryByRole('spinbutton', { name: '背面偏移 Y' })).toBeNull()
+  fireEvent.click(exportButton())
+  await waitFor(() => expect(mocks.exportPdfs).toHaveBeenCalledOnce())
+  const plan = entries()[0].cmyk!
+  expect(plan.differentBack).toBe(true)
+  expect(plan.sources).toHaveLength(2)
+  expect(plan.sources.filter(source => !!source.back)).toHaveLength(1)
+  expect(plan.placements.map(p => [p.x, p.y, p.rotation])).toEqual([[10, 12, 90], [40, 12, 180]])
 })
 
 it('shows the common loading animation before parsing and exports repeated boards once with their real plate holes', async () => {
@@ -268,7 +336,7 @@ it('combines corresponding image layers into separate pages of one whole-board P
   const secondChannel = await svgFromPreview()
   expect(secondChannel).toContain('QkFDSw==')
   expect(secondChannel).not.toContain('iVBORw0KGgo=')
-  expect(secondChannel).not.toContain('T1RIRVI=')
+  expect(secondChannel).toContain('T1RIRVI=')
   expect(document.querySelector('.imposition-export-file-list')?.textContent).toContain('图片 1（全板）')
   expect(document.querySelector('.imposition-export-file-list')?.textContent).toContain('图片 2（全板）')
   fireEvent.click(exportButton())
@@ -278,15 +346,15 @@ it('combines corresponding image layers into separate pages of one whole-board P
   expect(imageEntries).toHaveLength(2)
   expect(imageEntries.map(value => value.label)).toEqual(['图片 1（全板）', '图片 2（全板）'])
   const outputs = await Promise.all(imageEntries.map(entry => entry.renderSvg()))
-  for (const [index, svg] of outputs.entries()) {
+  for (const svg of outputs) {
     const root = new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement
-    expect(root.querySelectorAll('image')).toHaveLength(index === 0 ? 2 : 1)
-    expect(root.querySelectorAll('g[data-placement-id]')).toHaveLength(index === 0 ? 4 : 2)
+    expect(root.querySelectorAll('image')).toHaveLength(2)
+    expect(root.querySelectorAll('g[data-placement-id]')).toHaveLength(4)
   }
   expect(outputs.filter(svg => svg.includes('iVBORw0KGgo='))).toHaveLength(1)
   expect(outputs.filter(svg => svg.includes('QkFDSw=='))).toHaveLength(1)
   expect(outputs[0]).toContain('T1RIRVI=')
-  expect(outputs[1]).not.toContain('T1RIRVI=')
+  expect(outputs[1]).toContain('T1RIRVI=')
 })
 
 it('loads small backend thumbnails only when visible without creating full SVG dropdown Blobs', async () => {
@@ -453,4 +521,68 @@ it('names files with the time of confirmed export rather than the older modal op
   await waitFor(() => expect(mocks.exportPdfs).toHaveBeenCalledOnce())
   expect(entries().map(entry => entry.fileName)).toEqual(['202610141005_1B-1B_1F-1F.pdf'])
   expect(document.querySelector('.imposition-export-file-list')!.textContent).toContain('202610141005_1B-1B_1F-1F.pdf')
+})
+
+
+it('marks only templates with unassigned layers and clears the marker after classification', async () => {
+  const other = { ...piece(), image: { ...image, id: 'other', sourceImageId: 'other', name: '其他.svg' } }
+  mount([[piece()], [other]], knownSvg, { sources: { art: knownSvg, other: unknownSvg } })
+  await ready()
+  const boards = document.querySelectorAll('.imposition-export-board')
+  expect(boards[0].classList.contains('has-issues')).toBe(false)
+  expect(boards[1].classList.contains('has-issues')).toBe(true)
+  expect(exportButton().disabled).toBe(true)
+  fireEvent.click(screen.getByRole('checkbox', { name: '导出版式 2' }))
+  expect(exportButton().disabled).toBe(false)
+  fireEvent.click(boards[1].querySelector('button')!)
+  expect(screen.getByText('版式 2 需要检查')).toBeTruthy()
+  await choose('图层 note 类型', '不导出')
+  expect(boards[1].classList.contains('has-issues')).toBe(false)
+  fireEvent.click(screen.getByRole('checkbox', { name: '导出版式 2' }))
+  expect(exportButton().disabled).toBe(false)
+})
+
+it('identifies overlap and spacing on the affected template and allows exporting the other template', async () => {
+  const polygon: Array<[number, number]> = [[0, 0], [20, 0], [20, 10], [0, 10]]
+  mount([[piece()], [piece(1, 10), piece(2, 14)]], knownSvg, { geometry: { polygons: { art: polygon }, region: { left: 0, top: 0, right: 300, bottom: 464 }, spacing: 3 } })
+  await ready()
+  const boards = document.querySelectorAll('.imposition-export-board')
+  expect(boards[0].classList.contains('has-issues')).toBe(false)
+  expect(boards[1].classList.contains('has-issues')).toBe(true)
+  fireEvent.click(boards[1].querySelector('button')!)
+  expect(screen.getByText(/轮廓重叠或间距小于 3 mm/)).toBeTruthy()
+  expect(exportButton().disabled).toBe(true)
+  fireEvent.click(screen.getByRole('checkbox', { name: '导出版式 2' }))
+  expect(exportButton().disabled).toBe(false)
+  fireEvent.click(exportButton())
+  await waitFor(() => expect(mocks.exportPdfs).toHaveBeenCalledOnce())
+  expect(entries()).toHaveLength(1)
+})
+
+it('marks the concrete template when a CMYK export fails', async () => {
+  mocks.exportPdfs.mockImplementation(async (_directory, entries) => ({ completedFiles: [], cancelled: false, cleanupWarnings: [], failedFile: `CMYK_${entries[1].fileName}`, error: 'CMYK 转换失败' }))
+  mount([[piece()], [piece(1, 40)]])
+  await ready()
+  fireEvent.click(exportButton())
+  await screen.findByText(/导出 CMYK_.*失败：CMYK 转换失败/)
+  const boards = document.querySelectorAll('.imposition-export-board')
+  expect(boards[0].classList.contains('has-issues')).toBe(false)
+  expect(boards[1].classList.contains('has-issues')).toBe(true)
+  fireEvent.click(boards[1].querySelector('button')!)
+  expect(screen.getByText('版式 2 需要检查')).toBeTruthy()
+})
+
+it('keeps a failed SVG source visible on its template without blocking unrelated templates', async () => {
+  const other = { ...piece(), image: { ...image, id: 'missing', sourceImageId: 'missing', filePath: 'D:/missing.svg' } }
+  mount([[piece()], [other]])
+  mocks.loadImage.mockRejectedValue(new Error('文件不存在'))
+  await ready()
+  const boards = document.querySelectorAll('.imposition-export-board')
+  expect(boards[0].classList.contains('has-issues')).toBe(false)
+  expect(boards[1].classList.contains('has-issues')).toBe(true)
+  expect(exportButton().disabled).toBe(true)
+  fireEvent.click(boards[1].querySelector('button')!)
+  expect(screen.getByText(/missing.svg：读取 SVG 图层失败，文件不存在/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('checkbox', { name: '导出版式 2' }))
+  expect(exportButton().disabled).toBe(false)
 })

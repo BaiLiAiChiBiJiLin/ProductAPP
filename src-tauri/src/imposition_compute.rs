@@ -14,7 +14,7 @@ fn resolve_threads(requested: Option<u32>, logical_cores: usize) -> usize {
     requested
         .filter(|&count| count > 0)
         .map(|count| (count as usize).clamp(1, cores))
-        .unwrap_or_else(|| (cores / 2).max(1))
+        .unwrap_or(cores)
 }
 
 #[tauri::command]
@@ -39,8 +39,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn auto_uses_half_available_logical_cores_with_a_single_thread_minimum() {
-        for (cores, expected) in [(0, 1), (1, 1), (2, 1), (3, 1), (8, 4), (24, 12)] {
+    fn auto_uses_all_available_logical_cores_with_a_single_thread_minimum() {
+        for (cores, expected) in [(0, 1), (1, 1), (2, 2), (3, 3), (8, 8), (24, 24)] {
             assert_eq!(resolve_threads(None, cores), expected);
             assert_eq!(resolve_threads(Some(0), cores), expected);
         }

@@ -1,8 +1,8 @@
 import { filteredRoot, orderedImageLayers, type ImpositionExportModel } from './impositionSvgExport'
 import { boardHoleLayout } from './impositionHoles'
 
-export type CmykSettings = { dpi: 300 | 400; differentBack: boolean; includeWindow: boolean; autoAlign: boolean }
-export type CmykSourceChoice = { backX?: number; backY?: number; windowX?: number; windowY?: number }
+export type CmykSettings = { dpi: 300 | 400; autoAlign: boolean }
+export type CmykSourceChoice = { windowX?: number; windowY?: number }
 export type CmykChoices = Record<string, CmykSourceChoice>
 export type CmykSource = {
   key: string; label: string; widthMm: number; heightMm: number
@@ -35,16 +35,15 @@ export function createCmykExportPlan(model: ImpositionExportModel, templateId: s
     const choice = choices[cmykChoiceKey(templateId, id)] ?? {}
     const assigned = { ...model.assignments[id], ...model.templateAssignments?.[templateId]?.[id] }
     const frontIds = images.filter(layer => assigned[layer.id] === 'image-front').map(layer => layer.id)
-    const backIds = settings.differentBack ? images.filter(layer => assigned[layer.id] === 'image-back').map(layer => layer.id) : []
+    const backIds = images.filter(layer => assigned[layer.id] === 'image-back').map(layer => layer.id)
     if (!frontIds.length) throw new Error(`${source.fileName}：请在 SVG 图层类型中指定图片正`)
-    if (settings.differentBack && !backIds.length) throw new Error(`${source.fileName}：双面不同图需要分别指定图片正、图片背（SVG 图层类型）`)
     const key = JSON.stringify([id, item.width, item.height])
     if (!sources.has(key)) {
-      const windowIds = settings.includeWindow ? source.layers.filter(layer => assigned[layer.id] === 'fills').map(layer => layer.id) : []
+      const windowIds = source.layers.filter(layer => assigned[layer.id] === 'fills').map(layer => layer.id)
       const render = (ids: string[]) => () => new XMLSerializer().serializeToString(filteredRoot(source, new Set(ids)))
       sources.set(key, { key, label: source.fileName, widthMm: item.width, heightMm: item.height,
         front: render(frontIds), ...(backIds.length ? { back: render(backIds) } : {}), ...(windowIds.length ? { window: render(windowIds) } : {}),
-        backOffset: { xMm: choice.backX ?? 0, yMm: choice.backY ?? 0 }, windowOffset: { xMm: choice.windowX ?? 0, yMm: choice.windowY ?? 0 },
+        backOffset: { xMm: 0, yMm: 0 }, windowOffset: { xMm: choice.windowX ?? 0, yMm: choice.windowY ?? 0 },
       })
     }
     placements.push({ sourceKey: key, x: item.x, y: item.y, width: item.width, height: item.height, rotation: item.rotation ?? 0 })
@@ -56,5 +55,8 @@ export function createCmykExportPlan(model: ImpositionExportModel, templateId: s
     const { startMm, pitchMm } = boardHoleLayout(model.plateHeightMm, count, sizeMm, gapMm)
     for (let i = 0; i < count; i++) holes.push({ x: leftMm + sizeMm / 2, y: startMm + i * pitchMm + sizeMm / 2, radius: sizeMm / 2 })
   }
-  return { widthMm: model.plateWidthMm, heightMm: model.plateHeightMm, dpi: settings.dpi, differentBack: settings.differentBack, autoAlign: settings.autoAlign, sources: [...sources.values()], placements, holes }
+  // A board with any distinct back uses the different-face channel pipeline.
+  // Sources without a back reuse the native front raster at every placement,
+  // avoiding duplicate SVG staging, rendering and QT artwork buffers.
+  return { widthMm: model.plateWidthMm, heightMm: model.plateHeightMm, dpi: settings.dpi, differentBack: [...sources.values()].some(source => !!source.back), autoAlign: settings.autoAlign, sources: [...sources.values()], placements, holes }
 }

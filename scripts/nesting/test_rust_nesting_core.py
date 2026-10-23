@@ -194,8 +194,8 @@ class NativeFallbackTests(unittest.TestCase):
 
 
 class NativeThreadPolicyTests(unittest.TestCase):
-    def test_default_uses_half_available_logical_cpus_at_least_one(self):
-        for available, expected in ((1, 1), (2, 1), (3, 1), (7, 3), (8, 4), (24, 12)):
+    def test_default_uses_all_available_logical_cpus_at_least_one(self):
+        for available, expected in ((1, 1), (2, 2), (3, 3), (7, 7), (8, 8), (24, 24)):
             with (self.subTest(cpus=available), patch.dict(os.environ, {}, clear=True),
                   patch.object(native, '_available_cpu_count', return_value=available),
                   patch.object(native, '_available_memory', return_value=8 * 1024**3)):

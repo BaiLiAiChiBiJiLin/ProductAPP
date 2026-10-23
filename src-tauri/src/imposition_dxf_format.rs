@@ -168,7 +168,7 @@ pub(super) fn document(entities: &str, count: usize, width: f64, height: f64) ->
         symbol(&mut out, "LAYER", handle, "20", "AcDbLayerTableRecord");
         tags(
             &mut out,
-            &[(2, name), (70, "0"), (62, "7"), (6, "CONTINUOUS")],
+            &[(2, name), (70, "0"), (62, "1"), (6, "CONTINUOUS")],
         );
     }
     tag(&mut out, 0, "ENDTAB");

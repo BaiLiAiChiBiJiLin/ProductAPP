@@ -6,6 +6,7 @@ tries per-board quantity quotas, repeats dense templates, then nests remainders.
 It never creates one-copy-per-product quantity layers.
 """
 from collections import Counter
+import math
 
 from nesting_common import pack_one
 
@@ -56,6 +57,42 @@ def _dense_frontier(candidates, srcs):
         other_count >= count and other_area >= area - 1e-7
         and (other_count > count or other_area > area + 1e-7)
         for _, other_count, other_area in measured)]
+
+
+def _complete_repeat_template(job, args, sheet_limit, progress):
+    """Try exact whole-job quotas without increasing the validated sheet count.
+
+    Single-board density cannot score this tradeoff: 48 pieces repeated five
+    times can beat greedy 58-piece boards followed by three different tails.
+    Only common divisors of the demand can complete a job with one template.
+    Bound extra trials, share the mask bank, and keep the dense plan on failure.
+    """
+    quantities, srcs = job['quantities'], job['srcs']
+    divisor = math.gcd(*quantities)
+    area = sum(source['area'] * quantities[source['i']] for source in srcs)
+    board_area = (args.board_width - 2 * args.margin) * (args.board_height - 2 * args.margin)
+    lower = max(1, math.ceil(area / board_area - 1e-9))
+    choices = set()
+    for factor in range(1, min(sheet_limit, math.isqrt(divisor)) + 1):
+        if divisor % factor == 0:
+            choices.update(r for r in (factor, divisor // factor) if lower <= r <= sheet_limit)
+    choices = sorted(choices)
+    # Include both dense and high-reuse ends when there are many divisors.
+    if len(choices) > 8:
+        choices = [choices[j * (len(choices) - 1) // 7] for j in range(8)]
+    for repeat in choices:
+        quota = [quantity // repeat for quantity in quantities]
+        for mode, order in [('top', 'small'), ('low', 'mixed'), ('top', 'large'), ('bl', 'balanced')]:
+            remaining = quota.copy()
+            placed = pack_one(
+                srcs, job['bank'], remaining, args.board_width, args.board_height,
+                args.gap, args.margin, args.resolution, args.seed, mode, order,
+                max(1, args.lookahead),
+                (lambda count, unused: progress(0, repeat, count, (sum(quota) - count) * repeat))
+                if progress else None)
+            if not any(remaining) and _counts(placed) == Counter({i: q for i, q in enumerate(quota) if q}):
+                return placed, repeat
+    return None
 
 
 def pack_uniform_boards(job, args, progress=None):
@@ -118,4 +155,10 @@ def pack_uniform_boards(job, args, progress=None):
         if progress:
             progress(template_no, repeat, len(chosen), sum(remaining))
         template_no += 1
+    if len(templates_by_key) > 1:
+        complete = _complete_repeat_template(job, args, len(boards), progress)
+        if complete is not None:
+            placement, repeat = complete
+            return ([placement] * repeat, [(placement, repeat)],
+                    [dict(template=1, repeat=repeat, pieces_per_board=len(placement), remaining=0)])
     return boards, [(placement, repeat) for placement, repeat in templates_by_key.values()], summaries

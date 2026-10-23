@@ -36,6 +36,7 @@ export const submitReviewToImposition = (id: string, paymentStatus: PaymentStatu
 export const listPendingImpositions = (query: { page: number; pageSize: number; search?: string }) => invoke<ImpositionListResult>('list_pending_impositions', { query })
 export const loadImpositionJob = (id: string) => invoke<ImpositionRecord>('load_imposition_job', { id })
 export const updateImpositionImageQuantity = (jobId: string, imageId: string, quantity: number) => invoke<ImpositionRecord>('update_imposition_image_quantity', { jobId, imageId, quantity })
+export const updateImpositionImageQuantities = (jobId: string, imageIds: string[], quantity: number) => invoke<ImpositionRecord>('update_imposition_image_quantities', { jobId, imageIds, quantity })
 export const loadImpositionImage = (path: string) => invoke<string>('load_imposition_image', { path })
 export const packImpositionIrregular = (request: NestRequest) => invoke<NestResult>('pack_imposition_irregular', { request })
 export type ImpositionComputeInfo = { logicalCores: number; defaultThreads: number }
@@ -59,6 +60,14 @@ export const loadImpositionGeometry = (path: string, widthMm: number, heightMm: 
 }
 
 export const returnImpositionToReview = (id: string) => invoke<void>('return_imposition_to_review', { id })
+export const deleteImpositionImport = (jobId: string) => invoke<void>('delete_imposition_import', { jobId })
+
+export function forgetImpositionGeometry(paths: string[]) {
+  const removed = new Set(paths)
+  for (const key of impositionGeometryCache.keys()) {
+    if (removed.has(key.split('\u0000')[0])) impositionGeometryCache.delete(key)
+  }
+}
 
 const MAX_IMPOSITION_QUANTITY = 10_000
 

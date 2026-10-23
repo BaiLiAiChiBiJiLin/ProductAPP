@@ -1,6 +1,7 @@
 import contextlib
 import importlib.util
 import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -85,6 +86,51 @@ class LocalToolsTests(unittest.TestCase):
         self.assertEqual(result["sheetsUsed"], 1201)
         self.assertEqual(len({(p["xMm"], p["yMm"], p["rotationDeg"]) for p in result["placements"]}), 1)
         self.assertFalse(result["unplaced"])
+
+    def test_uniform_compares_complete_demand_instead_of_only_single_board_density(self):
+        from collections import Counter
+        sources = [item("a", 30, 10, 8), item("b", 30, 11, 8), item("c", 30, 12, 8)]
+        result = self.solve(request(sources, "least-cutting", width=104.5, height=54))
+        self.assertEqual(result["sheetsUsed"], 3)
+        pages = {}
+        for p in result["placements"]:
+            pages.setdefault(p["sheetIndex"], []).append(
+                (p["id"].split("#qt-")[0], p["xMm"], p["yMm"], p["rotationDeg"]))
+        self.assertEqual(len({tuple(sorted(page)) for page in pages.values()}), 1)
+        self.assertEqual(Counter(p["id"].split("#qt-")[0] for p in result["placements"]),
+                         {"a": 30, "b": 30, "c": 30})
+
+    def test_uniform_real_mixed_contours_thirty_each_fit_five_identical_boards(self):
+        from collections import Counter
+        req = json.loads((Path(__file__).parent / "fixtures/repeated-mixed-contours.json").read_text())
+        with patch.object(engine, "make_masks", wraps=engine.make_masks) as build:
+            result = self.solve(req)
+        self.assertEqual(build.call_count, len(req["items"]))
+        self.assertEqual(result["sheetsUsed"], 5)
+        self.assertFalse(result["unplaced"])
+        self.assertFalse(result["excludedItems"])
+        pages = {}
+        for p in result["placements"]:
+            pages.setdefault(p["sheetIndex"], []).append(
+                (p["id"].split("#qt-")[0], p["xMm"], p["yMm"], p["rotationDeg"]))
+        self.assertEqual(len({tuple(sorted(page)) for page in pages.values()}), 1)
+        for page in pages.values():
+            self.assertEqual(Counter(p[0] for p in page), {i["id"]: 6 for i in req["items"]})
+        # Independent frame/contour boundary and 3 mm pair-distance checks.
+        import test_combined_nesting as checks
+        checks.CombinedNestingTests().verify(req, result)
+
+    def test_uniform_keeps_complete_dense_plan_when_shared_quota_cannot_fit(self):
+        first, second = item("a", 2, 10, 10), item("b", 2, 10, 10)
+        first["polygon"] = [[0, 0], [10, 0], [0, 10]]
+        second["polygon"] = [[0, 0], [10, 0], [5, 10]]
+        req = request([first, second], "least-cutting", width=10.2, height=10.2)
+        result = self.solve(req)
+        self.assertEqual(result["sheetsUsed"], 4)
+        self.assertEqual(len(result["placements"]), 4)
+        self.assertFalse(result["unplaced"])
+        import test_combined_nesting as checks
+        checks.CombinedNestingTests().verify(req, result)
 
     def test_dense_frontier_does_not_trade_piece_count_and_area_for_sparse_repeats(self):
         from nest_uniform import _dense_frontier
