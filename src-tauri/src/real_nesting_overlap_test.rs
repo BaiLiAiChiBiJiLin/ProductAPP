@@ -243,7 +243,9 @@ fn independent_raster_check_detects_overlapping_art() {
 #[test]
 #[ignore = "reads real SVG fixtures and runs the full local nesting engine; explicit regression only"]
 fn real_job_artwork_does_not_overlap() {
-    let report_dir = std::env::temp_dir().join("printflow-overlap-repro");
+    let report_dir = std::env::var_os("PRINTFLOW_OVERLAP_OUTPUT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("printflow-overlap-repro"));
     fs::create_dir_all(&report_dir).unwrap();
     let job_path = std::env::var_os("PRINTFLOW_OVERLAP_JOB")
         .map(PathBuf::from)
@@ -281,7 +283,7 @@ fn real_job_artwork_does_not_overlap() {
         &report_dir.join(format!("{objective}-geometry.json")),
         &geometries,
     );
-    let request = NestRequest {
+    let mut request = NestRequest {
         plate_width_mm: PLATE_WIDTH_MM,
         plate_height_mm: PLATE_HEIGHT_MM,
         effective_width_mm: 285.0,
@@ -291,14 +293,34 @@ fn real_job_artwork_does_not_overlap() {
         objective: objective.clone(),
         irregular_algorithm: "local-tools".into(),
         template_repack: None,
-        allow_base_mixing: false,
-        thread_count: None,
+        allow_base_mixing: std::env::var("PRINTFLOW_OVERLAP_BASE_MIXING")
+            .is_ok_and(|value| value == "1" || value == "true"),
+        thread_count: std::env::var("PRINTFLOW_OVERLAP_THREADS")
+            .ok()
+            .map(|value| value.parse().expect("invalid test thread count")),
         items,
     };
+    write_json(
+        &report_dir.join(format!("{objective}-native-extracted-request.json")),
+        &request,
+    );
+    // Tauri serializes extracted geometry to the UI and deserializes the
+    // subsequent NestRequest. This opt-in read-only replay exposes numerical
+    // changes at that JSON boundary instead of bypassing it in solver tests.
+    if std::env::var("PRINTFLOW_OVERLAP_IPC_ROUNDTRIP").is_ok_and(|value| value == "1") {
+        request = serde_json::from_slice(&serde_json::to_vec(&request).unwrap()).unwrap();
+    }
     write_json(
         &report_dir.join(format!("{objective}-request.json")),
         &request,
     );
+    // Match pack_local_irregular's envelope serialization exactly. Rust's
+    // validation keeps these valid items intact before forwarding the bytes.
+    fs::write(
+        report_dir.join(format!("{objective}-worker-input.json")),
+        serde_json::to_vec(&json!({ "engine": "local-tools", "request": request })).unwrap(),
+    )
+    .unwrap();
     let expected_qt = request
         .items
         .iter()
@@ -310,6 +332,15 @@ fn real_job_artwork_does_not_overlap() {
         expected_qt,
         started.elapsed().as_secs_f64()
     );
+    if let Some(root) = super::local_tool_root(None) {
+        eprintln!(
+            "Actual Rust-selected runtime: {}; Python: {:?}; base mixing: {}; threads: {:?}",
+            root.display(),
+            super::local_python(&root),
+            request.allow_base_mixing,
+            request.thread_count
+        );
+    }
     // Optionally replay a captured result, useful to establish a red baseline
     // from the exact old placements without modifying the production job.
     let result: NestResult = if let Some(path) = std::env::var_os("PRINTFLOW_OVERLAP_RESULT") {

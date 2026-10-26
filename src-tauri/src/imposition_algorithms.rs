@@ -530,28 +530,61 @@ fn pack_irregular_at_resource(
 const LOCAL_NESTING_ADAPTER: &str = "src-tauri/src/imposition/local_nesting/local_tools_engine.py";
 
 fn local_tool_root(resource_dir: Option<&Path>) -> Option<std::path::PathBuf> {
+    let development = cfg!(debug_assertions);
+    let explicit_root = development
+        .then(|| std::env::var_os("PRINTFLOW_NESTING_ROOT").map(std::path::PathBuf::from))
+        .flatten();
+    let source_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent();
+    let cwd = std::env::current_dir().ok();
+    let executable = std::env::current_exe().ok();
+    let candidates = local_tool_candidates(
+        development,
+        explicit_root.as_deref(),
+        source_root,
+        cwd.as_deref(),
+        executable.as_deref(),
+        resource_dir,
+    );
+    find_local_tool_root(&candidates)
+}
+
+// Keep mode-dependent path policy independent of process environment so tests
+// can cover stale bundle directories without changing global cwd or env vars.
+fn local_tool_candidates(
+    development: bool,
+    explicit_root: Option<&Path>,
+    source_root: Option<&Path>,
+    cwd: Option<&Path>,
+    executable: Option<&Path>,
+    resource_dir: Option<&Path>,
+) -> Vec<std::path::PathBuf> {
     let mut candidates = Vec::new();
-    if let Some(directory) = resource_dir {
-        candidates.push(directory.join("imposition-runtime"));
-    }
-    if cfg!(debug_assertions) {
-        if let Ok(root) = std::env::var("PRINTFLOW_NESTING_ROOT") {
-            candidates.push(std::path::PathBuf::from(root));
+    if development {
+        if let Some(root) = explicit_root {
+            candidates.push(root.to_path_buf());
         }
-        if let Ok(cwd) = std::env::current_dir() {
-            candidates.push(cwd.clone());
+        // Development can be launched with an arbitrary cwd (including the
+        // binary directory). The compiled checkout is more reliable than cwd.
+        if let Some(root) = source_root {
+            candidates.push(root.to_path_buf());
+        }
+        if let Some(cwd) = cwd {
+            candidates.push(cwd.to_path_buf());
             if let Some(parent) = cwd.parent() {
                 candidates.push(parent.to_path_buf());
             }
         }
-    }
-    if let Ok(executable) = std::env::current_exe() {
-        if let Some(parent) = executable.parent() {
+        // Never silently execute an old build's bundled algorithm in dev.
+    } else {
+        if let Some(directory) = resource_dir {
+            candidates.push(directory.join("imposition-runtime"));
+        }
+        if let Some(parent) = executable.and_then(Path::parent) {
             candidates.push(parent.join("imposition-runtime"));
             candidates.push(parent.join("resources/imposition-runtime"));
         }
     }
-    find_local_tool_root(&candidates)
+    candidates
 }
 
 fn find_local_tool_root(candidates: &[std::path::PathBuf]) -> Option<std::path::PathBuf> {
@@ -628,8 +661,24 @@ fn pack_local_irregular(
     let root = local_tool_root(resource_dir).ok_or_else(|| {
         format!("{algorithm} 安装包缺少本地拼版运行组件，请使用包含拼版运行时的安装包重新安装")
     })?;
+    pack_local_irregular_at_root(request, progress, &root)
+}
+
+fn pack_local_irregular_at_root(
+    request: NestRequest,
+    progress: Option<&dyn Fn(IrregularProgressEvent)>,
+    root: &Path,
+) -> Result<NestResult, String> {
+    let algorithm = request.irregular_algorithm.clone();
     let python =
-        local_python(&root).ok_or_else(|| format!("{algorithm} 适配器未找到 Python 运行时"))?;
+        local_python(root).ok_or_else(|| format!("{algorithm} 适配器未找到 Python 运行时"))?;
+    #[cfg(debug_assertions)]
+    log::info!(
+        target: "printflow::nesting",
+        "开发拼版运行时：{}；Python：{}",
+        root.display(),
+        python.display()
+    );
     let script = root.join(LOCAL_NESTING_ADAPTER);
     if !script.is_file() {
         return Err(format!(
@@ -1082,43 +1131,151 @@ mod tests {
     }
 
     #[test]
-    #[cfg(debug_assertions)]
     fn development_uses_current_checkout_instead_of_old_packaged_resources() {
-        let project = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-        assert_eq!(local_tool_root(None), Some(project.to_path_buf()));
+        let temp = tempfile::tempdir().unwrap();
+        let checkout = temp.path().join("checkout");
+        let resources = temp.path().join("resources");
+        let executable = temp.path().join("debug/app.exe");
+        for root in [
+            checkout.clone(),
+            resources.join("imposition-runtime"),
+            executable.parent().unwrap().join("imposition-runtime"),
+        ] {
+            let script = root.join(LOCAL_NESTING_ADAPTER);
+            fs::create_dir_all(script.parent().unwrap()).unwrap();
+            fs::write(script, "# adapter").unwrap();
+        }
+        let candidates = local_tool_candidates(
+            true,
+            None,
+            Some(&checkout),
+            executable.parent(),
+            Some(&executable),
+            Some(&resources),
+        );
+        assert_eq!(find_local_tool_root(&candidates), Some(checkout));
     }
 
     #[test]
-    fn installed_resources_take_priority_over_the_development_checkout() {
-        let directory = std::env::temp_dir().join(format!(
-            "printflow installed 资源-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let runtime = directory.join("imposition-runtime");
-        let script = runtime.join(LOCAL_NESTING_ADAPTER);
-        let python = runtime.join(".tools/nesting/python/python.exe");
+    fn development_explicit_root_precedes_compiled_checkout_and_cwd() {
+        let temp = tempfile::tempdir().unwrap();
+        let explicit = temp.path().join("explicit");
+        let checkout = temp.path().join("checkout");
+        let cwd = temp.path().join("working");
+        for root in [&explicit, &checkout, &cwd] {
+            let script = root.join(LOCAL_NESTING_ADAPTER);
+            fs::create_dir_all(script.parent().unwrap()).unwrap();
+            fs::write(script, "# adapter").unwrap();
+        }
+        let candidates = local_tool_candidates(
+            true,
+            Some(&explicit),
+            Some(&checkout),
+            Some(&cwd),
+            None,
+            None,
+        );
+        assert_eq!(find_local_tool_root(&candidates), Some(explicit));
+    }
+
+    #[test]
+    fn development_relocated_checkout_can_be_resolved_from_cwd() {
+        let temp = tempfile::tempdir().unwrap();
+        let checkout = temp.path().join("relocated");
+        let cwd = checkout.join("src-tauri");
+        let script = checkout.join(LOCAL_NESTING_ADAPTER);
         fs::create_dir_all(script.parent().unwrap()).unwrap();
+        fs::write(script, "# adapter").unwrap();
+        let candidates = local_tool_candidates(
+            true,
+            None,
+            Some(&temp.path().join("missing")),
+            Some(&cwd),
+            None,
+            None,
+        );
+        assert_eq!(find_local_tool_root(&candidates), Some(checkout));
+    }
+
+    #[test]
+    fn development_without_sources_does_not_fall_back_to_an_old_bundle() {
+        let temp = tempfile::tempdir().unwrap();
+        let executable = temp.path().join("debug/app.exe");
+        let resources = temp.path().join("resources");
+        for root in [
+            resources.join("imposition-runtime"),
+            executable.parent().unwrap().join("imposition-runtime"),
+        ] {
+            let script = root.join(LOCAL_NESTING_ADAPTER);
+            fs::create_dir_all(script.parent().unwrap()).unwrap();
+            fs::write(script, "# old adapter").unwrap();
+        }
+        let candidates = local_tool_candidates(
+            true,
+            None,
+            Some(&temp.path().join("missing")),
+            executable.parent(),
+            Some(&executable),
+            Some(&resources),
+        );
+        assert_eq!(find_local_tool_root(&candidates), None);
+    }
+
+    #[test]
+    fn installed_resources_ignore_development_overrides_and_checkout() {
+        let temp = tempfile::tempdir().unwrap();
+        let directory = temp.path().join("installed 资源");
+        let checkout = temp.path().join("checkout");
+        let runtime = directory.join("imposition-runtime");
+        for root in [&runtime, &checkout] {
+            let script = root.join(LOCAL_NESTING_ADAPTER);
+            fs::create_dir_all(script.parent().unwrap()).unwrap();
+            fs::write(script, "# adapter").unwrap();
+        }
+        let python = runtime.join(".tools/nesting/python/python.exe");
         fs::create_dir_all(python.parent().unwrap()).unwrap();
-        fs::write(script, "# packaged adapter").unwrap();
         fs::write(&python, "packaged interpreter").unwrap();
-        assert_eq!(local_tool_root(Some(&directory)), Some(runtime.clone()));
+        let candidates = local_tool_candidates(
+            false,
+            Some(&checkout),
+            Some(&checkout),
+            Some(&checkout),
+            None,
+            Some(&directory),
+        );
+        assert_eq!(find_local_tool_root(&candidates), Some(runtime.clone()));
         assert_eq!(local_python(&runtime), Some(python));
-        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn installed_runtime_never_uses_the_checkout_when_its_bundle_is_missing() {
+        let temp = tempfile::tempdir().unwrap();
+        let checkout = temp.path().join("checkout");
+        let script = checkout.join(LOCAL_NESTING_ADAPTER);
+        fs::create_dir_all(script.parent().unwrap()).unwrap();
+        fs::write(script, "# dev adapter").unwrap();
+        let candidates = local_tool_candidates(
+            false,
+            Some(&checkout),
+            Some(&checkout),
+            Some(&checkout),
+            Some(&temp.path().join("app.exe")),
+            Some(&temp.path().join("resources")),
+        );
+        assert_eq!(find_local_tool_root(&candidates), None);
     }
 
     #[test]
     #[ignore = "requires the generated self-contained installer runtime"]
     fn installed_runtime_executes_all_strategies_with_the_native_core() {
         let resource = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources");
+        let candidates = local_tool_candidates(false, None, None, None, None, Some(&resource));
         assert_eq!(
-            local_tool_root(Some(&resource)),
+            find_local_tool_root(&candidates),
             Some(resource.join("imposition-runtime"))
         );
         for objective in ["least-material", "least-cutting", "combined"] {
-            let result = pack_irregular_at_resource(
+            let result = pack_local_irregular_at_root(
                 NestRequest {
                     plate_width_mm: 100.0,
                     plate_height_mm: 80.0,
@@ -1141,7 +1298,7 @@ mod tests {
                     }],
                 },
                 None,
-                Some(&resource),
+                &resource.join("imposition-runtime"),
             )
             .unwrap();
             assert_eq!(result.placements.len(), 4);

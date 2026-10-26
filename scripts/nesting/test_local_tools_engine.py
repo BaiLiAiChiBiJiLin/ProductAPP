@@ -3,6 +3,8 @@ import importlib.util
 import io
 import json
 import tempfile
+import itertools
+import os
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -44,6 +46,28 @@ class LocalToolsTests(unittest.TestCase):
                          {"a", "a#qt-2", "a#qt-3", "a#qt-4", "a#qt-5", "b", "b#qt-2", "b#qt-3", "b#qt-4"})
         self.assertFalse(result["unplaced"])
         self.assertTrue(all(p["xMm"] >= 10 and p["yMm"] >= 10 for p in result["placements"]))
+
+    def test_progress_reports_memory_fallback_and_native_recovery(self):
+        import nesting_rust as native
+        memory_checks = itertools.count()
+        clock = itertools.count(1)
+        log = io.StringIO()
+        def available_memory():
+            return (128 if next(memory_checks) < 2 else 4096) * 1024**2
+        with (patch.dict(os.environ, PRINTFLOW_NESTING_CORE='auto', PRINTFLOW_NESTING_THREADS='2'),
+              patch.object(native, '_available_memory', side_effect=available_memory),
+              patch.object(native.time, 'monotonic', side_effect=lambda: float(next(clock))),
+              contextlib.redirect_stderr(log)):
+            result = engine.solve(request([item(quantity=5)]), cache_dir=self.tmp.name)
+        progress = [json.loads(line.removeprefix('PRINTFLOW_PROGRESS ')) for line in log.getvalue().splitlines()
+                    if line.startswith('PRINTFLOW_PROGRESS ')]
+        details = [event['detail'] for event in progress if event['phase'] == 'search']
+        self.assertTrue(any('内存暂时不足' in detail for detail in details), details)
+        self.assertTrue(any('已恢复 Rust' in detail for detail in details), details)
+        self.assertEqual(result['searchCore']['current_backend'], 'rust')
+        self.assertEqual(result['searchCore']['python_calls'], 0)
+        self.assertEqual(len(result['placements']), 5)
+        self.assertFalse(result['unplaced'])
 
     def test_uniform_fills_a_board_instead_of_one_copy_per_quantity_layer(self):
         result = self.solve(request([item(quantity=5), item("b", 3), item("c", 1)], "least-cutting"))

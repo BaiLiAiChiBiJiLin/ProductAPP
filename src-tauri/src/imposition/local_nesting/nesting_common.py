@@ -159,6 +159,8 @@ def _pack_one_python(srcs, bank, remaining, board_w, board_h, gap, margin, res, 
         rng.shuffle(order)
     elif order_mode == 'balanced':
         order = sorted(srcs, key=lambda s: -remaining[s['i']])
+    elif order_mode == 'input':
+        order = list(srcs)
     else:
         order = sorted(srcs, key=lambda s: s['area'] * (.7 + .6 * rng.random()))
     placed, failed = [], set()

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Button, Checkbox, Modal, Progress, Select, Tag } from 'antd'
-import { Download } from 'lucide-react'
+import { Alert, Button, Checkbox, Image, Modal, Progress, Select, Tag } from 'antd'
+import { Download, ZoomIn, ZoomOut, Scan } from 'lucide-react'
 import Loading from '../../components/Loading'
 import ImpositionThumbnail from './ImpositionThumbnail'
 import { loadImpositionImage } from './impositionRecords'
@@ -113,6 +113,7 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
   const [templateIds, setTemplateIds] = useState<string[]>([])
   const [layerIds, setLayerIds] = useState<string[]>([])
   const [previewType, setPreviewType] = useState('all')
+  const [layerPreviewOpen, setLayerPreviewOpen] = useState(false)
   const [error, setError] = useState('')
   const [appliedMessage, setAppliedMessage] = useState('')
   const [busy, setBusy] = useState(false)
@@ -223,6 +224,7 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
   const layerPreviewBuilder = useMemo(() => source ? () => layerIds.length ? buildSourceLayerPreview(source, layerIds) : source.svgText : undefined, [source, layerIds])
   const layerPreview = useDeferredSvg(layerPreviewBuilder)
   const layerPreviewUrl = useSvgUrl(layerPreview.svg)
+  useEffect(() => { setLayerPreviewOpen(false) }, [layerPreviewUrl])
 
   function assignLayer(id: string, type: string) {
     if (!template || !source) return
@@ -298,7 +300,7 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
     finally { setBusy(false); operationLock.current = false }
   }
 
-  return <Modal open title={<div className="imposition-export-heading"><span>导出 PDF · 图层管理</span><div><Checkbox checked={includePdf} disabled={busy} onChange={e => { const checked = e.target.checked; setExportFormats(current => ({ ...current, includePdf: checked })) }}>导出 PDF</Checkbox><Checkbox checked={includeDxf} disabled={busy} onChange={e => { const checked = e.target.checked; setExportFormats(current => ({ ...current, includeDxf: checked })) }}>导出 DXF</Checkbox><Checkbox checked={includeCmyk} disabled={busy} onChange={e => { const checked = e.target.checked; setExportFormats(current => ({ ...current, includeCmyk: checked })) }}>导出 CMYK PDF</Checkbox></div></div>} className="imposition-export-modal" width="min(1480px, 96vw)" style={{ top: 24 }} maskClosable={!busy} keyboard={!busy} closable={!busy} onCancel={() => { if (!busy) onClose() }} footer={<div className="imposition-export-footer"><span>{templateIds.length} 种版式 · {pdfCount} 个 PDF · {dxfCount} 个轮廓 DXF · {cmykCount} 个 CMYK PDF · F 表示生产板材数量</span><Button disabled={busy} onClick={onClose}>关闭</Button><Button type="primary" icon={<Download size={15}/>} loading={busy} disabled={!outputCount || !!exportPlan.issue || !!cmykPlan.issue || pendingCount > 0 || geometryChecking || selectedGeometryIssue || selectedSourceIssue} onClick={() => void exportPdf()}>选择文件夹并导出</Button></div>}>
+  return <Modal open title={<div className="imposition-export-heading"><span>导出 PDF · 图层管理</span><div><Checkbox checked={includePdf} disabled={busy} onChange={e => { const checked = e.target.checked; setExportFormats(current => ({ ...current, includePdf: checked })) }}>导出 PDF</Checkbox><Checkbox checked={includeDxf} disabled={busy} onChange={e => { const checked = e.target.checked; setExportFormats(current => ({ ...current, includeDxf: checked })) }}>导出 DXF</Checkbox><Checkbox checked={includeCmyk} disabled={busy} onChange={e => { const checked = e.target.checked; setExportFormats(current => ({ ...current, includeCmyk: checked })) }}>导出 CMYK PDF</Checkbox></div></div>} className="imposition-export-modal" width="min(1480px, 96vw)" style={{ top: 24 }} maskClosable={!busy && !layerPreviewOpen} keyboard={!busy && !layerPreviewOpen} closable={!busy} onCancel={() => { if (!busy && !layerPreviewOpen) onClose() }} footer={<div className="imposition-export-footer"><span>{templateIds.length} 种版式 · {pdfCount} 个 PDF · {dxfCount} 个轮廓 DXF · {cmykCount} 个 CMYK PDF · F 表示生产板材数量</span><Button disabled={busy} onClick={onClose}>关闭</Button><Button type="primary" icon={<Download size={15}/>} loading={busy} disabled={!outputCount || !!exportPlan.issue || !!cmykPlan.issue || pendingCount > 0 || geometryChecking || selectedGeometryIssue || selectedSourceIssue} onClick={() => void exportPdf()}>选择文件夹并导出</Button></div>}>
     {error && <Alert type="error" showIcon message={error}/>}
     {!model ? (!error && <div className="imposition-export-preparing" aria-busy="true"><Loading size="large" text="读取已拼版的 SVG 图层…"/><Progress percent={preparing.total ? Math.round(preparing.completed / preparing.total * 100) : 0}/><span>已解析 {preparing.completed}/{preparing.total} 个原始 SVG</span><small>{preparing.fileName || '准备板材与图层信息…'}</small></div>) : <>
       <div className="imposition-export-summary"><span>板材 {widthMm} × {heightMm} mm、版面孔与图片当前位置；相同版式只导出一份。</span></div>
@@ -320,9 +322,28 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
         </section>
         <section className="imposition-export-layers"><strong>SVG 图层</strong><Select aria-label="选择 SVG" showSearch optionFilterProp="label" value={activeSourceId || undefined} disabled={busy} virtual listHeight={280} listItemHeight={56} options={template?.sourceIds.map(id => ({ value: id, label: model.sources[id].fileName }))} optionRender={option => <div className="imposition-export-source-option">{sourcePaths.get(String(option.value)) ? <ImpositionThumbnail path={sourcePaths.get(String(option.value))!} name={model.sources[String(option.value)].fileName}/> : <SourceBlobThumbnail source={model.sources[String(option.value)]}/>}<span>{option.label}</span></div>} onChange={id => { setActiveSourceId(id); setLayerIds([]); setAppliedMessage('') }}/>
           {source && <><div className="imposition-export-source-preview" aria-busy={layerPreview.loading}>
-            <div className="imposition-export-source-artwork">{layerPreview.loading ? <Loading size="small" text="生成图层预览…"/> : layerPreviewUrl && <img src={layerPreviewUrl} alt={layerIds.length ? '选中图层预览' : '当前 SVG 原图'}/>}</div>
+            <button type="button" className="imposition-export-source-artwork" aria-label="放大 SVG 图层预览" title="查看大图，可继续缩放" disabled={layerPreview.loading || !layerPreviewUrl} onClick={() => setLayerPreviewOpen(true)}>{layerPreview.loading ? <Loading size="small" text="生成图层预览…"/> : layerPreviewUrl && <><img src={layerPreviewUrl} alt={layerIds.length ? '选中图层预览' : '当前 SVG 原图'}/><span className="imposition-export-preview-magnifier" aria-hidden="true"><ZoomIn size={15}/></span></>}</button>
             <div className="imposition-export-source-caption"><span>{layerIds.length ? `选中 ${layerIds.length} 个图层` : '勾选图层可单独预览'}</span><span>同一 SVG 在本版式中的所有副本同步修改</span>{layerPreview.error && <small role="alert">图层预览失败：{layerPreview.error}</small>}</div>
           </div>
+            {layerPreviewUrl && <Image src={layerPreviewUrl} alt={layerIds.length ? '选中 SVG 图层大图' : 'SVG 原图大图'} wrapperStyle={{ display: 'none' }} preview={{
+              visible: layerPreviewOpen,
+              onVisibleChange: setLayerPreviewOpen,
+              rootClassName: 'imposition-export-layer-lightbox',
+              minScale: 1, maxScale: 16, scaleStep: .5,
+              closeIcon: null,
+              toolbarRender: (_, { actions, transform }) => <div className="imposition-export-lightbox-toolbar" onKeyDown={event => {
+                if (event.key === 'Escape') { event.stopPropagation(); actions.onClose() }
+              }}>
+                <div className="imposition-export-lightbox-caption"><strong title={source.fileName}>{source.fileName}</strong><span>{layerIds.length ? `选中 ${layerIds.length} 个图层` : '完整原图'} · 滚轮缩放，按住图片拖动</span></div>
+                <div className="imposition-export-lightbox-actions">
+                  <Button aria-label="缩小 SVG 预览" icon={<ZoomOut size={16}/>} disabled={transform.scale <= 1} onClick={actions.onZoomOut}/>
+                  <span aria-label="SVG 预览缩放比例">{Math.round(transform.scale * 100)}%</span>
+                  <Button aria-label="放大 SVG 预览" icon={<ZoomIn size={16}/>} disabled={transform.scale >= 16} onClick={actions.onZoomIn}/>
+                  <Button icon={<Scan size={16}/>} onClick={actions.onReset}>适应窗口</Button>
+                  <Button onClick={actions.onClose}>关闭大图</Button>
+                </div>
+              </div>,
+            }}/>}
             <div className="imposition-export-layer-actions"><Checkbox aria-label="选择全部图层" checked={layerIds.length === source.layers.length} indeterminate={!!layerIds.length && layerIds.length !== source.layers.length} disabled={busy} onChange={event => setLayerIds(event.target.checked ? source.layers.map(layer => layer.id) : [])}>全选</Checkbox></div>
             <div className="imposition-export-layer-list">{source.layers.toReversed().map(layer => {
               const displayName = layerDisplayName(layer.label)

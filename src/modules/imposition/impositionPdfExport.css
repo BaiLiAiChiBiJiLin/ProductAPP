@@ -26,8 +26,20 @@
 .imposition-export-file-list summary { cursor: pointer; margin-bottom: 5px; }
 .imposition-export-file-list > div { display: flex; flex-direction: column; gap: 2px; margin: 6px 0; }
 .imposition-export-source-preview { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 14px; flex: 0 0 96px; height: 96px; color: #64748b; font-size: 11px; }
-.imposition-export-source-artwork { width: 96px; height: 96px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #f8fafc; border: 1px solid #e2e8f0; box-sizing: border-box; }
+.imposition-export-source-artwork { position: relative; width: 96px; height: 96px; padding: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #f8fafc; border: 1px solid #e2e8f0; box-sizing: border-box; cursor: zoom-in; }
+.imposition-export-source-artwork:disabled { cursor: default; }
+.imposition-export-source-artwork:not(:disabled):hover { border-color: #1677ff; }
+.imposition-export-source-artwork:focus-visible { outline: 2px solid #1677ff; outline-offset: 2px; }
 .imposition-export-source-artwork > img { width: 100%; height: 100%; object-fit: contain; }
+.imposition-export-preview-magnifier { position: absolute; top: 3px; right: 3px; display: flex; padding: 3px; border-radius: 4px; background: #ffffffeb; color: #1677ff; pointer-events: none; }
+.imposition-export-layer-lightbox .ant-image-preview-img-wrapper { padding: 24px 24px 150px; box-sizing: border-box; }
+.imposition-export-layer-lightbox .ant-image-preview-img { width: 100%; height: 100%; max-height: 100%; object-fit: contain; background: white; }
+.imposition-export-lightbox-toolbar { max-width: calc(100vw - 32px); padding: 12px 18px; border-radius: 10px; color: #fff; background: #172b4df2; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.imposition-export-lightbox-caption { max-width: min(620px, calc(100vw - 72px)); text-align: center; }
+.imposition-export-lightbox-caption strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.imposition-export-lightbox-caption > span { display: block; margin-top: 3px; font-size: 12px; color: #dbeafe; }
+.imposition-export-lightbox-actions { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px; }
+.imposition-export-lightbox-actions > span { min-width: 54px; font-size: 13px; text-align: center; font-variant-numeric: tabular-nums; }
 .imposition-export-source-artwork .app-loading { gap: 5px; max-width: 100%; font-size: 10px; }
 .imposition-export-source-caption { min-width: 0; max-height: 96px; overflow: auto; line-height: 1.7; }
 .imposition-export-source-caption > span { display: block; }

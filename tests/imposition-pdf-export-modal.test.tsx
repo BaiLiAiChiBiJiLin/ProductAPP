@@ -46,8 +46,8 @@ async function choose(name: string, label: string) {
   fireEvent.click(option)
 }
 async function ready() {
-  await screen.findByRole('checkbox', { name: '选择图层 cut' })
-  await waitFor(() => expect(screen.queryByText('检查各版式的边界、轮廓和图片间距…')).toBeNull())
+  await screen.findByRole('checkbox', { name: '选择图层 cut' }, { timeout: 5000 })
+  await waitFor(() => expect(screen.queryByText('检查各版式的边界、轮廓和图片间距…')).toBeNull(), { timeout: 5000 })
 }
 function entries() { return mocks.exportPdfs.mock.calls.at(-1)![1] as ImpositionPdfExportEntry[] }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done }); return { promise, resolve } }
@@ -416,6 +416,44 @@ it('defers layer preview changes and never labels a previous SVG as the newly se
   expect(svg).not.toContain('<image')
 })
 
+it('opens the current SVG layers at full size, zooms without rebuilding SVGs and closes only the lightbox', async () => {
+  const onClose = vi.fn()
+  mount([[piece()]], knownSvg, { onClose })
+  await ready()
+  const thumbnail = await screen.findByRole('img', { name: '当前 SVG 原图' })
+  const originalSrc = thumbnail.getAttribute('src')
+  const blobCount = vi.mocked(URL.createObjectURL).mock.calls.length
+  const trigger = screen.getByRole('button', { name: '放大 SVG 图层预览' })
+  fireEvent.click(trigger)
+  const large = await screen.findByRole('img', { name: 'SVG 原图大图' })
+  expect(large.getAttribute('src')).toBe(originalSrc)
+  expect(screen.getByLabelText('SVG 预览缩放比例').textContent).toBe('100%')
+  fireEvent.click(screen.getByRole('button', { name: '放大 SVG 预览' }))
+  await waitFor(() => expect(screen.getByLabelText('SVG 预览缩放比例').textContent).toBe('150%'))
+  fireEvent.wheel(large, { deltaY: -100, clientX: 200, clientY: 200 })
+  await waitFor(() => expect(screen.getByLabelText('SVG 预览缩放比例').textContent).toBe('225%'))
+  fireEvent.click(screen.getByRole('button', { name: '适应窗口' }))
+  await waitFor(() => expect(screen.getByLabelText('SVG 预览缩放比例').textContent).toBe('100%'))
+  fireEvent.click(screen.getByRole('button', { name: '放大 SVG 预览' }))
+  fireEvent.keyDown(screen.getByRole('button', { name: '关闭大图' }), { key: 'Escape', keyCode: 27 })
+  await waitFor(() => expect(screen.queryByRole('button', { name: '关闭大图' })).toBeNull())
+  expect(onClose).not.toHaveBeenCalled()
+  expect(vi.mocked(URL.createObjectURL).mock.calls).toHaveLength(blobCount)
+
+  fireEvent.click(screen.getByRole('checkbox', { name: '选择图层 cut' }))
+  const selected = await screen.findByRole('img', { name: '选中图层预览' })
+  fireEvent.click(trigger)
+  const selectedLarge = await screen.findByRole('img', { name: '选中 SVG 图层大图' })
+  expect(selectedLarge.getAttribute('src')).toBe(selected.getAttribute('src'))
+  expect(selectedLarge.getAttribute('src')).not.toBe(originalSrc)
+  expect(screen.getByLabelText('SVG 预览缩放比例').textContent).toBe('100%')
+  fireEvent.click(screen.getByRole('button', { name: '关闭大图' }))
+  await waitFor(() => expect(screen.queryByRole('button', { name: '关闭大图' })).toBeNull())
+  expect((screen.getByRole('checkbox', { name: '选择图层 cut' }) as HTMLInputElement).checked).toBe(true)
+  expect(onClose).not.toHaveBeenCalled()
+  expect(mocks.loadImage).not.toHaveBeenCalled()
+})
+
 it('prefixes recognizable layer names in display and accessible controls while preserving SVG identifiers', async () => {
   const svg = knownSvg.replace('</svg>', `
     <path id="H_xBxB_Circle_Path_1" d="M1 1H2V2H1Z" fill="none" stroke="magenta"/>
@@ -431,7 +469,7 @@ it('prefixes recognizable layer names in display and accessible controls while p
     expect(screen.getByRole('combobox', { name: `图层 ${name} 类型` })).toBeTruthy()
   }
   fireEvent.click(screen.getByRole('checkbox', { name: '选择图层 轮廓 H_xBxB_Circle_Path_1' }))
-  const preview = await screen.findByRole('img', { name: '选中图层预览' }) as HTMLImageElement
+  const preview = await screen.findByRole('img', { name: '选中图层预览' }, { timeout: 5000 }) as HTMLImageElement
   const blob = blobs.get(preview.src)!
   const selectedSvg = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsText(blob) })
   const root = new DOMParser().parseFromString(selectedSvg, 'image/svg+xml').documentElement

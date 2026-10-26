@@ -14,6 +14,7 @@ from pathlib import Path
 import random
 import sys
 import threading
+import time
 from functools import lru_cache
 
 import numpy as np
@@ -31,6 +32,18 @@ class NativeCoreError(RuntimeError):
 
 class RustUnavailable(NativeCoreError):
     """The requested native library cannot be loaded."""
+
+
+class NativeResourceError(NativeCoreError):
+    """Temporary allocation pressure; never disable Rust for the whole job."""
+
+    def __init__(self, message, minimum_available=260 * _MIB):
+        super().__init__(message)
+        self.minimum_available = minimum_available
+
+
+class _RetryNative(BaseException):
+    """Unwind a Python trial before retrying its original quantity vector."""
 
 
 class _CallbackFailure(BaseException):
@@ -88,6 +101,7 @@ def core_status(bank):
 
 
 def _record_status(bank, status):
+    status['current_backend'] = status['backend']
     if isinstance(bank, MaskBank):
         counts = getattr(bank, '_native_calls', {'rust': 0, 'python': 0})
         counts[status['backend']] += 1
@@ -181,7 +195,7 @@ def _available_cpu_count():
     return 1
 
 
-def _resource_limits(estimated_bank):
+def _resource_limits(estimated_bank, worker_limit=None):
     available_cpus = _available_cpu_count()
     value = os.environ.get('PRINTFLOW_NESTING_THREADS')
     if value is None:
@@ -194,13 +208,16 @@ def _resource_limits(estimated_bank):
     available = _available_memory()
     budget = max(0, available - 256 * _MIB)
     if estimated_bank + 4 * _MIB > budget:
-        raise NativeCoreError('Insufficient available physical/commit memory for the Rust mask bank')
+        raise NativeResourceError('Insufficient available physical/commit memory for the Rust mask bank',
+                                  estimated_bank + 260 * _MIB)
     if available < 768 * _MIB:
         workers = 1
     else:
         # Masks are shared, but retain headroom for stacks, allocator overhead,
         # Python validation and the UI instead of multiplying copies per QT.
         workers = min(workers, max(1, (budget - estimated_bank) // (32 * _MIB)))
+    if worker_limit is not None:
+        workers = min(workers, worker_limit)
     return workers, budget
 
 
@@ -257,7 +274,7 @@ def _bank_signature(bank):
 
 
 class _NativeBank:
-    def __init__(self, bank):
+    def __init__(self, bank, worker_limit=None):
         self._lock = threading.RLock()
         self._packing = False
         self.handle = ct.c_void_p()
@@ -282,7 +299,11 @@ class _NativeBank:
                 self.indexes[id(item)] = len(self.items)
                 self.items.append(item)
                 estimate += ((width + 63) // 64) * height * 8 + height * 4 + 160
-        workers, budget = _resource_limits(estimate)
+        workers, budget = _resource_limits(estimate, worker_limit)
+        self.estimated_bank = estimate
+        self.worker_limit = worker_limit
+        self.configured_workers = workers
+        self.worker_upgrade_after = time.monotonic() + 2.
         self.budget = budget
         self._check(self.lib.nc_create(workers, budget, ct.byref(self.handle)), 'create')
         try:
@@ -304,7 +325,8 @@ class _NativeBank:
             buf = (ct.c_uint8 * 2048)()
             self.lib.nc_last_error(self.handle, buf, len(buf))
             detail = bytes(buf).split(b'\0', 1)[0].decode('utf-8', errors='replace')
-            raise NativeCoreError(f'Rust nesting {operation} failed ({result}): {detail}')
+            error_type = NativeResourceError if result in (2, 3) else NativeCoreError
+            raise error_type(f'Rust nesting {operation} failed ({result}): {detail}')
 
     def close(self):
         with self._lock:
@@ -325,6 +347,17 @@ class _NativeBank:
                 raise NativeCoreError('Native context was closed before its result was read')
             return dict(backend='rust', threads=int(self.lib.nc_worker_count(self.handle)),
                         mask_count=len(self.items), bank_bytes=int(self.lib.nc_memory_used(self.handle)))
+
+    def can_restore_workers(self):
+        """Only rebuild a temporary one-worker context after headroom returns."""
+        if time.monotonic() < self.worker_upgrade_after:
+            return False
+        self.worker_upgrade_after = time.monotonic() + 2.
+        try:
+            workers, _budget = _resource_limits(self.estimated_bank)
+        except NativeResourceError:
+            return False
+        return workers > self.configured_workers
 
     def pack(self, *args, **kwargs):
         with self._lock:
@@ -371,6 +404,8 @@ class _NativeBank:
             rng.shuffle(order)
         elif order_mode == 'balanced':
             order.sort(key=lambda j: -remaining[srcs[j]['i']])
+        elif order_mode == 'input':
+            pass  # The supplied source priority is independent of true area.
         else:
             order.sort(key=lambda j: srcs[j]['area'] * (.7 + .6 * rng.random()))
         weight = .002 + rng.random() * .014
@@ -448,12 +483,13 @@ class _NativeBank:
 
 def dispatch(python_impl, srcs, bank, remaining, board_w, board_h, gap, margin, res, seed,
              mode='top', order_mode='small', lookahead=1, progress=None, initial_occupancy=None):
-    """Run a complete sheet atomically; native failures rerun it in Python."""
+    """Run a complete sheet atomically, recovering Rust after temporary pressure."""
     requested = os.environ.get('PRINTFLOW_NESTING_CORE', 'auto').strip().lower()
     if requested not in ('auto', 'rust', 'python'):
         raise ValueError('PRINTFLOW_NESTING_CORE must be auto, rust, or python')
     persistent = isinstance(bank, MaskBank)
-    status = dict(requested=requested, backend='python', threads=1, reason=None, mask_count=0, bank_bytes=0)
+    status = dict(requested=requested, backend='python', current_backend='python', threads=1,
+                  reason=None, mask_count=0, bank_bytes=0)
     args = (srcs, bank, remaining, board_w, board_h, gap, margin, res, seed,
             mode, order_mode, lookahead, progress, initial_occupancy)
     if requested == 'python':
@@ -461,42 +497,152 @@ def dispatch(python_impl, srcs, bank, remaining, board_w, board_h, gap, margin, 
         _record_status(bank, status)
         return placed
     initial_remaining = list(remaining)
-    context = None
-    try:
-        previous_failure = getattr(bank, '_native_failure', None)
-        if previous_failure is not None and previous_failure[0] == _library_path():
-            failure_type = RustUnavailable if previous_failure[1] else NativeCoreError
-            raise failure_type(previous_failure[2])
-        context = getattr(bank, '_native_context', None) if persistent else None
-        if context is None:
-            context = _NativeBank(bank)
+    library_path = _library_path()
+    recovered = bool(getattr(bank, '_native_recovered', False))
+
+    def attempt(worker_limit=None):
+        # Return only scalar failure details. Leaving this frame releases the
+        # exception traceback and its buffers before the retry/fallback starts.
+        context = None
+        try:
+            context = getattr(bank, '_native_context', None) if persistent else None
+            if (context is not None and worker_limit is None
+                    and isinstance(context, _NativeBank) and context.handle
+                    and context.can_restore_workers()):
+                bank.close()
+                context = None
+            if context is None:
+                context = _NativeBank(bank, worker_limit=worker_limit)
+                if persistent:
+                    bank._native_context = context
             if persistent:
-                bank._native_context = context
-        placed = context.pack(*args)
-        status.update(context.status())
-        _record_status(bank, status)
-        return placed
-    except _CallbackFailure as exc:
-        raise exc.error
-    except (NativeCoreError, MemoryError) as exc:
-        if requested == 'rust' and isinstance(exc, RustUnavailable):
-            raise
-        remaining[:] = initial_remaining
-        status['reason'] = str(exc) or type(exc).__name__
+                active = dict(status, backend='rust', current_backend='rust', reason=None,
+                              resource_recovery=False, recovered=recovered)
+                # Existing test doubles need only pack/close. Real contexts
+                # expose their worker count before invoking any progress hook.
+                if isinstance(context, _NativeBank) and context.handle:
+                    active.update(context.status())
+                bank._native_status = active
+            placed = context.pack(*args)
+            status.update(context.status(), current_backend='rust', reason=None,
+                          resource_recovery=False, recovered=recovered)
+            if persistent:
+                bank._native_recovered = recovered
+                if hasattr(bank, '_native_resource_failure'):
+                    del bank._native_resource_failure
+            _record_status(bank, status)
+            return placed, None
+        except _CallbackFailure as exc:
+            remaining[:] = initial_remaining
+            raise exc.error
+        except (NativeCoreError, MemoryError) as exc:
+            remaining[:] = initial_remaining
+            if persistent:
+                bank.close()
+            if requested == 'rust' and isinstance(exc, RustUnavailable):
+                raise
+            return None, (isinstance(exc, (NativeResourceError, MemoryError)),
+                          isinstance(exc, RustUnavailable), str(exc) or type(exc).__name__,
+                          getattr(exc, 'minimum_available', 260 * _MIB))
+        finally:
+            if not persistent and context is not None:
+                context.close()
+
+    def recovery_ready(retry):
+        # Hysteresis and a short probe interval prevent repeated upload attempts
+        # when the machine is hovering at the memory reserve boundary.
+        return time.monotonic() >= retry[3] and _available_memory() >= retry[2] + 16 * _MIB
+
+    def remember_failure(failure, pending_retry=None):
+        resource, unavailable, reason, minimum = failure
+        status.update(backend='python', current_backend='python', threads=1, reason=reason,
+                      resource_recovery=resource)
+        retry = pending_retry or (library_path, reason, minimum, time.monotonic() + 1.)
         if persistent:
-            bank._native_status = status
-            # An exception retains its traceback, including board buffers and
-            # masks. Cache only scalar details and create a fresh exception on
-            # later attempts so repeated fallback cannot grow a traceback chain.
-            bank._native_failure = (_library_path(), isinstance(exc, RustUnavailable), status['reason'])
-            bank.close()
+            bank._native_status = dict(status)
+            if resource:
+                bank._native_resource_failure = retry
+            else:
+                # Missing/invalid native capabilities retain the existing
+                # job-wide fallback, without retaining any exception object.
+                bank._native_failure = (library_path, unavailable, reason)
         if not getattr(bank, '_native_warning_emitted', False):
             print('PRINTFLOW_NESTING_CORE ' + json.dumps(status, ensure_ascii=True), file=sys.stderr, flush=True)
             if persistent:
                 bank._native_warning_emitted = True
-    finally:
-        if not persistent and context is not None:
-            context.close()
-    placed = python_impl(*args)
+        return retry
+
+    previous_failure = getattr(bank, '_native_failure', None)
+    previous_resource = getattr(bank, '_native_resource_failure', None)
+    pending_retry = None
+    if previous_failure is not None and previous_failure[0] == library_path:
+        if requested == 'rust' and previous_failure[1]:
+            raise RustUnavailable(previous_failure[2])
+        failure = (False, previous_failure[1], previous_failure[2], 0)
+    elif (previous_resource is not None and previous_resource[0] == library_path
+          and not recovery_ready(previous_resource)):
+        failure = (True, False, previous_resource[1], previous_resource[2])
+        pending_retry = previous_resource
+    else:
+        recovered |= previous_resource is not None and previous_resource[0] == library_path
+        placed, failure = attempt()
+        if failure is None:
+            return placed
+        if failure[0]:
+            # A fresh, single-worker context can recover from native allocation
+            # pressure without changing the grid, angles, or search candidates.
+            recovered = True
+            placed, failure = attempt(worker_limit=1)
+            if failure is None:
+                return placed
+    retry = remember_failure(failure, pending_retry)
+
+    if not failure[0]:
+        placed = python_impl(*args)
+        _record_status(bank, status)
+        return placed
+
+    next_probe = retry[3]
+    allow_recovery = True
+    def recovery_progress(count, left):
+        nonlocal next_probe
+        if progress:
+            try:
+                progress(count, left)
+            except BaseException as exc:
+                raise _CallbackFailure(exc)
+        now = time.monotonic()
+        if allow_recovery and now >= next_probe:
+            next_probe = now + 1.
+            if _available_memory() >= retry[2] + 16 * _MIB:
+                raise _RetryNative()
+
+    fallback_args = (*args[:12], recovery_progress, initial_occupancy)
+    interrupted = False
+    try:
+        placed = python_impl(*fallback_args)
+    except _CallbackFailure as exc:
+        remaining[:] = initial_remaining
+        raise exc.error
+    except _RetryNative:
+        # Finish unwinding the discarded Python board (and its occupancy)
+        # before allocating a native context. No partial QT result is committed.
+        interrupted = True
+    if interrupted:
+        remaining[:] = initial_remaining
+        recovered = True
+        placed, failure = attempt()
+        if failure is not None:
+            remember_failure(failure)
+            # Bound recovery work to one mid-board restart. If native allocation
+            # still fails, finish this Python board and retry on a later board.
+            allow_recovery = False
+            try:
+                placed = python_impl(*fallback_args)
+            except _CallbackFailure as exc:
+                remaining[:] = initial_remaining
+                raise exc.error
+        else:
+            return placed
     _record_status(bank, status)
     return placed

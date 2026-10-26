@@ -14,7 +14,10 @@ pub struct LayoutConfig {
     effective_height: f64,
     effective_width: f64,
     effective_right: f64,
-    spacing: f64,
+    // Older catalogs stored spacing per preset. Accept that field when reading
+    // them, but never return or persist it: spacing is now a workspace setting.
+    #[serde(default, rename = "spacing", skip_serializing)]
+    _legacy_spacing: Option<f64>,
     hole_size: f64,
     hole_count: u32,
     hole_gap: f64,
@@ -62,7 +65,7 @@ fn defaults() -> Vec<LayoutPreset> {
         effective_height: 440.0,
         effective_width: 285.0,
         effective_right: 5.0,
-        spacing: 3.0,
+        _legacy_spacing: None,
         hole_size: 3.0,
         hole_count: 2,
         hole_gap: 203.468,
@@ -71,7 +74,6 @@ fn defaults() -> Vec<LayoutPreset> {
     let small = LayoutConfig {
         effective_height: 380.0,
         effective_width: 285.0,
-        spacing: 8.0,
         ..large.clone()
     };
     vec![
@@ -103,7 +105,6 @@ fn validate_config(config: &LayoutConfig) -> Result<()> {
     }
     for (name, value) in [
         ("有效区域右边距", config.effective_right),
-        ("图片间距", config.spacing),
         ("孔直径", config.hole_size),
         ("孔间距", config.hole_gap),
         ("孔左边距", config.hole_left),
@@ -382,7 +383,6 @@ mod tests {
         assert_eq!(first.presets, defaults());
         let mut expected_small = first.presets[0].config.clone();
         expected_small.effective_height = 380.0;
-        expected_small.spacing = 8.0;
         assert_eq!(first.presets[1].config, expected_small);
         let remaining = execute_local(
             &mut conn,
@@ -420,12 +420,12 @@ mod tests {
             .presets;
         let mut edited = original[0].clone();
         edited.name = "定制大版".into();
-        edited.config.spacing = 4.0;
+        edited.config.effective_right = 6.0;
         let updated = execute_local(&mut conn, save(&edited), true)
             .unwrap()
             .presets;
         assert_eq!(updated[0].version, 2);
-        assert_eq!(updated[0].config.spacing, 4.0);
+        assert_eq!(updated[0].config.effective_right, 6.0);
         assert_eq!(updated[1], original[1]);
         assert!(execute_local(&mut conn, save(&edited), true)
             .unwrap_err()
@@ -516,6 +516,45 @@ mod tests {
     }
 
     #[test]
+    fn old_preset_spacing_is_readable_but_not_exposed_or_saved_again() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        execute_local(&mut conn, Operation::List, true).unwrap();
+        let mut legacy = serde_json::to_value(defaults()).unwrap();
+        legacy[0]["config"]["spacing"] = serde_json::json!(3.0);
+        legacy[1]["config"]["spacing"] = serde_json::json!(8.0);
+        conn.execute(
+            "UPDATE imposition_layout_presets SET payload=?1 WHERE id=1",
+            [serde_json::to_string(&legacy).unwrap()],
+        )
+        .unwrap();
+
+        let snapshot = execute_local(&mut conn, Operation::List, false).unwrap();
+        assert_eq!(snapshot.presets[1].config.effective_height, 380.0);
+        let response = serde_json::to_value(&snapshot).unwrap();
+        for preset in response["presets"].as_array().unwrap() {
+            assert!(preset["config"].get("spacing").is_none());
+        }
+        execute_local(&mut conn, save(&snapshot.presets[0]), true).unwrap();
+        let payload: String = conn
+            .query_row(
+                "SELECT payload FROM imposition_layout_presets WHERE id=1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let saved: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert!(saved
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|preset| preset["config"].get("spacing").is_none()));
+        // Unknown parameters remain errors; only the historical spacing field
+        // receives compatibility treatment.
+        legacy[0]["config"]["misspelledWidth"] = serde_json::json!(285.0);
+        assert!(serde_json::from_value::<Vec<LayoutPreset>>(legacy).is_err());
+    }
+
+    #[test]
     fn geometry_validation_uses_outer_hole_span_and_checks_all_numbers() {
         let original = defaults()[0].config.clone();
         assert!(validate_config(&original).is_ok());
@@ -523,7 +562,7 @@ mod tests {
         config.plate_height = f64::NAN;
         assert!(validate_config(&config).is_err());
         config = original.clone();
-        config.spacing = -1.0;
+        config.effective_right = -1.0;
         assert!(validate_config(&config).is_err());
         config = original.clone();
         config.hole_left = 298.0;

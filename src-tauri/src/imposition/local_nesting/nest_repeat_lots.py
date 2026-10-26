@@ -12,6 +12,7 @@ from shapely.geometry import box
 from shapely.strtree import STRtree
 
 from nesting_common import pack_material_boards, pack_one
+from nest_repeat_patterns import repeated_pattern_lots
 
 
 def template_key(board):
@@ -140,17 +141,42 @@ def improve_repeated_lots(job, args, baseline, progress=None):
                                    seed_offset=0, progress=report)
         entry = dict(repeat=repeat, lotSheets=len(lot))
         diagnostics['candidates'].append(entry)
-        if len(lot) * repeat > len(best):
-            entry['rejected'] = 'sheet-count'
-            continue
-        candidate = [board for board in lot for _ in range(repeat)]
-        remaining = [quantity - per_lot * repeat for quantity, per_lot in zip(job['quantities'], quota)]
-        if any(remaining):
-            candidate = _insert_tails(job, args, candidate, remaining, progress)
-        candidate_score = plan_score(candidate)
-        entry.update(sheets=len(candidate), layouts=candidate_score[0])
-        if len(candidate) <= len(best) and candidate_score < score and _valid(job, args, candidate):
-            best, score = candidate, candidate_score
-            entry['accepted'] = True
+        def consider(lot, detail):
+            nonlocal best, score
+            if len(lot) * repeat > len(best):
+                detail['rejected'] = 'sheet-count'
+                return
+            candidate = [board for board in lot for _ in range(repeat)]
+            remaining = [quantity - per_lot * repeat for quantity, per_lot in zip(job['quantities'], quota)]
+            if any(remaining):
+                candidate = _insert_tails(job, args, candidate, remaining, progress)
+            candidate_score = plan_score(candidate)
+            detail.update(sheets=len(candidate), layouts=candidate_score[0])
+            if len(candidate) <= len(best) and candidate_score < score and _valid(job, args, candidate):
+                best, score = candidate, candidate_score
+                detail['accepted'] = True
+        consider(lot, entry)
+        # A complete lot can contain a repeated subtemplate of its own. Trying
+        # this before discarding an overlong lot can reduce both its sheet count
+        # and its number of cutting programs (e.g. A, A, B, C instead of five
+        # independently filled boards). Keep the complete plan on allocation
+        # pressure or a known optional-tail packing failure.
+        if score[0] <= 1:
+            break
+        patterns = entry['subpatterns'] = {}
+        try:
+            for candidate_lot, detail in repeated_pattern_lots(
+                    job, search_args, quota, lambda: len(best) // repeat, patterns, report):
+                consider(candidate_lot, detail)
+                if detail.get('accepted'):
+                    patterns.setdefault('accepted', []).append(detail)
+                    if score[0] <= 1:
+                        break
+        except MemoryError:
+            patterns['stopped'] = 'memory-pressure-preserved-complete-plan'
+        except SystemExit as exc:
+            if not str(exc).startswith('No remaining item fits;'):
+                raise
+            patterns['stopped'] = 'tail-does-not-fit-preserved-complete-plan'
     diagnostics['after'] = dict(sheets=len(best), layouts=score[0])
     return best

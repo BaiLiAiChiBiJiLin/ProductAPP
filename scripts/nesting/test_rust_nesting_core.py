@@ -97,12 +97,24 @@ class NativeFallbackTests(unittest.TestCase):
             self.assertEqual(workers, 1)
             self.assertEqual(budget, 144 * 1024**2)
         with patch.object(native, '_available_memory', return_value=260 * 1024**2):
-            with self.assertRaises(native.NativeCoreError):
+            with self.assertRaises(native.NativeResourceError):
                 native._resource_limits(1024**2)
         with (patch.object(native, '_available_memory', return_value=4 * 1024**3),
               patch.object(native, '_available_cpu_count', return_value=8),
               patch.dict(os.environ, PRINTFLOW_NESTING_THREADS='999')):
             self.assertEqual(native._resource_limits(1024)[0], 8)
+
+    def test_native_memory_codes_are_recoverable_but_invalid_arguments_are_not(self):
+        context = native._NativeBank.__new__(native._NativeBank)
+        context._lock, context._packing = native.threading.RLock(), False
+        context.handle = ct.c_void_p()
+        context.lib = types.SimpleNamespace(nc_last_error=lambda *_args: 0)
+        for code in (2, 3):
+            with self.subTest(code=code), self.assertRaises(native.NativeResourceError):
+                context._check(code, 'pack')
+        with self.assertRaises(native.NativeCoreError) as raised:
+            context._check(1, 'pack')
+        self.assertNotIsInstance(raised.exception, native.NativeResourceError)
 
     def test_repeated_fallback_does_not_retain_tracebacks_or_board_buffers(self):
         scratch_refs = []
@@ -237,6 +249,162 @@ class NativeDifferentialTests(unittest.TestCase):
         self.env.start()
         self.addCleanup(self.env.stop)
 
+    def test_memory_guard_recovers_during_python_sheet_without_changing_result(self):
+        srcs = [dict(i=0, area=4)]
+        bank = native.MaskBank({0: [mask_item(np.ones((2, 2), np.uint8))]})
+        reference = native.MaskBank(dict(bank))
+        self.addCleanup(bank.close)
+        self.addCleanup(reference.close)
+        expected_remaining = [5]
+        expected = run_native(srcs, reference, expected_remaining, 8, 7, 0, 0, 1, 42)
+        memory, clock = [120 * 1024**2], [0.]
+        started = []
+        def fallback(*args):
+            started.append(True)
+            forwarded = list(args)
+            callback = forwarded[12]
+            def after_one_placement(*counts):
+                memory[0], clock[0] = 2 * 1024**3, 10.
+                if callback:
+                    callback(*counts)
+            forwarded[12] = after_one_placement
+            return python_pack(*forwarded)
+        remaining = [5]
+        with (patch.object(native, '_available_memory', side_effect=lambda: memory[0]),
+              patch('time.monotonic', side_effect=lambda: clock[0]),
+              contextlib.redirect_stderr(io.StringIO())):
+            actual = native.dispatch(fallback, srcs, bank, remaining, 8, 7, 0, 0, 1, 42)
+        self.assertEqual(actual, expected)
+        self.assertEqual(remaining, expected_remaining)
+        self.assertEqual(len(started), 1)
+        self.assertEqual(native.core_status(bank)['backend'], 'rust')
+        self.assertTrue(native.core_status(bank)['recovered'])
+        self.assertFalse(hasattr(bank, '_native_failure'))
+
+    def test_native_allocation_retries_one_worker_then_restores_requested_workers(self):
+        srcs = [dict(i=0, area=4)]
+        bank = native.MaskBank({0: [mask_item(np.ones((2, 2), np.uint8), angle)
+                                   for angle in (0, 90, 180, 270)]})
+        self.addCleanup(bank.close)
+        clock = [0.]
+        with (patch.dict(os.environ, PRINTFLOW_NESTING_THREADS='4'),
+              patch.object(native, '_available_memory', return_value=2 * 1024**3),
+              patch.object(native, '_available_cpu_count', return_value=4),
+              patch('time.monotonic', side_effect=lambda: clock[0]),
+              contextlib.redirect_stderr(io.StringIO())):
+            expected = run_native(srcs, bank, [5], 8, 7, 0, 0, 1, 42)
+            original = bank._native_context
+            scratch_refs = []
+            def fail(*args):
+                scratch = np.ones((16, 16), np.uint8)
+                scratch_refs.append(weakref.ref(scratch))
+                args[2][0] -= 1
+                raise native.NativeResourceError('simulated allocation failure')
+            remaining = [5]
+            with patch.object(original, 'pack', side_effect=fail):
+                self.assertEqual(run_native(srcs, bank, remaining, 8, 7, 0, 0, 1, 42), expected)
+            self.assertEqual(remaining, [0])
+            limited = bank._native_context
+            self.assertEqual(limited.worker_limit, 1)
+            self.assertFalse(original.handle)
+            self.assertTrue(native.core_status(bank)['recovered'])
+            self.assertEqual(native.core_status(bank)['threads'], 1)
+            self.assertEqual(native.core_status(bank)['python_calls'], 0)
+            gc.collect()
+            self.assertIsNone(scratch_refs[0]())
+            clock[0] = 3.
+            self.assertEqual(run_native(srcs, bank, [5], 8, 7, 0, 0, 1, 42), expected)
+            self.assertIsNone(bank._native_context.worker_limit)
+            self.assertFalse(limited.handle)
+            self.assertEqual(bank._native_context.configured_workers, 4)
+
+    def test_initial_memory_limited_context_recovers_workers_but_manual_one_is_preserved(self):
+        srcs = [dict(i=0, area=4)]
+        for requested, expected_workers in (('4', 4), ('1', 1)):
+            with self.subTest(requested=requested):
+                bank = native.MaskBank({0: [mask_item(np.ones((2, 2), np.uint8), angle)
+                                           for angle in (0, 90, 180, 270)]})
+                self.addCleanup(bank.close)
+                memory, clock = [400 * 1024**2], [0.]
+                with (patch.dict(os.environ, PRINTFLOW_NESTING_THREADS=requested),
+                      patch.object(native, '_available_memory', side_effect=lambda: memory[0]),
+                      patch.object(native, '_available_cpu_count', return_value=4),
+                      patch('time.monotonic', side_effect=lambda: clock[0])):
+                    first = run_native(srcs, bank, [5], 8, 7, 0, 0, 1, 42)
+                    limited = bank._native_context
+                    self.assertEqual(limited.configured_workers, 1)
+                    self.assertIsNone(limited.worker_limit)
+                    clock[0], memory[0] = 3., 2 * 1024**3
+                    self.assertEqual(run_native(srcs, bank, [5], 8, 7, 0, 0, 1, 42), first)
+                    self.assertEqual(bank._native_context.configured_workers, expected_workers)
+                    if requested == '1':
+                        self.assertIs(bank._native_context, limited)
+                    else:
+                        self.assertIsNot(bank._native_context, limited)
+                        self.assertFalse(limited.handle)
+
+    def test_short_python_sheets_do_not_postpone_memory_recovery_deadline(self):
+        srcs = [dict(i=0, area=4)]
+        bank = native.MaskBank({0: [mask_item(np.ones((2, 2), np.uint8))]})
+        self.addCleanup(bank.close)
+        memory, clock = [120 * 1024**2], [0.]
+        with (patch.object(native, '_available_memory', side_effect=lambda: memory[0]),
+              patch('time.monotonic', side_effect=lambda: clock[0]),
+              contextlib.redirect_stderr(io.StringIO())):
+            first = run_native(srcs, bank, [5], 8, 7, 0, 0, 1, 42)
+            deadline = bank._native_resource_failure[3]
+            for now in (.2, .4, .6, .8):
+                clock[0] = now
+                self.assertEqual(run_native(srcs, bank, [5], 8, 7, 0, 0, 1, 42), first)
+                self.assertEqual(bank._native_resource_failure[3], deadline)
+                self.assertFalse(hasattr(bank, '_native_failure'))
+                self.assertFalse(any(isinstance(value, (BaseException, types.TracebackType))
+                                     for value in bank._native_resource_failure))
+            clock[0], memory[0] = 2., 2 * 1024**3
+            self.assertEqual(run_native(srcs, bank, [5], 8, 7, 0, 0, 1, 42), first)
+        status = native.core_status(bank)
+        self.assertEqual(status['backend'], 'mixed')
+        self.assertEqual(status['current_backend'], 'rust')
+        self.assertEqual((status['rust_calls'], status['python_calls']), (1, 5))
+        self.assertTrue(status['recovered'])
+        self.assertFalse(hasattr(bank, '_native_resource_failure'))
+
+    def test_python_recovery_callback_errors_propagate_without_committing_quantities(self):
+        srcs = [dict(i=0, area=4)]
+        bank = native.MaskBank({0: [mask_item(np.ones((2, 2), np.uint8))]})
+        self.addCleanup(bank.close)
+        remaining = [5]
+        def progress(*_counts):
+            raise MemoryError('user progress failure')
+        with (patch.object(native, '_available_memory', return_value=120 * 1024**2),
+              contextlib.redirect_stderr(io.StringIO()),
+              self.assertRaisesRegex(MemoryError, 'user progress failure')):
+            run_native(srcs, bank, remaining, 8, 7, 0, 0, 1, 42, progress=progress)
+        self.assertEqual(remaining, [5])
+        self.assertFalse(hasattr(bank, '_native_calls'))
+
+    def test_recovery_during_a_sheet_is_bounded_when_native_allocation_keeps_failing(self):
+        srcs = [dict(i=0, area=4)]
+        bank = native.MaskBank({0: [mask_item(np.ones((2, 2), np.uint8))]})
+        self.addCleanup(bank.close)
+        clock, started = [0.], []
+        def fallback(*args):
+            started.append(True)
+            clock[0] += 2.
+            return python_pack(*args)
+        with (patch.object(native, '_available_memory', return_value=2 * 1024**3),
+              patch('time.monotonic', side_effect=lambda: clock[0]),
+              patch.object(native._NativeBank, '_pack', side_effect=native.NativeResourceError('allocation')) as failed,
+              contextlib.redirect_stderr(io.StringIO())):
+            remaining = [5]
+            result = native.dispatch(fallback, srcs, bank, remaining, 8, 7, 0, 0, 1, 42)
+        self.assertEqual(len(result), 5)
+        self.assertEqual(remaining, [0])
+        self.assertEqual(failed.call_count, 3)
+        self.assertEqual(len(started), 2)
+        self.assertEqual(native.core_status(bank)['python_calls'], 1)
+        self.assertFalse(hasattr(bank, '_native_failure'))
+
     def compare(self, srcs, bank, quantities, width=83, height=67, gap=0, margin=0,
                 resolution=1, seed=0, mode='top', order='small', lookahead=1, threads='1', initial_occupancy=None):
         baseline_remaining, actual_remaining = list(quantities), list(quantities)
@@ -343,6 +511,22 @@ class NativeDifferentialTests(unittest.TestCase):
             self.assertLess(native.core_status(bank)['bank_bytes'] - first_memory, 4096)
         finally:
             bank.close()
+
+    def test_input_order_preserves_sparse_source_mapping_and_shared_bank(self):
+        sources = {i: dict(i=i, area=(4 - i) * 10) for i in (0, 1, 3)}
+        with native.MaskBank({i: [mask_item([[1, 1], [1, 1]])] for i in sources}) as bank:
+            context = None
+            for order in ((3, 1, 0), (1, 0, 3), (0, 3, 1)):
+                srcs = [sources[i] for i in order]
+                result = self.compare(srcs, bank, [2, 2, 99, 2], width=6, height=4,
+                                      order='input', lookahead=1, seed=123)
+                self.assertEqual(result[0]['i'], order[0])
+                remaining = [2, 2, 99, 2]
+                run_native(srcs, bank, remaining, 6, 4, 0, 0, 1, 123, 'top', 'input', 1)
+                self.assertEqual(remaining[2], 99)
+                if context is not None:
+                    self.assertIs(bank._native_context, context)
+                context = bank._native_context
 
     def test_frame_edge_limits_nonintegral_grid_and_full_board_fit(self):
         srcs = [dict(i=0, area=217.21, frame=object())]

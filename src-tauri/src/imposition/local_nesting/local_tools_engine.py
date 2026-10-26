@@ -46,6 +46,22 @@ class Progress:
             file=sys.stderr, flush=True)
 
 
+def _search_detail(detail, bank):
+    """Show the executing core, including temporary memory-pressure recovery."""
+    status = core_status(bank)
+    backend = status.get("current_backend")
+    if backend is None:
+        return detail
+    if backend == "rust":
+        prefix = "已恢复 " if status.get("recovered") else ""
+        label = f"{prefix}Rust · {status.get('threads', 1)} 线程"
+    elif status.get("resource_recovery"):
+        label = "内存暂时不足，Python 临时搜索；恢复后自动切回 Rust"
+    else:
+        label = "Python 兼容搜索"
+    return f"{label} · {detail}"
+
+
 def _qt_id(ident, ordinal):
     return ident if ordinal == 0 else f"{ident}#qt-{ordinal + 1}"
 
@@ -252,7 +268,7 @@ def _solve(request, *, cache_dir=None, progress=None, resolution=.5):
         scoped_quantities = [quantity if allow_base_mixing or source["line_only"] == line_only else 0
                              for source, quantity in zip(srcs, quantities)]
         def replan_progress(detail, done, count):
-            progress.emit("search", detail, done, count, 25 + 65 * done / max(1, count))
+            progress.emit("search", _search_detail(detail, bank), done, count, 25 + 65 * done / max(1, count))
         boards = pack_template_replan(dict(srcs=srcs, bank=bank, quantities=scoped_quantities), args,
                                       scoped, origin=(left, top), objective=objective,
                                       validate=lambda pages: _validate_boards(srcs, pages, width, height, gap, allow_base_mixing),
@@ -274,7 +290,7 @@ def _solve(request, *, cache_dir=None, progress=None, resolution=.5):
 
             def group_progress(detail, done, count):
                 fraction = max(0., min(1., done / max(1, count)))
-                progress.emit("search", label + "：" + detail,
+                progress.emit("search", _search_detail(label + "：" + detail, bank),
                               completed + int(group_total * fraction), total,
                               25 + 65 * (completed + group_total * fraction) / max(1, total))
 
