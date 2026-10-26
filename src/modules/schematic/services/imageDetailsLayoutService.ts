@@ -130,16 +130,20 @@ export function imageDetailsLayout(group: ImageGroup, visualScale = 1) {
   const bodyHeight = Math.max(0, contentHeight - 8 - fieldHeight - finishReserve)
   const accessoryExtra = details?.accessoryImage ? (details.accessoryCode ? 17 : 4) + accessoryTopGap(details.accessoryImage) : 0
   const desiredAccessorySize = details?.accessoryImage ? Math.min(Math.max(1, width - 4), group.height * DETAIL_ACCESSORY_SIZE_RATIO * displayScale) : 0
-  let noteFontSize = Math.min(8, fontSize)
+  const noteOverride = details?.textOverrides?.note
+  const noteText = noteOverride?.text ?? details?.note ?? ''
+  const noteColor = noteOverride?.color ?? '#475569'
+  let noteFontSize = Number.isFinite(noteOverride?.fontSize)
+    ? Math.max(6, Math.min(72, noteOverride!.fontSize!)) : Math.min(8, fontSize)
   let noteLine = noteFontSize * 1.25
-  let noteLines = details?.note?.trim() ? wrapNote(details.note, width, noteFontSize) : []
+  let noteLines = !noteOverride?.hidden && noteText.trim() ? wrapNote(noteText, width, noteFontSize) : []
   const minimumMedia = images.length ? Math.min(bodyHeight * 0.65, images.length * 24)
     : details?.accessoryImage ? Math.min(bodyHeight * 0.55, desiredAccessorySize + accessoryExtra) : 0
   const textRoom = Math.max(1, bodyHeight - minimumMedia - 2)
   while (noteLines.length * noteLine > textRoom && noteFontSize > 0.5) {
     noteFontSize = Math.max(0.5, noteFontSize - 0.25)
     noteLine = noteFontSize * 1.25
-    noteLines = wrapNote(details!.note!, width, noteFontSize)
+    noteLines = wrapNote(noteText, width, noteFontSize)
   }
   // Long unbroken codes also stay intact: shrink the note itself rather than
   // clipping or truncating any characters in the canvas or exported SVG.
@@ -160,7 +164,7 @@ export function imageDetailsLayout(group: ImageGroup, visualScale = 1) {
   const pictureWidth = details?.accessoryImage ? Math.max(0, width - accessoryColumnWidth - mediaGap) : width
   const noteImages = noteImageBoxes(images, pictureX, bodyY, pictureWidth, mediaHeight)
   return { x, y, width, line, fontSize, fields: displayFields, bodyY, imageSize, accessoryHeight, accessoryX,
-    noteX: x, noteWidth: width, noteY, noteLines, noteFontSize, noteLine,
+    noteX: x, noteWidth: width, noteY, noteText, noteColor, noteLines, noteFontSize, noteLine,
     noteImageSize: noteImages[0]?.size ?? 0, noteImageY: noteImages[0]?.y ?? bodyY, noteImages }
 }
 

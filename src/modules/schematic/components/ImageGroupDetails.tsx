@@ -113,7 +113,10 @@ export default function ImageGroupDetails({ group, page, assets, selectedItemIds
 function DetailsPanel({ group, sourceGroupId, selectedAccessoryKey, accessoryVisuals, onSelectAccessory, onChangeAccessory, onEditText, editorSelection, onSelectEditor, onEditDetailText }: { group: ImageGroup; sourceGroupId: string; editorSelection?: EditorSelection | null; onSelectEditor?: (selection: EditorSelection) => void; onEditDetailText?: (draft: DetailTextDraft) => void; selectedAccessoryKey?: string; accessoryVisuals?: ReadonlyMap<string, AccessoryVisual>; onSelectAccessory?: (key: string) => void; onChangeAccessory?: (key: string, patch: Partial<AccessoryVisual>) => void; onEditText?: EditImageGroupText }) {
   const details = group.details
   if (!details) return null
-  const { x, y, width, fields, bodyY, imageSize, accessoryX, noteX, noteWidth, noteY, noteLines, noteLine, noteFontSize, noteImages } = imageDetailsLayout(group)
+  const { x, y, width, fields, bodyY, imageSize, accessoryX, noteX, noteWidth, noteY, noteText, noteColor, noteLines, noteLine, noteFontSize, noteImages } = imageDetailsLayout(group)
+  const noteSelection = detailTextSelection(sourceGroupId, group.itemIds, 'note')
+  const noteSelected = editorSelection?.kind === 'detail' && editorSelection.id === noteSelection.id
+  const editNote = () => onEditDetailText?.({ ...noteSelection, text: noteText, fontSize: details.textOverrides?.note?.fontSize ?? noteFontSize, color: noteColor })
   const accessoryKey = `${group.id}:accessory`
   const bounds = { x: group.x - x, y: group.y - y, width: group.width, height: Math.max(group.height, group.backgroundHeight ?? group.height) }
   const edit = (target: EditableTextTarget, value: string) => {
@@ -148,7 +151,12 @@ function DetailsPanel({ group, sourceGroupId, selectedAccessoryKey, accessoryVis
       </Group>
     })}
     {details.accessoryImage && <AccessoryImage src={details.accessoryImage} x={accessoryX - x} y={bodyY - y} width={imageSize} height={imageSize} code={details.accessoryCode} framed selectionKey={accessoryKey} visual={accessoryVisuals?.get(accessoryKey)} selected={selectedAccessoryKey === accessoryKey} bounds={bounds} onSelect={onSelectAccessory} onChange={onChangeAccessory} onEditText={onEditText} itemIds={group.itemIds}/>}
-    {noteLines.map((value, index) => <Text key={`note-${index}`} x={noteX - x} y={noteY - y + index * noteLine} text={value} width={noteWidth} align="center" height={noteLine} fontSize={noteFontSize} fill="#475569" wrap="none" ellipsis={false} listening={Boolean(onEditText)} onDblClick={event => { event.cancelBubble = true; edit('note', details.note ?? value) }} onDblTap={event => { event.cancelBubble = true; edit('note', details.note ?? value) }}/>) }
+    {noteLines.length > 0 && <Group id={noteSelection.id} x={noteX - x} y={noteY - y} listening={Boolean(onSelectEditor || onEditDetailText)}
+      onClick={event => { event.cancelBubble = true; onSelectEditor?.(noteSelection) }} onTap={event => { event.cancelBubble = true; onSelectEditor?.(noteSelection) }}
+      onDblClick={event => { event.cancelBubble = true; editNote() }} onDblTap={event => { event.cancelBubble = true; editNote() }}>
+      {noteSelected && <Rect x={-2} y={-1} width={noteWidth + 4} height={noteLines.length * noteLine + 2} stroke="#2563eb" strokeWidth={.8} dash={[3, 2]} listening={false}/>}
+      {noteLines.map((value, index) => <Text name="image-detail-note" key={`note-${index}`} y={index * noteLine} text={value} width={noteWidth} align="center" height={noteLine} fontSize={noteFontSize} fill={noteColor} wrap="none" ellipsis={false}/>)}
+    </Group>}
     {noteImages.map((image, index) => {
       const noteKey = index === 0 ? `${group.id}:note` : `${group.id}:note:${index}`
       return <AccessoryImage key={noteKey} src={image.src} x={image.x - x} y={image.y - y} width={image.size} height={image.size} caption={image.name} captionHeight={image.captionHeight} captionFontSize={image.captionFontSize} selectionKey={noteKey} visual={accessoryVisuals?.get(noteKey)} selected={selectedAccessoryKey === noteKey} bounds={bounds} onSelect={onSelectAccessory} onChange={onChangeAccessory} itemIds={group.itemIds}/>
