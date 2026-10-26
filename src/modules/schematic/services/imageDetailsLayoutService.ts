@@ -63,14 +63,21 @@ export function imageDetailsLayout(group: ImageGroup, visualScale = 1) {
   const displayScale = Number.isFinite(visualScale) && visualScale > 0 ? visualScale : 1
   const details = group.details
   const images = getNoteImages(details ?? {})
-  const fields: { key: string; text: string; fontSize?: number }[] = []
+  const fields: { key: string; text: string; fontSize?: number; color?: string; editKey?: string }[] = []
   if (details) {
     if (details.heading) fields.push({ key: 'heading', text: details.heading })
     const size = details.size?.trim()
-    if (details.sizes?.length) details.sizes.forEach((value, index) => fields.push({ key: `size-${index}`, text: `Size: ${value.label}` }))
-    else if (size) fields.push({ key: 'size', text: `Size: ${size}` })
-    fields.push({ key: 'qt', text: quantityLabel(details.qt) })
+    if (details.sizes?.length) details.sizes.forEach((value, index) => fields.push({ key: `size-${index}`, editKey: `size:${value.itemId}`, text: `Size: ${value.label}` }))
+    else if (size) fields.push({ key: 'size', editKey: 'size', text: `Size: ${size}` })
+    fields.push({ key: 'qt', editKey: 'qt', text: quantityLabel(details.qt) })
     if (details.fields) fields.push(...details.fields)
+    const edited = fields.flatMap(field => {
+      const override = field.editKey ? details.textOverrides?.[field.editKey] : undefined
+      if (override?.hidden) return []
+      return [{ ...field, text: override?.text ?? field.text, color: override?.color,
+        fontSize: Number.isFinite(override?.fontSize) ? Math.max(6, Math.min(72, override!.fontSize!)) : field.fontSize }]
+    })
+    fields.splice(0, fields.length, ...edited)
   }
   // The details panel belongs to the group's right edge. Older/reflowed
   // groups may retain a stale detailsX or an oversized detailWidth, so clamp
@@ -98,17 +105,29 @@ export function imageDetailsLayout(group: ImageGroup, visualScale = 1) {
   }
   const maximumLine = Math.max(1, Math.min(DETAIL_LINE_HEIGHT, (contentHeight - 8) / Math.max(6, fields.length + 2)))
   const maximumFont = Math.max(1, Math.min(DETAIL_LABEL_FONT_SIZE, maximumLine - 1))
-  const widestLabel = Math.max(0, ...fields.filter(field => field.key.startsWith('size') || field.key === 'qt').map(field => detailLabelWidth(field.text, maximumFont)))
+  const widestLabel = Math.max(0, ...fields.filter(field => field.fontSize === undefined && (field.key.startsWith('size') || field.key === 'qt')).map(field => detailLabelWidth(field.text, maximumFont)))
   // Size and QT share a font size, stay complete on one line, and retain their
   // stable edit keys even in a narrow column or with many decimal places.
   const fontSize = Math.max(0.5, maximumFont * Math.min(1, Math.max(0, width - 3.01) / Math.max(1, widestLabel - 3)))
   const line = Math.min(maximumLine, fontSize + Math.max(1, DETAIL_LINE_HEIGHT - DETAIL_LABEL_FONT_SIZE))
-  const bodyY = y + fields.length * line
+  let fieldHeight = 0
+  const displayFields = fields.map(field => {
+    const requestedFont = field.fontSize ?? fontSize
+    const lines = field.text.replace(/\r\n/g, '\n').split('\n')
+    const widest = Math.max(1, ...lines.map(value => detailLabelWidth(value, requestedFont) - 3))
+    const effectiveFont = Math.max(.5, requestedFont * Math.min(1, Math.max(1, width - 3) / widest))
+    const lineHeight = field.fontSize === undefined ? line : Math.max(line, effectiveFont * 1.2)
+    const height = lineHeight * lines.length
+    const result = { ...field, fontSize: effectiveFont, color: field.color ?? (field.editKey ? '#000' : '#475569'), y: fieldHeight, height, lineHeight, lines }
+    fieldHeight += height
+    return result
+  })
+  const bodyY = y + fieldHeight
   // Finish/process is painted along the bottom edge of the group. Reserve a
   // line for it so wrapped notes always remain above that label.
   const hasFinish = Boolean(group.details?.finish?.trim()) || Boolean(group.detailGroups?.some(panel => panel.details.finish?.trim()))
   const finishReserve = hasFinish ? 18 : 0
-  const bodyHeight = Math.max(0, contentHeight - 8 - fields.length * line - finishReserve)
+  const bodyHeight = Math.max(0, contentHeight - 8 - fieldHeight - finishReserve)
   const accessoryExtra = details?.accessoryImage ? (details.accessoryCode ? 17 : 4) + accessoryTopGap(details.accessoryImage) : 0
   const desiredAccessorySize = details?.accessoryImage ? Math.min(Math.max(1, width - 4), group.height * DETAIL_ACCESSORY_SIZE_RATIO * displayScale) : 0
   let noteFontSize = Math.min(8, fontSize)
@@ -140,7 +159,7 @@ export function imageDetailsLayout(group: ImageGroup, visualScale = 1) {
   const pictureX = details?.accessoryImage ? x + accessoryColumnWidth + mediaGap : x
   const pictureWidth = details?.accessoryImage ? Math.max(0, width - accessoryColumnWidth - mediaGap) : width
   const noteImages = noteImageBoxes(images, pictureX, bodyY, pictureWidth, mediaHeight)
-  return { x, y, width, line, fontSize, fields, bodyY, imageSize, accessoryHeight, accessoryX,
+  return { x, y, width, line, fontSize, fields: displayFields, bodyY, imageSize, accessoryHeight, accessoryX,
     noteX: x, noteWidth: width, noteY, noteLines, noteFontSize, noteLine,
     noteImageSize: noteImages[0]?.size ?? 0, noteImageY: noteImages[0]?.y ?? bodyY, noteImages }
 }

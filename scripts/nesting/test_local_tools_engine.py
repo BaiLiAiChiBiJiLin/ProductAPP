@@ -132,6 +132,58 @@ class LocalToolsTests(unittest.TestCase):
         import test_combined_nesting as checks
         checks.CombinedNestingTests().verify(req, result)
 
+    def test_one_off_tail_does_not_destroy_repeated_bulk_layout(self):
+        from collections import Counter
+        req = json.loads((Path(__file__).parent / 'fixtures/repeated-mixed-contours.json').read_text())
+        req['allowBaseMixing'] = True
+        req['items'].append(item('one-off-tail', 1, 12, 8))
+        with patch.object(engine, 'make_masks', wraps=engine.make_masks) as build:
+            result = self.solve(req)
+        self.assertEqual(build.call_count, len(req['items']))
+        self.assertEqual(result['sheetsUsed'], 5)
+        pages = {}
+        for p in result['placements']:
+            pages.setdefault(p['sheetIndex'], []).append(
+                (p['id'].split('#qt-')[0], p['xMm'], p['yMm'], p['rotationDeg']))
+        self.assertLessEqual(len({tuple(sorted(page)) for page in pages.values()}), 2)
+        self.assertEqual(Counter(p['id'].split('#qt-')[0] for p in result['placements']),
+                         {i['id']: i['quantity'] for i in req['items']})
+        import test_combined_nesting as checks
+        checks.CombinedNestingTests().verify(req, result)
+
+    def test_real_unequal_lots_and_one_offs_reduce_whole_job_templates(self):
+        from collections import Counter
+        req = json.loads((Path(__file__).parent / 'fixtures/repeated-lots-with-tails.json').read_text())
+        with patch.object(engine, 'make_masks', wraps=engine.make_masks) as build:
+            result = self.solve(req)
+        self.assertEqual(build.call_count, len(req['items']))
+        self.assertLessEqual(result['sheetsUsed'], 91)  # Previous complete plan: 95 / 19.
+        pages = {}
+        for p in result['placements']:
+            pages.setdefault(p['sheetIndex'], []).append(
+                (p['id'].split('#qt-')[0], p['xMm'], p['yMm'], p['rotationDeg']))
+        self.assertLessEqual(len({tuple(sorted(page)) for page in pages.values()}), 11)
+        self.assertEqual(Counter(p['id'].split('#qt-')[0] for p in result['placements']),
+                         {i['id']: i['quantity'] for i in req['items']})
+        self.assertFalse(result['unplaced'])
+        self.assertFalse(result['excludedItems'])
+        import test_combined_nesting as checks
+        checks.CombinedNestingTests().verify(req, result)
+
+    def test_invalid_lot_tail_preserves_the_original_complete_plan(self):
+        req = json.loads((Path(__file__).parent / 'fixtures/repeated-mixed-contours.json').read_text())
+        req['items'].append(item('tail', 1, 12, 8))
+        def overlapping(job, args, boards, remaining, progress):
+            boards = list(boards)
+            boards[0] = boards[0] + [dict(boards[0][0], i=8)]
+            return boards
+        with patch('nest_repeat_lots._insert_tails', side_effect=overlapping):
+            result = self.solve(req)
+        self.assertEqual(len(result['placements']), 241)
+        self.assertEqual(result['sheetsUsed'], 5)
+        import test_combined_nesting as checks
+        checks.CombinedNestingTests().verify(req, result)
+
     def test_dense_frontier_does_not_trade_piece_count_and_area_for_sparse_repeats(self):
         from nest_uniform import _dense_frontier
         sources = [{"area": 2}, {"area": 4}]

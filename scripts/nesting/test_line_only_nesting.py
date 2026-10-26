@@ -46,7 +46,8 @@ class LineOnlyNestingTests(unittest.TestCase):
                 self.assertLessEqual(polygon.intersection(other).area, 1e-7)
                 self.assertGreaterEqual(polygon.distance(other), req["spacingMm"] - 1e-6)
             sheets[p["sheetIndex"]].append(polygon)
-        self.assertTrue(all(len(kinds) == 1 for kinds in classes.values()), classes)
+        if not req.get("allowBaseMixing", False):
+            self.assertTrue(all(len(kinds) == 1 for kinds in classes.values()), classes)
         self.assertEqual(set(sheets), set(range(result["sheetsUsed"])))
         if os.environ.get("PRINTFLOW_NESTING_CORE") == "rust":
             self.assertEqual(result["searchCore"]["backend"], "rust", result.get("warnings"))
@@ -80,6 +81,51 @@ class LineOnlyNestingTests(unittest.TestCase):
                 result = self.solve(req)
                 self.verify(req, result)
                 self.assertEqual(result["sheetsUsed"], 1)
+
+    def test_base_mixing_switch_changes_real_layout_for_all_strategies(self):
+        sources = [dict(item("stroke", 4), lineOnly=True), item("photo", 4)]
+        for objective in ("least-material", "least-cutting", "combined"):
+            with self.subTest(objective=objective):
+                req = request(sources, objective)
+                req["allowBaseMixing"] = False
+                separate = self.solve(req)
+                self.verify(req, separate)
+                self.assertEqual(separate["sheetsUsed"], 2)
+                req["allowBaseMixing"] = True
+                before = copy.deepcopy(req)
+                with patch.object(engine, "make_masks", wraps=engine.make_masks) as masks:
+                    mixed = self.solve(req)
+                self.verify(req, mixed)
+                self.assertEqual(mixed["sheetsUsed"], 1)
+                self.assertEqual(masks.call_count, 1)
+                self.assertEqual(req, before)
+
+    def test_mixed_cross_class_and_existing_mixed_templates_can_replan(self):
+        for mixed_template in (False, True):
+            with self.subTest(mixed_template=mixed_template):
+                req = job()
+                req["items"][2]["lineOnly"] = True
+                if mixed_template:
+                    req["items"][1]["lineOnly"] = True
+                req["allowBaseMixing"] = True
+                before = copy.deepcopy(req)
+                result = self.solve(req)
+                self.verify(req, result)
+                self.assertFalse(result["unplaced"])
+                self.assertEqual(req, before)
+                anchor = req["templateRepack"]["targetPlacement"]
+                self.assertTrue(any(p["id"].split("#qt-")[0] == anchor["sourceId"]
+                                    and abs(p["xMm"] - anchor["xMm"]) < 1e-6
+                                    and abs(p["yMm"] - anchor["yMm"]) < 1e-6
+                                    for p in result["placements"]))
+
+    def test_mixing_still_rejects_insufficient_spacing(self):
+        shape = box(0, 0, 10, 8)
+        sources = [dict(id="stroke", poly=shape, frame=shape, line_only=True),
+                   dict(id="photo", poly=shape, frame=shape, line_only=False)]
+        adjacent = [[dict(i=0, angle=0, tx=0, ty=0), dict(i=1, angle=0, tx=10, ty=0)]]
+        with self.assertRaisesRegex(ValueError, "间距不足"):
+            engine._validate_boards(sources, adjacent, 80, 60, 3, allow_base_mixing=True)
 
     def test_large_qt_and_repeated_templates_keep_unique_contour_storage(self):
         sources = [dict(item("stroke", 1201, 20.3, 10.7), lineOnly=True),

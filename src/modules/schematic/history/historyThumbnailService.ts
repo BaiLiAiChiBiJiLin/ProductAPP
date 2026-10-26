@@ -1,4 +1,5 @@
-import { invoke, isTauri } from '@tauri-apps/api/core'
+import { isTauri } from '@tauri-apps/api/core'
+import { invoke } from '../../../services/backend'
 
 export type BatchThumbnail = { assetId: string; name: string; url: string }
 

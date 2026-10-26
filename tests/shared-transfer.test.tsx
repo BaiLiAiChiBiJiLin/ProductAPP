@@ -128,7 +128,7 @@ test('network failure keeps local batches available for opening', async () => {
   render(<BatchHistoryPanel {...historyProps} onOpen={open}/>)
   await screen.findByRole('button', { name: '打开批次 本地批次' })
   fireEvent.click(screen.getByRole('button', { name: /^刷\s*新$/ }))
-  expect(await screen.findByText(/共享数据接收失败.*本地历史记录仍可使用/)).toBeTruthy()
+  expect(await screen.findByText(/刷新失败/)).toBeTruthy()
   fireEvent.click(await screen.findByRole('button', { name: '打开批次 本地批次' }))
   expect(open).toHaveBeenCalledTimes(1)
   expect(api.list).toHaveBeenCalledTimes(2)

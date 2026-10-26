@@ -291,6 +291,7 @@ fn real_job_artwork_does_not_overlap() {
         objective: objective.clone(),
         irregular_algorithm: "local-tools".into(),
         template_repack: None,
+        allow_base_mixing: false,
         thread_count: None,
         items,
     };

@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Button, Checkbox, InputNumber, Modal, Progress, Select, Tag } from 'antd'
+import { Alert, Button, Checkbox, Modal, Progress, Select, Tag } from 'antd'
 import { Download } from 'lucide-react'
 import Loading from '../../components/Loading'
 import ImpositionThumbnail from './ImpositionThumbnail'
 import { loadImpositionImage } from './impositionRecords'
 import type { PackedItem } from './packingAlgorithms'
-import { applySourceAssignmentsToSameName, buildImpositionTemplatePreview, buildSourceLayerPreview, createImpositionExportModel, enumerateImpositionPdfExports, parseImpositionSvgSource, renderImpositionSvgExport, impositionImageChannels } from './impositionSvgExport'
+import { applySourceAssignmentsToSameName, buildImpositionTemplatePreview, buildSourceLayerPreview, createImpositionExportModel, enumerateImpositionPdfExports, parseImpositionSvgSource, renderImpositionSvgExport, impositionImageChannels, canAssignSvgLayer } from './impositionSvgExport'
 import type { ExportSvgSource } from './impositionSvgExport'
 import { chooseImpositionPdfDirectory, exportImpositionPdfs, type ImpositionPdfExportProgress } from './impositionPdfExportService'
 import './impositionPdfExport.css'
-import { cmykChoiceKey, createCmykExportPlan, type CmykChoices, type CmykSettings, type CmykExportPlan } from './impositionCmykExport'
+import { createCmykExportPlan, type CmykSettings, type CmykExportPlan } from './impositionCmykExport'
 import { checkExportTemplate, type ExportGeometryCheck } from './impositionExportDiagnostics'
 
 type ExportModel = ReturnType<typeof createImpositionExportModel>
@@ -127,7 +127,6 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
     catch { /* Unavailable preference storage must not prevent exporting. */ }
   }, [exportFormats])
   const [cmykSettings, setCmykSettings] = useState<CmykSettings>({ dpi: 400, autoAlign: false })
-  const [cmykChoices, setCmykChoices] = useState<CmykChoices>({})
   const [runtimeIssues, setRuntimeIssues] = useState<Record<string, string>>({})
   const [sourceErrors, setSourceErrors] = useState<Record<string, string>>({})
   const [geometryChecks, setGeometryChecks] = useState<{ templates: ExportModel['templates']; issues: Record<string, string[]> }>()
@@ -229,6 +228,8 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
     if (!template || !source) return
     setAppliedMessage('')
     const value = type === OMIT ? null : type
+    const layer = source.layers.find(candidate => candidate.id === id)
+    if (!layer || !canAssignSvgLayer(layer, value)) return
     setModel(current => current ? { ...current, templateAssignments: { ...current.templateAssignments, [template.id]: { ...current.templateAssignments?.[template.id], [source.sourceId]: { ...assignmentsFor(current, template.id, source.sourceId), [id]: value } } } } : current)
   }
   function applyToSameName() {
@@ -241,11 +242,11 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
     const plans = new Map<string, CmykExportPlan | undefined>()
     const issues: Record<string, string> = {}
     if (includeCmyk && model) for (const board of model.templates) {
-      try { plans.set(board.id, createCmykExportPlan(model, board.id, cmykSettings, cmykChoices)) }
+      try { plans.set(board.id, createCmykExportPlan(model, board.id, cmykSettings)) }
       catch (reason) { issues[board.id] = reason instanceof Error ? reason.message : String(reason) }
     }
     return { plans, issues, issue: templateIds.map(id => issues[id]).filter(Boolean).join('；') }
-  }, [includeCmyk, model, templateIds, cmykSettings, cmykChoices])
+  }, [includeCmyk, model, templateIds, cmykSettings])
   const boardIssues = useMemo(() => Object.fromEntries((model?.templates ?? []).map(board => {
     const issues = [...(geometryChecks?.templates === model?.templates ? geometryChecks?.issues[board.id] ?? [] : [])]
     for (const sourceId of board.sourceIds) {
@@ -271,11 +272,6 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
   const exportedPdfCount = completedFiles.filter(path => /\.pdf$/iu.test(path)).length - exportedCmykCount
   const completedSummary = [[exportedPdfCount, 'PDF'], [exportedDxfCount, 'DXF'], [exportedCmykCount, 'CMYK PDF']].filter(([count]) => count).map(([count, type]) => `${count} 个 ${type}`).join('、')
   const currentCmykPlan = template ? cmykPlan.plans.get(template.id) : undefined
-  const currentPlacement = template?.placements.find(p => (p.image.sourceImageId ?? p.image.id.replace(/#qt-\d+$/u, '')) === source?.sourceId)
-  const currentCmykSource = currentPlacement && currentCmykPlan?.sources.find(item => item.key === JSON.stringify([source?.sourceId, currentPlacement.width, currentPlacement.height]))
-  const currentChoiceKey = template && source ? cmykChoiceKey(template.id, source.sourceId) : ''
-  const currentChoice = cmykChoices[currentChoiceKey] ?? {}
-  const changeChoice = (change: Partial<typeof currentChoice>) => setCmykChoices(current => ({ ...current, [currentChoiceKey]: { ...current[currentChoiceKey], ...change } }))
   async function exportPdf() {
     if (operationLock.current || !selectedModel || !outputCount || exportPlan.issue || cmykPlan.issue || pendingCount > 0 || geometryChecking || selectedGeometryIssue || selectedSourceIssue) return
     operationLock.current = true
@@ -288,7 +284,7 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
       const entries = enumerateImpositionPdfExports(selectedModel, { date: exportedAt, templateIds })
       const result = await exportImpositionPdfs(directory, entries.map(entry => ({ ...entry,
         exportPdf: includePdf,
-        cmyk: includeCmyk ? createCmykExportPlan(selectedModel, entry.templateId, cmykSettings, cmykChoices) : undefined,
+        cmyk: includeCmyk ? createCmykExportPlan(selectedModel, entry.templateId, cmykSettings) : undefined,
         pages: entry.pages.map(page => ({ label: page.groupName, exportDxf: includeDxf && page.groupId === 'paths', renderSvg: () => renderImpositionSvgExport(selectedModel, page) })) })), setProgress)
       setCompletedFiles(result.completedFiles)
       setCleanupWarnings(result.cleanupWarnings)
@@ -328,12 +324,9 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
             <div className="imposition-export-source-caption"><span>{layerIds.length ? `选中 ${layerIds.length} 个图层` : '勾选图层可单独预览'}</span><span>同一 SVG 在本版式中的所有副本同步修改</span>{layerPreview.error && <small role="alert">图层预览失败：{layerPreview.error}</small>}</div>
           </div>
             <div className="imposition-export-layer-actions"><Checkbox aria-label="选择全部图层" checked={layerIds.length === source.layers.length} indeterminate={!!layerIds.length && layerIds.length !== source.layers.length} disabled={busy} onChange={event => setLayerIds(event.target.checked ? source.layers.map(layer => layer.id) : [])}>全选</Checkbox></div>
-            {includeCmyk && currentCmykSource?.window && <div className="imposition-export-cmyk-roles">
-              <div className="imposition-export-cmyk-offset"><span>彩窗偏移 mm</span>{(['windowX', 'windowY'] as const).map((key, i) => <InputNumber key={key} aria-label={`彩窗偏移 ${i ? 'Y' : 'X'}`} addonBefore={i ? 'Y' : 'X'} disabled={busy} value={currentChoice[key] ?? 0} step={0.05} onChange={value => changeChoice({ [key]: value ?? 0 })}/>)}</div>
-            </div>}
-            <div className="imposition-export-layer-list">{source.layers.map(layer => {
+            <div className="imposition-export-layer-list">{source.layers.toReversed().map(layer => {
               const displayName = layerDisplayName(layer.label)
-              return <div key={layer.id} className={`imposition-export-layer ${assignments[layer.id] === undefined ? 'unassigned' : ''}`}><Checkbox aria-label={`选择图层 ${displayName}`} checked={layerIds.includes(layer.id)} disabled={busy} onChange={event => setLayerIds(current => event.target.checked ? [...current, layer.id] : current.filter(id => id !== layer.id))}/><div title={displayName}><span>{displayName}</span><small>{layer.tagName} · {CATEGORIES[layer.category]}{sourceImageChannels.has(layer.id) ? ` · 全板图片 ${sourceImageChannels.get(layer.id)}` : ''}</small></div><Select aria-label={`图层 ${displayName} 类型`} placeholder="待确认" value={assignments[layer.id] === null ? OMIT : assignments[layer.id]} disabled={busy} options={TYPE_OPTIONS} onChange={value => assignLayer(layer.id, value)}/></div>
+              return <div key={layer.id} className={`imposition-export-layer ${assignments[layer.id] === undefined ? 'unassigned' : ''}`}><Checkbox aria-label={`选择图层 ${displayName}`} checked={layerIds.includes(layer.id)} disabled={busy} onChange={event => setLayerIds(current => event.target.checked ? [...current, layer.id] : current.filter(id => id !== layer.id))}/><div title={displayName}><span>{displayName}</span><small>{layer.tagName} · {CATEGORIES[layer.category]}{sourceImageChannels.has(layer.id) ? ` · 全板图片 ${sourceImageChannels.get(layer.id)}` : ''}</small></div><Select aria-label={`图层 ${displayName} 类型`} placeholder="待确认" value={assignments[layer.id] === null ? OMIT : assignments[layer.id]} disabled={busy} options={TYPE_OPTIONS.filter(option => canAssignSvgLayer(layer, option.value))} onChange={value => assignLayer(layer.id, value)}/></div>
             })}</div>
             <Button type="primary" disabled={busy} onClick={applyToSameName}>应用到同名svg</Button>
             {appliedMessage && <small className="imposition-export-apply-message" role="status">{appliedMessage}</small>}

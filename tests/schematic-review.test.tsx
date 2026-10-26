@@ -1,3 +1,4 @@
+vi.mock('../src/services/backend', async () => { const core = await import('@tauri-apps/api/core'); return { invoke: core.invoke, storageMode: async () => ({ shared: false }) } })
 import type { ComponentProps } from 'react'
 import { ConfigProvider } from 'antd'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -17,6 +18,7 @@ vi.mock('../src/modules/schematic/services/exportService', () => ({ exportPdf: m
 vi.mock('../src/modules/schematic/services/productConfigService', () => ({ loadProductConfigs: async () => [], refreshProductConfigs: async () => {}, PRODUCT_CONFIGS_UPDATED_EVENT: 'configs' }))
 vi.mock('../src/modules/schematic/services/finishService', () => ({ loadFinishNames: async () => ({}), invalidateFinishNames: () => {} }))
 vi.mock('../src/modules/update/UpdateButton', () => ({ default: () => null }))
+vi.mock('../src/modules/feature-tour', () => ({ FeatureTour: () => null, listFeatureTours: () => [] }))
 vi.mock('../src/modules/schematic/components/UploadPanel', () => ({ default: () => null }))
 vi.mock('../src/modules/schematic/services/paginationService', async importOriginal => ({ ...await importOriginal<object>(), autoArrangePages: mocks.autoArrange }))
 vi.mock('../src/modules/schematic/ArrangePage', () => ({ default: (props: ComponentProps<typeof ArrangePage>) => {
@@ -54,6 +56,7 @@ const latestArrange = () => mocks.arrange.mock.calls.at(-1)![0] as ComponentProp
 const layoutPreferenceKey = 'printflow-schematic-layout-bounds'
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.setItem('printflow-account-name', '审核测试用户')
   localStorage.removeItem(layoutPreferenceKey)
   mocks.autoArrange.mockReset().mockImplementation(pages => pages)
   mocks.save.mockResolvedValue('C:\\new-proof.pdf')
@@ -65,7 +68,7 @@ beforeEach(() => {
   const getStyle = window.getComputedStyle.bind(window)
   vi.spyOn(window, 'getComputedStyle').mockImplementation(element => getStyle(element))
 })
-afterEach(() => { cleanup(); vi.restoreAllMocks(); localStorage.removeItem(layoutPreferenceKey) })
+afterEach(() => { cleanup(); vi.restoreAllMocks(); localStorage.removeItem(layoutPreferenceKey); localStorage.removeItem('printflow-account-name') })
 
 function mockPreferenceBatch() {
   const previous = mocks.invoke.getMockImplementation()!
@@ -440,6 +443,7 @@ it('App edit routing restores the record again after returning to the list', asy
   const record = fixture()
   mocks.invoke.mockImplementation(async command => command === 'list_schematic_reviews' ? { records: [summary(record)], total: 1, page: 1, pageSize: 20 } : command === 'load_schematic_review' ? structuredClone(record) : command === 'list_batches' ? { records: [], total: 0, page: 1, pageSize: 12 } : undefined)
   render(<App/> )
+  await waitFor(() => expect(document.querySelector('.module-view.is-active')).not.toBeNull(), { timeout: 5000 })
   fireEvent.click(screen.getByRole('button', { name: '示意图审核' }))
   fireEvent.click(await screen.findByRole('button', { name: /^编\s*辑$/ }))
   await screen.findByText('恢复的排列页')
@@ -501,6 +505,7 @@ it('App stays in review after transfer and refreshes the pending table when expl
     if (command === 'list_pending_impositions') return { records: transferred ? [job] : [], total: transferred ? 1 : 0, page: 1, pageSize: 20 }
   })
   render(<ConfigProvider theme={{ token: { motion: false } }}><App/></ConfigProvider>)
+  await waitFor(() => expect(document.querySelector('.module-view.is-active')).not.toBeNull(), { timeout: 5000 })
   fireEvent.click(screen.getByRole('button', { name: '生产拼版' }))
   await screen.findByText('共 0 条待拼版记录')
   fireEvent.click(screen.getByRole('button', { name: '示意图审核' }))
@@ -605,6 +610,7 @@ it('returns a pending order to review and allows paid or unpaid imposition again
     if (command === 'submit_schematic_review_to_imposition') { pending = true; returned = false; paymentStatus = args.paymentStatus; return job() }
   })
   render(<ConfigProvider theme={{ token: { motion: false } }}><App/></ConfigProvider>)
+  await waitFor(() => expect(document.querySelector('.module-view.is-active')).not.toBeNull(), { timeout: 5000 })
   fireEvent.click(screen.getByRole('button', { name: '示意图审核' }))
   await screen.findByRole('button', { name: '查看拼版' })
   fireEvent.click(screen.getByRole('button', { name: '生产拼版' }))

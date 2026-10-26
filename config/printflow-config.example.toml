@@ -1,0 +1,26 @@
+# Copy to printflow-data/config.toml. Credentials stay on this computer.
+# After editing this file, restart PrintFlow. Missing configuration uses local mode.
+mode = "local" # Change to "shared" after filling the current environment below.
+
+[development]
+storage_root = '\\192.168.0.66\电商文件\printFlow\dev\SVGhistory'
+[development.database]
+host = "rm-bp1x19f054x37lm336o.mysql.rds.aliyuncs.com"
+port = 3306
+name = "print_flow_dev"
+username = ""
+password = ""
+# If RDS uses a private CA, download its CA certificate and supply the local path.
+# ca_certificate = 'C:\PrintFlow\rds-ca.pem'
+
+[production]
+storage_root = '\\192.168.0.66\电商文件\printFlow\production\SVGhistory'
+[production.database]
+host = "rm-bp1x19f054x37lm336o.mysql.rds.aliyuncs.com"
+port = 3306
+name = "print_flow"
+username = ""
+password = ""
+# Private/VPC endpoint (only use when this PC has a route to the RDS VPC):
+# host = "rm-bp1x19f054x37lm33.mysql.rds.aliyuncs.com"
+# ca_certificate = 'C:\PrintFlow\rds-ca.pem'

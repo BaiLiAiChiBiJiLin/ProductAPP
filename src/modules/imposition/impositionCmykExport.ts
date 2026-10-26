@@ -2,8 +2,6 @@ import { filteredRoot, orderedImageLayers, type ImpositionExportModel } from './
 import { boardHoleLayout } from './impositionHoles'
 
 export type CmykSettings = { dpi: 300 | 400; autoAlign: boolean }
-export type CmykSourceChoice = { windowX?: number; windowY?: number }
-export type CmykChoices = Record<string, CmykSourceChoice>
 export type CmykSource = {
   key: string; label: string; widthMm: number; heightMm: number
   front: () => string; back?: () => string; window?: () => string
@@ -15,14 +13,13 @@ export type CmykExportPlan = {
   placements: { sourceKey: string; x: number; y: number; width: number; height: number; rotation: number }[]
   holes: { x: number; y: number; radius: number }[]
 }
-export const cmykChoiceKey = (templateId: string, sourceId: string) => `${templateId}:${sourceId}`
 export function cmykImageLayers(model: ImpositionExportModel, templateId: string, sourceId: string) {
   const assignments = { ...model.assignments[sourceId], ...model.templateAssignments?.[templateId]?.[sourceId] }
   return orderedImageLayers(model.sources[sourceId], assignments)
 }
 
 /** Keep physical frames, clipping and transforms; never render QT copies here. */
-export function createCmykExportPlan(model: ImpositionExportModel, templateId: string, settings: CmykSettings, choices: CmykChoices): CmykExportPlan | undefined {
+export function createCmykExportPlan(model: ImpositionExportModel, templateId: string, settings: CmykSettings): CmykExportPlan | undefined {
   const template = model.templates.find(t => t.id === templateId)
   if (!template) throw new Error('CMYK 版式已不存在')
   const sources = new Map<string, CmykSource>()
@@ -32,7 +29,6 @@ export function createCmykExportPlan(model: ImpositionExportModel, templateId: s
     const source = model.sources[id]
     const images = cmykImageLayers(model, templateId, id)
     if (!images.length) continue // Line-only layouts still export ordinary PDF/DXF.
-    const choice = choices[cmykChoiceKey(templateId, id)] ?? {}
     const assigned = { ...model.assignments[id], ...model.templateAssignments?.[templateId]?.[id] }
     const frontIds = images.filter(layer => assigned[layer.id] === 'image-front').map(layer => layer.id)
     const backIds = images.filter(layer => assigned[layer.id] === 'image-back').map(layer => layer.id)
@@ -43,7 +39,7 @@ export function createCmykExportPlan(model: ImpositionExportModel, templateId: s
       const render = (ids: string[]) => () => new XMLSerializer().serializeToString(filteredRoot(source, new Set(ids)))
       sources.set(key, { key, label: source.fileName, widthMm: item.width, heightMm: item.height,
         front: render(frontIds), ...(backIds.length ? { back: render(backIds) } : {}), ...(windowIds.length ? { window: render(windowIds) } : {}),
-        backOffset: { xMm: 0, yMm: 0 }, windowOffset: { xMm: choice.windowX ?? 0, yMm: choice.windowY ?? 0 },
+        backOffset: { xMm: 0, yMm: 0 }, windowOffset: { xMm: 0, yMm: 0 },
       })
     }
     placements.push({ sourceKey: key, x: item.x, y: item.y, width: item.width, height: item.height, rotation: item.rotation ?? 0 })

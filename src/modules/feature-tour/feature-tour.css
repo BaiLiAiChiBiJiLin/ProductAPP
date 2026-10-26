@@ -1,0 +1,52 @@
+.feature-tour { max-width: calc(100vw - 32px); padding-bottom: 0; }
+.feature-tour .ant-modal-content { display: flex; flex-direction: column; height: min(740px, calc(100dvh - 40px)); max-height: calc(100dvh - 40px); padding: 0; overflow: hidden; border-radius: 18px; box-shadow: 0 24px 90px #15284436; }
+.feature-tour .ant-modal-header { flex: none; margin: 0; padding: 22px 58px 12px 24px; }
+.feature-tour .ant-modal-body { flex: 1; min-height: 0; display: flex; padding: 0 24px 20px; }
+.feature-tour .ant-modal-close { top: 13px; right: 14px; width: 40px; height: 40px; font-size: 27px; font-weight: 400; }
+.feature-tour-modal-title { display: flex; align-items: center; gap: 12px; color: #344054; font-size: 14px; }
+.feature-tour-version { border: 1px solid #d6e6ff; border-radius: 6px; padding: 4px 7px; font-size: 12px; font-weight: 500; color: #1677ff; background: #eef5ff; cursor: pointer; }
+.feature-tour-version:focus-visible { outline: 2px solid #1677ff; outline-offset: 2px; }
+.feature-tour-content { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
+.feature-tour-heading { display: flex; flex: none; align-items: flex-start; gap: 16px; min-height: 100px; padding: 12px 0 16px; }
+.feature-tour-count { flex: none; margin-top: 2px; font-size: 25px; line-height: 1.2; font-weight: 700; color: #1677ff; font-variant-numeric: tabular-nums; }
+.feature-tour-count > span { font-size: 12px; font-weight: 500; color: #98a2b3; }
+.feature-tour-heading h2 { margin: 0 0 7px; font-size: 24px; line-height: 1.35; font-weight: 650; color: #172b4d; }
+.feature-tour-heading p { max-width: 680px; margin: 0; color: #667085; font-size: 14px; line-height: 1.65; }
+.feature-tour-demo { display: flex; flex: 1; align-items: center; justify-content: center; min-height: 0; overflow: hidden; border: 1px solid #e5ebf2; border-radius: 12px; background: #f4f7fb; }
+.feature-tour-demo img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.feature-tour-demo-caption { display: flex; flex: none; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; padding: 8px 0 10px; }
+.feature-tour-shortcuts { display: flex; flex-wrap: wrap; gap: 6px; }
+.feature-tour-shortcuts > span { border: 1px solid #e4e9ef; border-radius: 6px; background: #f8fafc; padding: 3px 8px; font-size: 12px; color: #475467; white-space: nowrap; }
+.feature-tour-demo-caption .ant-btn { color: #667085; font-size: 12px; }
+.feature-tour-footer { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 12px; padding-top: 13px; border-top: 1px solid #edf0f4; }
+.feature-tour-skip.ant-btn { color: #667085; padding-inline: 8px; }
+.feature-tour-actions { display: flex; gap: 8px; }
+.feature-tour-actions .ant-btn { min-width: 100px; height: 38px; }
+.feature-tour-dots { display: flex; align-items: center; gap: 2px; }
+.feature-tour-dots button { display: grid; place-items: center; width: 30px; height: 36px; border: 0; background: transparent; cursor: pointer; border-radius: 6px; }
+.feature-tour-dots button span { width: 7px; height: 7px; border-radius: 9px; background: #c9d2df; transition: width 160ms ease, background-color 160ms ease; }
+.feature-tour-dots button.is-active span { width: 23px; background: #1677ff; }
+.feature-tour-dots button:focus-visible { outline: 2px solid #1677ff; outline-offset: 1px; }
+@media (max-width: 640px) {
+  .feature-tour .ant-modal-header { padding-left: 16px; }
+  .feature-tour .ant-modal-body { padding: 0 16px 16px; }
+  .feature-tour-heading { gap: 12px; min-height: 118px; }
+  .feature-tour-heading h2 { font-size: 19px; }
+  .feature-tour-heading p { font-size: 12px; }
+  .feature-tour-count { font-size: 21px; }
+  .feature-tour-footer { flex-wrap: wrap; gap: 5px 12px; }
+  .feature-tour-actions { width: 100%; justify-content: flex-end; }
+  .feature-tour-demo-caption { gap: 4px; }
+  .feature-tour-shortcuts > span { padding-inline: 5px; font-size: 11px; }
+}
+@media (max-height: 560px) {
+  .feature-tour .ant-modal-header { padding-top: 12px; padding-bottom: 4px; }
+  .feature-tour-heading { min-height: auto; padding-top: 5px; padding-bottom: 8px; }
+  .feature-tour-heading h2 { font-size: 19px; margin-bottom: 2px; }
+  .feature-tour-heading p { font-size: 12px; line-height: 1.4; }
+  .feature-tour-footer { padding-top: 7px; }
+  .feature-tour-demo-caption { min-height: 36px; padding: 4px 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .feature-tour-dots button span { transition: none; }
+}

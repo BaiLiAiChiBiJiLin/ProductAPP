@@ -31,6 +31,34 @@ beforeEach(() => {
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
+test('defers automatic update prompts while the feature tour is visible and ignores a stale check', async () => {
+  vi.useFakeTimers()
+  try {
+    const onDialogOpenChange = vi.fn()
+    let resolveCheck!: (value: { version: string; currentVersion: string }) => void
+    api.checkForUpdate.mockReturnValueOnce(new Promise(resolve => { resolveCheck = resolve }))
+    const view = render(<UpdateButton autoCheck showButton={false} enabled={false} onDialogOpenChange={onDialogOpenChange}/>)
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+    expect(api.checkForUpdate).not.toHaveBeenCalled()
+    view.rerender(<UpdateButton autoCheck showButton={false} enabled onDialogOpenChange={onDialogOpenChange}/>)
+    await act(async () => { await vi.advanceTimersByTimeAsync(1200) })
+    expect(api.checkForUpdate).toHaveBeenCalledTimes(1)
+    view.rerender(<UpdateButton autoCheck showButton={false} enabled={false} onDialogOpenChange={onDialogOpenChange}/>)
+    await act(async () => { resolveCheck({ version: '0.1.33', currentVersion: '0.1.32' }) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    view.rerender(<UpdateButton autoCheck showButton={false} enabled onDialogOpenChange={onDialogOpenChange}/>)
+    await act(async () => { await vi.advanceTimersByTimeAsync(1200) })
+    expect(api.checkForUpdate).toHaveBeenCalledTimes(2)
+    expect(onDialogOpenChange).toHaveBeenLastCalledWith(true)
+    fireEvent.click(screen.getByRole('button', { name: '稍后更新' }))
+    expect(onDialogOpenChange).toHaveBeenLastCalledWith(false)
+    view.rerender(<UpdateButton autoCheck showButton={false} enabled={false} onDialogOpenChange={onDialogOpenChange}/>)
+    view.rerender(<UpdateButton autoCheck showButton={false} enabled onDialogOpenChange={onDialogOpenChange}/>)
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+    expect(api.checkForUpdate).toHaveBeenCalledTimes(2)
+  } finally { vi.useRealTimers() }
+})
+
 test('shows connection, retry and installation stages without inventing unknown download progress', async () => {
   const download = deferred()
   let reportProgress!: (progress: UpdateProgress) => void

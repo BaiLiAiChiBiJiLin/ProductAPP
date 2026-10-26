@@ -34,6 +34,7 @@ export function imageGroupsForPage(page: Page): ImageGroup[] {
 export function equalizeRowBackgrounds(groups: ImageGroup[]): ImageGroup[] {
   const tolerance = 0.1
   return groups.map(group => {
+    if (group.manualSize) return { ...group, backgroundHeight: group.height }
     const row = groups.filter(other => Math.abs(other.y - group.y) <= tolerance)
     const bottom = Math.max(...row.map(other => other.y + other.height))
     const obstructed = row.some(member => groups.some(other => !row.includes(other)
@@ -60,8 +61,8 @@ export function groupBackgroundsSvg(page: Page, accessoryVisuals?: ReadonlyMap<s
     const panels = detailPanelsForGroup(group).map(panel => {
     const group = panel
     const details = group.details
-    const { x, y, line, fontSize, fields, bodyY, imageSize, accessoryX, noteX, noteWidth, noteY, noteLines, noteLine, noteFontSize, noteImages } = imageDetailsLayout(group)
-    const fieldText = fields.map((field, index) => `<text x="${x}" y="${y + line * index + Math.min(fontSize, field.fontSize ?? fontSize)}" font-family="Arial, Microsoft YaHei, sans-serif" font-size="${Math.min(fontSize, field.fontSize ?? fontSize)}" font-weight="${field.key.startsWith('size') || field.key === 'qt' ? 400 : 700}" fill="${field.key.startsWith('size') || field.key === 'qt' ? '#000' : '#475569'}">${escape(field.text)}</text>`).join('')
+    const { x, y, fields, bodyY, imageSize, accessoryX, noteX, noteWidth, noteY, noteLines, noteLine, noteFontSize, noteImages } = imageDetailsLayout(group)
+    const fieldText = fields.map(field => `<text x="${x}" y="${y + field.y + field.fontSize}" font-family="Arial, Microsoft YaHei, sans-serif" font-size="${field.fontSize}" font-weight="${field.key.startsWith('size') || field.key === 'qt' ? 400 : 700}" fill="${escape(field.color)}">${field.lines.length === 1 ? escape(field.text) : field.lines.map((value, index) => `<tspan x="${x}" dy="${index ? field.lineHeight : 0}">${escape(value)}</tspan>`).join('')}</text>`).join('')
     const noteText = noteLines.map((value, index) => `<text text-anchor="middle" x="${noteX + noteWidth / 2}" y="${noteY + index * noteLine + noteLine - 2}" font-family="Arial, Microsoft YaHei, sans-serif" font-size="${noteFontSize}" fill="#475569">${escape(value)}</text>`).join('')
     const notePictures = noteImages.map((image, index) => {
       const key = index === 0 ? `${group.id}:note` : `${group.id}:note:${index}`

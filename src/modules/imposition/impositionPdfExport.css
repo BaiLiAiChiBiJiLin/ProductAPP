@@ -2,13 +2,9 @@
 .imposition-export-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-right: 32px; flex-wrap: wrap; }
 .imposition-export-heading > div { display: flex; gap: 16px; flex-wrap: wrap; font-weight: normal; }
 .imposition-export-cmyk-settings { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 18px; padding: 10px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; }
-.imposition-export-cmyk-settings label, .imposition-export-cmyk-roles > label { display: flex; align-items: center; gap: 8px; }
+.imposition-export-cmyk-settings label { display: flex; align-items: center; gap: 8px; }
 .imposition-export-cmyk-settings .ant-select { min-width: 120px; }
 .imposition-export-cmyk-settings small { color: #64748b; }
-.imposition-export-cmyk-roles { display: grid; gap: 8px; padding: 10px; border: 1px solid #e2e8f0; border-radius: 6px; }
-.imposition-export-cmyk-roles .ant-select { flex: 1; min-width: 0; }
-.imposition-export-cmyk-offset { display: grid; grid-template-columns: minmax(80px, 1fr) 100px 100px; align-items: center; gap: 6px; font-size: 12px; }
-.imposition-export-cmyk-offset .ant-input-number-group-wrapper { width: 100%; }
 .imposition-export-summary { display: flex; align-items: center; justify-content: space-between; gap: 20px; color: #64748b; font-size: 12px; }
 .imposition-export-grid { display: grid; grid-template-columns: 205px minmax(240px, 1fr) minmax(360px, 440px); min-height: 420px; height: min(67vh, 780px); border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
 .imposition-export-grid > section { min-width: 0; padding: 14px; display: flex; flex-direction: column; gap: 10px; overflow: auto; }

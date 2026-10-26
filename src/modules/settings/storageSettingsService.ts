@@ -1,7 +1,8 @@
-import { invoke, isTauri } from '@tauri-apps/api/core'
+import { isTauri } from '@tauri-apps/api/core'
+import { invoke } from '../../services/backend'
 import { open } from '@tauri-apps/plugin-dialog'
 
-export type StorageSettings = { historyDirectory: string; defaultHistoryDirectory: string }
+export type StorageSettings = { historyDirectory: string; defaultHistoryDirectory: string; shared?: boolean; configPath?: string }
 
 function requireDesktop() {
   if (!isTauri()) throw new Error('请在桌面软件中设置历史记录保存目录')

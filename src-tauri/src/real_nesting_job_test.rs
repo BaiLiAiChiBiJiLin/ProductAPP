@@ -84,6 +84,7 @@ fn request(items: Vec<NestItem>, algorithm: &str) -> NestRequest {
             .unwrap_or_else(|_| "least-material".into()),
         irregular_algorithm: algorithm.into(),
         template_repack: None,
+        allow_base_mixing: false,
         thread_count: None,
         items,
     }

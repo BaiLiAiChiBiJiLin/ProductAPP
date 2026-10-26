@@ -1,3 +1,4 @@
+vi.mock('../src/services/backend', async () => { const core = await import('@tauri-apps/api/core'); return { invoke: core.invoke, storageMode: async () => ({ shared: false }) } })
 import { expect, test, vi } from 'vitest'
 import type { Asset, Page } from '../src/model'
 import { defaultLayoutBounds } from '../src/model'

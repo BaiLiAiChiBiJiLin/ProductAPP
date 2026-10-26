@@ -1,3 +1,4 @@
+vi.mock('../src/services/backend', async () => { const core = await import('@tauri-apps/api/core'); return { invoke: core.invoke, storageMode: async () => ({ shared: false }) } })
 import { afterEach, expect, test, vi } from 'vitest'
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import BatchHistoryPreview from '../src/modules/schematic/history/BatchHistoryPreview'

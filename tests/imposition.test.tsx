@@ -1,9 +1,10 @@
+vi.mock('../src/services/backend', async () => { const core = await import('@tauri-apps/api/core'); return { invoke: core.invoke, storageMode: async () => ({ shared: false }) } })
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ConfigProvider } from 'antd'
 import ImpositionPage from '../src/modules/imposition/ImpositionPage'
 import ImpositionThumbnail from '../src/modules/imposition/ImpositionThumbnail'
-import { expandImpositionImages, getImpositionQuantity, type ImpositionJob, type ImpositionRecord } from '../src/modules/imposition/impositionRecords'
+import { expandImpositionImages, getImpositionQuantity, type ImpositionJob, type ImpositionRecord, type ProductionImage } from '../src/modules/imposition/impositionRecords'
 import type { PackedImpositionItem } from '../src/modules/imposition/ImpositionKonvaCanvas'
 import { applyPackingEdit, type PackingEdit } from '../src/modules/imposition/packingEdits'
 import { IMPOSITION_THREADS_STORAGE_KEY } from '../src/modules/imposition/useImpositionThreads'
@@ -958,7 +959,7 @@ describe('imposition pointer zoom', () => {
 })
 
 
-function mockComparisonJob(solve: (request: { objective: string; threadCount?: number }) => unknown) {
+function mockComparisonJob(solve: (request: { objective: string; threadCount?: number; allowBaseMixing?: boolean }) => unknown) {
   const job = jobs[0]
   mocks.invoke.mockImplementation(async (command, args) => {
     if (command === 'get_imposition_compute_info') return { logicalCores: 8, defaultThreads: 8 }
@@ -973,6 +974,50 @@ function mockComparisonJob(solve: (request: { objective: string; threadCount?: n
 function comparisonResult(sheetCount: number) {
   return { placements: Array.from({ length: 3 }, (_, index) => ({ id: `${jobs[0].id}::asset${index ? `#qt-${index + 1}` : ''}`, sheetIndex: index % sheetCount, xMm: 15 + Math.floor(index / sheetCount) * 23, yMm: 15, widthMm: 20, heightMm: 20, rotationDeg: 0 })), unplaced: [], sheetsUsed: sheetCount, utilization: .1, algorithm: 'local-tools' }
 }
+
+it('shows base mixing in production, defaults off, invalidates cached choices and forwards the setting to all strategies', async () => {
+  vi.stubEnv('DEV', false)
+  const job = mockComparisonJob(request => comparisonResult(request.allowBaseMixing ? 1 : 2))
+  const original = mocks.invoke.getMockImplementation()!
+  mocks.invoke.mockImplementation(async (command, args) => {
+    if (command === 'load_imposition_geometry') return { polygon: [[0, 0], [20, 0], [20, 20], [0, 20]], lineOnly: true }
+    const result = await original(command, args)
+    if (command === 'load_imposition_job') return { ...result, images: result.images.map((image: ProductionImage) => ({ ...image, filePath: 'D:/qa/base-mixing-switch.svg' })) }
+    return result
+  })
+  render(<ConfigProvider theme={{ token: { motion: false } }}><ImpositionPage active revision={0}/></ConfigProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: '开始拼版' }))
+  const mixing = screen.getByRole('switch', { name: '底座混排' })
+  expect(mixing.getAttribute('aria-checked')).toBe('false')
+  expect(screen.queryByRole('combobox', { name: '拼版策略' })).toBeNull()
+  await selectWholeJobAndCalculate(job)
+  const calls = () => mocks.invoke.mock.calls.filter(call => call[0] === 'pack_imposition_irregular')
+  const ready = async (sheets: number) => {
+    const choice = await screen.findByRole('button', { name: new RegExp(`综合最少\\s*版面 ${sheets}`) }, { timeout: 5000 })
+    await waitFor(() => expect((choice as HTMLButtonElement).disabled).toBe(false))
+    return choice
+  }
+  fireEvent.click(await ready(2))
+  expect(calls()).toHaveLength(3)
+  expect(calls().every(call => call[1].request.allowBaseMixing === false)).toBe(true)
+  fireEvent.click(mixing)
+  expect(mixing.getAttribute('aria-checked')).toBe('true')
+  expect(screen.queryByLabelText('拼版方案比较')).toBeNull()
+  expect(mocks.canvas.mock.calls.at(-1)![0].pages).toEqual([])
+  expect(calls()).toHaveLength(3) // Setting changes wait for explicit calculation.
+  fireEvent.click(screen.getByRole('button', { name: '智能拼版' }))
+  fireEvent.click(await ready(1))
+  expect(calls()).toHaveLength(6)
+  expect(calls().slice(3).every(call => call[1].request.allowBaseMixing === true)).toBe(true)
+  expect(calls().every(call => call[1].request.items[0].lineOnly === true)).toBe(true)
+  fireEvent.click(mixing)
+  expect(screen.queryByLabelText('拼版方案比较')).toBeNull()
+  expect(mocks.canvas.mock.calls.at(-1)![0].pages).toEqual([])
+  fireEvent.click(screen.getByRole('button', { name: '智能拼版' }))
+  await ready(2)
+  expect(calls()).toHaveLength(9)
+  expect(calls().slice(6).every(call => call[1].request.allowBaseMixing === false)).toBe(true)
+})
 
 it('defaults to all, solves three strategies serially from one contour extraction, and renders only the selected plan', async () => {
   const finish: Array<(value: unknown) => void> = []
@@ -1002,8 +1047,27 @@ it('defaults to all, solves three strategies serially from one contour extractio
   await waitFor(() => expect(mocks.canvas.mock.calls.at(-1)![0].pages).toHaveLength(2))
   expect(mocks.canvas.mock.calls.at(-1)![0].pages.flat()).toHaveLength(3)
   expect(document.querySelector('.imposition-packing-results')!.textContent).toContain('本次版面 2')
-  expect(screen.queryByLabelText('拼版方案比较')).toBeNull()
-  // A new click recomputes all three rather than retaining other plan results.
+  expect(screen.getByLabelText('拼版方案比较')).toBe(choices)
+  const combinedPages = mocks.canvas.mock.calls.at(-1)![0].pages
+  fireEvent.click(within(choices).getByRole('button', { name: /节省板材\s*版面 1/ }))
+  expect(mocks.canvas.mock.calls.at(-1)![0].pages).toHaveLength(1)
+  fireEvent.click(within(choices).getByRole('button', { name: /切割方案优先\s*版面 3/ }))
+  expect(mocks.canvas.mock.calls.at(-1)![0].pages).toHaveLength(3)
+  fireEvent.click(within(choices).getByRole('button', { name: /综合最少\s*版面 2/ }))
+  expect(mocks.canvas.mock.calls.at(-1)![0].pages).toBe(combinedPages)
+  expect(within(choices).getByRole('button', { name: /综合最少\s*版面 2/ }).getAttribute('aria-pressed')).toBe('true')
+  expect(calls()).toHaveLength(3)
+  const props = mocks.canvas.mock.calls.at(-1)![0]
+  const original = props.pages[0][0]
+  const edited = applyPackingEdit(props.pages, 0, original, 0, { ...original, x: original.x + 1, rotation: 180 }, false)
+  act(() => props.onEdit!(edited.pages, edited.edit))
+  const editedPages = mocks.canvas.mock.calls.at(-1)![0].pages
+  fireEvent.click(within(choices).getByRole('button', { name: /节省板材\s*版面 1/ }))
+  fireEvent.click(within(choices).getByRole('button', { name: /综合最少\s*版面 2/ }))
+  expect(mocks.canvas.mock.calls.at(-1)![0].pages).toBe(editedPages)
+  expect(editedPages[0][0]).toMatchObject({ x: original.x + 1, rotation: 180 })
+  // Explicit recalculation replaces the previous three cached results.
+
   fireEvent.click(screen.getByRole('button', { name: '智能拼版' }))
   await waitFor(() => expect(finish).toHaveLength(4))
   expect(mocks.canvas.mock.calls.at(-1)![0].pages).toEqual([])
@@ -1012,6 +1076,40 @@ it('defaults to all, solves three strategies serially from one contour extractio
     await act(async () => finish[index](comparisonResult(1)))
   }
   await waitFor(() => expect((screen.getByRole('button', { name: /节省板材\s*版面 1/ }) as HTMLButtonElement).disabled).toBe(false))
+})
+
+it.each(['add-image', 'cancel-image', 'back'])('releases all comparison choices and canvas results when %s invalidates the workspace', async action => {
+  const job = mockComparisonJob(request => comparisonResult(request.objective === 'combined' ? 2 : 1))
+  const original = mocks.invoke.getMockImplementation()!
+  mocks.invoke.mockImplementation(async (command, args) => {
+    const value = await original(command, args)
+    if (command !== 'load_imposition_job') return value
+    return { ...value, images: [...value.images, { ...value.images[0], id: 'extra', name: '额外.svg' }] }
+  })
+  render(<ConfigProvider theme={{ token: { motion: false } }}><ImpositionPage active revision={0}/></ConfigProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: '开始拼版' }))
+  await openJobImages(job)
+  fireEvent.click(await screen.findByRole('checkbox', { name: '参与拼版 front.svg' }))
+  await closeImagePicker()
+  fireEvent.click(screen.getByRole('button', { name: '智能拼版' }))
+  const choice = await screen.findByRole('button', { name: /综合最少\s*版面 2/ }, { timeout: 5000 })
+  await waitFor(() => expect((choice as HTMLButtonElement).disabled).toBe(false))
+  fireEvent.click(choice)
+  expect(mocks.canvas.mock.calls.at(-1)![0].pages).toHaveLength(2)
+  if (action === 'back') {
+    fireEvent.click(screen.getByRole('button', { name: '返回待拼版' }))
+    fireEvent.click(await screen.findByRole('button', { name: '开始拼版' }))
+  } else {
+    await openJobImages(job)
+    fireEvent.click(screen.getByRole('checkbox', { name: action === 'add-image' ? '参与拼版 额外.svg' : '参与拼版 front.svg' }))
+    await closeImagePicker()
+  }
+  await waitFor(() => expect(screen.queryByLabelText('拼版方案比较')).toBeNull())
+  expect(mocks.canvas.mock.calls.at(-1)![0].pages).toEqual([])
+  expect(document.querySelector('.imposition-packing-results')).toBeNull()
+  expect((screen.getByRole('button', { name: '导出 PDF' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(screen.getByText('勾选右侧图片，点击“智能拼版”生成拼版')).toBeTruthy()
+  expect(mocks.invoke.mock.calls.filter(call => call[0] === 'pack_imposition_irregular')).toHaveLength(3)
 })
 
 it('production hides development controls, uses automatic cores, and keeps valid comparison choices when one solver fails', async () => {

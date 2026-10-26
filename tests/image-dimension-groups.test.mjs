@@ -73,6 +73,69 @@ test('custom ruler ranges stay attached to the image geometry', () => {
  assert.equal(marker.x2, custom.x - custom.w / 2 + custom.w * 0.75)
 })
 
+test('a height ruler follows an image moved outside its original cell but inside the product block', () => {
+  const original = item('moving', 'portrait', 60, 50, 24, 48)
+  const page = { items: [original, item('other', 'landscape', 170, 150, 60, 30)], imageGroups: [{
+    id: 'product', itemIds: ['moving', 'other'], x: 10, y: 10, width: 400, height: 210,
+    imageCells: [
+      { itemId: 'moving', x: 10, y: 10, width: 100, height: 80 },
+      { itemId: 'other', x: 110, y: 100, width: 100, height: 120 },
+    ],
+  }] }
+  const before = imageDimensionMarkerLayout(imageGroupsForDimension(page)[0], page, assets)
+  const moved = { ...original, y: original.y + 80 }
+  const movedPage = { ...page, items: [moved, page.items[1]] }
+  const after = imageDimensionMarkerLayout(imageGroupsForDimension(movedPage)[0], movedPage, assets)
+  assert.equal(after.y1, before.y1 + 80)
+  assert.equal(after.y2, before.y2 + 80)
+  assert.equal(after.textY, before.textY + 80)
+  assert.equal(after.label, before.label)
+  assert.deepEqual(after.range, before.range)
+  assert.deepEqual(movedPage.imageGroups, page.imageGroups)
+})
+
+for (const range of [undefined, [0.25, 0.75]]) {
+  test(`${range ? 'adjusted' : 'full-length'} width and height rulers follow left/up cell crossings and keep their positions in SVG`, () => {
+    const original = { ...item('moving', 'portrait', 160, 150, 24, 48), rulerWidth: true, rulerHeight: true,
+      rulerWidthRange: range, rulerHeightRange: range }
+    const other = item('other', 'landscape', 260, 150, 60, 30)
+    const page = { items: [original, other], imageGroups: [{
+      id: 'product', itemIds: ['moving', 'other'], x: 10, y: 10, width: 400, height: 290,
+      imageCells: [
+        { itemId: 'moving', x: 110, y: 100, width: 100, height: 100 },
+        { itemId: 'other', x: 210, y: 100, width: 100, height: 100 },
+      ],
+    }] }
+    const before = dimensionGroups(page).map(group => imageDimensionMarkerLayout(group, page, assets))
+    const movedPage = { ...page, items: [{ ...original, x: 80, y: 70 }, other] }
+    const after = dimensionGroups(movedPage).map(group => imageDimensionMarkerLayout(group, movedPage, assets))
+    for (const [index, expected] of [
+      { x1: range ? 74 : 68, y1: 44, x2: range ? 86 : 92, y2: 44, textX: 80, textY: 41 },
+      { x1: 64, y1: range ? 58 : 46, x2: 64, y2: range ? 82 : 94, textX: 64, textY: 70 },
+    ].entries()) {
+      for (const [key, value] of Object.entries(expected)) {
+        assert.equal(after[index][key], value, `${after[index].axis} ${key}`)
+        assert.equal(after[index][key], before[index][key] - 80, `${after[index].axis} ${key} follows image`)
+      }
+      assert.deepEqual(after[index].extension, before[index].extension.map(line => line.map(value => value - 80)))
+      assert.deepEqual(after[index].range, before[index].range)
+      assert.equal(after[index].label, before[index].label)
+    }
+    assert.deepEqual(after[2], before[2], 'the other image ruler does not move')
+
+    const exported = [...imageDimensionMarkersSvg(movedPage, assets).matchAll(/<g\b[^>]*data-item-id="moving"[^>]*>(.*?)<\/g>/g)].map(match => match[1])
+    assert.equal(exported.length, 2)
+    assert.ok(exported[0].includes(`<path d="M${range ? 74 : 68} 44l5 -2v4Z"`))
+    assert.ok(exported[0].includes(`<path d="M${range ? 86 : 92} 44l-5 -2v4Z"`))
+    assert.ok(exported[0].includes('<text x="80" y="41"'))
+    assert.ok(exported[1].includes(`<path d="M64 ${range ? 58 : 46}l-2 5h4Z"`))
+    assert.ok(exported[1].includes(`<path d="M64 ${range ? 82 : 94}l-2 -5h4Z"`))
+    assert.ok(exported[1].includes('<text x="64" y="70"'))
+    assert.equal(page.items[0], original)
+    assert.deepEqual(movedPage.imageGroups, page.imageGroups)
+  })
+}
+
 test('enabling the second ruler preserves an implicit default axis from older item data', () => {
   const source = { ...assets.get('landscape'), id: 'implicit-axis' }
   const custom = item('implicit-axis-item', source.id, 100, 80, 80, 40)

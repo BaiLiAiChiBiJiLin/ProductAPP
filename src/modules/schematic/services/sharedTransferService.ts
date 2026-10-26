@@ -1,17 +1,19 @@
-import { invoke, isTauri } from '@tauri-apps/api/core'
+import { isTauri } from '@tauri-apps/api/core'
+import { invoke, storageMode } from '../../../services/backend'
 import { SOFTWARE_ACCOUNT_NAME } from '../../../config/account'
 
 export const SHARED_HISTORY_ROOT = `\\\\192.168.0.66\\电商文件\\printFlow\\${import.meta.env.DEV ? 'dev' : 'production'}\\historyProduction`
 export const sharedTransferDirectory = () => isTauri() ? invoke<string>('shared_transfer_directory') : Promise.resolve(SHARED_HISTORY_ROOT)
-export type TransferPreview = { assetCount: number; reviewCount: number; jobCount: number }
+export type TransferPreview = { shared?: boolean; assetCount: number; reviewCount: number; jobCount: number }
 export type TransferResult = TransferPreview & { taskId: string; recipient: string; batchName: string }
-export type SharedRefreshResult = { imported: number; finalized: number; errors: string[] }
+export type SharedRefreshResult = { imported: number; finalized: number; errors: string[]; shared?: boolean }
 export type SharedTransferProgress = { phase: string; completed: number; total: number }
 
 export const currentSharedUser = () => localStorage.getItem('printflow-account-name')?.trim() || SOFTWARE_ACCOUNT_NAME
 const initializations = new Map<string, Promise<string>>()
-export function initializeSharedUser(userName: string): Promise<string> {
+export async function initializeSharedUser(userName: string): Promise<string> {
   if (!isTauri() || !userName.trim()) return Promise.resolve('')
+  if ((await storageMode()).shared) return invoke<string>('initialize_shared_user', { userName })
   let request = initializations.get(userName)
   if (!request) {
     request = Promise.resolve(invoke<string>('initialize_shared_user', { userName })).catch(error => { initializations.delete(userName); throw error })

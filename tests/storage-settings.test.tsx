@@ -1,3 +1,4 @@
+vi.mock('../src/services/backend', async () => { const core = await import('@tauri-apps/api/core'); return { invoke: core.invoke, storageMode: async () => ({ shared: false }) } })
 import { afterEach, beforeAll, beforeEach, expect, test, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import SettingsModal from '../src/modules/settings/SettingsModal'
@@ -106,4 +107,25 @@ test('switching settings sections retains both drafts; product saving locks navi
   expect(screen.getByRole('alert').textContent).toContain('产品配置保存失败')
   expect((storageTab as HTMLButtonElement).disabled).toBe(false)
   expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy()
+})
+
+test('shared storage is read only and migration is an explicit resumable action', async () => {
+  api.invoke.mockImplementation(async command => {
+    if (command === 'load_storage_settings') return { ...defaults, shared: true, configPath: 'D:/PrintFlow/printflow-data/config.toml' }
+    if (command === 'preview_cloud_migration') return { batches: 2, reviews: 3, jobs: 1, pendingTransfers: 0 }
+    if (command === 'migrate_local_data') return { imported: 4, skipped: 1, errors: ['review broken: source missing'] }
+    throw new Error(command)
+  })
+  render(<SettingsModal open onClose={() => {}}/>)
+  const input = await screen.findByLabelText('历史记录保存目录') as HTMLInputElement
+  expect(input.disabled).toBe(true)
+  expect(screen.queryByRole('button', { name: '选择文件夹' })).toBeNull()
+  expect(screen.queryByRole('button', { name: /^保\s*存$/ })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '检查本机旧数据' }))
+  const migrate = await screen.findByRole('button', { name: '迁移数据' })
+  expect(api.invoke.mock.calls.some(([command]) => command === 'migrate_local_data')).toBe(false)
+  fireEvent.click(migrate)
+  expect(await screen.findByText(/已迁移 4 条/)).toBeTruthy()
+  expect(await screen.findByText(/review broken: source missing/)).toBeTruthy()
+  await waitFor(() => expect((screen.getByRole('button', { name: /迁移数据/ }) as HTMLButtonElement).disabled).toBe(false))
 })

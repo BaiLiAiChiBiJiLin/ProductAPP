@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.1.32"
+version = "0.1.33"
 description = "PrintFlow production layout desktop app"
 authors = ["PrintFlow"]
 edition = "2021"
@@ -24,6 +24,10 @@ tauri-plugin-dialog = "2"
 tokio = { version = "1", features = ["fs", "rt-multi-thread"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "blocking"] }
 rusqlite = { version = "0.32", features = ["bundled", "blob"] }
+mysql = { version = "26.0.1", default-features = false, features = ["minimal-rust", "rustls-tls"] }
+toml = "0.8"
+tempfile = "3"
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
 sha2 = "0.10"
 usvg = "0.45"
 resvg = "0.45"

@@ -1,3 +1,4 @@
+vi.mock('../src/services/backend', async () => { const core = await import('@tauri-apps/api/core'); return { invoke: core.invoke, storageMode: async () => ({ shared: false }) } })
 import { beforeEach, expect, test, vi } from 'vitest'
 import type { Asset } from '../src/model'
 const mocks = vi.hoisted(() => ({ invoke: vi.fn() }))

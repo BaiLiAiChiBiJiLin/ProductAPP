@@ -1,16 +1,20 @@
 import CanvasAnnotations from './components/CanvasAnnotations'
 import CanvasDrawingSurface from './components/CanvasDrawingSurface'
 import type { CanvasAnnotation } from './layoutTypes'
+import type { DetailTextDraft } from './services/detailTextService'
 import type { CanvasTool, EditorSelection, Point } from './services/canvasAnnotationService'
 import type { EditRulerValue } from './components/ImageDimensionMarkers'
 import { POOL_DROP_EVENT, poolDropPoint, type PoolImageDrop } from './services/poolDragService'
 import { itemsInSelection, selectionBounds, type CanvasPoint } from './services/canvasSelectionService'
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
 import { Stage, Layer, Rect, Group, Image as KonvaImage, Transformer, Text, Line } from 'react-konva'
 import type Konva from 'konva'
 import { ARRANGEMENT_FRAME_SHADOW, ARRANGEMENT_FRAME_STYLE, arrangementFrameRect, artworkBounds, constrain, defaultLayoutBounds, PAPER_HEIGHT, PAPER_WIDTH, svgObjectUrl, type Asset, type HeaderBlock, type Item, type LayoutBounds, type Page, type PageHeader } from '../../model'
 import HeaderBlockCanvas from './components/HeaderBlockCanvas'
 import ImageGroupBackgrounds from './components/ImageGroupBackgrounds'
+import GroupResizeHandles from './components/GroupResizeHandles'
+import { imageGroupsForPage } from './services/groupBackgroundService'
+import { resizeImageGroup, type GroupRect } from './services/groupResizeService'
 import ImageDimensionMarkers from './components/ImageDimensionMarkers'
 import type { AccessoryVisual, EditImageGroupText } from './components/ImageGroupDetails'
 import type { RulerChange } from './components/ImageDimensionMarkers'
@@ -54,8 +58,9 @@ function PageHeaderCanvas({ pageNumber, totalPages, metadata }: { pageNumber: nu
   </Group>
 }
 
-const Artwork = memo(function Artwork({ item, asset, visualScale = 1, selected, interactive, bounds, groupBounds, onSelect, onChange, onContextMenu, editorSelection, onSelectCaption }: {
+const Artwork = memo(function Artwork({ item, asset, visualScale = 1, selected, interactive, bounds, groupBounds, onSelect, onChange, onPreviewChange, onContextMenu, editorSelection, onSelectCaption }: {
   editorSelection?: EditorSelection | null; onSelectCaption?: (selection: EditorSelection) => void; item: Item; asset: Asset; visualScale?: number; selected: boolean; interactive: boolean; bounds: LayoutBounds; groupBounds?: { x: number; y: number; width: number; height: number }; onSelect: (id: string | null) => void; onChange: (item: Item) => void; onContextMenu?: (itemId: string, point: CanvasPoint) => void
+  onPreviewChange: (item?: Item) => void
 }) {
   const [image, setImage] = useState<HTMLImageElement>()
   const [failed, setFailed] = useState(false)
@@ -85,8 +90,8 @@ const Artwork = memo(function Artwork({ item, asset, visualScale = 1, selected, 
       scaleX={displayItem.mirrorX ? -1 : 1} offsetX={displayItem.w / 2} offsetY={displayItem.h / 2} rotation={displayItem.rotation} draggable={interactive}
       onClick={event => { if (!interactive) return; event.cancelBubble = true; onSelect(item.id) }} onTap={event => { if (!interactive) return; event.cancelBubble = true; onSelect(item.id) }} onDragStart={() => interactive && onSelect(item.id)}
       onContextMenu={event => { if (!interactive || !onContextMenu) return; event.evt.preventDefault(); event.cancelBubble = true; onSelect(item.id); onContextMenu(item.id, { x: event.evt.clientX, y: event.evt.clientY }) }}
-      onDragMove={event => { const next = constrainInsideGroup(constrain({ ...item, ...event.target.position() }, bounds), groupBounds); event.target.position(next) }}
-      onDragEnd={event => { const next = constrainInsideGroup(constrain({ ...item, ...event.target.position() }, bounds), groupBounds); event.target.position(next); onChange(next) }}
+      onDragMove={event => { const next = constrainInsideGroup(constrain({ ...item, ...event.target.position() }, bounds), groupBounds); event.target.position(next); onPreviewChange(next) }}
+      onDragEnd={event => { const next = constrainInsideGroup(constrain({ ...item, ...event.target.position() }, bounds), groupBounds); event.target.position(next); onChange(next); onPreviewChange() }}
       onTransformEnd={() => {
         const node = nodeRef.current!
         const next = constrain({ ...item, x: node.x(), y: node.y(), rotation: node.rotation() }, bounds)
@@ -98,14 +103,42 @@ const Artwork = memo(function Artwork({ item, asset, visualScale = 1, selected, 
   </>
 })
 
-export default function ArtworkCanvas({ page, assets, selected, selectedIds = [], onBoxSelect, selectedGroupIds = [], onSelect, onSelectGroup, onSelectAccessory, selectedAccessoryKey, accessoryVisuals, onChangeAccessory, onChange, onDropAsset, metadata, totalPages, mode = 'select', zoom = 1, onZoomChange, layoutBounds = defaultLayoutBounds, onHeaderBlockChange, dimensionPrecision = 'default', dimensionDecimalPlaces = 1, dimensionItemIds = [], dimensionDisplayOverrides, visualScales, onChangeRuler, onEditText, onArtworkContextMenu, pageNumber = page.id, editorSelection, onSelectEditor, onChangeAnnotation, onEditAnnotation, onPlaceText, onAddRuler, onCancelTool, textColor = '#000000', onEditRuler }: {
-  pageNumber?: number; editorSelection?: EditorSelection | null; onSelectEditor?: (selection: EditorSelection) => void
+/** Keep per-pointer updates local; saved pages and other canvas panels change only on release. */
+function ArtworkImages({ page, assets, selected, selectedIds = [], onSelect, onChange, visualScales, interactive, bounds,
+  dimensionItemIds, dimensionPrecision, dimensionDecimalPlaces, dimensionDisplayOverrides, onChangeRuler, onEditRuler,
+  onArtworkContextMenu, editorSelection, onSelectEditor,
+}: Pick<ComponentProps<typeof ArtworkCanvas>, 'page' | 'assets' | 'selected' | 'selectedIds' | 'onSelect' | 'onChange' | 'visualScales'
+  | 'dimensionItemIds' | 'dimensionPrecision' | 'dimensionDecimalPlaces' | 'dimensionDisplayOverrides' | 'onChangeRuler' | 'onEditRuler'
+  | 'onArtworkContextMenu' | 'editorSelection' | 'onSelectEditor'> & { interactive: boolean; bounds: LayoutBounds }) {
+  const [dragPreview, setDragPreview] = useState<{ page: Page; item: Item }>()
+  const previewChange = useCallback((item?: Item) => setDragPreview(item ? { page, item } : undefined), [page])
+  // A new saved page invalidates any in-flight preview (including page switches).
+  const markerPage = useMemo(() => dragPreview?.page === page
+    ? { ...page, items: page.items.map(item => item.id === dragPreview.item.id ? dragPreview.item : item) }
+    : page, [page, dragPreview])
+  return <>
+    {page.items.map(item => {
+      const asset = assets.get(item.assetId)
+      const group = page.imageGroups?.find(candidate => candidate.itemIds.includes(item.id))
+      return asset && <Artwork key={item.id} item={item} asset={asset} visualScale={visualScales?.get(item.id) ?? 1}
+        selected={selected === item.id || selectedIds.includes(item.id)} interactive={interactive} bounds={bounds} groupBounds={group}
+        onSelect={onSelect} onChange={onChange} onPreviewChange={previewChange} onContextMenu={interactive ? onArtworkContextMenu : undefined}
+        editorSelection={editorSelection} onSelectCaption={onSelectEditor}/>
+    })}
+    <ImageDimensionMarkers page={markerPage} assets={assets} selectedItemIds={dimensionItemIds} precision={dimensionPrecision} decimalPlaces={dimensionDecimalPlaces}
+      displayOverrides={dimensionDisplayOverrides} visualScales={visualScales} onChangeRuler={interactive ? onChangeRuler : undefined} onEditRuler={interactive ? onEditRuler : undefined}/>
+  </>
+}
+
+export default function ArtworkCanvas({ page, assets, selected, selectedIds = [], onBoxSelect, selectedGroupIds = [], onSelect, onSelectGroup, onResizeGroup, onSelectAccessory, selectedAccessoryKey, accessoryVisuals, onChangeAccessory, onChange, onDropAsset, metadata, totalPages, mode = 'select', zoom = 1, onZoomChange, layoutBounds = defaultLayoutBounds, onHeaderBlockChange, dimensionPrecision = 'default', dimensionDecimalPlaces = 1, dimensionItemIds = [], dimensionDisplayOverrides, visualScales, onChangeRuler, onEditText, onArtworkContextMenu, pageNumber = page.id, editorSelection, onSelectEditor, onChangeAnnotation, onEditAnnotation, onPlaceText, onAddRuler, onCancelTool, textColor = '#000000', onEditRuler, onEditDetailText }: {
+  pageNumber?: number; onEditDetailText?: (draft: DetailTextDraft) => void; editorSelection?: EditorSelection | null; onSelectEditor?: (selection: EditorSelection) => void
   onChangeAnnotation?: (annotation: CanvasAnnotation) => void; onEditAnnotation?: (annotation: CanvasAnnotation) => void
   onPlaceText?: (point: Point) => void; onAddRuler?: (ruler: CanvasAnnotation) => void; onCancelTool?: () => void; textColor?: string; onEditRuler?: EditRulerValue
   page: Page; assets: Map<string, Asset>; selected: string | null; onSelect: (id: string | null) => void
   onArtworkContextMenu?: (itemId: string, point: CanvasPoint) => void
   selectedIds?: string[]; onBoxSelect?: (ids: string[]) => void
   selectedGroupIds?: string[]; onSelectGroup?: (id: string, ctrlKey: boolean) => void
+  onResizeGroup?: (groupId: string, rect: GroupRect) => void
   onChange: (item: Item) => void; onDropAsset: (assetId: string, x: number, y: number) => void; metadata?: PageHeader; totalPages?: number
   mode?: CanvasTool; zoom?: number; onZoomChange?: (zoom: number) => void
   layoutBounds?: LayoutBounds; onHeaderBlockChange: (block: HeaderBlock) => void
@@ -119,6 +152,12 @@ export default function ArtworkCanvas({ page, assets, selected, selectedIds = []
   const boxStart = useRef<{ pointerId: number; start: CanvasPoint; screenX: number; screenY: number; dragging: boolean } | undefined>(undefined)
   const suppressClick = useRef(false)
   const [marquee, setMarquee] = useState<ReturnType<typeof selectionBounds> | null>(null)
+  const [resizePreview, setResizePreview] = useState<{ source: Page; groupId: string; rect: GroupRect }>()
+  const resizeGroup = selectedGroupIds.length === 1 ? imageGroupsForPage(page).find(group => group.id === selectedGroupIds[0]) : undefined
+  const previewGroupSize = (rect?: GroupRect) => setResizePreview(rect && resizeGroup ? { source: page, groupId: resizeGroup.id, rect } : undefined)
+  const canvasPage = useMemo(() => resizePreview?.source === page
+    ? resizeImageGroup(page, resizePreview.groupId, resizePreview.rect, layoutBounds, visualScales) : page,
+  [page, resizePreview, layoutBounds, visualScales])
   const select = (id: string | null) => { if (!suppressClick.current) onSelect(id) }
   const selectGroup = (id: string, ctrlKey: boolean) => { if (!suppressClick.current && !panMode) onSelectGroup?.(id, ctrlKey) }
   const panMode = mode === 'pan' || spacePressed
@@ -244,9 +283,11 @@ export default function ArtworkCanvas({ page, assets, selected, selectedIds = []
         <Rect {...arrangementFrameRect(layoutBounds)} cornerRadius={ARRANGEMENT_FRAME_STYLE.cornerRadius} fill="white" listening={false}
           {...ARRANGEMENT_FRAME_SHADOW}/>
         <Group clipX={0} clipY={0} clipWidth={PAPER_WIDTH} clipHeight={PAPER_HEIGHT}>
-          <ImageGroupBackgrounds page={page} assets={assets} selectedItemIds={dimensionItemIds} precision={dimensionPrecision} decimalPlaces={dimensionDecimalPlaces} displayOverrides={dimensionDisplayOverrides} selectedAccessoryKey={selectedAccessoryKey} accessoryVisuals={accessoryVisuals} onSelectAccessory={!editing ? undefined : onSelectAccessory} onChangeAccessory={!editing ? undefined : onChangeAccessory} selectedGroupIds={selectedGroupIds} onSelectGroup={!editing ? undefined : selectGroup} onEditText={!editing ? undefined : onEditText} editorSelection={editorSelection} onSelectCaption={editing ? onSelectEditor : undefined}/>
-          {page.items.map(item => { const asset = assets.get(item.assetId); const group = page.imageGroups?.find(candidate => candidate.itemIds.includes(item.id)); return asset && <Artwork key={item.id} item={item} asset={asset} visualScale={visualScales?.get(item.id) ?? 1} selected={selected === item.id || selectedIds.includes(item.id)} interactive={editing} bounds={imageBounds} groupBounds={group ? { x: group.x, y: group.y, width: group.width, height: group.height } : undefined} onSelect={select} onChange={onChange} onContextMenu={!editing ? undefined : onArtworkContextMenu} editorSelection={editorSelection} onSelectCaption={onSelectEditor} /> })}
-          <ImageDimensionMarkers page={page} assets={assets} selectedItemIds={dimensionItemIds} precision={dimensionPrecision} decimalPlaces={dimensionDecimalPlaces} displayOverrides={dimensionDisplayOverrides} visualScales={visualScales} onChangeRuler={!editing ? undefined : onChangeRuler} onEditRuler={editing ? onEditRuler : undefined}/>
+          <ImageGroupBackgrounds onEditDetailText={editing ? onEditDetailText : undefined} page={canvasPage} assets={assets} selectedItemIds={dimensionItemIds} precision={dimensionPrecision} decimalPlaces={dimensionDecimalPlaces} displayOverrides={dimensionDisplayOverrides} selectedAccessoryKey={selectedAccessoryKey} accessoryVisuals={accessoryVisuals} onSelectAccessory={!editing ? undefined : onSelectAccessory} onChangeAccessory={!editing ? undefined : onChangeAccessory} selectedGroupIds={selectedGroupIds} onSelectGroup={!editing ? undefined : selectGroup} onEditText={!editing ? undefined : onEditText} editorSelection={editorSelection} onSelectCaption={editing ? onSelectEditor : undefined}/>
+          <ArtworkImages key={page.id} page={canvasPage} assets={assets} selected={selected} selectedIds={selectedIds} onSelect={select} onChange={onChange}
+            visualScales={visualScales} interactive={editing} bounds={imageBounds} dimensionItemIds={dimensionItemIds} dimensionPrecision={dimensionPrecision}
+            dimensionDecimalPlaces={dimensionDecimalPlaces} dimensionDisplayOverrides={dimensionDisplayOverrides} onChangeRuler={onChangeRuler} onEditRuler={onEditRuler}
+            onArtworkContextMenu={onArtworkContextMenu} editorSelection={editorSelection} onSelectEditor={onSelectEditor}/>
           {page.headerBlocks?.map(block => <HeaderBlockCanvas key={block.id} block={block} bounds={layoutBounds} selected={selected === block.id} interactive={editing} onSelect={select} onChange={onHeaderBlockChange}/>)}
         </Group>
         <Group listening={false}>
@@ -254,6 +295,8 @@ export default function ArtworkCanvas({ page, assets, selected, selectedIds = []
         </Group>
         <CanvasAnnotations annotations={page.annotations} selectedId={editorSelection?.kind === 'annotation' ? editorSelection.id : undefined} interactive={editing} onSelect={id => onSelectEditor?.({ kind: 'annotation', id })} onChange={annotation => onChangeAnnotation?.(annotation)} onEdit={annotation => onEditAnnotation?.(annotation)}/>
         {marquee && <Rect {...marquee} fill="rgba(37,99,235,0.12)" stroke="#2563eb" strokeWidth={1 / scale} dash={[4 / scale, 3 / scale]} listening={false}/>}
+        {editing && onResizeGroup && resizeGroup && <GroupResizeHandles key={`${page.id}:${resizeGroup.id}`} group={{ ...resizeGroup, height: Math.max(resizeGroup.height, resizeGroup.backgroundHeight ?? 0) }} bounds={layoutBounds} scale={scale}
+          onPreview={previewGroupSize} onCommit={rect => onResizeGroup(resizeGroup.id, rect)}/>}
       </Group></Layer>
     </Stage>}
     {(mode === 'text' || mode === 'ruler') && !panMode && <CanvasDrawingSurface key={`${page.id}:${mode}`} tool={mode} page={page} assets={assets} scales={visualScales} x={x} y={y} scale={scale} color={textColor} toPaper={pointerToPaper} onText={point => onPlaceText?.(point)} onRuler={ruler => onAddRuler?.(ruler)} onCancel={() => onCancelTool?.()}/>}

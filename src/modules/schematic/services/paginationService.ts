@@ -3,6 +3,7 @@ import type { ProductConfig } from './productConfigService.ts'
 import { paginateThreeColumns } from '../arrangement/threeColumnLayout.ts'
 import { rulerDimensionLabel } from './imageDimensionService.ts'
 import { horizontalGroupPages } from './horizontalGroupReflowService.ts'
+import { resizeImageGroup } from './groupResizeService.ts'
 
 /** Follow image identities when regeneration splits, merges, or reorders pages. */
 function restorePageEdits(previous: Page[], generated: Page[]) {
@@ -64,12 +65,26 @@ export function autoArrangePages(pages: Page[], _activePage: number, assets: Ass
     candidates.push(item)
     previousByRole.set(key, candidates)
   }
-  const groupByAsset = new Map<string, string>()
+  const groupByAsset = new Map<string, { id: string; position?: number }>()
   for (const page of pages) for (const group of page.imageGroups ?? []) {
     if (group.stacked !== 'vertical' && !(group.layoutMode === 'horizontal' && (group.productGroupId || group.id.startsWith('group-combined-')))) continue
-    for (const item of page.items) if (group.itemIds.includes(item.id)) groupByAsset.set(sourceId(item), group.productGroupId || group.id)
+    const itemsById = new Map(page.items.map(item => [item.id, item]))
+    const manual = group.id.startsWith('group-combined-')
+    const members = new Set<string>()
+    for (const id of group.itemIds) {
+      const item = itemsById.get(id)
+      if (!item || item.derivedFrom || members.has(sourceId(item))) continue
+      members.add(sourceId(item))
+      groupByAsset.set(sourceId(item), { id: manual ? group.id : group.productGroupId || group.id,
+        // Old positions belong to separate source groups and can interleave
+        // their members after combining. Manual block order is authoritative.
+        ...(manual ? { position: members.size } : {}) })
+    }
   }
-  const chosen = assets.filter(asset => used.has(asset.id)).map(asset => groupByAsset.has(asset.id) ? { ...asset, productGroupId: groupByAsset.get(asset.id) } : asset)
+  const chosen = assets.filter(asset => used.has(asset.id)).map(asset => {
+    const group = groupByAsset.get(asset.id)
+    return group ? { ...asset, productGroupId: group.id, ...(group.position === undefined ? {} : { productGroupPosition: group.position }) } : asset
+  })
   const result = paginateThreeColumns(chosen, bounds, configs)
   const restoredIds = new Map<string, string>()
   for (const page of result) {
@@ -99,6 +114,7 @@ export function autoArrangePages(pages: Page[], _activePage: number, assets: Ass
   const restoreId = (id: string) => restoredIds.get(id) ?? id
   const membershipKey = (ids: readonly string[]) => JSON.stringify([...ids].sort())
   const previousGroups = new Map(pages.flatMap(page => (page.imageGroups ?? []).map(group => [membershipKey(group.itemIds), { group, page }] as const)))
+  const manualGroups = new Map([...previousGroups.values()].filter(({ group }) => group.id.startsWith('group-combined-')).map(previous => [previous.group.id, previous]))
   const horizontalIds: string[] = []
   for (const page of result) {
     page.items = page.items.map(item => item.derivedFrom ? { ...item, derivedFrom: restoreId(item.derivedFrom) } : item)
@@ -122,9 +138,61 @@ export function autoArrangePages(pages: Page[], _activePage: number, assets: Ass
       })
       const label = item && asset ? rulerDimensionLabel(asset, item) : undefined
       if (label && group.details) group.details.size = label
+      const manual = manualGroups.get(group.productGroupId ?? '')
+      // Native role inference can invent a derived Back for an earlier
+      // standee base. Match the unchanged originals before restoring the
+      // exact saved manual membership, including its existing Back images.
+      const originalsKey = (sourcePage: Page, ids: string[]) => membershipKey(sourcePage.items.filter(item => ids.includes(item.id) && !item.derivedFrom).map(item => item.id))
       const previous = previousGroups.get(membershipKey(group.itemIds))
+        ?? (manual && originalsKey(manual.page, manual.group.itemIds) === originalsKey(page, group.itemIds) ? manual : undefined)
       if (previous) {
+        if (previous.group.id.startsWith('group-combined-')) {
+          // The native product layout supplies this block's page/rectangle,
+          // but its role inference cannot describe several existing products
+          // combined together (for example, two separate standee bases).
+          const mappedPage = resizeImageGroup(previous.page, previous.group.id,
+            { x: group.x, y: group.y, width: group.width, height: group.height }, bounds, visualScales)
+          const mappedGroup = mappedPage.imageGroups!.find(value => value.id === previous.group.id)!
+          const mappedItems = new Map(mappedPage.items.filter(value => previous.group.itemIds.includes(value.id)).map(value => [value.id, value]))
+          const currentItems = new Map(page.items.map(value => [value.id, value]))
+          const members = previous.group.itemIds.map(id => {
+            const mapped = mappedItems.get(id)!
+            const value = currentItems.get(id) ?? mapped
+            return { ...value, x: mapped.x, y: mapped.y, w: mapped.w, h: mapped.h, rotation: mapped.rotation,
+              captionAlign: mapped.captionAlign, captionFontSize: mapped.captionFontSize, captionHidden: mapped.captionHidden,
+              captionColor: mapped.captionColor, suppressRuler: mapped.suppressRuler, note: mapped.note }
+          })
+          const generatedIds = new Set(group.itemIds)
+          let inserted = false
+          page.items = page.items.flatMap(value => {
+            if (!generatedIds.has(value.id)) return [value]
+            if (inserted) return []
+            inserted = true
+            return members
+          })
+          Object.assign(group, mappedGroup, { productGroupId: previous.group.id, manualSize: previous.group.manualSize })
+          group.details = mappedGroup.details ? { ...mappedGroup.details } : undefined
+          if (label && group.details) group.details.size = label
+          group.detailGroups = mappedGroup.detailGroups?.map(panel => {
+            const member = page.items.find(value => panel.itemIds.includes(value.id) && !value.derivedFrom)
+              ?? page.items.find(value => panel.itemIds.includes(value.id))
+            const source = member && assetsById.get(member.assetId)
+            const size = member && source ? rulerDimensionLabel(source, member) : undefined
+            const sizes = panel.details.sizes?.map(value => {
+              const entry = page.items.find(item => item.id === value.itemId)
+              const asset = entry && assetsById.get(entry.assetId)
+              const label = entry && asset ? rulerDimensionLabel(asset, entry) : undefined
+              return label ? { ...value, label } : { ...value }
+            })
+            return { ...panel, itemIds: [...panel.itemIds], details: { ...panel.details, size: size ?? panel.details.size, ...(sizes ? { sizes } : {}) } }
+          })
+        }
         group.id = previous.group.id
+        if (group.details && previous.group.details?.textOverrides) group.details = { ...group.details, textOverrides: previous.group.details.textOverrides }
+        group.detailGroups = group.detailGroups?.map(panel => {
+          const original = previous.group.detailGroups?.find(candidate => membershipKey(candidate.itemIds) === membershipKey(panel.itemIds))
+          return original?.details.textOverrides ? { ...panel, details: { ...panel.details, textOverrides: original.details.textOverrides } } : panel
+        })
         group.backgroundColor = previous.group.backgroundColor ?? previous.page.backgroundColor
         group.layoutMode = previous.group.layoutMode
         group.detailColumns = previous.group.detailColumns

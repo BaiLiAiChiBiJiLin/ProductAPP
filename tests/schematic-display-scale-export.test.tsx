@@ -1,9 +1,11 @@
+vi.mock('../src/services/backend', async () => { const core = await import('@tauri-apps/api/core'); return { invoke: core.invoke, storageMode: async () => ({ shared: false }) } })
 import type { ComponentProps } from 'react'
 import { afterEach, beforeAll, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { defaultLayoutBounds, type Asset, type Page } from '../src/model'
 import { createReviewRecord, type SchematicReviewRecord } from '../src/modules/schematic-review/reviewRecords'
 import { emptyArrangementDisplayState } from '../src/modules/schematic/services/arrangementDisplayState'
+import { paginateAssets } from '../src/modules/schematic/services/paginationService'
 import { defaultBatchMetadata } from '../src/modules/schematic/types'
 import type ArtworkCanvas from '../src/modules/schematic/ArtworkCanvas'
 
@@ -96,6 +98,84 @@ test.each(['pdf', 'svg', 'png', 'jpg'] as const)('%s exports the manually select
   expect(savedRecord().pages[0].items[0]).toMatchObject({ w: 50, h: 100 })
   expect(savedRecord().display.visualScales).toEqual([['main-1', 1.2]])
   expect(savedRecord().assets[0]).toMatchObject({ width: 30, height: 60, sourceGroupWidthMm: 30, sourceGroupHeightMm: 60 })
+})
+
+test('a resized block persists its custom dimensions and exports the same image and ruler geometry', async () => {
+  const view = render(<SchematicPage initialRecord={fixture()} onRecordSaved={mocks.recordSaved}/>)
+  await setPercentage(120)
+  const original = canvas().page.imageGroups![0]
+  act(() => { canvas().onResizeGroup?.(original.id, { ...original, width: 400, height: 260.5 }) })
+  await waitFor(() => expect(canvas().page.imageGroups![0].manualSize).toBe(true))
+  const resized = canvas().page.imageGroups![0]
+  expect(resized).toMatchObject({ width: 400, height: 260.5, backgroundHeight: 260.5 })
+  expect(canvas().selectedGroupIds).toEqual([resized.id])
+  expect(canvas().page.items[0]).toMatchObject({ w: 50, h: 100 })
+  expect(canvas().visualScales?.get('main-1')).toBe(1.2)
+  await exportFormat('pdf')
+  const exported = new DOMParser().parseFromString(stagedPages()[0], 'image/svg+xml')
+  const background = exported.querySelector(`[data-group-background="${resized.id}"]`)!
+  for (const field of ['x', 'y', 'width', 'height'] as const) expect(Number(background.getAttribute(field))).toBeCloseTo(resized[field])
+  const image = exported.querySelector('image')!
+  expect(Number(image.getAttribute('width'))).toBeCloseTo(60)
+  expect(Number(image.getAttribute('height'))).toBeCloseTo(120)
+  const marker = exported.querySelector('[data-item-id="main-1"]')!
+  const lines = marker.querySelectorAll('line')
+  expect(Number(lines[1].getAttribute('y1')) - Number(lines[0].getAttribute('y1'))).toBeCloseTo(120)
+  const record = savedRecord()
+  expect(record.pages[0].imageGroups![0]).toMatchObject({ width: 400, height: 260.5, manualSize: true })
+  view.unmount()
+  render(<SchematicPage initialRecord={record} onRecordSaved={mocks.recordSaved}/>)
+  await waitFor(() => expect(canvas().page.imageGroups![0]).toEqual(resized))
+})
+
+test('multi-selection combines several groups, then combines existing combinations again and persists every image', async () => {
+  const assets = Array.from({ length: 7 }, (_, index) => ({ ...asset, id: `combine-${index}`, name: `组合图片 ${index + 1}`, attributes: { QT: String(index + 1) } }))
+  const pages = paginateAssets(assets)
+  const originalIds = pages.flatMap(page => page.items.map(item => item.id)).sort()
+  const firstItem = pages[0].items[0]
+  firstItem.rulerUnit = 'cm'; firstItem.rulerHeight = true; firstItem.rulerWidth = true
+  const display = emptyArrangementDisplayState()
+  display.visualScales.set(firstItem.id, 1.2)
+  const record = createReviewRecord({ assets, pages, activePage: pages[0].id, metadata: defaultBatchMetadata,
+    layoutBounds: defaultLayoutBounds, arrangementSort: 'default', defaultArrangementIds: assets.map(asset => asset.id) }, display, 'pdf', 'before.pdf')
+  const view = render(<SchematicPage initialRecord={record} onRecordSaved={mocks.recordSaved}/>)
+  await waitFor(() => expect(canvas().page.imageGroups).toHaveLength(7))
+  const originalGroups = canvas().page.imageGroups!.map(group => group.id)
+  for (const [index, id] of originalGroups.slice(0, 3).entries()) act(() => canvas().onSelectGroup(id, index !== 0))
+  expect(screen.getByText('已选 3 组（按住 Ctrl 多选）')).toBeTruthy()
+  act(() => canvas().onSelectGroup(originalGroups[2], true))
+  expect(canvas().selectedGroupIds).toHaveLength(2)
+  act(() => canvas().onSelectGroup(originalGroups[2], true))
+  expect((screen.getByRole('button', { name: '组合', exact: true }) as HTMLButtonElement).disabled).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: '组合', exact: true }))
+  await waitFor(() => expect(canvas().page.imageGroups!.find(group => group.itemIds.length === 3)).toBeTruthy())
+  const firstCombined = canvas().page.imageGroups!.find(group => group.itemIds.length === 3)!
+  expect(canvas().selectedGroupIds).toEqual([firstCombined.id])
+  expect((screen.getByRole('button', { name: '组合', exact: true }) as HTMLButtonElement).disabled).toBe(true)
+
+  for (const [index, id] of originalGroups.slice(3, 5).entries()) act(() => canvas().onSelectGroup(id, index !== 0))
+  fireEvent.click(screen.getByRole('button', { name: '组合', exact: true }))
+  await waitFor(() => expect(canvas().page.imageGroups!.find(group => group.itemIds.length === 2)).toBeTruthy())
+  // Two existing combinations and two single images can all join one group.
+  const remainingGroups = canvas().page.imageGroups!.map(group => group.id)
+  for (const [index, id] of remainingGroups.entries()) act(() => canvas().onSelectGroup(id, index !== 0))
+  expect(canvas().selectedGroupIds).toHaveLength(4)
+  fireEvent.click(screen.getByRole('button', { name: '组合', exact: true }))
+  await waitFor(() => expect(canvas().page.imageGroups).toHaveLength(1))
+  expect([...canvas().page.imageGroups![0].itemIds].sort()).toEqual(originalIds)
+  expect(canvas().page.imageGroups![0].detailGroups?.map(panel => panel.details.qt).sort()).toEqual(['1', '2', '3', '4', '5', '6', '7'])
+  expect(canvas().page.items.map(item => item.id).sort()).toEqual(originalIds)
+  expect(canvas().page.items.find(item => item.id === firstItem.id)).toMatchObject({ rulerUnit: 'cm', rulerWidth: true, rulerHeight: true })
+  expect(canvas().visualScales?.get(firstItem.id)).toBe(1.2)
+  expect(canvas().selectedGroupIds).toEqual([canvas().page.imageGroups![0].id])
+  await exportFormat('pdf')
+  const saved = savedRecord()
+  expect(saved.pages.flatMap(page => page.items.map(item => item.id)).sort()).toEqual(originalIds)
+  expect(saved.pages.flatMap(page => page.imageGroups ?? [])).toHaveLength(1)
+  expect(saved.pages.flatMap(page => page.imageGroups ?? [])[0].detailGroups).toHaveLength(7)
+  view.unmount()
+  render(<SchematicPage initialRecord={saved} onRecordSaved={mocks.recordSaved}/>)
+  await waitFor(() => expect([...canvas().page.imageGroups![0].itemIds].sort()).toEqual(originalIds))
 })
 
 test('PDF exports each page with its own manual scale and repeated export never compounds it', async () => {

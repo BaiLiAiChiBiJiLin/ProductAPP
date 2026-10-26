@@ -8,13 +8,13 @@
 
 所有输入输出使用毫米 JSON；每种基础图片只提交一份轮廓和 QT 数量。无效轮廓按资产返回原因并继续处理其余图片，不生成矩形兜底结果。
 
-## 纯线条 SVG 单独开板
+## 纯线条底座分版与混排开关
 
 点击重新计算时，`load_imposition_geometry` 使用同一次 usvg 解析返回毫米轮廓和 `lineOnly`。分类读取解析后的样式、继承和 `use` 引用：有可见描边、没有图片或可见填充的 SVG 属于纯线条；颜色、渐变、图案填充及图片归入其他图片。隐藏图层、零透明度内容及未使用的定义不参与分类；有滤镜的内容保守归入其他图片。
 
-三种策略都会按这两类分别求解，随后合并连续板号与数量统计。纯线条 SVG 之间可以混排，同一板材不会混入其他图片；每类内部继续进行旋转、补空隙和版式优化。QT 副本共享基础轮廓，跨类别相同几何也共享掩码缓存。最终校验同时检查分类、完整 QT、有效区域及配置间距。
+拼版设置中的“底座混排”默认关闭（开发和生产环境都可见）。关闭时，三种策略按两类分别求解，纯线条底座之间可以混排，同一板材不混入其他图片。开启时，`NestRequest.allowBaseMixing=true` 将两类的实际 QT 放入同一个搜索任务，允许同版旋转、补空隙和版式优化。分类仍保留原始 `lineOnly`，不修改图片或轮廓。QT 副本共享基础轮廓，跨类别相同几何也共享掩码缓存。最终始终校验完整 QT、有效区域和配置间距；仅在关闭时额外强制类别分版。更改开关清空旧方案，等待点击“智能拼版”，不自动计算。
 
-同类跨方案拖动只重算所属类别，保留另一类板材的位置、角度和生产份数；跨这两类版式拖动会被拒绝并保留原结果。画布折叠和 PDF 导出继续按图片身份区分版式，不会因为两类形状相同而合并。
+关闭混排时，同类跨方案拖动只重算所属类别，保留另一类板材的位置、角度和生产份数；跨这两类版式拖动会被拒绝并保留原结果。开启混排时，跨类别和已混合版式均可参与特殊重排，落点、QT、间距和边界校验继续执行。画布折叠和 PDF 导出继续按图片身份区分版式，不会因为两类形状相同而合并。
 
 回归入口：`test_line_only_nesting.py` 覆盖三种策略、1802 QT、缓存复用和跨方案重排；Rust 的 `svg_content::tests` 验证 SVG 分类，`line_only_svg_geometry_reaches_solver_as_separate_sheets` 验证原生读取到实际求解的完整链路（需本地运行时，使用 `--ignored`）。前端分类与选中范围回归位于 `tests/imposition.test.tsx`。
 
@@ -77,7 +77,7 @@
 
 ## Windows 安装包中的拼版运行时
 
-正式打包前自动执行 `node scripts/bundle-nesting-runtime.mjs`。构建机需要 Windows x64、Python 3.13（可由 `PRINTFLOW_NESTING_BUILD_PYTHON` 指定）和 Rust MSVC 工具链；GitHub 发布流程已配置 Python。构建脚本固定安装生产依赖、编译 release 搜索 DLL，并把六个 Python 适配模块、独立解释器、标准库和依赖写入 `src-tauri/resources/imposition-runtime/`，通过 Tauri 资源映射随安装包发布。生成目录不提交 Git，不包含虚拟环境绝对路径、开发测试或订单数据。
+正式打包前自动执行 `node scripts/bundle-nesting-runtime.mjs`。构建机需要 Windows x64、Python 3.13（可由 `PRINTFLOW_NESTING_BUILD_PYTHON` 指定）和 Rust MSVC 工具链；GitHub 发布流程已配置 Python。构建脚本固定安装生产依赖、编译 release 搜索 DLL，并把七个 Python 适配模块、独立解释器、标准库和依赖写入 `src-tauri/resources/imposition-runtime/`，通过 Tauri 资源映射随安装包发布。生成目录不提交 Git，不包含虚拟环境绝对路径、开发测试或订单数据。
 
 每次打包都会从项目目录外验证三种策略使用内置 Rust 核心，并验证切割方案优先和综合最少的跨方案重排；运行时还会被复制到含空格和中文的临时安装目录验证搬迁。正式版优先使用 Tauri `resource_dir()/imposition-runtime`，不从当前工作目录查找源码，也不依赖目标电脑的系统 Python。Python 使用相对 `._pth` 隔离模块路径，缓存写入用户数据目录。
 
@@ -86,7 +86,7 @@
 
 ### 三方案比较
 
-默认策略为“全部”：一次提取基础图片轮廓，然后按节省板材、切割方案优先、综合最少的顺序串行运行求解器。一个策略失败不影响后续策略。比较阶段保留坐标与版面数、切割线数，不加载其他策略的画布图片；用户选定后清除其他策略结果，再建立可编辑画布。重新智能拼版会重新比较，不沿用未选方案缓存。
+默认策略为“全部”：一次提取基础图片轮廓，然后按节省板材、切割方案优先、综合最少的顺序串行运行求解器。一个策略失败不影响后续策略。比较阶段保留坐标与版面数、切割线数，不加载其他策略的画布图片；用户选定后仍保留其他策略坐标，支持再次切换，只有当前方案建立可编辑画布。返回待拼版或修改输入后释放比较结果。
 
 开发环境可查看版面配置、选择单个策略与手动核心数；生产环境隐藏这三项，默认比较全部策略，并自动使用全部可用逻辑核心。Python/Rust 的内存预算仍可降低实际并发。
 
@@ -99,3 +99,9 @@
 运行：`python -B -m unittest discover -s scripts/nesting -p test_local_tools_engine.py -k test_uniform`。设置 `PRINTFLOW_NESTING_CORE=rust` 或 `python` 可分别验证原生和参考搜索。
 
 本机原始 SVG 重放可用忽略测试 `real_production_svg_import`：`PRINTFLOW_IMPORT_TEST_SVG` 指定输入，`PRINTFLOW_IMPORT_TEST_COUNT` 指定拆分数量；可选 `PRINTFLOW_IMPORT_TEST_REQUEST` 指定系统临时目录内的 JSON 输出，`PRINTFLOW_IMPORT_TEST_QT` 指定测试 QT。该测试导出实际毫米轮廓请求及同目录下的拆分 SVG，原始文件不变。随后以此 JSON 调用 `local_tools_engine.py` 即可复现生产求解链路。
+
+### 含少量尾数的重复批次
+
+`nest_repeat_lots.py` 在已有完整方案之后，按 QT 除数搜索整批重复的多板组合，不再要求全部图片共享公约数。先排批量配额，再将无法整除的尾数补入已排模板的一块实际板材；该块独立成版，其他重复副本保持原样，无法补入的尾数继续单独求解。比较的是完整订单的板材和版式数，不以单板件数淘汰整批更好的候选。只接纳不增加板材且减少版式的完整合法结果；新候选仍经过真实轮廓、3 mm 间距、完整图框边界和每款 QT 校验。与原策略共享 MaskBank 和 Rust 搜索核心。
+
+`fixtures/repeated-lots-with-tails.json` 为 20 种匿名轮廓、1902 QT 的真实任务几何快照，不包含图片、文件路径或客户名称。回归要求切割方案优先不超过 91 板、11 版式（旧结果 95 / 19），全部 QT 和间距不变。另有 8 款各 30 份加一张尾数的回归：旧 5 / 4，修复后 5 / 2。运行 `python -B -m unittest discover -s scripts/nesting -p test_local_tools_engine.py`。这属于有界启发式改进，不保证全局最优。

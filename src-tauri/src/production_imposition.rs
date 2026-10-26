@@ -209,7 +209,7 @@ fn image_reference(
     Ok(path.to_string_lossy().into_owned())
 }
 
-fn production_images(
+pub(crate) fn production_images(
     conn: &Connection,
     review_id: &str,
     snapshot: &Value,

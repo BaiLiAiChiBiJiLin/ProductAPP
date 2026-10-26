@@ -16,6 +16,51 @@ const date = new Date(2026, 9, 14, 9, 30, 58)
 const model = (pages = [[item()]], sources = { art: source }) => createImpositionExportModel({ pages, sources, plateWidthMm: 300, plateHeightMm: 464 })
 
 describe('imposition export SVG layers', () => {
+  test('paths, filled paths and references to paths never enter image roles or image ordering', () => {
+    const source = parseSource('<defs><path id="shape" d="M0 0H20V10Z"/></defs><path id="cut" d="M0 0H20V10Z" fill="none" stroke="red"/><image id="back"/><path id="color" d="M0 0H20V10Z" fill="blue"/><image id="front"/><use id="shape-use" href="#shape"/>')
+    expect(Object.fromEntries(source.layers.map(layer => [layer.label, layer.defaultGroupId]))).toEqual({ cut: 'paths', back: 'image-back', color: 'fills', front: 'image-front', 'shape-use': 'fills' })
+    const current = model([[item()]], { art: source })
+    for (const label of ['cut', 'color', 'shape-use']) for (const type of ['image-front', 'image-back', 'images']) {
+      const layer = source.layers.find(layer => layer.label === label)!
+      const original = current.assignments.art[layer.id]
+      current.assignments.art[layer.id] = type
+      expect(() => enumerateImpositionPdfExports(current)).toThrow('不能作为图片')
+      current.assignments.art[layer.id] = original
+    }
+  })
+
+  test('defaults image roles from visual top to bottom and keeps contour/holes outside those slots', () => {
+    const source = parseSource('<defs><pattern id="resource"><image id="resource-image"/></pattern></defs><image id="back"/><path id="cut" fill="none" stroke="red" d="M0 0h40v20z"/><g><image id="window"/><circle id="hole" fill="none" stroke="red" r="2"/><g><image id="front"/></g></g>')
+    expect(Object.fromEntries(source.layers.map(layer => [layer.label, layer.defaultGroupId]))).toEqual({ back: 'image-back', cut: 'paths', window: 'fills', hole: 'paths', front: 'image-front' })
+    expect(source.layers.map(layer => layer.label)).toEqual(['back', 'cut', 'window', 'hole', 'front'])
+    const dual = parseSource('<image id="lower"/><image id="upper"/>')
+    expect(dual.layers.map(layer => layer.defaultGroupId)).toEqual(['image-back', 'image-front'])
+    const single = parseSource('<image id="only"/>')
+    expect(single.layers[0].defaultGroupId).toBe('image-front')
+  })
+
+  test('merges all layers of the same assigned image type onto one board page without a back', () => {
+    const art = parseSource('<image id="front-a" href="data:image/png;base64,AQ=="/><image id="front-b" href="data:image/png;base64,Ag=="/><image id="extra-a" href="data:image/png;base64,Aw=="/><image id="extra-b" href="data:image/png;base64,BA=="/>')
+    const other = parseSource('<image id="other-front" href="data:image/png;base64,BQ=="/>', 'other')
+    const placements = [item(), item('art', { x: 80, rotation: 90, image: { ...image(), id: 'art#qt-2', sourceImageId: 'art' } }), item('other', { x: 140, rotation: 180 })]
+    const current = model([placements], { art, other })
+    art.layers.forEach((layer, index) => { current.assignments.art[layer.id] = index < 2 ? 'image-front' : 'images' })
+    current.assignments.other[other.layers[0].id] = 'image-front'
+    const pages = buildImpositionSvgExports(current).filter(page => page.groupId === 'images')
+    expect(pages).toHaveLength(2)
+    const front = read(pages[0].svg)
+    expect(front.querySelector('[id$="-front-a"]')).not.toBeNull()
+    expect(front.querySelector('[id$="-front-b"]')).not.toBeNull()
+    expect(front.querySelector('[id$="-other-front"]')).not.toBeNull()
+    expect(front.querySelector('[id$="-extra-a"]')).toBeNull()
+    expect(front.querySelectorAll('[data-placement-id]')).toHaveLength(3)
+    const extra = read(pages[1].svg)
+    expect(extra.querySelector('[id$="-extra-a"]')).not.toBeNull()
+    expect(extra.querySelector('[id$="-extra-b"]')).not.toBeNull()
+    expect(extra.querySelector('[id$="-front-a"]')).toBeNull()
+    expect(extra.querySelectorAll('[data-placement-id]')).toHaveLength(2)
+  })
+
   test('reports an unpainted closed contour beside artwork even when a hanging hole is stroked', () => {
     const source = parseSource('<style>.fil0{fill:none}.str0{stroke:#EC2A90}</style><g><image width="400" height="200" href="data:image/png;base64,AQ=="/><path id="trace" class="fil0" d="M10 20h400v200H10z"/><circle class="fil0 str0" cx="210" cy="30" r="4"/></g>')
     expect(source.contourWarnings).toEqual(['图层“trace”的闭合路径没有填充和描边，原始 SVG 缺少可见外轮廓；PDF / DXF 不会输出该路径，挂孔不代表外轮廓完整。'])
@@ -63,6 +108,8 @@ describe('imposition export SVG layers', () => {
     const other = parseSource('<g><path fill="none" stroke="blue" d="M0 0h40v20z"/><image id="other-image" href="data:image/png;base64,Aw==" width="400" height="200"/></g>', 'other')
     const placements = [item('art', { rotation: 90 }), item('art', { x: 80, rotation: 180, image: { ...image(), id: 'art#qt-2', sourceImageId: 'art' } }), item('other', { x: 140, rotation: 37 }), item('other', { x: 180, y: 100, image: { ...image('other'), id: 'other#qt-2', sourceImageId: 'other' } })]
     const current = createImpositionExportModel({ pages: [placements, placements], sources: { art, other }, plateWidthMm: 300, plateHeightMm: 464, holes: { count: 2, sizeMm: 3, gapMm: 203.468, leftMm: 4 } })
+    current.assignments.art[art.layers[0].id] = 'image-front'
+    current.assignments.art[art.layers[1].id] = 'image-back'
     const entries = buildImpositionSvgExports(current, { date })
     expect(entries).toHaveLength(3)
     expect(new Set(entries.map(entry => entry.fileName)).size).toBe(3)
@@ -104,6 +151,7 @@ describe('imposition export SVG layers', () => {
     current.assignments.art[art.layers[0].id] = 'image-back'
     current.assignments.art[art.layers[1].id] = 'image-front'
     current.assignments.art[art.layers[2].id] = 'image-front'
+    current.assignments.art[art.layers[3].id] = 'images'
     const entries = enumerateImpositionPdfExports(current, { date })
     expect(entries[0].pages).toHaveLength(3)
     const [front, back, extra] = entries[0].pages.map(entry => read(renderImpositionSvgExport(current, entry)))
@@ -127,41 +175,28 @@ describe('imposition export SVG layers', () => {
     expect(read(renderImpositionSvgExport(current, changed[0].pages[1])).querySelector('[data-source-id="other"]')).toBeNull()
   })
 
-  test('image channels follow current type assignments in document order and honor per-template overrides', () => {
+  test('semantic image pages honor current types and per-template overrides even when another source has no front', () => {
     const art = parseSource('<image id="first" href="data:image/png;base64,AQ=="/><path id="cut" fill="none" d="M0 0h1"/><image id="second" href="data:image/png;base64,Ag=="/>')
     const other = parseSource('<g><image id="only" href="data:image/png;base64,Aw=="/></g>', 'other')
-    const placements = [item(), item('other', { x: 80 })]
-    const current = model([placements, [item('art', { x: 20 }), item('other', { x: 90 })]], { art, other })
-    // The first image becomes a color window; the next remaining image is now
-    // channel 1, despite its source id being different from the other SVG's id.
+    const current = model([[item(), item('other', { x: 80 })], [item('art', { x: 20 }), item('other', { x: 90 })]], { art, other })
     current.assignments.art[art.layers[0].id] = 'fills'
+    current.assignments.art[art.layers[2].id] = 'image-back'
     let entries = buildImpositionSvgExports(current, { date })
-    expect(entries.filter(entry => entry.groupId === 'images').map(entry => entry.imageLayerMembers)).toEqual([{ art: art.layers[2].id, other: other.layers[0].id }, { art: art.layers[2].id, other: other.layers[0].id }])
-    for (const entry of entries.filter(entry => entry.groupId === 'images')) {
-      expect(entry.imageLayerIndex).toBe(0)
-      const doc = read(entry.svg)
-      expect(doc.querySelector('[id$="-first"]')).toBeNull()
-      expect(doc.querySelector('[id$="-second"]')).not.toBeNull()
-      expect(doc.querySelector('[id$="-only"]')).not.toBeNull()
+    for (const template of current.templates) {
+      const pages = entries.filter(entry => entry.templateId === template.id && entry.groupId === 'images')
+      expect(pages.map(entry => entry.imageLayerMembers)).toEqual([{ other: other.layers[0].id }, { art: art.layers[2].id, other: other.layers[0].id }])
+      expect(read(pages[0].svg).querySelector('[id$="-second"]')).toBeNull()
+      expect(read(pages[1].svg).querySelector('[id$="-second"]')).not.toBeNull()
     }
     current.templateAssignments = { 'template-2': { art: { [art.layers[0].id]: null, [art.layers[1].id]: 'paths', [art.layers[2].id]: 'white' } } }
     entries = buildImpositionSvgExports(current, { date })
-    const secondImages = entries.find(entry => entry.templateId === 'template-2' && entry.groupId === 'images')!
-    expect(secondImages.imageLayerMembers).toEqual({ other: other.layers[0].id })
-    expect(read(secondImages.svg).querySelectorAll('[data-placement-id]')).toHaveLength(1)
+    const secondImages = entries.filter(entry => entry.templateId === 'template-2' && entry.groupId === 'images')
+    expect(secondImages).toHaveLength(1)
+    expect(secondImages[0].imageLayerMembers).toEqual({ other: other.layers[0].id })
     expect(entries.some(entry => entry.templateId === 'template-2' && entry.groupId === 'fills')).toBe(false)
     expect(read(entries.find(entry => entry.templateId === 'template-2' && entry.groupId === 'white')!.svg).querySelector('[id$="-second"]')).not.toBeNull()
-    expect(entries.find(entry => entry.templateId === 'template-1' && entry.groupId === 'images')!.imageLayerMembers).toEqual({ art: art.layers[2].id, other: other.layers[0].id })
-    // Assigning the path to images places it ahead of the existing second
-    // image, according to document order rather than image tag name.
     current.assignments.art[art.layers[1].id] = 'images'
-    entries = buildImpositionSvgExports(current, { templateIds: ['template-1'], date })
-    const channels = entries.filter(entry => entry.groupId === 'images')
-    expect(channels).toHaveLength(2)
-    expect(channels[0].imageLayerMembers).toEqual({ art: art.layers[1].id, other: other.layers[0].id })
-    expect(channels[1].imageLayerMembers).toEqual({ art: art.layers[2].id })
-    expect(read(channels[0].svg).querySelector('path')).not.toBeNull()
-    expect(read(channels[1].svg).querySelector('path')).toBeNull()
+    expect(() => buildImpositionSvgExports(current, { templateIds: ['template-1'], date })).toThrow('不能作为图片')
   })
 
   test('彩窗 and 白墨 merge across different SVGs; white paint alone is not automatically white ink', () => {
@@ -300,7 +335,7 @@ describe('imposition export physical board identity and positioning', () => {
       ])
     }
     for (const type of ['paths', 'images', 'fills', 'white']) {
-      current.assignments.art = Object.fromEntries(source.layers.map(layer => [layer.id, type]))
+      current.assignments.art = Object.fromEntries(source.layers.map(layer => [layer.id, type === 'images' && layer.category !== 'images' ? null : type]))
       const entry = buildImpositionSvgExports(current)[0]
       const preview = buildImpositionTemplatePreview(current, current.templates[0].id, type)
       for (const svg of [entry.svg, preview]) {
@@ -405,6 +440,7 @@ describe('imposition export physical board identity and positioning', () => {
     const first = [item()]; const second = [item('art', { x: 80 })]
     const current = model([...Array.from({ length: 5 }, () => first), second, second], { art })
     current.assignments.art[art.layers.find(layer => layer.label === 'ink')!.id] = 'white'
+    art.layers.filter(layer => layer.category === 'images').forEach((layer, i) => { current.assignments.art[layer.id] = i ? 'image-back' : 'image-front' })
     const entries = enumerateImpositionSvgExports(current, { date, templateIds: ['template-2', 'template-1'] })
     expect(entries).toHaveLength(10)
     const types = ['轮廓', '图片1', '图片2', '彩窗', '白墨']
@@ -424,6 +460,7 @@ describe('imposition export physical board identity and positioning', () => {
     const first = [item()]; const second = [item('art', { x: 80 })]
     const current = model([...Array.from({ length: 7 }, () => first), second, second], { art })
     current.assignments.art[art.layers.find(layer => layer.label === 'ink')!.id] = 'white'
+    art.layers.filter(layer => layer.category === 'images').forEach((layer, i) => { current.assignments.art[layer.id] = i ? 'image-back' : 'image-front' })
     const entries = enumerateImpositionPdfExports(current, { date, templateIds: ['template-2', 'template-1'] })
     expect(entries.map(entry => entry.fileName)).toEqual(['202610140930_1B-2B_1F-7F.pdf', '202610140930_2B-2B_1F-2F.pdf'])
     expect(entries.map(entry => entry.productionCopies)).toEqual([7, 2])

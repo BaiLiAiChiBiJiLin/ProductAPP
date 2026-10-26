@@ -1,3 +1,4 @@
+vi.mock('../src/services/backend', async () => { const core = await import('@tauri-apps/api/core'); return { invoke: core.invoke, storageMode: async () => ({ shared: false }) } })
 import { createRef, useState } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -173,8 +174,33 @@ describe('editable captions and annotations', () => {
     expect(stageRef.current!.find<Konva.Text>('Text').map(text => text.fill())).toEqual([RULER_COLOR, '#c000aa'])
   })
 
+  it.each([
+    { end: { x: 140, y: 50 }, rotation: 0 },
+    { end: { x: 40, y: 150 }, rotation: -90 },
+    { end: { x: 40, y: -50 }, rotation: -90 },
+    { end: { x: 140, y: 150 }, rotation: 45 },
+    { end: { x: -60, y: -50 }, rotation: 45 },
+  ])('rotates manual ruler text with its line at $rotation degrees in canvas and exports', ({ end, rotation }) => {
+    const annotation: Extract<CanvasAnnotation, { kind: 'ruler' }> = { id: 'angle', kind: 'ruler', x: 40, y: 50, x2: end.x, y2: end.y, measuredMm: 40, color: '#000', extensionOffset: -30 }
+    const stageRef = createRef<Konva.Stage>()
+    render(<Stage ref={stageRef} width={400} height={300}><Layer>
+      <CanvasAnnotations annotations={[annotation]} interactive onSelect={vi.fn()} onChange={vi.fn()} onEdit={vi.fn()}/>
+    </Layer></Stage>)
+    const label = stageRef.current!.findOne<Konva.Text>('.manual-ruler-label')!
+    const geometry = manualRulerGeometry(annotation)
+    expect(label.rotation()).toBeCloseTo(rotation)
+    expect(label.x() + annotation.x).toBeCloseTo(geometry.textX)
+    expect(label.y() + annotation.y).toBeCloseTo(geometry.textY)
+    const current = { ...page(), annotations: [annotation] }
+    for (const svg of [pageSvg(current, assets), pageRasterSvg(current, assets)]) {
+      const text = parseSvg(svg).querySelector('[data-canvas-annotations] text')!
+      expect(text.getAttribute('transform')).toBe(`rotate(${rotation} ${geometry.textX} ${geometry.textY})`)
+      expect(text.textContent).toBe('40 mm')
+    }
+  })
+
   it.each([1, 0.7, 1.6, 2.5])('keeps a manual ruler at its release position after repeated whole-ruler drags at zoom %s', zoom => {
-    const original = { id: 'ruler', kind: 'ruler' as const, x: 40, y: 50, x2: 140, y2: 70, measuredMm: 40, color: '#000' }
+    const original = { id: 'ruler', kind: 'ruler' as const, x: 40, y: 50, x2: 140, y2: 70, measuredMm: 40, color: '#000', extensionOffset: -25 }
     const stageRef = createRef<Konva.Stage>()
     const changes: CanvasAnnotation[] = []
     let expected = original
@@ -208,6 +234,7 @@ describe('editable captions and annotations', () => {
       expect(saved.x2).toBeCloseTo(expected.x2)
       expect(saved.y2).toBeCloseTo(expected.y2)
       expect(saved.measuredMm).toBe(original.measuredMm)
+      expect(saved.extensionOffset).toBe(-25)
       moveCanvasPointer({ x: destination.x + 50, y: destination.y + 30 }, 0)
       handles.forEach((handle, index) => {
         expect(handle.getAbsolutePosition().x).toBeCloseTo(beforeRelease[index].x)
@@ -232,6 +259,7 @@ describe('editable captions and annotations', () => {
       expect(saved.x2).toBeCloseTo(expected.x2)
       expect(saved.y2).toBeCloseTo(expected.y2)
       expect(saved.measuredMm).toBe(original.measuredMm)
+      expect(saved.extensionOffset).toBe(-25)
       expect(handles[1 - endpoint].getAbsolutePosition().x).toBeCloseTo(opposite.x)
       expect(handles[1 - endpoint].getAbsolutePosition().y).toBeCloseTo(opposite.y)
       expect(handles[endpoint].getAbsolutePosition().x).toBeCloseTo(beforeRelease.x)
@@ -304,7 +332,7 @@ it('review snapshots roundtrip page ordering, colors, deleted captions, annotati
   pages[0].items[0].rulerHeightMm = 71.25
   pages[0].annotations = [
     { id: 'text', kind: 'text', x: 10, y: 20, text: 'saved', color: '#000', fontSize: 12 },
-    { id: 'ruler', kind: 'ruler', x: 10, y: 30, x2: 100, y2: 30, measuredMm: 40, color: '#123456', sourceItemId: 'item-9' },
+    { id: 'ruler', kind: 'ruler', x: 10, y: 30, x2: 100, y2: 30, measuredMm: 40, color: '#123456', sourceItemId: 'item-9', extensionOffset: -24 },
   ]
   const record = createReviewRecord({ assets: [asset], pages, activePage: 9, metadata: { customerName: 'client', drawingDate: '', estimatedShipDate: '', designer: '' },
     layoutBounds: defaultLayoutBounds, arrangementSort: 'default', defaultArrangementIds: [asset.id] }, emptyArrangementDisplayState(), 'pdf', 'proof.pdf')
@@ -328,7 +356,7 @@ it('review snapshots roundtrip page ordering, colors, deleted captions, annotati
   expect(restored.pages).toEqual(record.pages)
   expect(restored.pages[0].items[0].captionHidden).toBe(true)
   expect(restored.pages[0].items[0].captionColor).toBe('#654321')
-  expect(restored.pages[0].annotations?.[1]).toMatchObject({ kind: 'ruler', measuredMm: 40, sourceItemId: 'item-9' })
+  expect(restored.pages[0].annotations?.[1]).toMatchObject({ kind: 'ruler', measuredMm: 40, sourceItemId: 'item-9', extensionOffset: -24 })
 })
 
 describe('drawing surface', () => {
@@ -339,21 +367,78 @@ describe('drawing surface', () => {
     return { ...rendered, onText, onRuler, onCancel, surface: screen.getByLabelText(tool === 'ruler' ? '点击画布绘制标尺' : '点击画布添加文字') }
   }
 
-  it('previews the line between two clicks, commits calibrated distance and then clears the preview', () => {
+  it('fixes two measured points then previews a parallel offset until the third click commits', () => {
     const { surface, container, onRuler } = drawing()
     fireEvent.click(surface, { clientX: 250, clientY: 450 })
     expect(onRuler).not.toHaveBeenCalled()
     fireEvent(surface, new MouseEvent('pointermove', { bubbles: true, clientX: 350, clientY: 450 }))
     const segment = container.querySelector('[data-ruler-segment]')
     expect(segment?.getAttribute('x1')).toBe('100')
-    expect(segment?.getAttribute('x2')).toBe('118.5')
+    expect(segment?.getAttribute('x2')).toBe('110')
     expect(container.querySelector('text')?.textContent).toBe('40 mm')
     container.querySelectorAll('[stroke]').forEach(node => expect(node.getAttribute('stroke')).toBe(RULER_COLOR))
     container.querySelectorAll('[fill]').forEach(node => expect(node.getAttribute('fill')).toBe(RULER_COLOR))
     fireEvent.click(surface, { clientX: 350, clientY: 450 })
+    expect(onRuler).not.toHaveBeenCalled()
+    fireEvent(surface, new MouseEvent('pointermove', { bubbles: true, clientX: 330, clientY: 510 }))
+    expect(container.querySelector('[data-ruler-segment]')?.getAttribute('y1')).toBe('230')
+    const extension = container.querySelector('[data-ruler-extension]')!
+    expect(['x1', 'y1', 'x2', 'y2'].map(name => extension.getAttribute(name))).toEqual(['100', '200', '100', '230'])
+    expect(container.querySelector('text')?.textContent).toBe('40 mm')
+    fireEvent.click(surface, { clientX: 330, clientY: 510 })
     expect(onRuler).toHaveBeenCalledOnce()
-    expect(onRuler.mock.calls[0][0]).toMatchObject({ kind: 'ruler', x: 100, y: 200, x2: 150, y2: 200, color: RULER_COLOR, measuredMm: 40, sourceItemId: 'item-1' })
+    expect(onRuler.mock.calls[0][0]).toMatchObject({ kind: 'ruler', x: 100, y: 230, x2: 150, y2: 230, color: RULER_COLOR, measuredMm: 40, sourceItemId: 'item-1', extensionOffset: 30 })
     expect(container.querySelector('svg')).toBeNull()
+  })
+
+  it.each([50, 150])('lets the user put vertical extensions on either side at x=%s', x => {
+    const { surface, container, onRuler } = drawing()
+    fireEvent.click(surface, { clientX: 250, clientY: 450 })
+    fireEvent.click(surface, { clientX: 250, clientY: 650 })
+    expect(onRuler).not.toHaveBeenCalled()
+    fireEvent(surface, new MouseEvent('pointermove', { bubbles: true, clientX: x * 2 + 50, clientY: 550 }))
+    const extension = container.querySelector('[data-ruler-extension]')!
+    expect(['x1', 'y1', 'x2', 'y2'].map(name => Number(extension.getAttribute(name)))).toEqual([100, 200, x, 200])
+    expect(container.querySelector('text')?.getAttribute('transform')).toMatch(/^rotate\(-90 /)
+    expect(container.querySelector('text')?.textContent).toBe('80 mm')
+    fireEvent.click(surface, { clientX: x * 2 + 50, clientY: 550 })
+    expect(onRuler).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ x, y: 200, x2: x, y2: 300, extensionOffset: 100 - x, measuredMm: 80 }))
+  })
+
+  it('projects the third click perpendicular to a diagonal ruler without changing the measured length', () => {
+    const { surface, container, onRuler } = drawing()
+    fireEvent.click(surface, { clientX: 250, clientY: 450 })
+    fireEvent.click(surface, { clientX: 350, clientY: 550 })
+    fireEvent(surface, new MouseEvent('pointermove', { bubbles: true, clientX: 350, clientY: 450 }))
+    expect(container.querySelector('text')?.getAttribute('transform')).toMatch(/^rotate\(45 /)
+    fireEvent.click(surface, { clientX: 350, clientY: 450 })
+    const ruler = onRuler.mock.calls[0][0]
+    expect(ruler.x).toBeCloseTo(125)
+    expect(ruler.y).toBeCloseTo(175)
+    expect(ruler.x2).toBeCloseTo(175)
+    expect(ruler.y2).toBeCloseTo(225)
+    expect(ruler.extensionOffset).toBeCloseTo(-Math.sqrt(1250))
+    expect(ruler.measuredMm).toBeCloseTo(Math.sqrt(5000) * .8)
+    const geometry = manualRulerGeometry(ruler)
+    expect(geometry.extension[0][0]).toBeCloseTo(100)
+    expect(geometry.extension[0][1]).toBeCloseTo(200)
+    expect(geometry.extension[1][0]).toBeCloseTo(150)
+    expect(geometry.extension[1][1]).toBeCloseTo(250)
+  })
+
+  it('cancels offset placement without saving a partial ruler and permits a zero extension', () => {
+    const { surface, container, onRuler, onCancel } = drawing()
+    fireEvent.click(surface, { clientX: 250, clientY: 450 })
+    fireEvent.click(surface, { clientX: 350, clientY: 450 })
+    fireEvent(surface, new MouseEvent('pointermove', { bubbles: true, clientX: 350, clientY: 550 }))
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(onCancel).toHaveBeenCalledOnce()
+    expect(onRuler).not.toHaveBeenCalled()
+    expect(container.querySelector('svg')).toBeNull()
+    fireEvent.click(surface, { clientX: 250, clientY: 450 })
+    fireEvent.click(surface, { clientX: 350, clientY: 450 })
+    fireEvent.click(surface, { clientX: 350, clientY: 450 })
+    expect(onRuler).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ x: 100, y: 200, x2: 150, y2: 200, extensionOffset: 0, measuredMm: 40 }))
   })
 
   it('ignores off-paper clicks and zero-length rulers; Escape cancels before committing', () => {

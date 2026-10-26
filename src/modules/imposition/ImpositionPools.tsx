@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { CSSProperties } from 'react'
 import { Alert, Button, Checkbox, Drawer, Dropdown, Empty, Input, Modal, Pagination, Radio, Select, Spin, Table, Tabs, Tag } from 'antd'
 import { ArrowLeft, Check, ChevronRight, Images, Layers, MoreHorizontal, Plus, RefreshCw, Search, Settings2, Trash2, Pencil, Inbox } from 'lucide-react'
@@ -7,6 +7,7 @@ import PoolCustomerPie from './PoolCustomerPie'
 import { loadPoolRecords, poolCustomers, poolImages, poolStorageKey, POOL_COLORS, POOL_COLOR_OPTIONS, readPools, recordsForPool, replacePoolImages, UNASSIGNED_POOL, type ImpositionPool, type PoolImage } from './impositionPoolStore'
 import type { ImpositionRecord } from './impositionRecords'
 import './impositionPools.css'
+import { invoke, storageMode } from '../../services/backend'
 
 type Props = { active: boolean; revision: number; onBack: () => void; onStart: (records: ImpositionRecord[]) => void }
 const EMPTY_POOL_IMAGES: PoolImage[] = []
@@ -53,7 +54,9 @@ export default function ImpositionPools({ active, revision, onBack, onStart }: P
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [storageError, setStorageError] = useState(saved.error)
-  const configReady = !saved.error
+  const [poolSaving, setPoolSaving] = useState(false)
+  const poolSaveLock = useRef(false)
+  const configReady = !storageError && !poolSaving && !loading && !loadError
   const [refresh, setRefresh] = useState(0)
   const [editor, setEditor] = useState<PoolEditor>()
   const [editorError, setEditorError] = useState('')
@@ -73,7 +76,7 @@ export default function ImpositionPools({ active, revision, onBack, onStart }: P
     if (!active) return
     const controller = new AbortController()
     setLoading(true); setLoadError('')
-    void loadPoolRecords(controller.signal).then(next => { if (!controller.signal.aborted) setRecords(next) })
+    void Promise.all([loadPoolRecords(controller.signal), storageMode().then(async mode => mode?.shared ? (await invoke<{ pools: ImpositionPool[] }>('load_cloud_pools')).pools : null)]).then(([next, sharedPools]) => { if (!controller.signal.aborted) { setRecords(next); if (sharedPools) { setPools(sharedPools); setStorageError('') } } })
       .catch(reason => { if (!controller.signal.aborted) setLoadError(`加载图片失败：${String(reason)}`) })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
@@ -102,20 +105,26 @@ export default function ImpositionPools({ active, revision, onBack, onStart }: P
   const manageable = allImages.filter(item => (manageFilter !== 'unassigned' || !owners.has(item.key) || owners.get(item.key)?.id === manageId)
     && `${item.customer} ${item.image.name} ${item.image.productName}`.toLowerCase().includes(manageQuery.trim().toLowerCase()))
 
-  function commit(next: ImpositionPool[]): boolean {
-    try { localStorage.setItem(saved.storageKey, JSON.stringify(next)); setPools(next); setStorageError(''); return true }
-    catch (reason) { setStorageError(`保存拼版池失败：${String(reason)}。本次修改未保存，请重试。`); return false }
+  async function commit(next: ImpositionPool[]): Promise<boolean> {
+    if (poolSaveLock.current) return false
+    poolSaveLock.current = true; setPoolSaving(true)
+    try {
+      if ((await storageMode())?.shared) await invoke('save_cloud_pools', { pools: next })
+      else localStorage.setItem(saved.storageKey, JSON.stringify(next))
+      setPools(next); setStorageError(''); return true
+    } catch (reason) { setStorageError(`保存拼版池失败：${String(reason)}。本次修改未保存，请刷新后重试。`); return false }
+    finally { poolSaveLock.current = false; setPoolSaving(false) }
   }
   function select(id: string) { setSelectedId(id); setCustomer(undefined); setImagePage(1); setCheckedKeys([]); setPreviewCustomer(undefined); setPreviewPage(1); setTab('customers') }
   function openManager(pool: ImpositionPool) { setManageId(pool.id); setManageKeys((byPool.get(pool.id) ?? []).map(item => item.key)); setManageQuery(''); setManageFilter('all') }
-  function saveEditor() {
+  async function saveEditor() {
     if (!editor) return
     const name = editor.name.trim()
     if (!name) { setEditorError('请填写池子名称'); return }
     if (pools.some(pool => pool.id !== editor.id && pool.name === name)) { setEditorError('已有同名池子，请换一个名称'); return }
     const id = editor.id ?? crypto.randomUUID()
     const next = editor.id ? pools.map(pool => pool.id === id ? { ...pool, name, color: editor.color } : pool) : [...pools, { id, name, color: editor.color, imageKeys: [] }]
-    if (commit(next)) { setEditor(undefined); if (!editor.id) { setQuery(''); setPoolPage(Math.ceil(next.length / poolPageSize)); select(id) } }
+    if (await commit(next)) { setEditor(undefined); if (!editor.id) { setQuery(''); setPoolPage(Math.ceil(next.length / poolPageSize)); select(id) } }
   }
   function startPool() { if (selectedImages.length && ready) onStart(recordsForPool(records, selectedImages)) }
 
@@ -124,7 +133,7 @@ export default function ImpositionPools({ active, revision, onBack, onStart }: P
     <header className="pool-page-header"><div><h1>拼版池</h1></div><div className="pool-page-actions"><Button icon={<ArrowLeft size={15}/>} onClick={onBack}>返回列表</Button><Button icon={<RefreshCw size={15}/>} loading={loading} onClick={() => setRefresh(value => value + 1)}>刷新</Button></div></header>
     <div className="pool-totals"><span>订单数 <strong>{loading ? '—' : records.length}</strong></span><span>设计总数 <strong>{loading ? '—' : allImages.length}</strong></span></div>
     {(loadError || storageError) && <Alert type="error" showIcon message={loadError || storageError} action={loadError ? <Button size="small" onClick={() => setRefresh(value => value + 1)}>重试</Button> : undefined}/>}
-    <Spin wrapperClassName="pool-loading-shell" spinning={loading} tip="正在读取待拼版图片…"><div className="pool-workbench">
+    <Spin wrapperClassName="pool-loading-shell" spinning={loading || poolSaving} tip="正在读取待拼版图片…"><div className="pool-workbench">
       <section className="pool-overview"><div className="pool-overview-toolbar"><h2>池子总览</h2><Input prefix={<Search size={15}/>} placeholder="搜索池子或客户" aria-label="搜索池子或客户" value={query} allowClear onChange={event => { setQuery(event.target.value); setPoolPage(1) }}/></div>
         <div className="pool-card-grid">{visiblePools.slice((currentPoolPage - 1) * poolPageSize, currentPoolPage * poolPageSize).map(pool => {
           const images = byPool.get(pool.id) ?? []
@@ -147,7 +156,7 @@ export default function ImpositionPools({ active, revision, onBack, onStart }: P
           <div className="pool-image-grid">{visibleImages.slice((currentImagePage - 1) * 6, currentImagePage * 6).map(item => <div className="pool-image-tile" key={item.key}><div className="pool-image-preview"><ImpositionThumbnail path={item.image.filePath} name={item.image.name}/>{!selectedPool && <Checkbox aria-label={`选择 ${item.customer} ${item.image.name}`} checked={checkedKeys.includes(item.key)} onChange={event => setCheckedKeys(current => event.target.checked ? [...current, item.key] : current.filter(key => key !== item.key))}/>}</div><strong title={item.image.name}>{item.image.name}</strong><span title={item.customer}>{item.customer}</span><small>{item.image.productName || '未设置产品'} · {item.image.widthMm} × {item.image.heightMm} mm</small></div>)}</div>
           <Pagination size="small" current={currentImagePage} pageSize={6} total={visibleImages.length} showSizeChanger={false} onChange={setImagePage}/></>}
         </>}
-        <footer className="pool-detail-actions">{selectedPool ? <><Button type="primary" disabled={!ready || !selectedImages.length} onClick={startPool}>开始拼版</Button><Button disabled={!ready} icon={<Plus size={15}/>} onClick={() => openManager(selectedPool)}>管理图片</Button></> : <><Select aria-label="选择目标池子" placeholder="选择目标池子" value={destination} onChange={setDestination} options={pools.map(pool => ({ value: pool.id, label: pool.name }))}/><Button type="primary" disabled={!ready || !checkedKeys.length || !pools.some(pool => pool.id === destination)} onClick={() => { const target = pools.find(pool => pool.id === destination); if (target && commit(replacePoolImages(pools, target.id, [...target.imageKeys, ...checkedKeys]))) { setCheckedKeys([]); select(target.id) } }}>移入池子{checkedKeys.length ? `（${checkedKeys.length}）` : ''}</Button></>}</footer>
+        <footer className="pool-detail-actions">{selectedPool ? <><Button type="primary" disabled={!ready || !selectedImages.length} onClick={startPool}>开始拼版</Button><Button disabled={!ready} icon={<Plus size={15}/>} onClick={() => openManager(selectedPool)}>管理图片</Button></> : <><Select aria-label="选择目标池子" placeholder="选择目标池子" value={destination} onChange={setDestination} options={pools.map(pool => ({ value: pool.id, label: pool.name }))}/><Button type="primary" disabled={!ready || !checkedKeys.length || !pools.some(pool => pool.id === destination)} onClick={async () => { const target = pools.find(pool => pool.id === destination); if (target && await commit(replacePoolImages(pools, target.id, [...target.imageKeys, ...checkedKeys]))) { setCheckedKeys([]); select(target.id) } }}>移入池子{checkedKeys.length ? `（${checkedKeys.length}）` : ''}</Button></>}</footer>
       </section>
     </div></Spin>
     </div>
@@ -157,9 +166,9 @@ export default function ImpositionPools({ active, revision, onBack, onStart }: P
       <Pagination size="small" current={currentPreviewPage} pageSize={6} total={previewImages.length} showSizeChanger={false} onChange={setPreviewPage}/>
     </Modal>
     <Modal title={editor?.id ? '编辑池子' : '新建池子'} open={Boolean(editor)} onCancel={() => setEditor(undefined)} onOk={saveEditor} okText="保存" cancelText="取消" destroyOnHidden><div className="pool-editor">{editorError && <Alert type="error" message={editorError}/>}<label htmlFor="pool-name">池子名称</label><Input id="pool-name" maxLength={30} placeholder="例如：生产池 A" value={editor?.name ?? ''} onChange={event => setEditor(current => current && ({ ...current, name: event.target.value }))} onPressEnter={saveEditor}/><span>池子颜色</span><Radio.Group className="pool-color-options" value={editor?.color} onChange={event => setEditor(current => current && ({ ...current, color: event.target.value }))} options={POOL_COLOR_OPTIONS.map(option => ({ value: option.value, label: <span className={`pool-color-option pool-tone-${option.value}`}><span className="pool-color-dot"/>{option.label}</span> }))}/></div></Modal>
-    <Modal title={`删除“${deleting?.name ?? ''}”？`} open={Boolean(deleting)} onCancel={() => setDeleting(undefined)} okText="删除池子" cancelText="取消" okButtonProps={{ danger: true }} onOk={() => { if (deleting && commit(pools.filter(pool => pool.id !== deleting.id))) { if (selectedId === deleting.id) select(UNASSIGNED_POOL); setDeleting(undefined) } }}><p>池内图片会回到待分类区域，原始图片和产品数据会保留。</p></Modal>
+    <Modal title={`删除“${deleting?.name ?? ''}”？`} open={Boolean(deleting)} onCancel={() => setDeleting(undefined)} okText="删除池子" cancelText="取消" okButtonProps={{ danger: true }} onOk={async () => { if (deleting && await commit(pools.filter(pool => pool.id !== deleting.id))) { if (selectedId === deleting.id) select(UNASSIGNED_POOL); setDeleting(undefined) } }}><p>池内图片会回到待分类区域，原始图片和产品数据会保留。</p></Modal>
     <Drawer title={`${pools.find(pool => pool.id === settingsId)?.name ?? ''} · 分类设置`} open={Boolean(settingsId)} onClose={() => setSettingsId(undefined)} width={420}><Alert type="info" showIcon message="分类依据待配置" description="自动分类规则尚未确定。当前可以通过“管理图片”手动归集，确定规则后再接入自动分类。"/><h3>当前图片中的属性字段</h3><p className="pool-muted">以下仅展示现有字段，尚未启用匹配规则。</p><div className="pool-field-tags">{fields.length ? fields.map(field => <Tag key={field}>{field}</Tag>) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无图片属性字段"/>}</div></Drawer>
-    <Modal title={`${pools.find(pool => pool.id === manageId)?.name ?? ''} · 管理图片`} open={Boolean(manageId)} width={920} onCancel={() => setManageId(undefined)} okText={`保存所选图片（${manageKeys.length}）`} cancelText="取消" okButtonProps={{ disabled: !ready }} onOk={() => { if (manageId && commit(replacePoolImages(pools, manageId, manageKeys))) setManageId(undefined) }} destroyOnHidden>
+    <Modal title={`${pools.find(pool => pool.id === manageId)?.name ?? ''} · 管理图片`} open={Boolean(manageId)} width={920} onCancel={() => setManageId(undefined)} okText={`保存所选图片（${manageKeys.length}）`} cancelText="取消" okButtonProps={{ disabled: !ready }} onOk={async () => { if (manageId && await commit(replacePoolImages(pools, manageId, manageKeys))) setManageId(undefined) }} destroyOnHidden>
       <Alert type="info" showIcon message="勾选图片加入当前池，取消勾选移回待分类。选择其他池的图片会将它移入当前池。"/>
       <div className="pool-manage-toolbar"><Input aria-label="搜索待归集图片" prefix={<Search size={15}/>} placeholder="搜索客户、图片或产品" value={manageQuery} onChange={event => setManageQuery(event.target.value)}/><Radio.Group value={manageFilter} onChange={event => setManageFilter(event.target.value)} options={[{ label: '全部图片', value: 'all' }, { label: '待分类及本池', value: 'unassigned' }]}/></div>
       <Table<PoolImage> rowKey="key" size="small" dataSource={manageable} scroll={{ x: 650, y: 380 }} pagination={{ pageSize: 10, showSizeChanger: false }} rowSelection={{ selectedRowKeys: manageKeys, preserveSelectedRowKeys: true, onChange: keys => setManageKeys(keys.map(String)) }} columns={[{ title: '图片', key: 'image', width: 72, render: (_, item) => <ImpositionThumbnail path={item.image.filePath} name={item.image.name}/> }, { title: '文件名', key: 'name', render: (_, item) => item.image.name }, { title: '客户', dataIndex: 'customer' }, { title: '产品', key: 'product', render: (_, item) => item.image.productName || '未设置产品' }, { title: '当前池子', key: 'pool', render: (_, item) => owners.get(item.key)?.name ?? <Tag color="orange">待分类</Tag> }]}/>

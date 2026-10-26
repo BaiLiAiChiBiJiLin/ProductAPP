@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / 'src-tauri/src/imposition/local_nesting'
 DESTINATION = ROOT / 'src-tauri/resources/imposition-runtime'
 ADAPTER = Path('src-tauri/src/imposition/local_nesting/local_tools_engine.py')
-MODULES = ['local_tools_engine.py', 'nesting_common.py', 'nest_uniform.py', 'nest_combined.py', 'nesting_rust.py', 'nest_replan.py']
+MODULES = ['local_tools_engine.py', 'nesting_common.py', 'nest_uniform.py', 'nest_repeat_lots.py', 'nest_combined.py', 'nesting_rust.py', 'nest_replan.py']
 
 
 def verify_runtime(runtime: Path):

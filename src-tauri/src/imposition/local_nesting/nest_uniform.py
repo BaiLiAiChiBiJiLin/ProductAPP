@@ -9,6 +9,7 @@ from collections import Counter
 import math
 
 from nesting_common import pack_one
+from nest_repeat_lots import improve_repeated_lots, template_key
 
 
 def _counts(placement):
@@ -161,4 +162,16 @@ def pack_uniform_boards(job, args, progress=None):
             placement, repeat = complete
             return ([placement] * repeat, [(placement, repeat)],
                     [dict(template=1, repeat=repeat, pieces_per_board=len(placement), remaining=0)])
+    improved = improve_repeated_lots(job, args, boards, progress)
+    if improved is not boards:
+        grouped = {}
+        for board in improved:
+            key = template_key(board)
+            if key not in grouped:
+                grouped[key] = [board, 0]
+            grouped[key][1] += 1
+        templates = list(grouped.values())
+        return improved, templates, [dict(template=i + 1, repeat=repeat,
+                                         pieces_per_board=len(board), remaining=0)
+                                     for i, (board, repeat) in enumerate(templates)]
     return boards, [(placement, repeat) for placement, repeat in templates_by_key.values()], summaries

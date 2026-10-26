@@ -31,6 +31,7 @@
 .imposition-packing-choices button { min-width: 0; border: 1px solid #93c5fd; border-radius: 6px; padding: 8px; background: #eff6ff; color: #1e40af; text-align: left; cursor: pointer; }
 .imposition-packing-choices button:disabled { cursor: default; border-color: #dbe3ed; color: #64748b; background: #f8fafc; }
 .imposition-packing-choices button:not(:disabled):hover { border-color: #2563eb; background: #dbeafe; }
+.imposition-packing-choices button[aria-pressed="true"] { border-color: #2563eb; background: #dbeafe; box-shadow: inset 0 0 0 1px #2563eb; }
 .imposition-packing-choices button:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
 .imposition-packing-choices strong, .imposition-packing-choices span, .imposition-packing-choices small { display: block; font-size: 12px; overflow-wrap: anywhere; }
 .imposition-packing-choices span { margin-top: 4px; }
@@ -38,6 +39,8 @@
 .imposition-workspace.is-production .imposition-workspace-header { min-height: 112px; }
 .imposition-workspace.is-production .imposition-packing-settings { min-width: 400px; }
 .imposition-packing-title { width: 100%; display: flex; align-items: baseline; gap: 8px; color: #1e293b; }
+.imposition-base-mixing { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; }
+.imposition-packing-title .imposition-base-mixing span { font-size: 12px; color: #475569; }
 .imposition-packing-title strong { flex: 0 0 auto; font-size: 14px; white-space: nowrap; }
 .imposition-packing-title span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #94a3b8; font-size: 10px; }
 .imposition-packing-settings .ant-radio-group { display: inline-flex; }

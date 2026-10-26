@@ -93,12 +93,12 @@ def _source(item, index, cache):
                 line_only=item.get("lineOnly") is True)
 
 
-def _validate_boards(srcs, boards, width, height, gap):
+def _validate_boards(srcs, boards, width, height, gap, allow_base_mixing=False):
     """Check final true polygons, not the raster search approximation."""
     region = box(0, 0, width, height).buffer(1e-7)
     checked = set()
     for board in boards:
-        if len({srcs[p["i"]].get("line_only", False) for p in board}) > 1:
+        if not allow_base_mixing and len({srcs[p["i"]].get("line_only", False) for p in board}) > 1:
             raise ValueError("纯线条 SVG 必须单独开板，不能与其他图片混排")
         signature = tuple((p["i"], p["angle"], p["tx"], p["ty"]) for p in board)
         if signature in checked:
@@ -122,8 +122,8 @@ def _validate_boards(srcs, boards, width, height, gap):
                     raise ValueError(f'图片 {srcs[board[i]["i"]]["id"]} 与 {srcs[board[j]["i"]]["id"]} 的最终轮廓间距不足')
 
 
-def _replan_partition(request, srcs, origin, validate):
-    """Scope a manual transaction to its class and preserve other-class sheets.
+def _replan_partition(request, srcs, origin, validate, allow_base_mixing=False):
+    """Preserve other-class sheets unless the user enables base mixing.
 
     The complete source/bank indexes stay unchanged. Repeated untouched sheets
     share their placement lists and never rebuild their contour masks.
@@ -143,7 +143,7 @@ def _replan_partition(request, srcs, origin, validate):
         if not isinstance(raw, list) or not raw:
             raise ValueError("原始版式不能为空")
         placements = [_placement(item, by_id, origin) for item in raw]
-        kinds = {srcs[p["i"]].get("line_only", False) for p in placements}
+        kinds = {False if allow_base_mixing else srcs[p["i"]].get("line_only", False) for p in placements}
         if len(kinds) != 1:
             raise ValueError("原版式混有纯线条 SVG 和其他图片，请先重新计算以单独开板")
         validate([placements])
@@ -163,7 +163,7 @@ def _replan_partition(request, srcs, origin, validate):
             preserved.extend([placements] * repeat)
             for p in placements:
                 preserved_counts[p["i"]] += repeat
-    if any(preserved_counts[s["i"]] != s["quantity"] for s in srcs if s.get("line_only", False) != line_only):
+    if any(preserved_counts[s["i"]] != s["quantity"] for s in srcs if not allow_base_mixing and s.get("line_only", False) != line_only):
         raise ValueError("未参与跨方案重排的另一类版式 QT 不完整，请先重新计算")
     return dict(request, templates=scoped), line_only, preserved
 
@@ -230,6 +230,7 @@ def _solve(request, *, cache_dir=None, progress=None, resolution=.5):
     total = sum(quantities)
     objective = request.get("objective", "least-material")
     template_repack = request.get("templateRepack")
+    allow_base_mixing = request.get("allowBaseMixing") is True
     strategy = "combined" if objective in ("combined", "least-combined") else ("uniform" if objective == "least-cutting" else "material")
     combined_diagnostics = {}
     boards = []
@@ -241,14 +242,15 @@ def _solve(request, *, cache_dir=None, progress=None, resolution=.5):
             raise ValueError('跨方案重排没有有效图片')
         scoped, line_only, preserved = _replan_partition(
             template_repack, srcs, (left, top),
-            lambda pages: _validate_boards(srcs, pages, width, height, gap))
-        scoped_quantities = [quantity if source["line_only"] == line_only else 0
+            lambda pages: _validate_boards(srcs, pages, width, height, gap, allow_base_mixing),
+            allow_base_mixing=allow_base_mixing)
+        scoped_quantities = [quantity if allow_base_mixing or source["line_only"] == line_only else 0
                              for source, quantity in zip(srcs, quantities)]
         def replan_progress(detail, done, count):
             progress.emit("search", detail, done, count, 25 + 65 * done / max(1, count))
         boards = pack_template_replan(dict(srcs=srcs, bank=bank, quantities=scoped_quantities), args,
                                       scoped, origin=(left, top), objective=objective,
-                                      validate=lambda pages: _validate_boards(srcs, pages, width, height, gap),
+                                      validate=lambda pages: _validate_boards(srcs, pages, width, height, gap, allow_base_mixing),
                                       progress=replan_progress)
         boards.extend(preserved)
     elif srcs:
@@ -256,13 +258,13 @@ def _solve(request, *, cache_dir=None, progress=None, resolution=.5):
         # removes the other class from every baseline, tail repair and template
         # recombination without rebuilding masks or expanding QT into sources.
         completed = 0
-        for line_only in (False, True):
-            group_quantities = [quantity if source["line_only"] == line_only else 0
+        for line_only in ((False,) if allow_base_mixing else (False, True)):
+            group_quantities = [quantity if allow_base_mixing or source["line_only"] == line_only else 0
                                 for source, quantity in zip(srcs, quantities)]
             group_total = sum(group_quantities)
             if not group_total:
                 continue
-            label = "纯线条 SVG 独立板材" if line_only else "其他图片板材"
+            label = "底座与其他图片混排" if allow_base_mixing else ("纯线条 SVG 独立板材" if line_only else "其他图片板材")
             group_job = dict(srcs=srcs, bank=bank, quantities=group_quantities)
 
             def group_progress(detail, done, count):
@@ -271,13 +273,13 @@ def _solve(request, *, cache_dir=None, progress=None, resolution=.5):
                               completed + int(group_total * fraction), total,
                               25 + 65 * (completed + group_total * fraction) / max(1, total))
 
-            progress.emit("search", f"{label}：{group_total} 张；共用唯一轮廓缓存，单独排版",
+            progress.emit("search", f"{label}：{group_total} 张；共用唯一轮廓缓存",
                           completed, total, 25 + 65 * completed / max(1, total), True)
             if strategy == "combined":
                 group_boards = pack_combined_boards(
                     group_job, args, group_progress, origin=(left, top),
-                    validate=lambda pages: _validate_boards(srcs, pages, width, height, gap))
-                combined_diagnostics["lineOnly" if line_only else "other"] = group_job.get("combinedDiagnostics", {})
+                    validate=lambda pages: _validate_boards(srcs, pages, width, height, gap, allow_base_mixing))
+                combined_diagnostics["mixed" if allow_base_mixing else ("lineOnly" if line_only else "other")] = group_job.get("combinedDiagnostics", {})
             elif strategy == "uniform":
                 def uniform_progress(template, repeat, count, remaining):
                     group_progress(f"方案 {template + 1}：尝试复用 {repeat} 块，单板已放 {count} 张；尚余 {remaining} 张",
@@ -291,7 +293,7 @@ def _solve(request, *, cache_dir=None, progress=None, resolution=.5):
             boards.extend(group_boards)
             completed += group_total
     progress.emit("validation", "验证真实轮廓间距、完整图片边界和 QT 数量", total, total, 93, True)
-    _validate_boards(srcs, boards, width, height, gap)
+    _validate_boards(srcs, boards, width, height, gap, allow_base_mixing)
     counts, placements, frame_origins = Counter(), [], {}
     for sheet_index, board in enumerate(boards):
         for p in board:

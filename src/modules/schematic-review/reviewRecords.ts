@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '../../services/backend'
 import { copyWorkspaceValue, stageLargeWorkspaceValues, StagedArtwork, REVIEW_ARTWORK_PREFIX } from '../schematic/services/stagedArtworkService'
 import type { Asset, LayoutBounds, Page } from '../../model'
 import type { BatchMetadata } from '../schematic/types'
@@ -17,6 +17,7 @@ export type ReviewWorkspace = {
   defaultArrangementIds: string[]
 }
 export type SchematicReviewRecord = ReviewWorkspace & {
+  detachedFromBatch?: boolean
   schemaVersion: 1
   id: string
   savedAt: string

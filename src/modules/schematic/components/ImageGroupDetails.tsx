@@ -10,6 +10,8 @@ import { resolveRemoteImage } from '../services/remoteImageService'
 import type { DimensionDisplayOverride, DimensionDisplayPrecision } from '../services/imageDimensionService'
 import { groupForDimensionDisplay } from '../services/dimensionDisplayService'
 import type { Node as KonvaNode } from 'konva/lib/Node'
+import type { EditorSelection } from '../services/canvasAnnotationService'
+import { detailTextSelection, type DetailTextDraft } from '../services/detailTextService'
 
 const imageCache = new Map<string, HTMLImageElement>()
 export type AccessoryVisual = DetailImageVisual
@@ -102,16 +104,16 @@ function AccessoryImage({ src, x, y, width, height, code, caption, captionHeight
   </Group>
 }
 
-export default function ImageGroupDetails({ group, page, assets, selectedItemIds = [], precision = 'default', decimalPlaces = 1, displayOverrides, selectedAccessoryKey, accessoryVisuals, onSelectAccessory, onChangeAccessory, onEditText }: { group: ImageGroup; page?: Page; assets?: Map<string, Asset>; selectedItemIds?: string[]; precision?: DimensionDisplayPrecision; decimalPlaces?: number; displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>; selectedAccessoryKey?: string; accessoryVisuals?: ReadonlyMap<string, AccessoryVisual>; onSelectAccessory?: (key: string) => void; onChangeAccessory?: (key: string, patch: Partial<AccessoryVisual>) => void; onEditText?: EditImageGroupText }) {
+export default function ImageGroupDetails({ group, page, assets, selectedItemIds = [], precision = 'default', decimalPlaces = 1, displayOverrides, selectedAccessoryKey, accessoryVisuals, onSelectAccessory, onChangeAccessory, onEditText, editorSelection, onSelectEditor, onEditDetailText }: { group: ImageGroup; page?: Page; assets?: Map<string, Asset>; selectedItemIds?: string[]; precision?: DimensionDisplayPrecision; decimalPlaces?: number; displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>; selectedAccessoryKey?: string; accessoryVisuals?: ReadonlyMap<string, AccessoryVisual>; onSelectAccessory?: (key: string) => void; onChangeAccessory?: (key: string, patch: Partial<AccessoryVisual>) => void; onEditText?: EditImageGroupText; editorSelection?: EditorSelection | null; onSelectEditor?: (selection: EditorSelection) => void; onEditDetailText?: (draft: DetailTextDraft) => void }) {
   const displayGroup = groupForDimensionDisplay(group, page, assets, selectedItemIds, precision, decimalPlaces, displayOverrides)
   const label = finishLabel(displayGroup)
-  return <Group listening={Boolean(onSelectAccessory || onEditText)}>{detailPanelsForGroup(displayGroup).map(panel => <DetailsPanel key={panel.id} group={panel} selectedAccessoryKey={selectedAccessoryKey} accessoryVisuals={accessoryVisuals} onSelectAccessory={onSelectAccessory} onChangeAccessory={onChangeAccessory} onEditText={onEditText}/>)}{label.text && <Text x={label.x + label.width} y={label.y} text={label.text} fontSize={10} fill="#ff4d4f" wrap="none" ref={node => { if (node) node.offsetX(node.width()) }} listening={Boolean(onEditText)} onDblClick={event => { event.cancelBubble = true; const next = window.prompt('编辑文字', label.text); if (next !== null && next !== label.text) onEditText?.(displayGroup.itemIds, 'finish', next) }} onDblTap={event => { event.cancelBubble = true; const next = window.prompt('编辑文字', label.text); if (next !== null && next !== label.text) onEditText?.(displayGroup.itemIds, 'finish', next) }}/>}</Group>
+  return <Group listening={Boolean(onSelectAccessory || onEditText || onSelectEditor || onEditDetailText)}>{detailPanelsForGroup(displayGroup).map(panel => <DetailsPanel key={panel.id} group={panel} sourceGroupId={group.id} editorSelection={editorSelection} onSelectEditor={onSelectEditor} onEditDetailText={onEditDetailText} selectedAccessoryKey={selectedAccessoryKey} accessoryVisuals={accessoryVisuals} onSelectAccessory={onSelectAccessory} onChangeAccessory={onChangeAccessory} onEditText={onEditText}/>)}{label.text && <Text x={label.x + label.width} y={label.y} text={label.text} fontSize={10} fill="#ff4d4f" wrap="none" ref={node => { if (node) node.offsetX(node.width()) }} listening={Boolean(onEditText)} onDblClick={event => { event.cancelBubble = true; const next = window.prompt('编辑文字', label.text); if (next !== null && next !== label.text) onEditText?.(displayGroup.itemIds, 'finish', next) }} onDblTap={event => { event.cancelBubble = true; const next = window.prompt('编辑文字', label.text); if (next !== null && next !== label.text) onEditText?.(displayGroup.itemIds, 'finish', next) }}/>}</Group>
 }
 
-function DetailsPanel({ group, selectedAccessoryKey, accessoryVisuals, onSelectAccessory, onChangeAccessory, onEditText }: { group: ImageGroup; selectedAccessoryKey?: string; accessoryVisuals?: ReadonlyMap<string, AccessoryVisual>; onSelectAccessory?: (key: string) => void; onChangeAccessory?: (key: string, patch: Partial<AccessoryVisual>) => void; onEditText?: EditImageGroupText }) {
+function DetailsPanel({ group, sourceGroupId, selectedAccessoryKey, accessoryVisuals, onSelectAccessory, onChangeAccessory, onEditText, editorSelection, onSelectEditor, onEditDetailText }: { group: ImageGroup; sourceGroupId: string; editorSelection?: EditorSelection | null; onSelectEditor?: (selection: EditorSelection) => void; onEditDetailText?: (draft: DetailTextDraft) => void; selectedAccessoryKey?: string; accessoryVisuals?: ReadonlyMap<string, AccessoryVisual>; onSelectAccessory?: (key: string) => void; onChangeAccessory?: (key: string, patch: Partial<AccessoryVisual>) => void; onEditText?: EditImageGroupText }) {
   const details = group.details
   if (!details) return null
-  const { x, y, width, line, fontSize, fields, bodyY, imageSize, accessoryX, noteX, noteWidth, noteY, noteLines, noteLine, noteFontSize, noteImages } = imageDetailsLayout(group)
+  const { x, y, width, fields, bodyY, imageSize, accessoryX, noteX, noteWidth, noteY, noteLines, noteLine, noteFontSize, noteImages } = imageDetailsLayout(group)
   const accessoryKey = `${group.id}:accessory`
   const bounds = { x: group.x - x, y: group.y - y, width: group.width, height: Math.max(group.height, group.backgroundHeight ?? group.height) }
   const edit = (target: EditableTextTarget, value: string) => {
@@ -128,8 +130,23 @@ function DetailsPanel({ group, selectedAccessoryKey, accessoryVisuals, onSelectA
     const source = details.fields?.find(field => key === field.key || key.startsWith(`${field.key}-`))
     return source ? `field:${source.key}` : key as EditableTextTarget
   }
-  return <Group x={x} y={y} listening={Boolean(onSelectAccessory || onEditText)}>
-    {fields.map((field, index) => <Text key={field.key} y={index * line} text={field.text} width={width} height={line} fontSize={Math.min(fontSize, field.fontSize ?? fontSize)} wrap="none" fontStyle={field.key.startsWith('size') || field.key === 'qt' ? 'normal' : 'bold'} fill={field.key.startsWith('size') || field.key === 'qt' ? '#000' : '#475569'} ellipsis={false} listening={Boolean(onEditText)} onDblClick={event => { event.cancelBubble = true; edit(fieldTarget(field.key), field.text.replace(/^Size: /, '').replace(/^QT: ?/, '')) }} onDblTap={event => { event.cancelBubble = true; edit(fieldTarget(field.key), field.text.replace(/^Size: /, '').replace(/^QT: ?/, '')) }}/>) }
+  return <Group x={x} y={y} listening={Boolean(onSelectAccessory || onEditText || onSelectEditor || onEditDetailText)}>
+    {fields.map(field => {
+      const selection = field.editKey ? detailTextSelection(sourceGroupId, group.itemIds, field.editKey) : undefined
+      const selected = selection && editorSelection?.kind === 'detail' && editorSelection.id === selection.id
+      const openEditor = () => {
+        if (selection && onEditDetailText) onEditDetailText({ ...selection, text: field.text, fontSize: details.textOverrides?.[selection.fieldKey]?.fontSize ?? field.fontSize, color: field.color })
+        else edit(fieldTarget(field.key), field.text.replace(/^Size: /, '').replace(/^QT: ?/, ''))
+      }
+      return <Group key={field.key} y={field.y}>
+        {selected && <Rect x={-2} y={-1} width={width + 4} height={field.height + 2} stroke="#2563eb" strokeWidth={.8} dash={[3, 2]} listening={false}/>}
+        <Text name={selection ? 'image-detail-text' : undefined} id={selection?.id} text={field.text} width={width} height={field.height} fontSize={field.fontSize} lineHeight={field.lineHeight / field.fontSize} wrap="none" fontStyle={field.key.startsWith('size') || field.key === 'qt' ? 'normal' : 'bold'} fill={field.color} ellipsis={false}
+          listening={Boolean(onEditText || onSelectEditor || onEditDetailText)}
+          onClick={event => { if (selection && onSelectEditor) { event.cancelBubble = true; onSelectEditor(selection) } }}
+          onTap={event => { if (selection && onSelectEditor) { event.cancelBubble = true; onSelectEditor(selection) } }}
+          onDblClick={event => { event.cancelBubble = true; openEditor() }} onDblTap={event => { event.cancelBubble = true; openEditor() }}/>
+      </Group>
+    })}
     {details.accessoryImage && <AccessoryImage src={details.accessoryImage} x={accessoryX - x} y={bodyY - y} width={imageSize} height={imageSize} code={details.accessoryCode} framed selectionKey={accessoryKey} visual={accessoryVisuals?.get(accessoryKey)} selected={selectedAccessoryKey === accessoryKey} bounds={bounds} onSelect={onSelectAccessory} onChange={onChangeAccessory} onEditText={onEditText} itemIds={group.itemIds}/>}
     {noteLines.map((value, index) => <Text key={`note-${index}`} x={noteX - x} y={noteY - y + index * noteLine} text={value} width={noteWidth} align="center" height={noteLine} fontSize={noteFontSize} fill="#475569" wrap="none" ellipsis={false} listening={Boolean(onEditText)} onDblClick={event => { event.cancelBubble = true; edit('note', details.note ?? value) }} onDblTap={event => { event.cancelBubble = true; edit('note', details.note ?? value) }}/>) }
     {noteImages.map((image, index) => {

@@ -175,10 +175,6 @@ export function imageGroupsForDimension(page: Page): ImageGroup[] {
   }))]
 }
 
-function clamp(value: number, minimum: number, maximum: number) {
-  return Math.max(minimum, Math.min(maximum, value))
-}
-
 /** Place the measurement outside the source artwork while retaining its source-size label. */
 export function imageDimensionMarkerLayout(group: ImageGroup, page: Page, assets: Map<string, Asset>, precision: DimensionDisplayPrecision = 'default', decimalPlaces = 1): ImageDimensionMarkerLayout | undefined {
   let dimension = imageDimensionForGroup(group, page, assets)
@@ -205,20 +201,21 @@ export function imageDimensionMarkerLayout(group: ImageGroup, page: Page, assets
   const rulerEnd = imageStart + (imageEnd - imageStart) * range[1]
   const labelWidth = Math.max(16, dimension.label.length * 4 + 4)
   const gap = labelWidth / 2 + 3
+  // An image can be dragged across its original cell inside the product block.
+  // Only the outer block may constrain label placement; endpoints measure the image.
+  const block = page.imageGroups?.find(candidate => candidate.itemIds.includes(item.id)) ?? group
   if (dimension.horizontal) {
-    // Placement already constrains the artwork to its cell. A ruler measures
-    // those actual edges, including when artwork fills the details boundary.
+    // Measure the actual edges, including when artwork moves beyond its old cell.
     const x1 = rulerStart
     const x2 = rulerEnd
-    // Keep the label just above the measurement line inside the green image
-    // cell. The short extension lines then reach the actual artwork edge.
-    const y = Math.max(group.y + 3, imageTop - 2)
+    // Keep the label above the line without crossing the product block's top.
+    const y = Math.max(block.y + 3, imageTop - 2)
     return { ...dimension, itemId: item.id, axis: markerAxis, imageStart, imageEnd, rangeMax, range, x1, y1: y, x2, y2: y, extension: [[x1, y, x1, item.y], [x2, y, x2, item.y]], textX: (x1 + x2) / 2, textY: y - 3, textWidth: labelWidth, textRotation: 0, gap }
   }
-  const y1 = clamp(rulerStart, group.y + 4, group.y + group.height - 20)
-  const y2 = clamp(rulerEnd, y1 + 16, group.y + group.height - 4)
+  const y1 = rulerStart
+  const y2 = rulerEnd
   // Shift every left ruler, including its label and arrows, without moving artwork.
-  const x = Math.max(group.x + VERTICAL_MARKER_INSET, imageLeft - VERTICAL_MARKER_GAP) - VERTICAL_MARKER_LEFT_OFFSET
+  const x = Math.max(block.x + VERTICAL_MARKER_INSET, imageLeft - VERTICAL_MARKER_GAP) - VERTICAL_MARKER_LEFT_OFFSET
   return { ...dimension, itemId: item.id, axis: markerAxis, imageStart, imageEnd, rangeMax, range, x1: x, y1, x2: x, y2, extension: [[x, y1, item.x, y1], [x, y2, item.x, y2]], textX: x, textY: (y1 + y2) / 2, textWidth: labelWidth, textRotation: -90, gap }
 }
 

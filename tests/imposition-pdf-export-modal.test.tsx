@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ConfigProvider } from 'antd'
 import ImpositionPdfExportModal from '../src/modules/imposition/ImpositionPdfExportModal'
 import type { ExportGeometryCheck } from '../src/modules/imposition/impositionExportDiagnostics'
@@ -81,6 +81,19 @@ it('marks the board and identifies an invisible source contour without silently 
   expect(screen.getByText(/原始挂件.svg：图层“cut”的闭合路径没有填充和描边/)).toBeTruthy()
   expect(screen.getByText(/需检查 · 1/)).toBeTruthy()
   expect(exportButton().disabled).toBe(false)
+})
+
+it('does not offer image roles for vector paths and removes window offset controls', async () => {
+  mount([[piece()]])
+  await ready()
+  expect(screen.queryByRole('spinbutton', { name: '彩窗偏移 X' })).toBeNull()
+  expect(screen.queryByRole('spinbutton', { name: '彩窗偏移 Y' })).toBeNull()
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: '图层 cut 类型' }))
+  const dropdown = document.querySelector('.ant-select-dropdown:not(.ant-select-dropdown-hidden)')!
+  expect(dropdown).toBeTruthy()
+  for (const role of ['图片正', '图片背', '其他图片']) expect(within(dropdown as HTMLElement).queryByTitle(role)).toBeNull()
+  expect(within(dropdown as HTMLElement).getByTitle('轮廓 / 路径')).toBeTruthy()
+  expect(within(dropdown as HTMLElement).getByTitle('彩窗')).toBeTruthy()
 })
 
 it('defaults to PDF, DXF and CMYK, and each option actually controls the export plan', async () => {
@@ -189,7 +202,7 @@ it('detects same-face printing and windows from SVG types without manual mode sw
 })
 
 it('selects front and back in SVG layer types without duplicate face selectors', async () => {
-  mount([[piece()]], knownSvg.replace('</svg>', '<image id="reverse" width="20" height="10" href="data:image/png;base64,QkFDSw=="/></svg>'))
+  mount([[piece()]], knownSvg.replace('<path id="cut"', '<image id="reverse" width="20" height="10" href="data:image/png;base64,QkFDSw=="/><image id="window-image" width="20" height="10" href="data:image/png;base64,V0lORE9X"/><path id="cut"'))
   await ready()
   expect(screen.queryByRole('combobox', { name: 'CMYK 图片正' })).toBeNull()
   expect(screen.queryByRole('combobox', { name: 'CMYK 图片背' })).toBeNull()
@@ -204,7 +217,7 @@ it('selects front and back in SVG layer types without duplicate face selectors',
 })
 
 it('exports a mixed board in different-face mode while keeping same-face products at their original placements', async () => {
-  const differentSvg = knownSvg.replace('</svg>', '<image id="reverse" width="20" height="10" href="data:image/png;base64,QkFDSw=="/></svg>')
+  const differentSvg = knownSvg.replace('<path id="cut"', '<image id="reverse" width="20" height="10" href="data:image/png;base64,QkFDSw=="/><image id="window-image" width="20" height="10" href="data:image/png;base64,V0lORE9X"/><path id="cut"')
   const different = { ...piece(1, 40), image: { ...image, id: 'different', sourceImageId: 'different', sourceFileName: '不同图.svg', filePath: 'D:/assets/不同图.svg' }, rotation: 180 }
   mount([[piece(), different]], knownSvg, { sources: { art: knownSvg, different: differentSvg } })
   await ready()
@@ -311,7 +324,7 @@ it('offers fixed layer types including white ink and omit, and merges layers wit
 })
 
 it('combines corresponding image layers into separate pages of one whole-board PDF and previews each channel independently', async () => {
-  const multipleImages = knownSvg.replace('</svg>', '<image id="back" width="20" height="10" href="data:image/png;base64,QkFDSw=="/></svg>')
+  const multipleImages = knownSvg.replace('<path id="cut"', '<image id="back" width="20" height="10" href="data:image/png;base64,QkFDSw=="/><image id="window-image" width="20" height="10" href="data:image/png;base64,V0lORE9X"/><path id="cut"')
   const otherSvg = knownSvg.replace('iVBORw0KGgo=', 'T1RIRVI=')
   const other = { ...piece(2, 70), image: { ...image, id: 'other', sourceImageId: 'other', filePath: 'D:/assets/other.svg' } }
   const otherCopy = { ...other, x: 100, image: { ...other.image, id: 'other#qt-2' } }

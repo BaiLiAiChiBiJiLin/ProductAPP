@@ -12,9 +12,16 @@ export const isImageAssignment = (value: SvgLayerAssignment) => value === 'image
 /** Preserve source paint order within a face; board page membership is
  * resolved separately so front/back can be selected by their assigned role. */
 export function orderedImageLayers(source: ExportSvgSource, assigned: Record<string, SvgLayerAssignment>) {
-  return source.layers.filter(layer => isImageAssignment(assigned[layer.id]))
+  return source.layers.filter(layer => {
+    validateLayerAssignment(source, layer, assigned[layer.id])
+    return layer.category === 'images' && isImageAssignment(assigned[layer.id])
+  })
 }
 export type ExportSvgLayer = { id: string; label: string; tagName: string; category: SvgLayerCategory; defaultGroupId: SvgLayerAssignment; nodePath: number[] }
+export const canAssignSvgLayer = (layer: ExportSvgLayer, value: SvgLayerAssignment) => !isImageAssignment(value) || layer.category === 'images'
+function validateLayerAssignment(source: ExportSvgSource, layer: ExportSvgLayer, value: SvgLayerAssignment) {
+  if (!canAssignSvgLayer(layer, value)) throw new Error(`${source.fileName}：图层“${layer.label}”为 ${layer.tagName}，不能作为图片正、图片背或其他图片，请重新选择类型`)
+}
 export type ExportSvgSource = { sourceId: string; fileName: string; svgText: string; layers: ExportSvgLayer[]; warnings: string[]; contourWarnings?: string[] }
 export type ExportGroup = { id: string; name: string }
 export const IMPOSITION_EXPORT_TYPES: ExportGroup[] = [{ id: 'paths', name: '轮廓 / 路径' }, { id: 'images', name: '图片' }, { id: 'fills', name: '彩窗' }, { id: 'white', name: '白墨' }]
@@ -211,8 +218,11 @@ export function parseImpositionSvgSource(input: { sourceId: string; fileName: st
   }
   walk(root, [])
   const images = layers.filter(layer => layer.category === 'images')
-  if (images[0]) images[0].defaultGroupId = 'image-front'
-  if (images[1]) images[1].defaultGroupId = 'image-back'
+  // SVG paints later siblings above earlier siblings. The visual layer panel
+  // reads top to bottom, while node paths and rendering retain source order.
+  const visualImages = images.toReversed()
+  const visualDefaults = visualImages.length === 2 ? ['image-front', 'image-back'] : ['image-front', 'fills', 'image-back']
+  visualImages.forEach((layer, index) => { layer.defaultGroupId = visualDefaults[index] ?? 'images' })
   const warnings: string[] = []
   if (layers.some(layer => layer.category === 'unknown')) warnings.push('未知图层需要选择导出类型，或明确选择不导出。')
   if (root.querySelector('use')) warnings.push('引用图层 use 会作为一个完整图层处理，保留它引用的原始资源。')
@@ -408,33 +418,36 @@ export function applySourceAssignmentsToSameName(model: ImpositionExportModel, t
   return { model: { ...model, templateAssignments }, appliedSources: matches.size, skippedSources }
 }
 
-/** Ordinary PDF pages and their previews share the same face membership.
- * Use explicit faces when the board has valid front/back artwork. Unrelated
- * image layers keep separate numbered pages instead of entering either face. */
-export function impositionImageChannels(model: ImpositionExportModel, templateId: string): Record<string, string | string[]>[] {
+/** Resolve semantic image pages once for both ordinary PDF and preview.
+ * Every same-type layer on the board belongs to one page. Same-face artwork
+ * also enters the back page when any product has an explicit back. */
+export function impositionImagePageGroups(model: ImpositionExportModel, templateId: string) {
   const template = model.templates.find(board => board.id === templateId)
   if (!template) return []
-  const sources = template.sourceIds.map(id => {
-    const layers = model.sources[id].layers
-    const assigned = Object.fromEntries(layers.map(layer => [layer.id, assignment(model, templateId, id, layer.id)]))
-    return { id, images: orderedImageLayers(model.sources[id], assigned),
-      front: layers.filter(layer => assigned[layer.id] === 'image-front'),
-      back: layers.filter(layer => assigned[layer.id] === 'image-back'), assigned }
-  })
-  const faces = sources.some(source => source.back.length && source.front.length)
-    && sources.every(source => !source.images.length || source.front.length)
-  const channels: Record<string, string | string[]>[] = []
-  const add = (index: number, id: string, ids: string[]) => {
-    if (ids.length) (channels[index] ??= {})[id] = ids.length === 1 ? ids[0] : ids
+  const roles = ['image-front', 'image-back', 'images'] as const
+  const groups = roles.map(role => ({ role, members: {} as Record<string, string | string[]> }))
+  const hasBack = template.sourceIds.some(id => model.sources[id].layers.some(layer => assignment(model, templateId, id, layer.id) === 'image-back'))
+  for (const sourceId of template.sourceIds) {
+    const layers = model.sources[sourceId].layers
+    const assigned = new Map(layers.map(layer => {
+      const value = assignment(model, templateId, sourceId, layer.id)
+      validateLayerAssignment(model.sources[sourceId], layer, value)
+      return [layer.id, value]
+    }))
+    const back = layers.filter(layer => assigned.get(layer.id) === 'image-back')
+    for (const group of groups) {
+      const selected = group.role === 'image-back' && hasBack && !back.length
+        ? layers.filter(layer => assigned.get(layer.id) === 'image-front')
+        : layers.filter(layer => assigned.get(layer.id) === group.role)
+      const ids = selected.map(layer => layer.id)
+      if (ids.length) group.members[sourceId] = ids.length === 1 ? ids[0] : ids
+    }
   }
-  for (const source of sources) {
-    if (faces) {
-      add(0, source.id, source.front.map(layer => layer.id))
-      add(1, source.id, (source.back.length ? source.back : source.front).map(layer => layer.id))
-      source.images.filter(layer => source.assigned[layer.id] === 'images').forEach((layer, index) => add(index + 2, source.id, [layer.id]))
-    } else source.images.forEach((layer, index) => add(index, source.id, [layer.id]))
-  }
-  return channels
+  return groups.filter(group => Object.keys(group.members).length)
+}
+
+export function impositionImageChannels(model: ImpositionExportModel, templateId: string): Record<string, string | string[]>[] {
+  return impositionImagePageGroups(model, templateId).map(group => group.members)
 }
 
 const imageChannelIncludes = (member: string | string[] | undefined, layerId: string) => Array.isArray(member) ? member.includes(layerId) : member === layerId
@@ -607,10 +620,8 @@ export function buildImpositionTemplatePreview(model: ImpositionExportModel, tem
     if (!Number.isInteger(imageLayerIndex) || imageLayerIndex < 0) throw new Error('图片图层序号无效')
     imageMembers = impositionImageChannels(model, templateId)[imageLayerIndex] ?? {}
   }
-  const faces = type === 'image-front' ? 0 : type === 'image-back' ? 1 : undefined
-  if (faces !== undefined && impositionImageChannels(model, templateId).length > 1) {
-    const assignedSources = (model.templates.find(board => board.id === templateId)?.sourceIds ?? []).map(id => model.sources[id].layers.map(layer => assignment(model, templateId, id, layer.id)))
-    if (assignedSources.some(values => values.includes('image-back')) && assignedSources.every(values => !values.some(isImageAssignment) || values.includes('image-front'))) imageMembers = impositionImageChannels(model, templateId)[faces]
+  if (type === 'image-front' || type === 'image-back') {
+    imageMembers = impositionImagePageGroups(model, templateId).find(group => group.role === type)?.members ?? {}
   }
   return renderBoardLayers(model, templateId, 'preview', (sourceId, layerId) => imageMembers ? imageChannelIncludes(imageMembers[sourceId], layerId) : type === 'all' || (type === 'images' ? isImageAssignment(assignment(model, templateId, sourceId, layerId)) : assignment(model, templateId, sourceId, layerId) === type), type !== 'all' && type !== 'paths')
 }

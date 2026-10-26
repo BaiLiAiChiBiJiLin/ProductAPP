@@ -109,6 +109,9 @@ pub struct NestRequest {
     pub effective_height_mm: f64,
     pub effective_right_mm: f64,
     pub spacing_mm: f64,
+    /// Allow pure-stroke bases and printed artwork to share boards.
+    #[serde(default)]
+    pub allow_base_mixing: bool,
     pub objective: String,
     #[serde(default = "default_irregular_algorithm")]
     pub irregular_algorithm: String,
@@ -875,15 +878,18 @@ mod tests {
         });
         let request: NestRequest = serde_json::from_value(payload.clone()).unwrap();
         assert_eq!(request.thread_count, None);
+        assert!(!request.allow_base_mixing);
         let forwarded = serde_json::to_value(request).unwrap();
         assert_eq!(forwarded["templateRepack"], payload["templateRepack"]);
         let mut combined = payload.clone();
         combined["objective"] = serde_json::json!("combined");
         combined["threadCount"] = serde_json::json!(7);
+        combined["allowBaseMixing"] = serde_json::json!(true);
         let request: NestRequest = serde_json::from_value(combined.clone()).unwrap();
         let forwarded = serde_json::to_value(request).unwrap();
         assert_eq!(forwarded["objective"], "combined");
         assert_eq!(forwarded["threadCount"], 7);
+        assert_eq!(forwarded["allowBaseMixing"], true);
         assert_eq!(forwarded["templateRepack"], combined["templateRepack"]);
         let mut normal = payload;
         normal.as_object_mut().unwrap().remove("templateRepack");
@@ -1053,6 +1059,7 @@ mod tests {
             objective: "least-material".into(),
             irregular_algorithm: "local-tools".into(),
             template_repack: None,
+            allow_base_mixing: false,
             thread_count: None,
             items,
         };
@@ -1122,6 +1129,7 @@ mod tests {
                     objective: objective.into(),
                     irregular_algorithm: "local-tools".into(),
                     template_repack: None,
+                    allow_base_mixing: false,
                     thread_count: None,
                     items: vec![NestItem {
                         id: "安装测试".into(),
@@ -1236,6 +1244,7 @@ mod tests {
                 objective: "least-material".into(),
                 irregular_algorithm: "local-tools".into(),
                 template_repack: None,
+                allow_base_mixing: false,
                 thread_count: None,
                 items: vec![NestItem {
                     id: "tools-probe".into(),
@@ -1280,6 +1289,7 @@ mod tests {
             objective: "combined".into(),
             irregular_algorithm: "local-tools".into(),
             template_repack: None,
+            allow_base_mixing: false,
             thread_count: None,
             items: vec![
                 NestItem {
@@ -1324,6 +1334,7 @@ mod tests {
             objective: "least-sheets".into(),
             irregular_algorithm: "local-tools".into(),
             template_repack: None,
+            allow_base_mixing: false,
             thread_count: None,
             items: vec![
                 NestItem {
@@ -1362,6 +1373,7 @@ mod tests {
             objective: "least-material".into(),
             irregular_algorithm: "not-a-real-engine".into(),
             template_repack: None,
+            allow_base_mixing: false,
             thread_count: None,
             items: vec![NestItem {
                 id: "external-tool-probe".into(),

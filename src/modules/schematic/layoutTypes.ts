@@ -9,6 +9,8 @@ export type ImageGroup = {
   y: number
   width: number
   height: number
+  /** A user-sized block keeps its own height instead of inheriting row whitespace. */
+  manualSize?: boolean
   /** Visual row background only; does not resize artwork or packing bounds. */
   backgroundHeight?: number
   details?: ImageDetails
@@ -37,9 +39,11 @@ export type ImageGroup = {
 
 export type CanvasAnnotation =
   | { id: string; kind: 'text'; x: number; y: number; text: string; color: string; fontSize: number }
-  | { id: string; kind: 'ruler'; x: number; y: number; x2: number; y2: number; color: string; measuredMm: number; sourceItemId?: string }
+  | { id: string; kind: 'ruler'; x: number; y: number; x2: number; y2: number; color: string; measuredMm: number; sourceItemId?: string; extensionOffset?: number }
 
 export type ImageDetails = {
+  /** Canvas-only text edits; source dimensions and quantities remain unchanged. */
+  textOverrides?: Record<string, { text?: string; fontSize?: number; color?: string; hidden?: boolean }>
   sizes?: Array<{ itemId: string; label: string }>
   size: string
   qt: string

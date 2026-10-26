@@ -5,21 +5,28 @@ import { isTauri } from '@tauri-apps/api/core'
 import { checkForUpdate, downloadAndInstallUpdate, type UpdateProgress } from './updateService'
 import './update.css'
 
-type Props = { autoCheck?: boolean; showButton?: boolean }
-export default function UpdateButton({ autoCheck = false, showButton = true }: Props) {
+type Props = { autoCheck?: boolean; showButton?: boolean; enabled?: boolean; onDialogOpenChange?: (open: boolean) => void }
+export default function UpdateButton({ autoCheck = false, showButton = true, enabled = true, onDialogOpenChange }: Props) {
   const [notice, contextHolder] = message.useMessage()
   const [checking, setChecking] = useState(false)
   const [update, setUpdate] = useState<Awaited<ReturnType<typeof checkForUpdate>>>(null)
   const [downloading, setDownloading] = useState(false)
   const [progress, setProgress] = useState<UpdateProgress>({ downloaded: 0 })
   const actionInFlight = useRef(false)
+  const autoChecked = useRef(false)
   useEffect(() => {
-    if (!autoCheck || !isTauri()) return
+    if (!enabled || !autoCheck || autoChecked.current || !isTauri()) return
+    let cancelled = false
     const timer = window.setTimeout(() => {
-      void checkForUpdate().then(result => { if (result) setUpdate(result) }).catch(() => {})
+      void checkForUpdate().then(result => {
+        if (cancelled) return
+        autoChecked.current = true
+        if (result) setUpdate(result)
+      }).catch(() => { if (!cancelled) autoChecked.current = true })
     }, 1200)
-    return () => window.clearTimeout(timer)
-  }, [autoCheck])
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [autoCheck, enabled])
+  useEffect(() => { onDialogOpenChange?.(Boolean(update)) }, [update, onDialogOpenChange])
   const checkUpdate = async () => {
     if (!isTauri() || actionInFlight.current) return
     actionInFlight.current = true

@@ -2,6 +2,7 @@ mod asset_storage;
 pub mod assets;
 mod batch_history;
 mod batch_thumbnails;
+pub mod cloud;
 mod compositor;
 mod coreldraw;
 mod custom_products;
@@ -1593,6 +1594,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            cloud::cloud_operation,
+            cloud::cloud_resource,
+            cloud::storage_mode,
             shared_transfers::initialize_shared_user,
             shared_transfers::shared_transfer_directory,
             shared_transfers::list_shared_transfer_users,

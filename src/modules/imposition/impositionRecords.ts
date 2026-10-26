@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '../../services/backend'
 import type { PaymentStatus } from '../schematic-review/reviewRecords'
 import type { NoteImage } from '../../model'
 
@@ -28,7 +28,7 @@ export type NestTemplateRepack = {
   sourceSlotIndex: number
   targetPlacement: NestTemplatePlacement
 }
-export type NestRequest = { plateWidthMm: number; plateHeightMm: number; effectiveWidthMm: number; effectiveHeightMm: number; effectiveRightMm: number; spacingMm: number; objective: string; irregularAlgorithm?: 'local-tools'; threadCount?: number; templateRepack?: NestTemplateRepack; items: Array<{ id: string; widthMm: number; heightMm: number; quantity?: number; polygon?: Array<[number, number]>; lineOnly?: boolean }> }
+export type NestRequest = { plateWidthMm: number; plateHeightMm: number; effectiveWidthMm: number; effectiveHeightMm: number; effectiveRightMm: number; spacingMm: number; allowBaseMixing?: boolean; objective: string; irregularAlgorithm?: 'local-tools'; threadCount?: number; templateRepack?: NestTemplateRepack; items: Array<{ id: string; widthMm: number; heightMm: number; quantity?: number; polygon?: Array<[number, number]>; lineOnly?: boolean }> }
 export type ImpositionGeometry = { polygon: Array<[number, number]>; lineOnly: boolean }
 export type NestExcludedItem = { id: string; reason: string }
 export type NestResult = { placements: Array<{ id: string; sheetIndex: number; xMm: number; yMm: number; widthMm: number; heightMm: number; rotationDeg: number }>; unplaced: string[]; sheetsUsed: number; utilization: number; algorithm: string; excludedItems?: NestExcludedItem[]; warnings?: string[] }

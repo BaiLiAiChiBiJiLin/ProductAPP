@@ -47,7 +47,7 @@ export default function BatchHistoryPanel({ active, openingId, progress, onOpen,
     }).catch(failure => { if (!cancelled) setError(`历史记录读取失败：${String(failure)}`) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [active, query, revision])
+  }, [active, query, revision, userName])
 
   useEffect(() => {
     if (!active || !isTauri()) return
@@ -64,10 +64,10 @@ export default function BatchHistoryPanel({ active, openingId, progress, onOpen,
     try {
       const updated = await refreshSharedTransfers(userName)
       if (updated.errors.length) setSyncError(updated.errors.join('；'))
-      else void notice.success(updated.imported ? `已接收 ${updated.imported} 个批次，相关审核和生产拼版记录已写入本地。` : updated.finalized ? `已完成 ${updated.finalized} 个转移批次的发送端清理。` : '刷新完成，暂无新的转移数据。')
+      else void notice.success(updated.shared ? '云端历史记录已刷新。' : updated.imported ? `已接收 ${updated.imported} 个批次，相关审核和生产拼版记录已写入本地。` : updated.finalized ? `已完成 ${updated.finalized} 个转移批次的发送端清理。` : '刷新完成，暂无新的转移数据。')
       if (updated.imported || updated.finalized) onSharedRecordsChanged?.()
       if (updated.imported) filters.clear()
-    } catch (failure) { setSyncError(`共享数据接收失败：${String(failure)}。本地历史记录仍可使用。`) }
+    } catch (failure) { setSyncError(`刷新失败：${String(failure)}`) }
     finally { syncLock.current = false; setSyncing(false); setRevision(value => value + 1) }
   }
 
@@ -85,7 +85,7 @@ export default function BatchHistoryPanel({ active, openingId, progress, onOpen,
     try {
       const sent = await sendBatchTransfer(transferRecord.id, userName, recipient)
       setTransferRecord(null)
-      void notice.success(`已向 ${sent.recipient} 发送批次，对方在历史记录页刷新即可接收。`)
+      void notice.success(sent.shared ? `批次已转移给 ${sent.recipient}，对方刷新历史记录即可查看。` : `已向 ${sent.recipient} 发送批次，对方在历史记录页刷新即可接收。`)
     } finally {
       transferLock.current = false; onTransferringChange?.(false)
       // Publication can succeed before a network response fails. Reload all
