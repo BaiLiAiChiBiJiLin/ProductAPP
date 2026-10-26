@@ -113,8 +113,6 @@ pub fn stage(db: &Connection) -> Result<usize> {
     }
     for table in [
         "batch_thumbnail_cache",
-        "shared_transfer_outbox",
-        "shared_transfer_receipts",
         "batch_asset_directories",
         "assets",
     ] {

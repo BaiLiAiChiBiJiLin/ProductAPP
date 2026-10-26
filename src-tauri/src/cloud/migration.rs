@@ -22,9 +22,8 @@ fn ids(db: &Connection, table: &str) -> Result<Vec<String>> {
 }
 pub fn preview(db: &Connection) -> Result<Value> {
     crate::schematic_review::ensure_store(db)?;
-    let pending:i64=db.query_row("SELECT COUNT(*) FROM shared_transfer_outbox WHERE status IN ('preparing','publishing','published','received')",[],|r|r.get(0)).map_err(|e|e.to_string())?;
     Ok(
-        json!({"batches":ids(db,"batches")?.len(),"reviews":ids(db,"schematic_reviews")?.len(),"jobs":ids(db,"production_imposition_jobs")?.len(),"pendingTransfers":pending,"snapshot":super::local_cleanup::snapshot(db)?,"pendingFiles":super::local_cleanup::pending(db)?}),
+        json!({"batches":ids(db,"batches")?.len(),"reviews":ids(db,"schematic_reviews")?.len(),"jobs":ids(db,"production_imposition_jobs")?.len(),"snapshot":super::local_cleanup::snapshot(db)?,"pendingFiles":super::local_cleanup::pending(db)?}),
     )
 }
 
@@ -32,13 +31,48 @@ fn checked_transaction<'a>(db: &'a Connection, args: &Value) -> Result<rusqlite:
     let tx = rusqlite::Transaction::new_unchecked(db, rusqlite::TransactionBehavior::Immediate)
         .map_err(|e| e.to_string())?;
     let state = preview(&tx)?;
-    if state["pendingTransfers"].as_i64().unwrap_or(0) > 0 {
-        return Err("请先处理未完成的旧版转移任务".into());
-    }
     if args["snapshot"].as_str().is_none() || args["snapshot"] != state["snapshot"] {
         return Err("本机旧数据已变化，请重新点击检查本机旧数据后再操作".into());
     }
     Ok(tx)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn local_with_legacy_transfers() -> Connection {
+        let db = reviews::memory().unwrap();
+        for status in ["preparing", "publishing", "published", "received"] {
+            db.execute("INSERT INTO shared_transfer_outbox(task_id,batch_id,sender,recipient,status,record_ids) VALUES(?1,?1,'old-sender','old-recipient',?2,'{}')", [status, status]).unwrap();
+        }
+        db.execute("INSERT INTO shared_transfer_receipts VALUES('receipt','old-recipient','old-time','old-batch')", []).unwrap();
+        db
+    }
+
+    #[test]
+    fn legacy_transfers_do_not_block_migration_snapshot_or_get_cleaned_up() {
+        let db = local_with_legacy_transfers();
+        let state = preview(&db).unwrap();
+        let tx = checked_transaction(&db, &json!({"snapshot":state["snapshot"]})).unwrap();
+        super::super::local_cleanup::stage(&tx).unwrap();
+        tx.commit().unwrap();
+        let count: usize = db.query_row("SELECT COUNT(*) FROM shared_transfer_outbox", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 4, "cloud migration must leave old transfer records alone");
+        let count: usize = db.query_row("SELECT COUNT(*) FROM shared_transfer_receipts", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn legacy_transfer_status_changes_do_not_invalidate_business_snapshot() {
+        let db = local_with_legacy_transfers();
+        let state = preview(&db).unwrap();
+        db.execute("UPDATE shared_transfer_outbox SET status='complete'", []).unwrap();
+        let tx = checked_transaction(&db, &json!({"snapshot":state["snapshot"]})).unwrap();
+        drop(tx);
+        db.execute("INSERT INTO batches VALUES('new','now','[]','{}')", []).unwrap();
+        assert!(checked_transaction(&db, &json!({"snapshot":state["snapshot"]})).err().unwrap().contains("旧数据已变化"));
+    }
 }
 
 pub fn delete_local(env: &Environment, db: &Connection, args: &Value) -> Result<Value> {
@@ -124,10 +158,6 @@ pub fn run(
     db: &Connection,
     args: &Value,
 ) -> Result<Value> {
-    let preview = preview(db)?;
-    if preview["pendingTransfers"].as_i64().unwrap_or(0) > 0 {
-        return Err("请先在本地模式完成或取消待处理的旧版转移，再迁移数据".into());
-    }
     db.execute_batch(
         "CREATE TABLE IF NOT EXISTS app_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)",
     )

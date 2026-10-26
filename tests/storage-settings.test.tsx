@@ -21,6 +21,25 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
+test('cloud migration ignores legacy transfer tasks and forwards only its own snapshot', async () => {
+  api.invoke.mockImplementation(async command => {
+    if (command === 'load_storage_settings') return { ...defaults, shared: true }
+    if (command === 'preview_cloud_migration') return { batches: 1, reviews: 0, jobs: 0, pendingTransfers: 4, snapshot: 'local-snapshot' }
+    if (command === 'migrate_local_data') return { imported: 1, skipped: 0, errors: [], localRecordsDeleted: true }
+    throw new Error(`unexpected command: ${command}`)
+  })
+  render(<SettingsModal open onClose={() => {}}/>)
+  fireEvent.click(await screen.findByRole('button', { name: '检查本机旧数据' }))
+  const migrate = await screen.findByRole('button', { name: '迁移数据' })
+  expect((migrate as HTMLButtonElement).disabled).toBe(false)
+  expect((screen.getByRole('button', { name: '删除旧数据' }) as HTMLButtonElement).disabled).toBe(false)
+  expect(screen.queryByText('请先在本地模式处理未完成的转移任务。')).toBeNull()
+  fireEvent.click(migrate)
+  await screen.findByText(/已迁移 1 条/)
+  expect(api.invoke).toHaveBeenCalledWith('migrate_local_data', { pools: expect.any(Array), snapshot: 'local-snapshot' })
+  expect(api.invoke.mock.calls.some(([command]) => /shared.*transfer|transfer.*shared/.test(command))).toBe(false)
+})
+
 test('loads Rust settings, chooses a native folder, and only persists on save', async () => {
   const close = vi.fn()
   render(<SettingsModal open onClose={close}/>)

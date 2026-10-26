@@ -11,16 +11,41 @@
 .imposition-layout-config { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; }
 .imposition-layout-toggle { display: flex; align-items: center; gap: 8px; border: 0; border-radius: 6px; background: #f5f8fc; padding: 10px; color: #334155; cursor: pointer; white-space: nowrap; }
 .imposition-layout-toggle strong { display: block; font-size: 13px; font-weight: 600; }
+.imposition-layout-toggle > span { min-width: 0; max-width: 136px; }
+.imposition-layout-toggle strong { overflow: hidden; text-overflow: ellipsis; }
 .imposition-layout-toggle small { display: block; margin-top: 3px; color: #94a3b8; font-size: 10px; }
 .imposition-layout-toggle:hover { background: #eaf2ff; color: #1677ff; }
 .imposition-layout-toggle:focus-visible { outline: 2px solid #1677ff; outline-offset: 2px; }
-.imposition-layout-config.is-expanded .imposition-layout-fields { display: grid; grid-template-columns: repeat(5, 78px); width: 430px; }
+.imposition-layout-summary { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; }
+.imposition-layout-preview { font-size: 10px; color: #64748b; }
+.imposition-layout-options { min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+.imposition-preset-cards { display: flex; gap: 6px; max-width: 320px; overflow-x: auto; padding: 2px; }
+.imposition-preset-card { flex: 0 0 112px; display: flex; flex-direction: column; gap: 4px; border: 1px solid #dbe3ed; border-radius: 6px; background: #fff; padding: 8px; color: #475569; text-align: left; cursor: pointer; }
+.imposition-preset-card strong { display: flex; align-items: center; justify-content: space-between; gap: 6px; overflow-wrap: anywhere; font-size: 12px; }
+.imposition-preset-card span, .imposition-preset-card small { font-size: 10px; white-space: nowrap; }
+.imposition-preset-card[aria-pressed="true"] { background: #eff6ff; border-color: #1677ff; color: #1d4ed8; }
+.imposition-preset-card:not(:disabled):hover { border-color: #1677ff; }
+.imposition-preset-card:focus-visible { outline: 2px solid #1677ff; outline-offset: 1px; }
+.imposition-preset-card:disabled { opacity: .55; cursor: not-allowed; }
+.imposition-preset-actions { display: flex; gap: 6px; }
+.imposition-preset-actions .ant-btn { font-size: 11px; }
+.imposition-preset-details { min-width: 220px; }
+.imposition-preset-details dl { margin: 8px 0; }
+.imposition-preset-details dl > div { display: flex; justify-content: space-between; gap: 16px; }
+.imposition-preset-details dd { margin: 0; font-variant-numeric: tabular-nums; }
+.imposition-preset-details small { font-size: 11px; }
+.imposition-layout-error { display: flex; align-items: center; gap: 4px; color: #b91c1c; font-size: 11px; max-width: 260px; }
+.imposition-layout-error .ant-btn { padding: 0; font-size: 11px; }
+.imposition-preset-form { display: flex; flex-direction: column; gap: 16px; padding-top: 12px; }
+.imposition-preset-name { display: flex; flex-direction: column; gap: 6px; }
+.imposition-preset-form > small { color: #64748b; }
+.imposition-preset-form .imposition-layout-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; }
 .imposition-header-import { min-width: 0; display: flex; align-items: center; padding: 14px 16px; border-left: 1px solid #dbe3ed; }
 .imposition-header-import .imposition-upload { width: 100%; }
 .imposition-header-import .imposition-upload-zone { min-height: 88px; }
 .imposition-layout-fields { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 7px 10px; }
 .imposition-layout-fields label { display: flex; flex-direction: column; gap: 3px; color: #64748b; font-size: 11px; }
-.imposition-layout-fields .ant-input-number { width: 78px; }
+.imposition-layout-fields .ant-input-number { width: 100%; }
 .imposition-layout-fields .ant-input-number-input { font-size: 12px; }
 .imposition-packing-divider { height: 72px; margin: 0 2px; border-inline-start-color: #dbe3ed; }
 .imposition-packing-settings { flex: 1 1 0; min-width: 340px; display: flex; flex-wrap: wrap; align-items: center; gap: 7px 8px; }
@@ -37,7 +62,7 @@
 .imposition-packing-choices span { margin-top: 4px; }
 .imposition-packing-choices button.has-error:disabled { color: #b91c1c; background: #fef2f2; border-color: #fca5a5; }
 .imposition-workspace.is-production .imposition-workspace-header { min-height: 112px; }
-.imposition-workspace.is-production .imposition-packing-settings { min-width: 400px; }
+.imposition-workspace.is-production .imposition-packing-settings { min-width: 340px; }
 .imposition-packing-title { width: 100%; display: flex; align-items: baseline; gap: 8px; color: #1e293b; }
 .imposition-base-mixing { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; }
 .imposition-packing-title .imposition-base-mixing span { font-size: 12px; color: #475569; }
@@ -102,6 +127,14 @@
 .imposition-progress-value { height: 100%; min-width: 2%; border-radius: 99px; background: linear-gradient(90deg, #1677ff, #60a5fa); transition: width .25s ease; }
 
 .imposition-header-export { margin-left: auto; display: flex; flex: 0 0 auto; justify-content: flex-end; align-items: center; }
+/* Expanded presets get their own row so export never moves behind the fixed
+   import column. Only the preset-card strip scrolls when more presets exist. */
+.imposition-header-tools:has(.imposition-layout-config.is-expanded) { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px 14px; overflow: visible; }
+.imposition-header-tools:has(.imposition-layout-config.is-expanded) > .imposition-back-button { grid-column: 1; grid-row: 1; }
+.imposition-header-tools:has(.imposition-layout-config.is-expanded) > .imposition-layout-config { grid-column: 2; grid-row: 1; min-width: 0; }
+.imposition-header-tools:has(.imposition-layout-config.is-expanded) > .imposition-packing-divider { display: none; }
+.imposition-header-tools:has(.imposition-layout-config.is-expanded) > .imposition-packing-settings { grid-column: 1 / -1; grid-row: 2; min-width: 0; }
+.imposition-header-tools:has(.imposition-layout-config.is-expanded) > .imposition-header-export { grid-column: 3; grid-row: 1; margin-left: 0; }
 .imposition-thumbnail { width: 56px; height: 62px; display: grid; place-items: center; color: #94a3b8; font-size: 10px; }
 .imposition-thumbnail img { width: 100%; height: 100%; object-fit: contain; }
 .imposition-job-card-footer { padding-left: 10px; }

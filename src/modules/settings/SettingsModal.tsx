@@ -22,7 +22,7 @@ export default function SettingsModal({ open, onClose }: Props) {
   const [productVisited, setProductVisited] = useState(false)
   const [productBusy, setProductBusy] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [migration, setMigration] = useState<{ batches: number; reviews: number; jobs: number; pendingTransfers: number; snapshot: string }>()
+  const [migration, setMigration] = useState<{ batches: number; reviews: number; jobs: number; snapshot: string }>()
   const [maintenanceMessage, setMaintenanceMessage] = useState('')
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const busy = useRef(false)
@@ -125,10 +125,9 @@ export default function SettingsModal({ open, onClose }: Props) {
             <Button disabled={saving} onClick={() => void maintain('check_shared_storage')}>检查连接与目录权限</Button>
             <Button disabled={saving} onClick={() => void maintain('preview_cloud_migration')}>检查本机旧数据</Button>
             {migration && <div><p>本机有 {migration.batches} 个历史批次、{migration.reviews} 条审核、{migration.jobs} 条生产记录。历史批次导入后归当前用户，审核和生产记录公开。</p>
-              {migration.pendingTransfers > 0 && <Alert type="warning" message="请先在本地模式处理未完成的转移任务。"/>}
               <span style={{ display: 'inline-flex', gap: 8 }}>
-                <Button type="primary" loading={saving} disabled={saving || migration.pendingTransfers > 0} onClick={() => void maintain('migrate_local_data')}>迁移数据</Button>
-                <Button danger loading={saving} disabled={saving || migration.pendingTransfers > 0} onClick={deleteLocal}>删除旧数据</Button>
+                <Button type="primary" loading={saving} disabled={saving} onClick={() => void maintain('migrate_local_data')}>迁移数据</Button>
+                <Button danger loading={saving} disabled={saving} onClick={deleteLocal}>删除旧数据</Button>
               </span></div>}
             <p>删除记录后，仍被其他记录引用的文件继续保留。未引用的文件保留至少 24 小时后可清理。</p>
             <Button disabled={saving} onClick={() => void maintain('cleanup_cloud_resources')}>清理未引用文件</Button>

@@ -46,6 +46,7 @@ fn initialize_locked(conn: &mut impl Queryable) -> Result<()> {
             conn.query_drop(sql).map_err(error)?;
         }
     }
+    crate::imposition_layout_presets::initialize_cloud_store(conn)?;
     // Custom product choices belong to each installation's local SQLite store.
     // Snapshot product names/attributes are self-contained and remain untouched.
     conn.query_drop("DROP TABLE IF EXISTS pf_custom_products")

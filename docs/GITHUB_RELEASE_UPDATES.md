@@ -17,6 +17,8 @@ https://github.com/BaiLiAiChiBiJiLin/ProductAPP/releases/latest/download/latest.
 
 ## 发布
 
+需要本地打包后自行上传安装包、签名及更新清单时，按 [手动上传 GitHub 更新包](手动上传GitHub更新包.md) 操作。下面的 `npm run release` 则会提交并推送标签，触发自动发布。
+
 在项目根目录执行下面命令，无需手动修改版本号：
 
 ```powershell

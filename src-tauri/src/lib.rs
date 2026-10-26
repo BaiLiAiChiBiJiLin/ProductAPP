@@ -19,6 +19,7 @@ mod imposition_dxf;
 mod imposition_pdf_runtime;
 pub use imposition_pdf_runtime::run_pdf_worker_if_requested;
 mod imposition_import;
+mod imposition_layout_presets;
 mod local_api;
 mod product_config_cache;
 mod production_imposition;
@@ -1623,6 +1624,9 @@ pub fn run() {
             production_imposition::load_imposition_thumbnail,
             imposition_import::import_imposition_svg,
             imposition_import::delete_imposition_import,
+            imposition_layout_presets::list_imposition_layout_presets,
+            imposition_layout_presets::save_imposition_layout_preset,
+            imposition_layout_presets::delete_imposition_layout_preset,
             production_imposition::return_imposition_to_review,
             imposition_algorithms::pack_imposition_irregular,
             imposition_algorithms::load_imposition_geometry,

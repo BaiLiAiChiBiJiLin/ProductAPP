@@ -8,9 +8,11 @@ import { expandImpositionImages, getImpositionQuantity, type ImpositionJob, type
 import type { PackedImpositionItem } from '../src/modules/imposition/ImpositionKonvaCanvas'
 import { applyPackingEdit, type PackingEdit } from '../src/modules/imposition/packingEdits'
 import { IMPOSITION_THREADS_STORAGE_KEY } from '../src/modules/imposition/useImpositionThreads'
+import { DEFAULT_LAYOUT_PRESETS, LAYOUT_PRESET_STORAGE_KEY } from '../src/modules/imposition/layoutPresetStore'
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), importSvg: vi.fn(), canvas: vi.fn((_props: { pages: PackedImpositionItem[][]; collapseRepeatedLayouts?: boolean; onEdit?: (pages: PackedImpositionItem[][], edit: PackingEdit) => void }) => null) }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke, isTauri: () => false }))
+vi.mock('../src/modules/imposition/layoutPresetStore', async importOriginal => ({ ...await importOriginal<typeof import('../src/modules/imposition/layoutPresetStore')>(), listLayoutPresets: async () => ({ presets: DEFAULT_LAYOUT_PRESETS, canManage: true }) }))
 vi.mock('../src/modules/imposition/ImpositionKonvaCanvas', () => ({ default: mocks.canvas }))
 vi.mock('../src/modules/imposition/impositionUploadService', async importOriginal => ({ ...await importOriginal<typeof import('../src/modules/imposition/impositionUploadService')>(), importImpositionSvg: mocks.importSvg }))
 const jobs: ImpositionJob[] = Array.from({ length: 21 }, (_, index) => ({ id: `job-${index}`, sourceReviewId: `review-${index}`, customerName: `生产客户${index}`, output: `C:/proof-${index}.pdf`, submittedAt: '2026-10-08T01:00:00Z', paymentStatus: index % 2 ? 'unpaid' : 'paid', status: 'pending', imageCount: 1 }))
@@ -284,8 +286,8 @@ it('locks packing inputs during a job and unlocks them when the solver returns',
   expect(screen.queryByRole('combobox', { name: '异形算法' })).toBeNull()
   expect(screen.queryByText('本地拼版')).toBeNull()
   expect((screen.getByRole('combobox', { name: '拼版策略' }) as HTMLInputElement).disabled).toBe(true)
-  expect(screen.getAllByRole('spinbutton').length).toBeGreaterThanOrEqual(10)
-  for (const input of screen.getAllByRole('spinbutton')) expect((input as HTMLInputElement).disabled).toBe(true)
+  expect((screen.getByRole('button', { name: '选择小版' }) as HTMLButtonElement).disabled).toBe(true)
+  expect((screen.getByRole('button', { name: '编辑版面配置' }) as HTMLButtonElement).disabled).toBe(true)
   await act(async () => finish({ placements: [], unplaced: [`${job.id}::asset`, `${job.id}::asset#qt-2`, `${job.id}::asset#qt-3`], sheetsUsed: 0, utilization: 0, algorithm: 'local-tools' }))
   await waitFor(() => expect((screen.getByRole('combobox', { name: '拼版策略' }) as HTMLInputElement).disabled).toBe(false))
   expect(mocks.invoke.mock.calls.filter(call => call[0] === 'pack_imposition_irregular')).toHaveLength(1)
@@ -742,15 +744,14 @@ it('invalidates results when selection, QT or settings change and waits for manu
   fireEvent.click(screen.getByRole('button', { name: '智能拼版' }))
   await waitFor(() => expect(screen.getByText(/已放置/).textContent).toContain('4/4'))
   fireEvent.click(screen.getByRole('button', { name: '展开版面配置' }))
-  const gap = within(screen.getByText('图片间距').closest('label')!).getByRole('spinbutton')
-  fireEvent.change(gap, { target: { value: '4' } })
-  fireEvent.blur(gap)
+  fireEvent.click(screen.getByRole('button', { name: '选择小版' }))
   await screen.findByText(/0 种版式 · 共 0 块板材/)
   expect(solverCalls()).toHaveLength(3)
   await closeImagePicker()
   fireEvent.click(screen.getByRole('button', { name: '智能拼版' }))
   await waitFor(() => expect(solverCalls()).toHaveLength(4))
-  expect(solverCalls().at(-1)![1].request.spacingMm).toBe(4)
+  expect(solverCalls().at(-1)![1].request).toMatchObject({ spacingMm: 8, effectiveWidthMm: 285, effectiveHeightMm: 380, plateWidthMm: 300, plateHeightMm: 464 })
+  expect(mocks.canvas.mock.calls.at(-1)![0]).toMatchObject({ spacing: 8, effectiveHeight: 380, effectiveWidth: 285, boardWidth: 300, boardHeight: 464 })
 })
 
 it('starts with collapsed board settings and preserves configuration and packed results when toggling them', async () => {
@@ -767,10 +768,8 @@ it('starts with collapsed board settings and preserves configuration and packed 
 
   fireEvent.click(expand)
   expect(screen.getByRole('button', { name: '收起版面配置' }).getAttribute('aria-expanded')).toBe('true')
-  const gap = within(screen.getByText('图片间距').closest('label')!).getByRole('spinbutton') as HTMLInputElement
-  expect(gap.value).toBe('3.00')
-  fireEvent.change(gap, { target: { value: '4' } })
-  fireEvent.blur(gap)
+  expect(screen.getByRole('button', { name: '选择大版' }).getAttribute('aria-pressed')).toBe('true')
+  fireEvent.click(screen.getByRole('button', { name: '选择小版' }))
   fireEvent.click(screen.getByRole('button', { name: '收起版面配置' }))
   expect(screen.queryByText('图片间距')).toBeNull()
   expect(solverCalls()).toHaveLength(0)
@@ -783,12 +782,12 @@ it('starts with collapsed board settings and preserves configuration and packed 
   const pagesBeforeToggle = canvasPages()
   expect(pagesBeforeToggle.flat()).toHaveLength(2)
   expect(solverCalls()).toHaveLength(1)
-  expect(solverCalls()[0][1].request.spacingMm).toBe(4)
+  expect(solverCalls()[0][1].request.spacingMm).toBe(8)
   expect((screen.getByRole('button', { name: '导出 PDF' }) as HTMLButtonElement).disabled).toBe(false)
 
   for (let index = 0; index < 2; index++) {
     fireEvent.click(screen.getByRole('button', { name: '展开版面配置' }))
-    expect((within(screen.getByText('图片间距').closest('label')!).getByRole('spinbutton') as HTMLInputElement).value).toBe('4.00')
+    expect(screen.getByRole('button', { name: '选择小版' }).getAttribute('aria-pressed')).toBe('true')
     expect(canvasPages()).toBe(pagesBeforeToggle)
     fireEvent.click(screen.getByRole('button', { name: '收起版面配置' }))
     expect(screen.getByRole('button', { name: '展开版面配置' }).getAttribute('aria-expanded')).toBe('false')
@@ -869,6 +868,7 @@ it('limits thumbnail loads to two concurrent requests and skips queued thumbnail
 beforeEach(() => {
   vi.clearAllMocks()
   localStorage.removeItem(IMPOSITION_THREADS_STORAGE_KEY)
+  localStorage.removeItem(LAYOUT_PRESET_STORAGE_KEY)
   Object.defineProperty(window, 'matchMedia', { writable: true, value: vi.fn(() => ({ matches: false, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() })) })
   const getStyle = window.getComputedStyle.bind(window)
   vi.spyOn(window, 'getComputedStyle').mockImplementation(element => getStyle(element))
@@ -1121,7 +1121,11 @@ it('production hides development controls, uses automatic cores, and keeps valid
   })
   render(<ConfigProvider theme={{ token: { motion: false } }}><ImpositionPage active revision={0}/></ConfigProvider>)
   fireEvent.click(await screen.findByRole('button', { name: '开始拼版' }))
-  expect(screen.queryByRole('button', { name: '展开版面配置' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '展开版面配置' }))
+  expect(await screen.findByRole('button', { name: '选择小版' })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: '编辑版面配置' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '新增版面配置' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '删除版面配置' })).toBeNull()
   expect(screen.queryByRole('combobox', { name: '拼版策略' })).toBeNull()
   expect(screen.queryByRole('combobox', { name: '使用核心数' })).toBeNull()
   await selectWholeJobAndCalculate(job)
@@ -1133,7 +1137,16 @@ it('production hides development controls, uses automatic cores, and keeps valid
   expect(screen.getByRole('button', { name: /计算失败：示例策略失败/ })).toBeTruthy()
   fireEvent.click(choice)
   expect(mocks.canvas.mock.calls.at(-1)![0].pages).toHaveLength(2)
-})
+  fireEvent.click(screen.getByRole('button', { name: '选择小版' }))
+  await screen.findByText('勾选右侧图片，点击“智能拼版”生成拼版')
+  expect(screen.queryByRole('button', { name: /综合最少\s*版面 2/ })).toBeNull()
+  expect((screen.getByRole('button', { name: '导出 PDF' }) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: '智能拼版' }))
+  await screen.findByRole('button', { name: /综合最少\s*版面 2/ })
+  const recalculated = mocks.invoke.mock.calls.filter(call => call[0] === 'pack_imposition_irregular').slice(3)
+  expect(recalculated).toHaveLength(3)
+  expect(recalculated.every(call => call[1].request.spacingMm === 8 && call[1].request.effectiveHeightMm === 380)).toBe(true)
+}, 15000)
 
 
 it.each([false, true])('deletes only temporary imports, clears selected plans, and preserves the job on failure (%s)', async fail => {

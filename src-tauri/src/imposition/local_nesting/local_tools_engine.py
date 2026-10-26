@@ -206,7 +206,12 @@ def _solve(request, *, cache_dir=None, progress=None, resolution=.5):
                 # changing a path without changing its text length cannot
                 # accidentally reuse old geometry.
                 mask_source = dict(source, i=0, name=source["digest"])
-                angles = list(range(0, 360, args.rotation_step))
+                # Concave outlines can interlock at intermediate orientations.
+                # Keep the established convex search, and refine only shapes
+                # with usable notches. Every QT still shares one mask bank.
+                concavity = source["poly"].convex_hull.area - source["area"]
+                step = 7.5 if concavity > max(1e-6, source["area"] * .001) else args.rotation_step
+                angles = [index * step for index in range(round(360 / step))]
                 def mask_progress(_index, angle_no, count):
                     progress.emit("geometry", f"图片 {ident}：生成旋转轮廓 {angle_no}/{count}；其余 QT 复用", item_index, len(items), 2 + 23 * (item_index + angle_no / count) / max(1, len(items)))
                 masks = make_masks([mask_source], cache, args.resolution, angles, gap, mask_progress)[0]
@@ -214,7 +219,7 @@ def _solve(request, *, cache_dir=None, progress=None, resolution=.5):
             masks = sources_by_digest[mask_key]
             usable = [m for m in masks if m["frame_width"] <= width + 1e-7 and m["frame_height"] <= height + 1e-7]
             if not usable:
-                raise ValueError("尝试 0–345° 旋转后仍放不进有效区域，未参与拼版")
+                raise ValueError("尝试完整一周的多个旋转角度后仍放不进有效区域，未参与拼版")
             srcs.append(source)
             bank[source["i"]] = usable
         except MemoryError:
