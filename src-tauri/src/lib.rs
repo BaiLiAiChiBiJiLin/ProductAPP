@@ -505,9 +505,12 @@ mod export_tests {
                 mode_used: "groups".into(),
                 merge_status: "kept-separate".into(),
                 source_group_id: String::new(),
+                source_layer_role: String::new(),
                 attributes: Default::default(),
                 attribute_images: Default::default(),
                 note: String::new(),
+                note_font_size: None,
+                note_color: None,
                 note_image: String::new(),
                 note_images: Some(Vec::new()),
                 attributes_confirmed: false,
@@ -892,6 +895,10 @@ async fn import_assets(
     request_id: String,
 ) -> Result<Vec<Asset>, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let source_path = PathBuf::from(&path);
+        let compact_events = fs::metadata(&source_path)
+            .map(|metadata| metadata.len() >= assets::LARGE_IMPORT_BYTES)
+            .unwrap_or(false);
         let temp_dir = project_data_dir().join("temp-assets");
         let import_started = Instant::now();
         log::info!(target: "printflow::import", "导入开始 request={request_id}");
@@ -899,15 +906,23 @@ async fn import_assets(
         let pending_assets: Arc<Mutex<Vec<Asset>>> = Arc::new(Mutex::new(Vec::with_capacity(8)));
         let pending_for_callback = Arc::clone(&pending_assets);
         let delivery_error = Mutex::new(None::<String>);
-        let assets = assets::import_with_stage(&PathBuf::from(path), &product_id, &mode, &request_id, |phase, completed, total| {
+        let assets = assets::import_with_stage(&source_path, &product_id, &mode, &request_id, |phase, completed, total| {
             let _ = app.emit("import-progress", ImportProgress { request_id: request_id.clone(), phase: phase.to_owned(), completed, total });
         }, |asset| {
             let temp_path = temp_dir.join(format!("{}.svg", safe_asset_file_name(&asset.id)));
-            let mut streamed_asset = asset.clone();
             if let Err(error) = fs::write(&temp_path, asset.svg.as_bytes()) {
                 *delivery_error.lock().unwrap() = Some(format!("临时图片写入失败：{error}"));
                 return;
             }
+            // For large imports the complete artwork is already on disk. Build
+            // the event payload from a compact clone directly instead of
+            // cloning the large SVG and then clearing it, which briefly doubles
+            // the peak memory for every generated asset.
+            let mut streamed_asset = if compact_events {
+                compact_asset(asset)
+            } else {
+                asset.clone()
+            };
             streamed_asset.storage_path = temp_path.to_string_lossy().to_string();
             let batch = {
                 let Ok(mut pending) = pending_for_callback.lock() else { return };
@@ -1200,6 +1215,8 @@ fn batch_signature(assets: &[Asset], metadata: &BatchMetadata) -> Result<String,
                 "attributes": asset.attributes,
                 "finishMatchDisabled": asset.finish_match_disabled,
                 "note": asset.note,
+                "noteFontSize": asset.note_font_size,
+                "noteColor": asset.note_color,
                 "noteImage": asset.note_image,
                 "noteImages": asset.note_images,
                 "attributesConfirmed": asset.attributes_confirmed,
@@ -1298,6 +1315,27 @@ async fn discard_temp_assets(assets: Vec<Asset>) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         remove_temp_asset_files(&assets);
         Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Load one staged SVG only when a visible card needs it. Large imports keep
+/// the artwork on disk until this point, so the upload event carries metadata
+/// instead of another multi-hundred-megabyte IPC payload.
+#[tauri::command]
+async fn load_temp_asset_svg(path: String) -> Result<tauri::ipc::Response, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = project_data_dir().join("temp-assets");
+        let canonical_root = fs::canonicalize(&root).map_err(|e| format!("临时图片目录不可访问：{e}"))?;
+        let requested = PathBuf::from(path);
+        let actual = fs::canonicalize(&requested).map_err(|e| format!("临时图片不可访问：{e}"))?;
+        if !actual.starts_with(&canonical_root) || !actual.is_file() {
+            return Err("临时图片路径无效".into());
+        }
+        fs::read(&actual)
+            .map(tauri::ipc::Response::new)
+            .map_err(|e| format!("临时图片读取失败：{e}"))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1637,6 +1675,7 @@ pub fn run() {
             delete_asset,
             save_batch,
             discard_temp_assets,
+            load_temp_asset_svg,
             list_batches,
             load_batch_thumbnails,
             load_batch,

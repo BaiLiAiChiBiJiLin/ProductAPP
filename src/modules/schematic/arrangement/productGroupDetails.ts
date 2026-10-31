@@ -11,7 +11,7 @@ export function buildProductGroupDetails(items: Item[], assets: Map<string, Asse
     const asset = assets.get(item.assetId)
     if (!asset) return
     const visible = detailsForAsset(asset, configs)
-    const key = JSON.stringify([visible.size, visible.qt, visible.finish, visible.accessoryImage ?? '', visible.accessoryCode ?? '', visible.note ?? '', getNoteImages(visible)])
+    const key = JSON.stringify([visible.size, visible.qt, visible.finish, visible.accessoryImage ?? '', visible.accessoryCode ?? '', visible.note ?? '', visible.textOverrides?.note?.fontSize ?? '', visible.textOverrides?.note?.color ?? '', getNoteImages(visible)])
     const previous = grouped.get(key)
     if (previous) { previous.itemIds.push(item.id); return }
     grouped.set(key, { itemIds: [item.id], details: visible })

@@ -13,7 +13,55 @@ mod svg_modes;
 pub use asset_images::SourceImage;
 pub use asset_notes::{deserialize_note_images, read_note_images, NoteImage};
 
-const MAX_SVG_BYTES: usize = 500 * 1024 * 1024;
+/// Maximum source SVG size shared by the schematic upload and imposition upload
+/// flows. This is a binary gigabyte (1024 MiB).
+pub const MAX_SVG_BYTES: usize = 1024 * 1024 * 1024;
+/// Above this size, the importer selects a memory-budgeted worker count. The
+/// source, split candidates and usvg trees are large enough that worker count
+/// must be limited by physical memory as well as CPU count.
+pub const LARGE_IMPORT_BYTES: u64 = 128 * 1024 * 1024;
+
+fn total_physical_memory_bytes() -> Option<u64> {
+    #[cfg(windows)]
+    {
+        let mut status = windows::Win32::System::SystemInformation::MEMORYSTATUSEX {
+            dwLength: std::mem::size_of::<windows::Win32::System::SystemInformation::MEMORYSTATUSEX>() as u32,
+            ..Default::default()
+        };
+        // GlobalMemoryStatusEx only reports host capacity; it does not change
+        // process state and is safe to use for selecting an import budget.
+        unsafe {
+            windows::Win32::System::SystemInformation::GlobalMemoryStatusEx(&mut status)
+                .ok()
+                .map(|_| status.ullTotalPhys)
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
+fn large_import_workers(file_bytes: u64, physical_memory_bytes: Option<u64>, cpu_workers: usize) -> usize {
+    if file_bytes < LARGE_IMPORT_BYTES {
+        return cpu_workers.max(1);
+    }
+    let Some(memory) = physical_memory_bytes else {
+        return 1;
+    };
+    let gib = 1024 * 1024 * 1024u64;
+    // Keep roughly 4 GiB available for Windows, the WebView and the source
+    // document itself, then budget about 4 GiB per rendering worker. This
+    // grows with high-memory workstations while keeping 8/12/16 GiB machines
+    // at 1/2/3 workers respectively for the same large source.
+    let budget = memory
+        .saturating_sub(4 * gib)
+        .checked_div(4 * gib)
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(1)
+        .max(1);
+    budget.min(cpu_workers.max(1)).max(1)
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,12 +104,20 @@ pub struct Asset {
     pub merge_status: String,
     #[serde(default)]
     pub source_group_id: String,
+    /// Default semantic role for a standard direct layer group. Values are
+    /// `front`, `window`, or `back`; older and non-standard assets are empty.
+    #[serde(default)]
+    pub source_layer_role: String,
     #[serde(default)]
     pub attributes: BTreeMap<String, String>,
     #[serde(default)]
     pub attribute_images: BTreeMap<String, String>,
     #[serde(default)]
     pub note: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note_font_size: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note_color: Option<String>,
     #[serde(default)]
     pub note_image: String,
     /// Missing for legacy single-image notes; an explicit empty list clears all images.
@@ -122,6 +178,18 @@ mod note_persistence_tests {
         asset.source_group_width_mm = 70.1998;
         asset.source_group_height_mm = 70.2;
         asset.source_group_bounds = [100.0, 200.0, 2454617.0, 2454617.0];
+        asset.source_layer_role = "window".into();
+        asset.note_font_size = Some(14.0);
+        asset.note_color = Some("#666666".into());
+        asset.source_images = Some(vec![super::SourceImage {
+            node_id: "embedded-back".into(),
+            width_px: 100,
+            height_px: 100,
+            width_mm: Some(10.0),
+            height_mm: Some(10.0),
+            format: "PNG".into(),
+            layer_role: "back".into(),
+        }]);
         asset.attributes_confirmed = true;
         asset.note = "保留文字备注".into();
         asset.note_image = "data:image/png;base64,AA==".into();
@@ -162,6 +230,13 @@ mod note_persistence_tests {
             asset.source_group_height_mm
         );
         assert_eq!(restored.source_group_bounds, asset.source_group_bounds);
+        assert_eq!(restored.source_layer_role, "window");
+        assert_eq!(restored.note_font_size, Some(14.0));
+        assert_eq!(restored.note_color.as_deref(), Some("#666666"));
+        assert_eq!(
+            restored.source_images.as_ref().unwrap()[0].layer_role,
+            "back"
+        );
     }
 }
 
@@ -704,6 +779,155 @@ pub fn import_with_asset(
     )
 }
 
+/// Map standard direct layer groups to their initial production role.
+///
+/// The splitter keeps source order (the first SVG sibling paints first and
+/// therefore sits at the back; the last sibling paints on top). Only the
+/// standard layer-group mode gets this default. Two layers are back/front;
+/// when the first (back-order) layer is larger than the front layer it becomes
+/// the color window instead. Three layers are back/window/front, with the
+/// largest embedded image taking the window role. Other counts remain
+/// unclassified so a more complex document is never given a misleading role.
+fn role_for_layer_position(index: usize, count: usize, window_index: Option<usize>) -> &'static str {
+    match count {
+        2 => match index {
+            0 if window_index == Some(0) => "window",
+            0 => "back",
+            1 => "front",
+            _ => "",
+        },
+        3 => {
+            let window_index = window_index.unwrap_or(1);
+            if index == window_index {
+                "window"
+            } else {
+                let first_non_window = (0..count).find(|candidate| *candidate != window_index);
+                if Some(index) == first_non_window { "back" } else { "front" }
+            }
+        }
+        _ => "",
+    }
+}
+
+fn source_layer_role(
+    kind: svg_modes::classifier::SvgKind,
+    index: usize,
+    count: usize,
+    window_index: Option<usize>,
+) -> &'static str {
+    if kind == svg_modes::classifier::SvgKind::LayerGroups {
+        role_for_layer_position(index, count, window_index)
+    } else {
+        ""
+    }
+}
+
+fn image_area_score(image: &SourceImage) -> Option<f64> {
+    let width = image
+        .width_mm
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .unwrap_or_else(|| image.width_px as f64 * 25.4 / 96.0);
+    let height = image
+        .height_mm
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .unwrap_or_else(|| image.height_px as f64 * 25.4 / 96.0);
+    let area = width * height;
+    area.is_finite().then_some(area).filter(|value| *value > 0.0)
+}
+
+/// Find a window candidate by using the last paint-order layer as the known
+/// front. Only an earlier layer that is clearly larger than that front can be
+/// a color window; the front itself is never classified as a window.
+fn window_index_against_front(scores: &[Option<f64>]) -> Option<usize> {
+    if !matches!(scores.len(), 2 | 3) {
+        return None;
+    }
+    let front_area = scores.last().copied().flatten()?;
+    scores[..scores.len() - 1]
+        .iter()
+        .enumerate()
+        .filter_map(|(index, area)| {
+            let area = (*area)?;
+            (area > front_area * (1.0 + 1e-6)).then_some((index, area))
+        })
+        .max_by(|left, right| left.1.total_cmp(&right.1))
+        .map(|(index, _)| index)
+}
+
+fn largest_image_index(images: &[SourceImage]) -> Option<usize> {
+    if !matches!(images.len(), 2 | 3) {
+        return None;
+    }
+    let scores = images.iter().map(image_area_score).collect::<Vec<_>>();
+    window_index_against_front(&scores)
+}
+
+fn source_window_index(
+    sources: &[(String, String)],
+    options: &usvg::Options,
+) -> Result<Option<usize>, String> {
+    if !matches!(sources.len(), 2 | 3) {
+        return Ok(None);
+    }
+    let mut scores = Vec::with_capacity(sources.len());
+    for (_, source) in sources {
+        let tree = usvg::Tree::from_str(source, options).map_err(|error| error.to_string())?;
+        let document = roxmltree::Document::parse_with_options(
+            source,
+            roxmltree::ParsingOptions {
+                allow_dtd: true,
+                ..Default::default()
+            },
+        )
+        .map_err(|error| error.to_string())?;
+        let images = asset_images::collect(&tree, &document);
+        scores.push(images.iter().filter_map(image_area_score).reduce(f64::max));
+    }
+    Ok(window_index_against_front(&scores))
+}
+
+fn annotate_source_image_roles(
+    kind: svg_modes::classifier::SvgKind,
+    asset_index: usize,
+    asset_count: usize,
+    images: &mut [SourceImage],
+    window_index: Option<usize>,
+) {
+    // A standard layer group can contain several raster nodes (for example a
+    // face plus an embedded texture). All of those nodes inherit the group
+    // role; they are not separate front/back layers.
+    let group_role = source_layer_role(kind, asset_index, asset_count, window_index);
+    if !group_role.is_empty() {
+        for image in images {
+            image.layer_role = group_role.to_owned();
+        }
+        return;
+    }
+    // A split asset that contains exactly one raster image has no ambiguity:
+    // that image is the front artwork, even when the source file was a whole
+    // artwork or a top-level group rather than a standard layer wrapper.
+    if images.len() == 1 {
+        images[0].layer_role = "front".to_owned();
+        return;
+    }
+    // Whole-artwork SVGs such as Corel exports may have no named layer
+    // wrapper while still containing exactly two or three real raster images.
+    // Mark those image rows by paint order so the asset details can still
+    // expose front/back (or front/window/back). Paths and other vector nodes
+    // do not participate because this count only uses collected raster images.
+    if matches!(
+        kind,
+        svg_modes::classifier::SvgKind::Whole | svg_modes::classifier::SvgKind::LayerGroups
+    ) && matches!(images.len(), 2 | 3)
+    {
+        let count = images.len();
+        let image_window_index = largest_image_index(images);
+        for (index, image) in images.iter_mut().enumerate() {
+            image.layer_role = role_for_layer_position(index, count, image_window_index).to_owned();
+        }
+    }
+}
+
 pub fn import_with_stage(
     path: &Path,
     product_id: &str,
@@ -712,19 +936,29 @@ pub fn import_with_stage(
     progress: impl Fn(&str, usize, usize),
     on_asset: impl Fn(&Asset),
 ) -> Result<Vec<Asset>, String> {
+    let cpu_workers = import_parallel::default_workers();
+    let workers = fs::metadata(path)
+        .map(|metadata| {
+            large_import_workers(
+                metadata.len(),
+                total_physical_memory_bytes(),
+                cpu_workers,
+            )
+        })
+        .unwrap_or(cpu_workers);
     import_with_stage_workers(
         path,
         product_id,
         mode,
         request_id,
-        import_parallel::default_workers(),
+        workers,
         progress,
         on_asset,
     )
 }
 
-/// Explicit worker count for importer verification. Desktop uploads use half
-/// the available logical CPUs through `import_with_stage`.
+/// Explicit worker count for importer verification. Desktop uploads use a
+/// CPU-and-memory budget through `import_with_stage`.
 pub fn import_with_stage_workers(
     path: &Path,
     product_id: &str,
@@ -745,7 +979,8 @@ pub fn import_with_stage_workers(
         35 * 1024 * 1024
     };
     if fs::metadata(path).map_err(|e| e.to_string())?.len() > max_bytes as u64 {
-        return Err(format!("单个文件不能超过 {} MB", max_bytes / (1024 * 1024)));
+        let limit = if extension == "svg" { "1 GB" } else { "35 MB" };
+        return Err(format!("单个文件不能超过 {limit}"));
     }
     // `auto` is the default UI mode and lets the importer decide between a
     // complete artwork and top-level graphic groups.
@@ -834,7 +1069,7 @@ pub fn import_with_stage_workers(
             svg_modes::classifier::SvgKind::TopLevelGroups => {
                 svg_modes::top_groups::sources(svg_text, &progress)?
             }
-            svg_modes::classifier::SvgKind::SceneTree => {
+            svg_modes::classifier::SvgKind::LayerGroups => {
                 svg_modes::scene::split_sources_with_workers(svg_text, true, workers, &progress)?
             }
         }
@@ -843,6 +1078,16 @@ pub fn import_with_stage_workers(
     };
     let options = options();
     let total = sources.len();
+    // In a standard layered file, the front is the last paint-order layer.
+    // A preceding layer becomes the color window only when its embedded image
+    // is larger than that front. Compute this once before the worker pass so
+    // every generated asset receives the same cross-layer classification while
+    // delivery remains ordered.
+    let window_asset_index = if svg_kind == svg_modes::classifier::SvgKind::LayerGroups {
+        source_window_index(&sources, &options)?
+    } else {
+        None
+    };
     log::info!(target: "printflow::import", "SVG 资源生成 request={} assets={} workers={}", request_id, total, workers.max(1).min(total.max(1)));
     progress("generate", 0, total.max(1));
     let mut assets = Vec::new();
@@ -910,6 +1155,20 @@ pub fn import_with_stage_workers(
             // as the canonical resource. PNG rendering is reserved for
             // temporary pixel validation and export; importing every split
             // asset as a raster preview wastes time and duplicates SQLite data.
+            let mut source_images = asset_images::collect(&tree, &source_doc);
+            annotate_source_image_roles(
+                svg_kind,
+                index,
+                total,
+                &mut source_images,
+                window_asset_index,
+            );
+            let asset_layer_role = if source_images.len() == 1 {
+                let group_role = source_layer_role(svg_kind, index, total, window_asset_index);
+                if group_role.is_empty() { "front" } else { group_role }
+            } else {
+                ""
+            };
             let asset = Asset {
                 source_file_name: path
                     .file_name()
@@ -929,7 +1188,7 @@ pub fn import_with_stage_workers(
                 source_group_width_mm,
                 source_group_height_mm,
                 source_group_bounds,
-                source_images: Some(asset_images::collect(&tree, &source_doc)),
+                source_images: Some(source_images),
                 // SVG is the single source of truth. Preview URLs are kept
                 // empty so one large embedded SVG is not stored three times
                 // in memory/SQLite; the UI derives a data URL lazily when it
@@ -945,9 +1204,12 @@ pub fn import_with_stage_workers(
                     "whole".into()
                 },
                 source_group_id: format!("{request_id}-{index}"),
+                source_layer_role: asset_layer_role.into(),
                 attributes: BTreeMap::new(),
                 attribute_images: BTreeMap::new(),
                 note: String::new(),
+                note_font_size: None,
+                note_color: None,
                 note_image: String::new(),
                 note_images: Some(Vec::new()),
                 attributes_confirmed: false,
@@ -1071,7 +1333,7 @@ fn embed_relative_images(svg: &str, svg_path: &Path) -> Result<String, String> {
                 .saturating_sub(end - start)
                 .saturating_add(encoded.len());
             if expanded_size > MAX_SVG_BYTES {
-                return Err("SVG 嵌入图片展开后超过 500 MB，请拆分文件或压缩图片后重试".into());
+                return Err("SVG 嵌入图片展开后超过 1 GB，请拆分文件或压缩图片后重试".into());
             }
             out.replace_range(start..end, &encoded);
             pos = start + encoded.len() + 1;
@@ -1082,6 +1344,209 @@ fn embed_relative_images(svg: &str, svg_path: &Path) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn large_import_worker_budget_scales_with_memory() {
+        let mib = 1024 * 1024u64;
+        let gib = 1024 * mib;
+        assert_eq!(super::large_import_workers(64 * mib, Some(8 * gib), 4), 4);
+        assert_eq!(super::large_import_workers(128 * mib, Some(8 * gib), 4), 1);
+        assert_eq!(super::large_import_workers(128 * mib, Some(12 * gib), 4), 2);
+        assert_eq!(super::large_import_workers(128 * mib, Some(16 * gib), 4), 3);
+        assert_eq!(super::large_import_workers(128 * mib, Some(32 * gib), 8), 7);
+        assert_eq!(super::large_import_workers(128 * mib, Some(64 * gib), 16), 15);
+        assert_eq!(super::large_import_workers(128 * mib, None, 4), 1);
+    }
+
+    #[test]
+    fn standard_layer_roles_follow_svg_paint_order() {
+        use super::svg_modes::classifier::SvgKind;
+        assert_eq!(super::source_layer_role(SvgKind::LayerGroups, 0, 2, None), "back");
+        assert_eq!(super::source_layer_role(SvgKind::LayerGroups, 1, 2, None), "front");
+        assert_eq!(super::role_for_layer_position(0, 2, Some(0)), "window");
+        assert_eq!(super::role_for_layer_position(1, 2, Some(0)), "front");
+        assert_eq!(super::source_layer_role(SvgKind::LayerGroups, 0, 3, None), "back");
+        assert_eq!(super::source_layer_role(SvgKind::LayerGroups, 1, 3, None), "window");
+        assert_eq!(super::source_layer_role(SvgKind::LayerGroups, 2, 3, None), "front");
+        assert_eq!(super::source_layer_role(SvgKind::LayerGroups, 0, 3, Some(0)), "window");
+        assert_eq!(super::source_layer_role(SvgKind::LayerGroups, 1, 3, Some(0)), "back");
+        assert_eq!(super::source_layer_role(SvgKind::LayerGroups, 2, 3, Some(0)), "front");
+        assert_eq!(super::source_layer_role(SvgKind::TopLevelGroups, 0, 2, None), "");
+        assert_eq!(super::source_layer_role(SvgKind::LayerGroups, 0, 4, None), "");
+    }
+
+    #[test]
+    fn single_raster_asset_is_marked_as_front() {
+        use super::svg_modes::classifier::SvgKind;
+        for kind in [SvgKind::Whole, SvgKind::TopLevelGroups, SvgKind::LayerGroups] {
+            let mut images = vec![super::SourceImage {
+                node_id: "front".into(),
+                width_px: 10,
+                height_px: 10,
+                width_mm: Some(20.0),
+                height_mm: Some(20.0),
+                format: "PNG".into(),
+                layer_role: String::new(),
+            }];
+            super::annotate_source_image_roles(kind, 0, 1, &mut images, None);
+            assert_eq!(images[0].layer_role, "front");
+        }
+    }
+
+    #[test]
+    fn standard_layer_window_index_uses_largest_embedded_image() {
+        const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+        let source = |width: u32, height: u32| {
+            format!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><image width="{width}" height="{height}" href="data:image/png;base64,{PNG}"/></svg>"#
+            )
+        };
+        let sources = vec![
+            ("front".into(), source(20, 20)),
+            ("window".into(), source(60, 60)),
+            ("back".into(), source(20, 20)),
+        ];
+        assert_eq!(
+            super::source_window_index(&sources, &super::options()).unwrap(),
+            Some(1)
+        );
+        let front_is_largest = vec![
+            ("back".into(), source(60, 60)),
+            ("window-candidate".into(), source(20, 20)),
+            ("front".into(), source(80, 80)),
+        ];
+        assert_eq!(
+            super::source_window_index(&front_is_largest, &super::options()).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn whole_artwork_image_roles_ignore_vector_paths() {
+        use super::svg_modes::classifier::SvgKind;
+        let mut images = vec![
+            super::SourceImage {
+                node_id: "back".into(),
+                width_px: 10,
+                height_px: 10,
+                width_mm: None,
+                height_mm: None,
+                format: "PNG".into(),
+                layer_role: String::new(),
+            },
+            super::SourceImage {
+                node_id: "front".into(),
+                width_px: 10,
+                height_px: 10,
+                width_mm: None,
+                height_mm: None,
+                format: "PNG".into(),
+                layer_role: String::new(),
+            },
+        ];
+        super::annotate_source_image_roles(SvgKind::Whole, 0, 1, &mut images, None);
+        assert_eq!(
+            images.iter().map(|image| image.layer_role.as_str()).collect::<Vec<_>>(),
+            ["back", "front"]
+        );
+        for image in &mut images {
+            image.layer_role.clear();
+        }
+        super::annotate_source_image_roles(SvgKind::LayerGroups, 0, 1, &mut images, None);
+        assert_eq!(
+            images.iter().map(|image| image.layer_role.as_str()).collect::<Vec<_>>(),
+            ["back", "front"]
+        );
+    }
+
+    #[test]
+    fn largest_three_layer_image_is_marked_as_window() {
+        use super::svg_modes::classifier::SvgKind;
+        let mut images = vec![
+            super::SourceImage {
+                node_id: "front".into(),
+                width_px: 10,
+                height_px: 10,
+                width_mm: Some(20.0),
+                height_mm: Some(20.0),
+                format: "PNG".into(),
+                layer_role: String::new(),
+            },
+            super::SourceImage {
+                node_id: "window".into(),
+                width_px: 10,
+                height_px: 10,
+                width_mm: Some(40.0),
+                height_mm: Some(40.0),
+                format: "PNG".into(),
+                layer_role: String::new(),
+            },
+            super::SourceImage {
+                node_id: "back".into(),
+                width_px: 10,
+                height_px: 10,
+                width_mm: Some(20.0),
+                height_mm: Some(20.0),
+                format: "PNG".into(),
+                layer_role: String::new(),
+            },
+        ];
+        super::annotate_source_image_roles(SvgKind::Whole, 0, 1, &mut images, None);
+        assert_eq!(
+            images.iter().map(|image| image.layer_role.as_str()).collect::<Vec<_>>(),
+            ["back", "window", "front"]
+        );
+
+        images.swap(0, 1);
+        for image in &mut images {
+            image.layer_role.clear();
+        }
+        super::annotate_source_image_roles(SvgKind::Whole, 0, 1, &mut images, None);
+        assert_eq!(
+            images.iter().map(|image| image.layer_role.as_str()).collect::<Vec<_>>(),
+            ["window", "back", "front"]
+        );
+    }
+
+    #[test]
+    fn larger_first_image_in_two_layers_is_marked_as_window() {
+        use super::svg_modes::classifier::SvgKind;
+        let mut images = vec![
+            super::SourceImage {
+                node_id: "window-candidate".into(),
+                width_px: 10,
+                height_px: 10,
+                width_mm: Some(40.0),
+                height_mm: Some(40.0),
+                format: "PNG".into(),
+                layer_role: String::new(),
+            },
+            super::SourceImage {
+                node_id: "front".into(),
+                width_px: 10,
+                height_px: 10,
+                width_mm: Some(20.0),
+                height_mm: Some(20.0),
+                format: "PNG".into(),
+                layer_role: String::new(),
+            },
+        ];
+        super::annotate_source_image_roles(SvgKind::Whole, 0, 1, &mut images, None);
+        assert_eq!(
+            images.iter().map(|image| image.layer_role.as_str()).collect::<Vec<_>>(),
+            ["window", "front"]
+        );
+
+        images.swap(0, 1);
+        for image in &mut images {
+            image.layer_role.clear();
+        }
+        super::annotate_source_image_roles(SvgKind::Whole, 0, 1, &mut images, None);
+        assert_eq!(
+            images.iter().map(|image| image.layer_role.as_str()).collect::<Vec<_>>(),
+            ["back", "front"]
+        );
+    }
+
     #[test]
     fn artwork_without_text_never_loads_fonts() {
         let options = super::options();
@@ -1143,27 +1608,10 @@ mod tests {
             |_, _| {},
         )
         .unwrap();
-        assert_eq!(assets.len(), 2);
-        let root = roxmltree::Document::parse(&assets[0].svg).unwrap();
-        let width_mm: f64 = root
-            .root_element()
-            .attribute("width")
-            .unwrap()
-            .trim_end_matches("mm")
-            .parse()
-            .unwrap();
-        let height_mm: f64 = root
-            .root_element()
-            .attribute("height")
-            .unwrap()
-            .trim_end_matches("mm")
-            .parse()
-            .unwrap();
-        assert!((width_mm - 30.0 * 25.4 / 96.0).abs() < 0.001);
-        assert!((height_mm - 40.0 * 25.4 / 96.0).abs() < 0.001);
-        assert!(assets[0]
-            .svg
-            .contains("viewBox=\"20.000000000 10.000000000 30.000000000 40.000000000\""));
+        assert_eq!(assets.len(), 1);
+        assert_eq!((assets[0].width, assets[0].height), (200.0, 100.0));
+        assert!(assets[0].svg.contains("<g id=\"rectangle\""));
+        assert!(assets[0].svg.contains("<circle id=\"circle\""));
     }
 
     #[test]
@@ -1251,6 +1699,19 @@ mod tests {
             && svg.contains("<path")
             && svg.contains("<clipPath")));
     }
+
+    #[test]
+    fn standard_layer_groups_keep_paint_order_and_vector_window_without_deep_split() {
+        let embedded = STANDARD.encode(r#"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="red"/></svg>"#);
+        let source = format!(
+            r##"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><g id="图层_1"><g id="front"><path id="front-cut" d="M0 0h20v20h-20z"/><image width="20" height="20" href="data:image/svg+xml;base64,{embedded}"/></g><g id="window"><path id="window-fill" d="M0 0h20v20h-20z" fill="#00ffff"/></g><g id="back"><image width="20" height="20" href="data:image/svg+xml;base64,{embedded}"/><path id="back-cut" d="M0 0h20v20h-20z"/></g></g></svg>"##
+        );
+        let sources = split_sources(&source, true).unwrap();
+        assert_eq!(sources.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>(), ["front", "window", "back"]);
+        assert!(sources[0].1.contains("front-cut") && !sources[0].1.contains("window-fill"));
+        assert!(sources[1].1.contains("window-fill") && !sources[1].1.contains("front-cut"));
+        assert!(sources[2].1.contains("back-cut") && !sources[2].1.contains("window-fill"));
+    }
     #[test]
     fn handles_many_split_candidates_without_cloning_the_scene() {
         let embedded = STANDARD.encode(r#"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="red"/></svg>"#);
@@ -1282,9 +1743,8 @@ mod tests {
             |_, _| {},
         )
         .unwrap();
-        assert_eq!(assets.len(), 2);
-        assert_eq!((assets[0].width, assets[0].height), (30.0, 40.0));
-        assert_eq!((assets[1].width, assets[1].height), (20.0, 20.0));
+        assert_eq!(assets.len(), 1);
+        assert_eq!((assets[0].width, assets[0].height), (200.0, 100.0));
         for asset in assets {
             let image = asset_pixmap(&asset);
             assert!(image.pixels().iter().any(|pixel| pixel.alpha() > 0));

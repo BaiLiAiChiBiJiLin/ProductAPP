@@ -228,6 +228,18 @@ test('exports independent CMYK after PDF and DXF and releases every staged resou
   const cleanup = mocks.invoke.mock.calls.find(call => call[0] === 'clear_pdf_pages')![1].ids
   expect(cleanup).toHaveLength(4) // ordinary SVG, front, back, job manifest
 })
+test('keeps CMYK export successful and reports a window skipped after product clipping', async () => {
+  mocks.invoke.mockImplementation(async (name, args) => {
+    if (name === 'export_imposition_cmyk_pdf') {
+      mocks.listener?.({ payload: { id: args.id, phase: 'cmyk-window-skipped', pageIndex: 1 } })
+    }
+  })
+  const board = { ...entry('layout.pdf'), cmyk: cmyk() }
+  const result = await exportImpositionPdfs('D:/exports', [board])
+  expect(result.error).toBeUndefined()
+  expect(result.completedFiles).toEqual(['D:/exports/layout.pdf', 'D:/exports/CMYK_layout.pdf'])
+  expect(result.warnings).toEqual(['CMYK_layout.pdf：art.svg 的彩窗图层没有可见像素（可能完全在版面外或无法渲染），已跳过该图片的彩窗像素并继续导出；CMYK 与 White/C2/M2/Y2/K2 通道仍会生成。'])
+})
 test('a failed CMYK keeps completed PDF/DXF and identifies the CMYK filename', async () => {
   const board = { ...entry('layout.pdf'), cmyk: cmyk() }
   board.pages[0].exportDxf = true

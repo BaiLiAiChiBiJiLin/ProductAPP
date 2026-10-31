@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <rect width="960" height="540" rx="24" fill="#f4f8ff"/>
+  <rect x="40" y="40" width="880" height="460" rx="18" fill="#fff" stroke="#d8e6fb" stroke-width="3"/>
+  <rect x="72" y="82" width="490" height="356" rx="14" fill="#fbfdff" stroke="#d9e7f8"/>
+  <path d="M125 350h350M170 388V145" stroke="#a9bfdc" stroke-width="3"/>
+  <rect x="205" y="168" width="220" height="150" rx="12" fill="#e8f2ff" stroke="#7daff1" stroke-width="4"/>
+  <path d="M235 335h160" stroke="#1677ff" stroke-width="5"/>
+  <path d="M235 323v24M395 323v24" stroke="#1677ff" stroke-width="5"/>
+  <text x="276" y="371" font-size="22" fill="#1677ff" font-family="Microsoft YaHei,Arial,sans-serif">70.20 mm</text>
+  <path d="M175 166v152" stroke="#2c9a70" stroke-width="5"/>
+  <path d="M163 178h24M163 306h24" stroke="#2c9a70" stroke-width="5"/>
+  <text x="612" y="142" font-size="26" font-weight="700" fill="#19345f" font-family="Microsoft YaHei,Arial,sans-serif">标尺方向可锁定</text>
+  <text x="612" y="191" font-size="20" fill="#627895" font-family="Microsoft YaHei,Arial,sans-serif">垂直、水平或自由方向</text>
+  <rect x="612" y="232" width="212" height="46" rx="23" fill="#1677ff"/><text x="665" y="263" font-size="19" fill="#fff" font-family="Microsoft YaHei,Arial,sans-serif">三次点击完成</text>
+  <text x="92" y="480" font-size="18" fill="#6b7f9d" font-family="Microsoft YaHei,Arial,sans-serif">双击标尺数值可修改尺寸，并同步对应 Size</text>
+</svg>

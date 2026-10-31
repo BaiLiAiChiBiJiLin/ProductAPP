@@ -40,6 +40,7 @@ export function replaceAssetArtwork(assets: Asset[], originalId: string, artwork
     modeUsed: artwork.modeUsed,
     mergeStatus: artwork.mergeStatus,
     sourceGroupId: artwork.sourceGroupId,
+    sourceLayerRole: artwork.sourceLayerRole,
   }
   return assets.map(asset => {
     const next = asset.id === originalId ? replacement : asset

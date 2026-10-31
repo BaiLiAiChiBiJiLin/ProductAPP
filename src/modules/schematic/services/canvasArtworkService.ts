@@ -36,7 +36,7 @@ export function replaceCanvasItemArtwork(assets: Asset[], pages: Page[], itemId:
           ...value, assetId: artwork.id, arrangementSourceAssetId: sourceId === artwork.id ? undefined : sourceId,
           w: artwork.width * scale, h: artwork.height * scale,
           backSvg: value.derivedFrom
-            ? replacementBack ??= backLayerSvg(replacement.svg, productLayoutKind(replacement) === 'standee')
+            ? replacementBack ??= backLayerSvg(replacement.svg, productLayoutKind(replacement) === 'standee', replacement.sourceImages)
             : undefined,
           svgLayerId: undefined, svgLayerIds: undefined,
         }
@@ -85,4 +85,48 @@ export function replaceCanvasItemArtwork(assets: Asset[], pages: Page[], itemId:
       }
     }),
   }
+}
+
+/** Replace only the canvas placement under a pool drop, keeping the old asset in the pool. */
+export function replaceCanvasItemWithAsset(pages: Page[], itemId: string, artwork: Asset, displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>): Page[] {
+  const pageIndex = pages.findIndex(page => page.items.some(item => item.id === itemId))
+  if (pageIndex < 0) throw new Error('需要更换的图片已不在当前示意图中')
+  if (![artwork.width, artwork.height].every(value => Number.isFinite(value) && value > 0)) throw new Error('新图片尺寸无效，请重新选择文件')
+  const page = pages[pageIndex]
+  const item = page.items.find(value => value.id === itemId)!
+  const scale = Math.min(item.w / artwork.width, item.h / artwork.height)
+  if (!Number.isFinite(scale) || scale <= 0) throw new Error('无法计算新图片尺寸')
+  const labels = new Map<string, string>()
+  const nextItem: Item = {
+    ...item,
+    assetId: artwork.id,
+    arrangementSourceAssetId: undefined,
+    w: artwork.width * scale,
+    h: artwork.height * scale,
+    backSvg: item.derivedFrom ? backLayerSvg(artwork.svg, productLayoutKind(artwork) === 'standee', artwork.sourceImages) : undefined,
+    svgLayerId: undefined,
+    svgLayerIds: undefined,
+  }
+  if (!nextItem.derivedFrom && nextItem.caption?.trim().toLowerCase() !== 'base') {
+    const override = displayOverrides?.get(item.id)
+    labels.set(item.id, rulerDimensionLabel(artwork, nextItem, override?.precision, override?.decimalPlaces)
+      ?? rulerDimensionLabel(artwork, { ...nextItem, rulerWidth: nextItem.sizeAxis ? nextItem.sizeAxis === 'width' : undefined, rulerHeight: nextItem.sizeAxis ? nextItem.sizeAxis === 'height' : undefined }, override?.precision, override?.decimalPlaces)!)
+  }
+  const updateDetails = (details: ImageDetails | undefined, itemIds: string[]) => {
+    if (!details || !labels.size || !itemIds.some(id => labels.has(id))) return details
+    if (details.sizes) return { ...details, sizes: details.sizes.map(value => labels.has(value.itemId) ? { ...value, label: labels.get(value.itemId)! } : value) }
+    const mainId = itemIds.find(id => labels.has(id))
+    return mainId ? { ...details, size: labels.get(mainId)! } : details
+  }
+  const updateGroup = (group: ImageGroup) => {
+    const details = updateDetails(group.details, group.itemIds)
+    const detailGroups = group.detailGroups?.map(panel => ({ ...panel, details: updateDetails(panel.details, panel.itemIds)! }))
+    const panelsChanged = detailGroups?.some((panel, index) => panel.details !== group.detailGroups?.[index]?.details) ?? false
+    return details === group.details && !panelsChanged ? group : { ...group, details, detailGroups }
+  }
+  return pages.map((candidate, index) => index !== pageIndex ? candidate : {
+    ...candidate,
+    items: candidate.items.map(value => value.id === itemId ? nextItem : value),
+    imageGroups: candidate.imageGroups?.map(updateGroup),
+  })
 }

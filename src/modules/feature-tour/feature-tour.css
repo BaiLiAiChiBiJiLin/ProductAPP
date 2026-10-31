@@ -18,6 +18,7 @@
 .feature-tour-shortcuts { display: flex; flex-wrap: wrap; gap: 6px; }
 .feature-tour-shortcuts > span { border: 1px solid #e4e9ef; border-radius: 6px; background: #f8fafc; padding: 3px 8px; font-size: 12px; color: #475467; white-space: nowrap; }
 .feature-tour-demo-caption .ant-btn { color: #667085; font-size: 12px; }
+.feature-tour-static-caption { color: #98a2b3; font-size: 12px; white-space: nowrap; }
 .feature-tour-footer { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 12px; padding-top: 13px; border-top: 1px solid #edf0f4; }
 .feature-tour-skip.ant-btn { color: #667085; padding-inline: 8px; }
 .feature-tour-actions { display: flex; gap: 8px; }

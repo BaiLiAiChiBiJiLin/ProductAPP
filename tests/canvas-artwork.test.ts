@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import type { Asset, Item, Page } from '../src/model'
 import { defaultLayoutBounds, pageRasterSvg, pageSvg } from '../src/model'
-import { replaceCanvasItemArtwork } from '../src/modules/schematic/services/canvasArtworkService'
+import { replaceCanvasItemArtwork, replaceCanvasItemWithAsset } from '../src/modules/schematic/services/canvasArtworkService'
 import { autoArrangePages, paginateAssets } from '../src/modules/schematic/services/paginationService'
 import { groupForDimensionDisplay } from '../src/modules/schematic/services/dimensionDisplayService'
 import type { DimensionDisplayOverride } from '../src/modules/schematic/services/imageDimensionService'
@@ -14,6 +14,18 @@ const asset = (id: string, fields: Partial<Asset> = {}): Asset => ({
 })
 const item = (id: string, fields: Partial<Item> = {}): Item => ({
   id, assetId: 'old', x: 125, y: 180, w: 50, h: 100, rotation: 0, ...fields,
+})
+
+test('pool replacement changes only the dropped placement and keeps the previous asset available', () => {
+  const original = asset('old')
+  const replacement = asset('new', { width: 20, height: 40 })
+  const target = item('target', { caption: 'Front' })
+  const page: Page = { id: 1, name: 'page', items: [target], imageGroups: [{ id: 'group', itemIds: [target.id], x: 90, y: 120, width: 80, height: 140 }] }
+  const result = replaceCanvasItemWithAsset([page], target.id, replacement)
+  expect(result[0].items[0]).toMatchObject({ ...target, assetId: 'new', w: 50, h: 100, arrangementSourceAssetId: undefined, backSvg: undefined, svgLayerId: undefined, svgLayerIds: undefined })
+  expect(result[0].imageGroups).toEqual(page.imageGroups)
+  expect(page.items[0]).toEqual(target)
+  expect(original.id).toBe('old')
 })
 
 test('replacing Back replaces the list entry and all shared Front/Back references across pages', () => {

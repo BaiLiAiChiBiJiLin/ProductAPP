@@ -216,14 +216,25 @@ def pack_one(srcs, bank, remaining, board_w, board_h, gap, margin, res, seed, mo
                     gap, margin, res, seed, mode, order_mode, lookahead, progress, initial_occupancy)
 
 
-def pack_material_boards(srcs, bank, quantities, args, seed_offset=0, progress=None):
+def pack_material_boards(srcs, bank, quantities, args, seed_offset=0, progress=None, *, max_sheets=None):
     """Pack a quantity vector using the board-saving heuristic.
 
     This is a reusable low-level packing utility. The material strategy uses
     it directly; the uniform strategy uses it only for quantities left over
-    after its repeated common template has been generated.
+    after its repeated common template has been generated. ``max_sheets`` is
+    an optional bound on this particular greedy candidate, not on the order:
+    return None when its fixed prefix fills the bound with demand still left.
+    Appending more boards cannot make that prefix shorter. The input quantity
+    vector stays untouched and unbounded callers retain the complete search.
     """
     remaining = list(quantities)
+    if max_sheets is not None:
+        if not isinstance(max_sheets, int) or max_sheets < 0:
+            raise ValueError('max_sheets must be a nonnegative integer or None')
+        if not any(remaining):
+            return []
+        if max_sheets == 0:
+            return None
     best = None
     for run in range(args.runs):
         rem = remaining.copy()
@@ -237,6 +248,8 @@ def pack_material_boards(srcs, bank, quantities, args, seed_offset=0, progress=N
     result = [best[0]]
     remaining = list(best[1])
     while sum(remaining):
+        if max_sheets is not None and len(result) >= max_sheets:
+            return None
         trials = []
         for j, (mode, order) in enumerate([('low', 'small'), ('bl', 'small'), ('low', 'mixed')]):
             rem = remaining.copy()

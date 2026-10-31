@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { JSDOM } from 'jsdom'
-import { svgLayers, selectSvgLayer, selectSvgLayers } from '../src/modules/schematic/services/svgLayerService.ts'
+import { svgLayers, selectSvgLayer, selectSvgLayers, withWindowLayerOverlay } from '../src/modules/schematic/services/svgLayerService.ts'
 
 const parse = svg => new JSDOM(svg, { contentType: 'image/svg+xml' }).window.document
 const source = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="200mm" height="100mm" viewBox="20 30 200 100">
@@ -123,6 +123,31 @@ test('invalid selections leave the source intact and do not prevent valid select
   assert.equal(selectSvgLayers(source, []), source)
   assert.equal(selectSvgLayers(source, ['missing', 'svg-layer-999']), source)
   assert.equal(selectSvgLayers(source, ['missing', layer.id]), selectSvgLayer(source, layer.id))
+})
+
+test('front or back selection automatically keeps a color-window layer selected', () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><image id="back" href="back.png"/><image id="window" href="window.png"/><image id="front" href="front.png"/></svg>'
+  const layers = svgLayers(svg)
+  const [back, window, front] = layers
+  const sourceImages = [{ layerRole: 'back' }, { layerRole: 'window' }, { layerRole: 'front' }]
+  assert.deepEqual(withWindowLayerOverlay(layers, [front.id], sourceImages), [window.id, front.id])
+  assert.deepEqual(withWindowLayerOverlay(layers, [back.id], sourceImages), [back.id, window.id])
+  assert.deepEqual(withWindowLayerOverlay(layers, [front.id, window.id], sourceImages), [window.id, front.id])
+})
+
+test('layer labels expose the source face role for the arrange-page menu', () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><image id="back" href="back.png"/><image id="window" href="window.png"/><image id="front" href="front.png"/></svg>'
+  const sourceImages = [{ nodeId: 'back', layerRole: 'back' }, { nodeId: 'window', layerRole: 'window' }, { nodeId: 'front', layerRole: 'front' }]
+  assert.deepEqual(svgLayers(svg, sourceImages).map(layer => layer.label), ['back（背面）', 'window（彩窗）', 'front（正面）'])
+})
+
+test('nested face groups keep the outer color-window group with a selected face', () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><g id="front"><image id="front-image" href="front.png"/></g><g id="window"><image id="window-image" href="window.png"/></g><g id="back"><image id="back-image" href="back.png"/></g></svg>'
+  const layers = svgLayers(svg)
+  const front = layers.find(layer => layer.label === 'front')
+  const window = layers.find(layer => layer.label === 'window')
+  const sourceImages = [{ nodeId: 'back-image', layerRole: 'back' }, { nodeId: 'window-image', layerRole: 'window' }, { nodeId: 'front-image', layerRole: 'front' }]
+  assert.deepEqual(withWindowLayerOverlay(layers, [front.id], sourceImages), [front.id, window.id])
 })
 
 test('anonymous sibling face groups are exposed instead of their structural wrappers', () => {

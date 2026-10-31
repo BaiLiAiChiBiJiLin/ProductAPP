@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { Button, Dropdown } from 'antd'
 import { Check, ImageUp, Layers } from 'lucide-react'
 import type { Asset, Item } from '../../../model'
-import { selectSvgLayer, selectSvgLayers, svgLayers } from '../services/svgLayerService'
+import { selectSvgLayer, selectSvgLayers, svgLayers, withWindowLayerOverlay } from '../services/svgLayerService'
 import './artwork-context-menu.css'
 
 export type ArtworkMenuTarget = { itemId: string; x: number; y: number }
@@ -40,16 +40,17 @@ export default function ArtworkContextMenu({ target, item, asset, onClose, onCha
 }) {
   // Enumerate only when the user opens the menu, always against the original
   // document so switching one layer never discards the other choices.
-  const layers = useMemo(() => svgLayers(asset.svg), [asset.svg])
+  const layers = useMemo(() => svgLayers(asset.svg, asset.sourceImages), [asset.svg, asset.sourceImages])
   const [draft, setDraft] = useState<{ itemId: string; svg: string; ids: string[] }>()
   const savedIds = item.svgLayerIds ?? (item.svgLayerId ? [item.svgLayerId] : item.backSvg ? [] : ['all'])
   const selectedIds = (draft?.itemId === item.id && draft.svg === asset.svg ? draft.ids : savedIds)
     .filter(id => id === 'all' || layers.some(layer => layer.id === id))
+  const withWindow = (ids: readonly string[]) => withWindowLayerOverlay(layers, ids, asset.sourceImages)
   const confirm = () => {
     if (!selectedIds.length) return
     const all = selectedIds.includes('all')
     // Keep source order regardless of the order in which layers were checked.
-    const ids = layers.filter(layer => selectedIds.includes(layer.id)).map(layer => layer.id)
+    const ids = withWindow(layers.filter(layer => selectedIds.includes(layer.id)).map(layer => layer.id))
     onChange({
       ...item,
       svgLayerIds: all ? undefined : ids,
@@ -91,7 +92,7 @@ export default function ArtworkContextMenu({ target, item, asset, onClose, onCha
         const ids = layerId === 'all' ? ['all'] : selectedIds.includes(layerId)
           ? selectedIds.filter(id => id !== layerId)
           : [...selectedIds.filter(id => id !== 'all'), layerId]
-        setDraft({ itemId: item.id, svg: asset.svg, ids })
+        setDraft({ itemId: item.id, svg: asset.svg, ids: withWindow(ids) })
       },
     }}>
     <span aria-hidden style={{ position: 'fixed', left: target.x, top: target.y, width: 1, height: 1, pointerEvents: 'none' }}/>

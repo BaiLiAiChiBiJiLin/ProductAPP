@@ -51,6 +51,16 @@ export function createReviewRecord(workspace: ReviewWorkspace, display: Arrangem
 
 export const listReviewRecords = (query: ReviewListQuery = { page: 1, pageSize: 20 }) => invoke<ReviewListResult>('list_schematic_reviews', { query })
 export const deleteReviewRecord = (id: string) => invoke<void>('delete_schematic_review', { id })
+const reviewResourceCache = new Map<string, Promise<string>>()
+function loadReviewResource(id: string, resourceId: string, decoder: TextDecoder) {
+  const key = `${id}\u0000${resourceId}`
+  const cached = reviewResourceCache.get(key)
+  if (cached) return cached
+  const pending = invoke<ArrayBuffer>('load_schematic_review_resource', { id, resourceId }).then(bytes => decoder.decode(bytes))
+  reviewResourceCache.set(key, pending)
+  void pending.catch(() => { if (reviewResourceCache.get(key) === pending) reviewResourceCache.delete(key) })
+  return pending
+}
 export async function saveReviewRecord(record: SchematicReviewRecord): Promise<void> {
   const resources = new StagedArtwork()
   try {
@@ -68,10 +78,10 @@ export async function loadReviewRecord(id: string): Promise<SchematicReviewRecor
   const references = new Map<string, string>()
   copyWorkspaceValue(record, text => { if (text.startsWith(REVIEW_ARTWORK_PREFIX)) references.set(text, ''); return text })
   const decoder = new TextDecoder('utf-8', { fatal: true })
-  for (const reference of references.keys()) {
-    const bytes = await invoke<ArrayBuffer>('load_schematic_review_resource', { id, resourceId: reference.slice(REVIEW_ARTWORK_PREFIX.length) })
-    references.set(reference, decoder.decode(bytes))
-  }
+  const entries = [...references.keys()]
+  let cursor = 0
+  const worker = async () => { while (cursor < entries.length) { const reference = entries[cursor++]; references.set(reference, await loadReviewResource(id, reference.slice(REVIEW_ARTWORK_PREFIX.length), decoder)) } }
+  await Promise.all(Array.from({ length: Math.min(4, entries.length) }, () => worker()))
   return copyWorkspaceValue(record, text => references.get(text) ?? text)
 }
 

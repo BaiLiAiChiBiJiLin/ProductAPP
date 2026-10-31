@@ -5,6 +5,18 @@ import './asset-details.css'
 import { getNoteImages } from '../services/assetNotesService'
 
 type Props = { asset: Asset | null; products: ProductConfig[]; onClose: () => void }
+type LayerRole = 'front' | 'window' | 'back'
+
+const layerRoleLabels: Record<LayerRole, string> = { front: '正面', window: '彩窗', back: '背面' }
+const layerRoleColors: Record<LayerRole, string> = { front: 'blue', window: 'cyan', back: 'purple' }
+const isLayerRole = (value: string | undefined): value is LayerRole => value === 'front' || value === 'window' || value === 'back'
+const inferredSourceImageRole = (value: string | undefined, index: number, count: number): LayerRole | undefined => {
+  if (isLayerRole(value)) return value
+  if (count === 1) return 'front'
+  if (count === 2) return index === 0 ? 'back' : index === 1 ? 'front' : undefined
+  if (count === 3) return index === 0 ? 'back' : index === 1 ? 'window' : index === 2 ? 'front' : undefined
+  return undefined
+}
 
 /** Read only: never parse the SVG or serialize its embedded image data. */
 export default function AssetDetailsModal({ asset, products, onClose }: Props) {
@@ -18,6 +30,10 @@ export default function AssetDetailsModal({ asset, products, onClose }: Props) {
   const attributes = Object.entries(asset.attributes ?? {})
   const attributeImages = Object.entries(asset.attributeImages ?? {}).filter(([, url]) => url)
   const noteImages = getNoteImages(asset)
+  const sourceImages = asset.sourceImages ?? []
+  const roleKeys = [asset.sourceLayerRole, ...sourceImages.map((image, index) => inferredSourceImageRole(image.layerRole, index, sourceImages.length))]
+    .filter((value, index, values): value is LayerRole => isLayerRole(value) && values.indexOf(value) === index)
+  const roleTags = roleKeys.length ? roleKeys.map(role => <Tag key={role} color={layerRoleColors[role]}>{layerRoleLabels[role]}</Tag>) : '未标记'
 
   return <Modal open title="图片资产详情" onCancel={onClose} footer={null} centered width={760} className="asset-details-modal">
     <Descriptions bordered size="small" column={1} items={[
@@ -26,6 +42,7 @@ export default function AssetDetailsModal({ asset, products, onClose }: Props) {
       { key: 'source', label: '来源文件', children: asset.sourceFileName || '未记录' },
       { key: 'path', label: 'SVG 保存位置', children: asset.storagePath || '尚未写入文件' },
       { key: 'size', label: '真实尺寸（宽 × 高）', children: physicalSize },
+      { key: 'layer-role', label: '图层标记', children: roleTags },
       { key: 'product', label: '产品', children: product?.title || asset.productName || '未选择产品' },
       { key: 'status', label: '产品状态', children: <Tag color={asset.attributesConfirmed ? 'blue' : undefined}>{asset.attributesConfirmed ? '已选产品' : '未选产品'}</Tag> },
       ...(asset.productGroupId ? [
@@ -39,9 +56,9 @@ export default function AssetDetailsModal({ asset, products, onClose }: Props) {
       {asset.sourceImages == null ? <p>此资产未记录图片尺寸，重新导入后会记录。</p>
         : asset.sourceImages.length === 0 ? <p>此资产未发现位图，无独立图片尺寸。</p>
         : <div className="asset-details-table-scroll"><table className="asset-details-image-table">
-          <thead><tr><th>序号</th><th>图片图层 ID</th><th>格式</th><th>宽 × 高（mm）</th></tr></thead>
-          <tbody>{asset.sourceImages.map((image, index) => <tr key={index}>
-            <td>{index + 1}</td><td>{image.nodeId || '无 ID'}</td><td>{image.format}</td><td>{image.widthMm && image.heightMm && Number.isFinite(image.widthMm) && Number.isFinite(image.heightMm) && image.widthMm > 0 && image.heightMm > 0
+          <thead><tr><th>序号</th><th>图片图层 ID</th><th>格式</th><th>图层标记</th><th>宽 × 高（mm）</th></tr></thead>
+          <tbody>{sourceImages.map((image, index) => <tr key={index}>
+            <td>{index + 1}</td><td>{image.nodeId || '无 ID'}</td><td>{image.format}</td><td>{inferredSourceImageRole(image.layerRole, index, sourceImages.length) ? <Tag color={layerRoleColors[inferredSourceImageRole(image.layerRole, index, sourceImages.length)!]}>{layerRoleLabels[inferredSourceImageRole(image.layerRole, index, sourceImages.length)!]}</Tag> : '未标记'}</td><td>{image.widthMm && image.heightMm && Number.isFinite(image.widthMm) && Number.isFinite(image.heightMm) && image.widthMm > 0 && image.heightMm > 0
               ? `${image.widthMm.toFixed(3)} × ${image.heightMm.toFixed(3)} mm`
               : '未记录毫米尺寸，请重新导入'}</td>
           </tr>)}</tbody>

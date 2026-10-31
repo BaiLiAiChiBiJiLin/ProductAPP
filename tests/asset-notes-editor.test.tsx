@@ -17,6 +17,14 @@ beforeEach(() => { vi.clearAllMocks(); native.invoke.mockImplementation(async (_
 afterEach(cleanup)
 const saved = () => JSON.parse(screen.getByLabelText('已保存备注').textContent!) as Asset
 
+test('note text controls default to 14px and persist a changed size', () => {
+  render(<Editor/>)
+  expect(screen.getByRole('spinbutton', { name: '备注字号' })).toHaveProperty('value', '14')
+  fireEvent.change(screen.getByRole('spinbutton', { name: '备注字号' }), { target: { value: '18' } })
+  expect(saved().noteFontSize).toBe(18)
+  expect(screen.getByLabelText('备注文字颜色')).toBeTruthy()
+})
+
 test('upload up to three, name any image or leave blank, delete and add again', async () => {
   native.open.mockResolvedValueOnce(['two.png', 'three.svg']).mockResolvedValueOnce(['new.png'])
   render(<Editor/>)
@@ -57,6 +65,16 @@ test('deleting the last legacy note clears both representations', () => {
   expect(saved().noteImages).toEqual([])
   expect(saved().noteImage).toBe('')
   expect(screen.queryByLabelText('备注图片 1 名称')).toBeNull()
+})
+
+test('pasting a Windows clipboard image adds it as a note image without changing note text', async () => {
+  render(<Editor/>)
+  const clipboardImage = new Blob(['clipboard-image'], { type: 'image/png' })
+  const item = { kind: 'file', type: 'image/png', getAsFile: () => clipboardImage }
+  fireEvent.paste(screen.getByLabelText('备注文字'), { clipboardData: { items: [item] } })
+  await waitFor(() => expect(saved().noteImages?.length).toBe(2))
+  expect(saved().noteImages?.[1].src).toMatch(/^data:image\/png;base64,/)
+  expect(saved().note).toBe('文字备注')
 })
 
 test('an in-flight upload cannot write into a different selected asset', async () => {

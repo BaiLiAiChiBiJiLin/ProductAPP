@@ -1,4 +1,6 @@
-export type SvgLayer = { id: string; label: string }
+export type SvgLayer = { id: string; label: string; role?: SourceLayerRole; imageNodeIds?: string[]; tag?: string }
+export type SourceLayerRole = 'front' | 'window' | 'back' | ''
+export type SourceLayerRoleImage = { nodeId?: string; layerRole?: string }
 
 type SvgNode = {
   start: number
@@ -128,9 +130,77 @@ function layerNodes(nodes: SvgNode[]): SvgNode[] {
 
 function layerId(index: number): string { return `svg-layer-${index}` }
 
+function imageNodeIds(node: SvgNode): string[] {
+  if (node.tag === 'image') {
+    const id = node.attributes.get('id')
+    return id ? [id] : []
+  }
+  return [...new Set(node.children.flatMap(imageNodeIds))]
+}
+
+function inferredRole(value: string | undefined, index: number, count: number): SourceLayerRole {
+  if (value === 'front' || value === 'window' || value === 'back') return value
+  if (count === 1) return 'front'
+  if (count === 2) return index === 0 ? 'back' : index === 1 ? 'front' : ''
+  if (count === 3) return index === 0 ? 'back' : index === 1 ? 'window' : index === 2 ? 'front' : ''
+  return ''
+}
+
+function rolesForLayers(layers: readonly SvgLayer[], sourceImages: readonly SourceLayerRoleImage[]): SourceLayerRole[] {
+  const roles = sourceImages.map((image, index) => inferredRole(image.layerRole, index, sourceImages.length))
+  const roleByNodeId = new Map(sourceImages.map((image, index) => [image.nodeId, roles[index]] as const).filter(([nodeId]) => Boolean(nodeId)) as [string, SourceLayerRole][])
+  return layers.map((layer, index) => {
+    const matched = [...new Set((layer.imageNodeIds ?? []).map(nodeId => roleByNodeId.get(nodeId)).filter((role): role is SourceLayerRole => Boolean(role)))]
+    // Older callers/tests only provide parallel arrays. Keep that fallback for
+    // flat SVGs whose layer and source-image counts still match.
+    return matched.length === 1 ? matched[0] : sourceImages.length === layers.length ? roles[index] : ''
+  })
+}
+
+/**
+ * A color-window image is a shared overlay. When a user chooses either face
+ * in the arrange-page layer menu, keep the window layer selected with it.
+ * Source image order is the same paint order used by the SVG layer parser.
+ */
+export function withWindowLayerOverlay(layers: readonly SvgLayer[], selectedIds: readonly string[], sourceImages?: readonly SourceLayerRoleImage[]) {
+  if (!sourceImages?.length) return [...selectedIds]
+  const roles = sourceImages.map((image, index) => inferredRole(image.layerRole, index, sourceImages.length))
+  if (!roles.includes('window')) return [...selectedIds]
+  const resolvedLayerRoles = rolesForLayers(layers, sourceImages)
+  const layerRoles = layers.map((layer, index) => layer.role || resolvedLayerRoles[index] || '')
+  if (!selectedIds.some(id => {
+    const index = layers.findIndex(layer => layer.id === id)
+    return index >= 0 && (layerRoles[index] === 'front' || layerRoles[index] === 'back')
+  })) return [...selectedIds]
+  const windowLayers = layers.map((layer, index) => ({ layer, index }))
+    .filter(({ index }) => layerRoles[index] === 'window')
+  if (!windowLayers.length) return [...selectedIds]
+  // A named group and its child image can both be selectable. Add the outer
+  // window group when it covers the same image IDs, and skip the redundant
+  // child layer so the stored selection remains stable and readable.
+  const covered = new Set<string>()
+  const windowIds = new Set<string>()
+  for (const { layer } of windowLayers) {
+    const ids = layer.imageNodeIds ?? []
+    if (ids.length && ids.every(id => covered.has(id))) continue
+    windowIds.add(layer.id)
+    ids.forEach(id => covered.add(id))
+    if (!ids.length) break
+  }
+  return layers.filter(layer => selectedIds.includes(layer.id) || windowIds.has(layer.id)).map(layer => layer.id)
+}
+
 /** Enumerate selectable artwork layers in source order, excluding SVG resources. */
-export function svgLayers(svg: string): SvgLayer[] {
-  return layerNodes(parseNodes(svg)).map((node, index) => ({ id: layerId(index), label: name(node) || `${node.tag === 'image' ? '图片' : '图层'} ${index + 1}` }))
+const ROLE_LABELS: Record<Exclude<SourceLayerRole, ''>, string> = { front: '正面', window: '彩窗', back: '背面' }
+
+export function svgLayers(svg: string, sourceImages?: readonly SourceLayerRoleImage[]): SvgLayer[] {
+  const layers = layerNodes(parseNodes(svg)).map((node, index) => ({ id: layerId(index), label: name(node) || `${node.tag === 'image' ? '图片' : '图层'} ${index + 1}`, imageNodeIds: imageNodeIds(node), tag: node.tag }))
+  if (!sourceImages?.length) return layers
+  const roles = rolesForLayers(layers, sourceImages)
+  return layers.map((layer, index) => {
+    const role = roles[index]
+    return role ? { ...layer, role, label: `${layer.label}（${ROLE_LABELS[role]}）` } : layer
+  })
 }
 
 function contains(parent: SvgNode, child: SvgNode): boolean {

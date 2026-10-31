@@ -18,7 +18,7 @@ const model = (pages = [[item()]], sources = { art: source }) => createImpositio
 describe('imposition export SVG layers', () => {
   test('paths, filled paths and references to paths never enter image roles or image ordering', () => {
     const source = parseSource('<defs><path id="shape" d="M0 0H20V10Z"/></defs><path id="cut" d="M0 0H20V10Z" fill="none" stroke="red"/><image id="back"/><path id="color" d="M0 0H20V10Z" fill="blue"/><image id="front"/><use id="shape-use" href="#shape"/>')
-    expect(Object.fromEntries(source.layers.map(layer => [layer.label, layer.defaultGroupId]))).toEqual({ cut: 'paths', back: 'image-back', color: 'fills', front: 'image-front', 'shape-use': 'fills' })
+    expect(Object.fromEntries(source.layers.map(layer => [layer.label, layer.defaultGroupId]))).toEqual({ cut: 'paths', back: 'image-back', color: 'fills', front: 'image-front', 'shape-use': 'paths' })
     const current = model([[item()]], { art: source })
     for (const label of ['cut', 'color', 'shape-use']) for (const type of ['image-front', 'image-back', 'images']) {
       const layer = source.layers.find(layer => layer.label === label)!
@@ -75,14 +75,14 @@ describe('imposition export SVG layers', () => {
 
   test('classifies inherited and CSS paint, gradients and combined fill/stroke without duplicating paint', () => {
     const source = parseSource('<style>.filled{fill:url(#gradient)} .stroke {fill:none;stroke:blue}</style><defs><linearGradient id="gradient"><stop offset="0" stop-color="red"/></linearGradient></defs><g fill="none"><path id="a" d="M0 0h1" stroke="red"/><g fill="green"><path id="b" d="M0 0h1" stroke="red"/></g><path id="c" class="filled" d="M0 0h1"/><path id="d" class="stroke" d="M0 0h1"/></g><text id="note">manual</text>')
-    expect(source.layers.map(layer => [layer.label, layer.category, layer.defaultGroupId])).toEqual([['a', 'paths', 'paths'], ['b', 'fills', 'fills'], ['c', 'fills', 'fills'], ['d', 'paths', 'paths'], ['note', 'unknown', undefined]])
+    expect(source.layers.map(layer => [layer.label, layer.category, layer.defaultGroupId])).toEqual([['a', 'paths', 'paths'], ['b', 'paths', 'paths'], ['c', 'paths', 'paths'], ['d', 'paths', 'paths'], ['note', 'unknown', undefined]])
     const current = model([[item()]], { art: source })
     expect(() => enumerateImpositionSvgExports(current)).toThrow('尚未选择类型')
     current.assignments.art[source.layers[4].id] = 'paths'
     const pages = buildImpositionSvgExports(current, { date })
-    expect(pages).toHaveLength(2)
-    expect(read(pages.find(page => page.groupId === 'fills')!.svg).querySelectorAll('path')).toHaveLength(2)
-    expect(read(pages.find(page => page.groupId === 'paths')!.svg).querySelectorAll('path')).toHaveLength(2)
+    expect(pages).toHaveLength(1)
+    expect(pages.find(page => page.groupId === 'fills')).toBeUndefined()
+    expect(read(pages.find(page => page.groupId === 'paths')!.svg).querySelectorAll('path')).toHaveLength(4)
   })
 
   test('unknown layers require an explicit type or omission; same types merge without custom groups', () => {
@@ -307,7 +307,7 @@ describe('imposition export SVG layers', () => {
 
   test('use instance fill inherits from the instance, not the definition tree', () => {
     const source = parseSource('<defs><path id="shape" d="M0 0h10v10z"/></defs><use href="#shape" fill="none" stroke="red"/><use href="#shape" fill="green"/>')
-    expect(source.layers.map(layer => layer.category)).toEqual(['paths', 'fills'])
+    expect(source.layers.map(layer => layer.category)).toEqual(['paths', 'paths'])
   })
 })
 

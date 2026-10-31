@@ -95,9 +95,31 @@ class MaskBank(dict):
 
 def core_status(bank):
     """Return a copy of this job's actual backend status for UI/reporting."""
-    return dict(getattr(bank, '_native_status', dict(
+    status = dict(getattr(bank, '_native_status', dict(
         requested=os.environ.get('PRINTFLOW_NESTING_CORE', 'auto').lower(),
         backend='python', threads=1, reason=None, mask_count=0, bank_bytes=0)))
+    # Compact template trials reuse the NumPy masks but own short-lived native
+    # contexts. Include their work even after those contexts have been closed;
+    # otherwise a child Python fallback would be hidden by the main Rust bank.
+    children = list(getattr(bank, '_child_core_status', ()))
+    active = getattr(bank, '_active_child_bank', None)
+    if active is not None:
+        current = core_status(active)
+        children.append(current)
+        status['current_backend'] = current.get('current_backend', current['backend'])
+        status['threads'] = current.get('threads', status['threads'])
+    if not children:
+        return status
+    statuses = [status, *children]
+    rust = sum(item.get('rust_calls', 0) for item in statuses)
+    python = sum(item.get('python_calls', 0) for item in statuses)
+    status.update(rust_calls=rust, python_calls=python, child_searches=len(children))
+    if rust or python:
+        status['backend'] = 'mixed' if rust and python else ('rust' if rust else 'python')
+    status['reason'] = next((item['reason'] for item in statuses if item.get('reason')), None)
+    for key in ('resource_recovery', 'recovered'):
+        status[key] = any(item.get(key, False) for item in statuses)
+    return status
 
 
 def _record_status(bank, status):

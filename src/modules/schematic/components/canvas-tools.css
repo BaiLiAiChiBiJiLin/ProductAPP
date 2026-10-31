@@ -4,6 +4,8 @@
 .canvas-floating-tools .ant-btn { width: 36px; height: 36px; }
 .canvas-floating-tools .ant-select { width: 60px; }
 .canvas-floating-tools .ant-select-selector { padding: 0 4px !important; font-size: 11px; }
+.ruler-mode-options { position: absolute; top: 82px; left: 72px; z-index: 6; display: flex; flex-direction: column; align-items: stretch; gap: 2px; width: 60px; padding: 3px 0; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 6px 18px #0f172a18; }
+.ruler-mode-options .ant-btn { width: 60px; height: 26px; padding: 0 2px; font-size: 10px; }
 .canvas-tool-label { font-size: 10px; color: #475569; }
 .canvas-tool-hint { position: absolute; bottom: 12px; left: 88px; right: 12px; z-index: 4; pointer-events: none; text-align: center; font-size: 12px; color: #475569; }
 .canvas-tool-hint span { padding: 6px 10px; background: #ffffffed; border-radius: 6px; }

@@ -137,9 +137,18 @@ def improve_repeated_lots(job, args, baseline, progress=None):
                 progress(board, repeat, count, left * repeat + tail_total)
         if progress:
             progress(0, repeat, 0, sum(job['quantities']))
+        # Once this greedy lot needs another board beyond this bound, repeating
+        # it cannot beat the complete incumbent. Other subtemplate searches are
+        # independent and still run even when the ordinary lot is pruned.
+        lot_limit = len(best) // repeat
         lot = pack_material_boards(job['srcs'], job['bank'], quota, search_args,
-                                   seed_offset=0, progress=report)
-        entry = dict(repeat=repeat, lotSheets=len(lot))
+                                   seed_offset=0, progress=report, max_sheets=lot_limit)
+        entry = dict(repeat=repeat)
+        if lot is None:
+            entry.update(materialPruned=True, lotSheetsAtLeast=lot_limit + 1,
+                         rejected='sheet-count')
+        else:
+            entry['lotSheets'] = len(lot)
         diagnostics['candidates'].append(entry)
         def consider(lot, detail):
             nonlocal best, score
@@ -155,7 +164,8 @@ def improve_repeated_lots(job, args, baseline, progress=None):
             if len(candidate) <= len(best) and candidate_score < score and _valid(job, args, candidate):
                 best, score = candidate, candidate_score
                 detail['accepted'] = True
-        consider(lot, entry)
+        if lot is not None:
+            consider(lot, entry)
         # A complete lot can contain a repeated subtemplate of its own. Trying
         # this before discarding an overlong lot can reduce both its sheet count
         # and its number of cutting programs (e.g. A, A, B, C instead of five

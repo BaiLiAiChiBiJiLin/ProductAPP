@@ -48,6 +48,23 @@ describe('product upload workflow', () => {
     expect(mocks.arrange.mock.lastCall?.[0]?.[0]?.items).toHaveLength(2)
   })
 
+  it('deletes all selected images from the current batch after confirmation', async () => {
+    render(<SchematicPage />)
+    fireEvent.click(screen.getByRole('button', { name: /上传 SVG 文件/ }))
+    await screen.findByText('当前批次图片')
+
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择 测试图' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择 测试图2' }), { ctrlKey: true })
+    fireEvent.click(screen.getByRole('button', { name: '删除选中图片' }))
+
+    await screen.findByText('删除选中的 2 张图片？')
+    const popover = screen.getByRole('tooltip')
+    fireEvent.click(popover.querySelector('button.ant-btn-primary')!)
+
+    await waitFor(() => expect(screen.getByText('共 0 张')).toBeTruthy())
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === 'delete_asset')).toHaveLength(2)
+  })
+
   it('canceling the picker leaves the upload page unchanged', async () => {
     mocks.importAssets.mockResolvedValue([])
     render(<SchematicPage />)

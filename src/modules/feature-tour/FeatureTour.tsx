@@ -54,6 +54,8 @@ export default function FeatureTour({ enabled, requestOpen = 0, onOpenChange }: 
   if (!release) return null
   const slides = release.slides
   const slide = slides[index]
+  const hasAnimation = slide.animation !== slide.poster
+  const showAnimation = hasAnimation && playing && !mediaFailed
   const close = () => { markFeatureTourSeen(release.version, release.id); setOpen(false) }
   const select = (next: number) => { setIndex(Math.max(0, Math.min(slides.length - 1, next))); setMediaFailed(false) }
   const changeVersion = (version: string) => {
@@ -73,13 +75,13 @@ export default function FeatureTour({ enabled, requestOpen = 0, onOpenChange }: 
         <div><h2>{slide.title}</h2><p>{slide.description}</p></div>
       </div>
       <div className="feature-tour-demo">
-        {visible && <img key={`${release.version}-${slide.id}-${playing && !mediaFailed ? 'animated' : 'poster'}`} src={playing && !mediaFailed ? slide.animation : slide.poster} alt={slide.alt}
-          width={960} height={540} decoding="async" onError={playing && !mediaFailed ? () => setMediaFailed(true) : undefined}/>}
+        {visible && <img key={`${release.version}-${slide.id}-${showAnimation ? 'animated' : 'poster'}`} src={showAnimation ? slide.animation : slide.poster} alt={slide.alt}
+          width={960} height={540} decoding="async" onError={showAnimation ? () => setMediaFailed(true) : undefined}/>}
       </div>
       <div className="feature-tour-demo-caption">
         <div className="feature-tour-shortcuts">{slide.shortcuts.map(shortcut => <span key={shortcut}>{shortcut}</span>)}</div>
-        <Button type="text" size="small" icon={playing && !mediaFailed ? <CircleStop size={14}/> : <Play size={14}/>} disabled={mediaFailed}
-          onClick={() => setPlaying(value => !value)}>{mediaFailed ? '演示暂不可用' : playing ? '停止播放' : '播放演示'}</Button>
+        {hasAnimation ? <Button type="text" size="small" icon={showAnimation ? <CircleStop size={14}/> : <Play size={14}/>} disabled={mediaFailed}
+          onClick={() => setPlaying(value => !value)}>{mediaFailed ? '演示暂不可用' : showAnimation ? '停止播放' : '播放演示'}</Button> : <span className="feature-tour-static-caption">静态功能示意</span>}
       </div>
       <div className="feature-tour-footer">
         <Button type="text" className="feature-tour-skip" onClick={close}>跳过介绍</Button>

@@ -14,7 +14,7 @@ use tauri::{AppHandle, Emitter};
 pub const DEFAULT_PORT: u16 = 47821;
 const PORT_ATTEMPTS: u16 = 20;
 const MAX_BODY: usize = 16 * 1024;
-const MAX_SVG_BYTES: u64 = 500 * 1024 * 1024;
+const MAX_SVG_BYTES: u64 = crate::assets::MAX_SVG_BYTES as u64;
 
 #[derive(Deserialize, Serialize, Clone)]
 struct ImportRequest {
@@ -140,7 +140,7 @@ fn handle(mut stream: TcpStream, app: &AppHandle, port: u16) {
         response(
             &mut stream,
             "413 Payload Too Large",
-            serde_json::json!({"error":"SVG 超过 500MB 限制"}),
+            serde_json::json!({"error":"SVG 超过 1GB 限制"}),
         );
         return;
     }

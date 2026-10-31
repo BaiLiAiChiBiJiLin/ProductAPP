@@ -1,10 +1,10 @@
 import type { Asset, NoteImage } from '../../../model'
-import { getNoteImages, noteImagesPatch, sameNoteImages } from './assetNotesService.ts'
+import { DEFAULT_NOTE_COLOR, DEFAULT_NOTE_FONT_SIZE, getNoteImages, noteImagesPatch, sameNoteImages } from './assetNotesService.ts'
 import type { ProductConfig } from './productConfigService'
 import { availableOptionValues, type ProductAttributePatch } from './productOptionRules.ts'
 
-export type AttributeDraft = { productId: string; attributes: Record<string, string>; images: Record<string, string>; note: string; noteImage: string; noteImages?: NoteImage[]; finishMatchDisabled?: boolean }
-export const emptyAttributeDraft = (): AttributeDraft => ({ productId: '', attributes: {}, images: {}, note: '', noteImage: '', finishMatchDisabled: false })
+export type AttributeDraft = { productId: string; attributes: Record<string, string>; images: Record<string, string>; note: string; noteFontSize: number; noteColor: string; noteImage: string; noteImages?: NoteImage[]; finishMatchDisabled?: boolean }
+export const emptyAttributeDraft = (): AttributeDraft => ({ productId: '', attributes: {}, images: {}, note: '', noteFontSize: DEFAULT_NOTE_FONT_SIZE, noteColor: DEFAULT_NOTE_COLOR, noteImage: '', finishMatchDisabled: false })
 
 /** Hydrate only the current selection; blank or conflicting values start empty. */
 export function readSelectionDraft(selected: Asset[]): AttributeDraft {
@@ -13,6 +13,8 @@ export function readSelectionDraft(selected: Asset[]): AttributeDraft {
   const draft: AttributeDraft = {
     ...emptyAttributeDraft(),
     note: selected.every(asset => (asset.note ?? '') === (first.note ?? '')) ? first.note ?? '' : '',
+    noteFontSize: selected.every(asset => (asset.noteFontSize ?? DEFAULT_NOTE_FONT_SIZE) === (first.noteFontSize ?? DEFAULT_NOTE_FONT_SIZE)) ? first.noteFontSize ?? DEFAULT_NOTE_FONT_SIZE : DEFAULT_NOTE_FONT_SIZE,
+    noteColor: selected.every(asset => (asset.noteColor ?? DEFAULT_NOTE_COLOR) === (first.noteColor ?? DEFAULT_NOTE_COLOR)) ? first.noteColor ?? DEFAULT_NOTE_COLOR : DEFAULT_NOTE_COLOR,
     ...noteImagesPatch(selected.every(asset => sameNoteImages(getNoteImages(asset), getNoteImages(first))) ? getNoteImages(first) : []),
   }
   if (!first.productId || first.productId === 'a' || !selected.every(asset => asset.productId === first.productId)) return draft
@@ -56,5 +58,5 @@ export function catalogConfirmationPatch(draft: AttributeDraft, product: Product
     }
   }
   if (draft.attributes.QT) attributes.QT = draft.attributes.QT
-  return { productId: product.id, productName: product.title, attributes, attributeImages, clearAttributes: true, note: draft.note, ...noteImagesPatch(getNoteImages(draft)), suppressFinishMatch: Boolean(draft.finishMatchDisabled) }
+  return { productId: product.id, productName: product.title, attributes, attributeImages, clearAttributes: true, note: draft.note, noteFontSize: draft.noteFontSize, noteColor: draft.noteColor, ...noteImagesPatch(getNoteImages(draft)), suppressFinishMatch: Boolean(draft.finishMatchDisabled) }
 }

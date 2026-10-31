@@ -15,6 +15,12 @@ pub struct SourceImage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub height_mm: Option<f64>,
     pub format: String,
+    /// Default semantic role for an embedded image. Standard layer groups
+    /// inherit their group role; whole SVGs with two or three raster images
+    /// use paint order plus the largest-image color-window rule. Older records
+    /// omit this field.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub layer_role: String,
 }
 
 pub fn collect(tree: &usvg::Tree, source: &roxmltree::Document<'_>) -> Vec<SourceImage> {
@@ -76,6 +82,7 @@ pub fn collect(tree: &usvg::Tree, source: &roxmltree::Document<'_>) -> Vec<Sourc
                             height_mm: (height_mm.is_finite() && height_mm > 0.0)
                                 .then_some(height_mm),
                             format: format.into(),
+                            layer_role: String::new(),
                         });
                     }
                 }

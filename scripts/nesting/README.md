@@ -77,7 +77,7 @@
 
 ## Windows 安装包中的拼版运行时
 
-正式打包前自动执行 `node scripts/bundle-nesting-runtime.mjs`。构建机需要 Windows x64、Python 3.13（可由 `PRINTFLOW_NESTING_BUILD_PYTHON` 指定）和 Rust MSVC 工具链；GitHub 发布流程已配置 Python。构建脚本固定安装生产依赖、编译 release 搜索 DLL，并把七个 Python 适配模块、独立解释器、标准库和依赖写入 `src-tauri/resources/imposition-runtime/`，通过 Tauri 资源映射随安装包发布。生成目录不提交 Git，不包含虚拟环境绝对路径、开发测试或订单数据。
+正式打包前自动执行 `node scripts/bundle-nesting-runtime.mjs`。构建机需要 Windows x64、Python 3.13（可由 `PRINTFLOW_NESTING_BUILD_PYTHON` 指定）和 Rust MSVC 工具链；GitHub 发布流程已配置 Python。构建脚本固定安装生产依赖、编译 release 搜索 DLL，并把 `bundle_runtime.py` 的 `MODULES` 清单中的适配模块、独立解释器、标准库和依赖写入 `src-tauri/resources/imposition-runtime/`，通过 Tauri 资源映射随安装包发布。生成目录不提交 Git，不包含虚拟环境绝对路径、开发测试或订单数据。
 
 每次打包都会从项目目录外验证三种策略使用内置 Rust 核心，并验证切割方案优先和综合最少的跨方案重排；运行时还会被复制到含空格和中文的临时安装目录验证搬迁。正式版优先使用 Tauri `resource_dir()/imposition-runtime`，不从当前工作目录查找源码，也不依赖目标电脑的系统 Python。Python 使用相对 `._pth` 隔离模块路径，缓存写入用户数据目录。
 
@@ -117,3 +117,13 @@
 `nesting_rust.py` 将资源不足与缺少原生库分开处理。资源预检或 Rust 分配失败先尝试降低线程；必要时临时进入 Python，但内存恢复后可以安全撤销当前试排并重新交给 Rust。旧数量向量、0.5 mm 栅格和旋转规则不变；短冷却避免反复重建。因内存被限制的线程可重新升回用户设置，明确选择 1 线程仍保持。进度使用 `current_backend` 显示当前核心，`backend` 仍记录整次任务是否混用过不同核心。
 
 回归入口：`test_rust_nesting_core.py` 的资源恢复、冷却、线程恢复及数量事务测试；`test_local_tools_engine.py` 的实际入口恢复进度测试。故障恢复不能缓存为整批永久 Python 降级，也不能通过减少图片或超时终止规避。
+
+### 全批不同重复次数的模板候选
+
+勾选后的图片属于同一个需求池，不按任务来源、客户名或文件名限制组合。`nest_repeat_portfolio.py` 根据 QT 的整除关系生成额外的部分模板种子：不同模板可以有不同生产重复次数。原全混方案仍是候选；种子与完整余量组成的方案、向种子空隙全局补排的方案、原有全款重复批次搜索继续比较。只有完整需求满足、板数不增加且切割评分改善的结果才被采用，综合策略继续按 60:40 比较及重组。
+
+额外搜索最多两个去重的 QT 支持集候选、四次子求解、共用 384 次近满顺序试排以及一次全局补空，禁止递归扩展。子求解只重编基础轮廓的索引，共享原 NumPy 掩码，每次结束释放原生上下文；不会按 QT 复制图像。传入数量为零的类型始终不可参与，保留底座混排关闭时的隔离。原生状态汇总父、子搜索，不能把子搜索的 Python 回退误报为全 Rust。
+
+普通贪心 lot 已用完可胜出板数且仍有余量时，停止该失去竞争力的候选；完整订单、其它重复子模板和原有可行结果不受影响。该剪枝只根据板数下界，不以时间或订单数量中止拼版。
+
+回归入口：`test_repeat_portfolio.py`、`test_bounded_lots.py`。匿名四轮廓 QT 8/8/12/12 的实际搜索由 5/4 改善为 4/2；另验证即使独立模板组合较差，仍可通过全批插空反超，而不是强制保持种子划分。所有结果仍通过逐款数量、完整图框、真实轮廓和间距检查。本方法是有界启发式，不保证全局最优。

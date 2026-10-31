@@ -2,13 +2,13 @@ import CanvasTools from './components/CanvasTools'
 import PageThumbnailList from './components/PageThumbnailList'
 import type { CanvasAnnotation } from './layoutTypes'
 import { updateDetailText, type DetailTextDraft } from './services/detailTextService'
-import { deleteEditorSelection, type BackgroundScope, type CanvasTool, type EditorSelection, type Point } from './services/canvasAnnotationService'
+import { deleteEditorSelection, type BackgroundScope, type CanvasTool, type EditorSelection, type Point, type RulerMode } from './services/canvasAnnotationService'
 import { GROUP_BACKGROUND, imageGroupsForPage } from './services/groupBackgroundService'
 import { rulerDimensionValue } from './services/imageDimensionService'
 import { updateRulerDimensionValue } from './services/rulerValueEditService'
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction, type ReactNode } from 'react'
 import { Button, ColorPicker, Input, InputNumber, Modal } from 'antd'
-import { Download, Hand, MousePointer2, Plus, WandSparkles, ZoomIn, ZoomOut, ArrowLeft, Combine } from 'lucide-react'
+import { Download, Hand, MousePointer2, Plus, WandSparkles, ZoomIn, ZoomOut, ArrowLeft, Combine, Upload } from 'lucide-react'
 import type { Asset, HeaderBlock, Item, LayoutBounds, Page, PageHeader } from '../../model'
 import { rulerAxes, type RulerPatch } from './services/canvasSelectionService'
 import { dimensionForItem, type DimensionDisplayOverride, type DimensionDisplayPrecision } from './services/imageDimensionService'
@@ -51,7 +51,11 @@ type Props = {
   onChangeRuler?: RulerChange
   onEditText?: EditImageGroupText
   onDropAsset: (assetId: string, x?: number, y?: number) => void
+  onUpload?: () => void
+  uploadDropActive?: boolean
+  poolFocusAssetId?: string | null
   onDeleteGroups: (ids: string[]) => void
+  onDeleteItems?: (ids: string[]) => void
   onConfirmAssetAttributes: (assetId: string, patch: ProductAttributePatch) => Promise<void>
   onAddPage: () => void
   onAutoArrange: (mode?: 'default' | 'upload') => void
@@ -71,12 +75,13 @@ type Props = {
   onRemoveHeaderBlock: (id: string) => void
 }
 
-export default function ArrangePage({ processingLabel, onChangePage, onReorderPages, onBackgroundChange, onHorizontalGroup, onResizeGroup, displayState, onDisplayStateChange, context, assets, pages, activePage, selectedItem, selectedGroupIds, sortMode, onSelectPage, onSelectItem, onSelectGroup, onChangeItem, onReplaceArtwork, replacingArtwork = false, onChangeRulers, onChangeRuler = () => {}, onEditText = () => {}, onDropAsset, onDeleteGroups, onConfirmAssetAttributes, onAddPage, onAutoArrange, onCombine, onBack, onBackToHistory, onExport, exporting = false, exportProgress = { phase: 'rendering', completed: 0, total: 1 }, metadata = {}, onMetadataChange, layoutBounds, onBoundsChange, onAddHeaderBlock, onChangeHeaderBlock, onRemoveHeaderBlock }: Props) {
+export default function ArrangePage({ processingLabel, onChangePage, onReorderPages, onBackgroundChange, onHorizontalGroup, onResizeGroup, displayState, onDisplayStateChange, context, assets, pages, activePage, selectedItem, selectedGroupIds, sortMode, onSelectPage, onSelectItem, onSelectGroup, onChangeItem, onReplaceArtwork, replacingArtwork = false, onChangeRulers, onChangeRuler = () => {}, onEditText = () => {}, onDropAsset, onUpload, uploadDropActive = false, poolFocusAssetId, onDeleteGroups, onDeleteItems, onConfirmAssetAttributes, onAddPage, onAutoArrange, onCombine, onBack, onBackToHistory, onExport, exporting = false, exportProgress = { phase: 'rendering', completed: 0, total: 1 }, metadata = {}, onMetadataChange, layoutBounds, onBoundsChange, onAddHeaderBlock, onChangeHeaderBlock, onRemoveHeaderBlock }: Props) {
   const workspaceRef = useRef<HTMLElement>(null)
   const [artworkMenu, setArtworkMenu] = useState<ArtworkMenuTarget | null>(null)
   useEffect(() => { setArtworkMenu(null) }, [activePage, exporting, replacingArtwork])
   const [exportFormat, setExportFormat] = useState<'jpg' | 'png' | 'svg' | 'pdf'>('pdf')
   const [canvasMode, setCanvasMode] = useState<CanvasTool>('select')
+  const [rulerMode, setRulerMode] = useState<RulerMode>('free')
   const [editorSelection, setEditorSelection] = useState<EditorSelection | null>(null)
   const [textColor, setTextColor] = useState('#000000')
   const [textEdit, setTextEdit] = useState<Extract<CanvasAnnotation, { kind: 'text' }> | DetailTextDraft | null>(null)
@@ -93,7 +98,7 @@ export default function ArrangePage({ processingLabel, onChangePage, onReorderPa
   const [boxSelection, setBoxSelection] = useState<string[]>([])
   const [selectedAccessoryKey, setSelectedAccessoryKey] = useState<string | null>(null)
   const [visualScaleInput, setVisualScaleInput] = useState('100')
-  useEffect(() => { setBoxSelection([]); setSelectedAccessoryKey(null); setEditorSelection(null); setTextEdit(null); setRulerEdit(null); setCanvasMode('select') }, [activePage])
+  useEffect(() => { setBoxSelection([]); setSelectedAccessoryKey(null); setEditorSelection(null); setTextEdit(null); setRulerEdit(null); setCanvasMode('select'); setRulerMode('free') }, [activePage])
   const selectOne = (id: string | null) => { setEditorSelection(null); setSelectedAccessoryKey(null); setBoxSelection([]); onSelectItem(id) }
   const selectGroup = (id: string, ctrlKey: boolean) => { setEditorSelection(null); setSelectedAccessoryKey(null); setBoxSelection([]); onSelectGroup(id, ctrlKey) }
   const selectAccessory = (key: string) => { setEditorSelection(null); setSelectedAccessoryKey(key); setBoxSelection([]); onSelectItem(null) }
@@ -120,7 +125,15 @@ export default function ArrangePage({ processingLabel, onChangePage, onReorderPa
   const placeText = (point: Point) => {
     setTextEdit({ id: crypto.randomUUID(), kind: 'text', ...point, text: '', color: textColor, fontSize: 12 }); setCanvasMode('select')
   }
-  const selectedBackgroundGroups = selectedGroupIds.length ? selectedGroupIds : imageGroupsForPage(page ?? { id: 0, name: '', items: [] }).filter(group => group.itemIds.includes(selectedItem ?? '') || group.itemIds.some(id => boxSelection.includes(id))).map(group => group.id)
+  const backgroundGroups = imageGroupsForPage(page ?? { id: 0, name: '', items: [] })
+  // Keep the two selection paths additive. Ctrl-click selects groups directly;
+  // marquee selection selects their member items. They can briefly overlap
+  // while React is committing a selection change, so never let one path hide
+  // the other when applying a color.
+  const selectedBackgroundGroups = Array.from(new Set([
+    ...selectedGroupIds,
+    ...backgroundGroups.filter(group => group.itemIds.includes(selectedItem ?? '') || group.itemIds.some(id => boxSelection.includes(id))).map(group => group.id),
+  ])).filter(id => backgroundGroups.some(group => group.id === id))
   const backgroundColor = page?.imageGroups?.find(group => selectedBackgroundGroups.includes(group.id))?.backgroundColor ?? page?.backgroundColor ?? GROUP_BACKGROUND
   const editRuler = (id: string, axis: 'width' | 'height') => {
     const item = page?.items.find(item => item.id === id), asset = assets.find(asset => asset.id === item?.assetId)
@@ -197,9 +210,20 @@ export default function ArrangePage({ processingLabel, onChangePage, onReorderPa
       if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [role="dialog"], .ant-modal, .ant-select'))) return
       if (document.querySelector('.ant-modal-wrap:not([style*="display: none"])')) return
       if (editorSelection && page) { event.preventDefault(); onChangePage?.(deleteEditorSelection(page, editorSelection)); setEditorSelection(null); return }
+      if (!boxSelection.length && !selectedGroupIds.length && selectedItem) {
+        event.preventDefault()
+        if (onDeleteItems) onDeleteItems([selectedItem])
+        else {
+          const groupIds = (page?.imageGroups ?? []).filter(group => group.itemIds.includes(selectedItem)).map(group => group.id)
+          if (groupIds.length) onDeleteGroups(groupIds)
+        }
+        setBoxSelection([])
+        setSidePanel('pool')
+        return
+      }
       const ids = boxSelection.length
         ? (page?.imageGroups ?? []).filter(group => group.itemIds.some(id => boxSelection.includes(id))).map(group => group.id)
-        : selectedGroupIds.length ? selectedGroupIds : (page?.imageGroups ?? []).filter(group => group.itemIds.includes(selectedItem ?? '')).map(group => group.id)
+        : selectedGroupIds
       if (!ids.length) return
       event.preventDefault()
       onDeleteGroups(ids)
@@ -208,7 +232,7 @@ export default function ArrangePage({ processingLabel, onChangePage, onReorderPa
     }
     window.addEventListener('keydown', remove)
     return () => window.removeEventListener('keydown', remove)
-  }, [page, boxSelection, selectedGroupIds, selectedItem, exporting, replacingArtwork, artworkMenu, canvasMode, onDeleteGroups, editorSelection, onChangePage])
+  }, [page, boxSelection, selectedGroupIds, selectedItem, exporting, replacingArtwork, artworkMenu, canvasMode, onDeleteGroups, onDeleteItems, editorSelection, onChangePage])
   const updateVisualScale = (value: number) => {
     const scale = clampCanvasDisplayScale(value)
     if (selectedAccessoryKey) {
@@ -329,9 +353,9 @@ export default function ArrangePage({ processingLabel, onChangePage, onReorderPa
         <button className="zoom-btn" title="缩小画布" onClick={() => setZoom(value => Math.max(0.5, Number((value - 0.1).toFixed(2))))}><ZoomOut size={16}/></button><span className="zoom-value">{Math.round(zoom * 100)}%</span><button className="zoom-btn" title="放大画布" onClick={() => setZoom(value => Math.min(2.5, Number((value + 0.1).toFixed(2))))}><ZoomIn size={16}/></button>
       </div>
       <div className="canvas-editor-surface">
-      <CanvasTools tool={canvasMode} onTool={tool => { setCanvasMode(tool); setArtworkMenu(null) }} background={backgroundColor} onBackground={color => onBackgroundChange?.('group', color, selectedBackgroundGroups)} hasGroup={selectedBackgroundGroups.length > 0} disabled={exporting || replacingArtwork}/>
-      {page && <ArtworkCanvas onEditDetailText={draft => { chooseEditor(draft); setTextEdit(draft) }} page={page} pageNumber={pageNumber} editorSelection={editorSelection} onSelectEditor={chooseEditor} textColor={textColor} onPlaceText={placeText} onCancelTool={() => setCanvasMode('select')} onAddRuler={ruler => { changeAnnotation(ruler); chooseEditor({ kind: 'annotation', id: ruler.id }); setCanvasMode('select') }} onChangeAnnotation={changeAnnotation} onEditAnnotation={annotation => annotation.kind === 'text' ? setTextEdit(annotation) : setRulerEdit({ id: annotation.id, value: annotation.measuredMm, unit: 'mm' })} onEditRuler={editRuler} assets={assetMap} selected={selectedItem} selectedIds={boxSelection} onBoxSelect={ids => { setEditorSelection(null); setSelectedAccessoryKey(null); onSelectItem(null); setBoxSelection(ids) }} selectedGroupIds={selectedGroupIds} onSelect={selectOne} onSelectGroup={selectGroup} onResizeGroup={exporting || replacingArtwork ? undefined : onResizeGroup} onSelectAccessory={selectAccessory} selectedAccessoryKey={selectedAccessoryKey ?? undefined} accessoryVisuals={accessoryVisuals} onChangeAccessory={changeAccessory} onChange={onChangeItem} onDropAsset={onDropAsset} metadata={metadata} totalPages={pages.length} mode={canvasMode} zoom={zoom} onZoomChange={setZoom} layoutBounds={layoutBounds} onHeaderBlockChange={onChangeHeaderBlock} dimensionItemIds={dimensionItemIds} dimensionPrecision={dimensionPrecision} dimensionDecimalPlaces={dimensionDecimalPlaces} dimensionDisplayOverrides={dimensionDisplayOverrides} visualScales={visualScales} onChangeRuler={onChangeRuler} onEditText={onEditText} onArtworkContextMenu={exporting || replacingArtwork ? undefined : (itemId, point) => setArtworkMenu({ itemId, ...point })}/>}
-      {(canvasMode === 'text' || canvasMode === 'ruler') && <div className="canvas-tool-hint"><span>{canvasMode === 'text' ? '点击画布放置文字 · Esc 取消' : '点击起点、终点，再移动鼠标确定标尺位置，第三次点击完成 · Esc 取消'}</span></div>}
+      <CanvasTools tool={canvasMode} rulerMode={rulerMode} onRulerMode={setRulerMode} onTool={tool => { setCanvasMode(tool); setArtworkMenu(null) }} background={backgroundColor} onBackground={color => onBackgroundChange?.('group', color, selectedBackgroundGroups)} hasGroup={selectedBackgroundGroups.length > 0} disabled={exporting || replacingArtwork}/>
+      {page && <ArtworkCanvas rulerMode={rulerMode} onEditDetailText={draft => { chooseEditor(draft); setTextEdit(draft) }} page={page} pageNumber={pageNumber} editorSelection={editorSelection} onSelectEditor={chooseEditor} textColor={textColor} onPlaceText={placeText} onCancelTool={() => setCanvasMode('select')} onAddRuler={ruler => { changeAnnotation(ruler); chooseEditor({ kind: 'annotation', id: ruler.id }); setCanvasMode('select') }} onChangeAnnotation={changeAnnotation} onEditAnnotation={annotation => annotation.kind === 'text' ? setTextEdit(annotation) : setRulerEdit({ id: annotation.id, value: annotation.measuredMm, unit: 'mm' })} onEditRuler={editRuler} assets={assetMap} selected={selectedItem} selectedIds={boxSelection} onBoxSelect={ids => { setEditorSelection(null); setSelectedAccessoryKey(null); onSelectItem(null); setBoxSelection(ids) }} selectedGroupIds={selectedGroupIds} onSelect={selectOne} onSelectGroup={selectGroup} onResizeGroup={exporting || replacingArtwork ? undefined : onResizeGroup} onSelectAccessory={selectAccessory} selectedAccessoryKey={selectedAccessoryKey ?? undefined} accessoryVisuals={accessoryVisuals} onChangeAccessory={changeAccessory} onChange={onChangeItem} onDropAsset={onDropAsset} metadata={metadata} totalPages={pages.length} mode={canvasMode} zoom={zoom} onZoomChange={setZoom} layoutBounds={layoutBounds} onHeaderBlockChange={onChangeHeaderBlock} dimensionItemIds={dimensionItemIds} dimensionPrecision={dimensionPrecision} dimensionDecimalPlaces={dimensionDecimalPlaces} dimensionDisplayOverrides={dimensionDisplayOverrides} visualScales={visualScales} onChangeRuler={onChangeRuler} onEditText={onEditText} onArtworkContextMenu={exporting || replacingArtwork ? undefined : (itemId, point) => setArtworkMenu({ itemId, ...point })}/>}
+      {(canvasMode === 'text' || canvasMode === 'ruler') && <div className="canvas-tool-hint"><span>{canvasMode === 'text' ? '点击画布放置文字 · Esc 取消' : `${rulerMode === 'vertical' ? '垂直' : rulerMode === 'horizontal' ? '水平' : '自由'}标尺：点击起点、终点，再移动鼠标确定标尺位置，第三次点击完成 · Esc 取消`}</span></div>}
       </div>
       <Modal title="编辑文字" open={Boolean(textEdit)} destroyOnHidden onCancel={() => setTextEdit(null)} okText="确认" cancelText="取消" okButtonProps={{ disabled: !textEdit?.text.trim() }} onOk={() => { if (!textEdit?.text.trim()) return; if (textEdit.kind === 'detail') { if (page) onChangePage?.(updateDetailText(page, textEdit, { text: textEdit.text, fontSize: textEdit.fontSize, color: textEdit.color, hidden: false })); chooseEditor(textEdit) } else { changeAnnotation(textEdit); chooseEditor({ kind: 'annotation', id: textEdit.id }) } setTextEdit(null) }}>
         <Input.TextArea aria-label="画布文字" autoFocus rows={3} value={textEdit?.text ?? ''} onChange={event => setTextEdit(previous => previous ? { ...previous, text: event.target.value } : previous)}/>
@@ -344,7 +368,7 @@ export default function ArrangePage({ processingLabel, onChangePage, onReorderPa
       {artworkMenu && menuItem && menuAsset && <ArtworkContextMenu target={artworkMenu} item={menuItem} asset={menuAsset} onClose={() => setArtworkMenu(null)} onChange={onChangeItem} onReplace={onReplaceArtwork} onHorizontal={onHorizontalGroup}/>}
       <div className="canvas-footer"><span>画布尺寸：A4 · 210 × 297 mm</span><span>当前页面 {page?.items.filter(item => !item.derivedFrom).length ?? 0} 张 · 全部页面 {pages.reduce((total, item) => total + item.items.filter(image => !image.derivedFrom).length, 0)} 张</span><span className="saved" title="导出成功后保存当前排列与调整，可在示意图审核中恢复"><i/>导出后保存到审核</span></div>
     </section>
-    <aside className="assets-panel" inert={replacingArtwork}><PageConfigPanel metadata={metadata} onMetadataChange={onMetadataChange} bounds={layoutBounds} onBoundsChange={onBoundsChange} pageId={pageNumber} headerBlocks={page?.headerBlocks ?? []} selectedHeaderBlock={selectedItem} onSelectHeaderBlock={selectOne} onAddHeaderBlock={onAddHeaderBlock} onChangeHeaderBlock={onChangeHeaderBlock} onRemoveHeaderBlock={onRemoveHeaderBlock}/><div className="asset-section arrange-pool-section"><div className="arrange-pool-shell"><div className="arrange-side-tabs" role="tablist" aria-label="排列页图片面板"><button type="button" role="tab" aria-selected={sidePanel === 'pool'} className={sidePanel === 'pool' ? 'active' : ''} onClick={() => setSidePanel('pool')}>图片池</button><button type="button" role="tab" aria-selected={sidePanel === 'attributes'} className={sidePanel === 'attributes' ? 'active' : ''} disabled={!hasVisualSelection} title={hasVisualSelection ? '调整选中图片的画布显示大小' : '请先在画布中选择图片或图片组'} onClick={() => hasVisualSelection && setSidePanel('attributes')}>图片属性</button></div>{sidePanel === 'attributes' && hasVisualSelection ? <div className="arrange-attributes-content"><div className="visual-scale-controls" aria-label="图片视觉缩放"><span>图片显示</span><button type="button" className="zoom-btn" title="缩小图片" disabled={exporting} onClick={() => updateVisualScale(selectedVisualScale - CANVAS_DISPLAY_SCALE_STEP)}><ZoomOut size={15}/></button><input aria-label="图片显示百分比" type="number" min={25} max={300} step={1} value={visualScaleInput} disabled={exporting} onChange={event => setVisualScaleInput(event.target.value)} onBlur={commitVisualScale} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); commitVisualScale() } }}/><span>%</span><button type="button" className="zoom-btn" title="放大图片" disabled={exporting} onClick={() => updateVisualScale(selectedVisualScale + CANVAS_DISPLAY_SCALE_STEP)}><ZoomIn size={15}/></button><small>Alt＋滚轮调整图片大小（每次 10%）；仅改变显示，标尺同步缩放</small></div>{singleAssetSelection && selectedAssetId ? <ProductAttributesPanel allowGrouping={false} assets={assets} selectedAssetIds={selectedAssetIds} onConfirmAttributes={patch => onConfirmAssetAttributes(selectedAssetId, patch)} showSelectionSummary={false} disabled={exporting}/> : null}</div> : <div className="arrange-pool-content"><AssetPool assets={assets} pages={pages} mode="arrange" onAddAsset={onDropAsset}/></div>}</div></div></aside>
+    <aside className="assets-panel" inert={replacingArtwork}><PageConfigPanel metadata={metadata} onMetadataChange={onMetadataChange} bounds={layoutBounds} onBoundsChange={onBoundsChange} pageId={pageNumber} headerBlocks={page?.headerBlocks ?? []} selectedHeaderBlock={selectedItem} onSelectHeaderBlock={selectOne} onAddHeaderBlock={onAddHeaderBlock} onChangeHeaderBlock={onChangeHeaderBlock} onRemoveHeaderBlock={onRemoveHeaderBlock}/><div className="arrange-upload-action"><button type="button" className={`upload-zone large arrange-upload-zone ${uploadDropActive ? 'is-drop-active' : ''}`} title="上传 SVG 图片到图片池" disabled={exporting || replacingArtwork || !onUpload} onClick={onUpload}><Upload size={30}/><strong>{uploadDropActive ? '松开鼠标开始上传' : '上传 SVG 文件'}</strong><span>{uploadDropActive ? '仅支持 SVG 文件' : '点击选择或将 SVG 文件拖到这里'}</span></button></div><div className="asset-section arrange-pool-section"><div className="arrange-pool-shell"><div className="arrange-side-tabs" role="tablist" aria-label="排列页图片面板"><button type="button" role="tab" aria-selected={sidePanel === 'pool'} className={sidePanel === 'pool' ? 'active' : ''} onClick={() => setSidePanel('pool')}>图片池</button><button type="button" role="tab" aria-selected={sidePanel === 'attributes'} className={sidePanel === 'attributes' ? 'active' : ''} disabled={!hasVisualSelection} title={hasVisualSelection ? '调整选中图片的画布显示大小' : '请先在画布中选择图片或图片组'} onClick={() => hasVisualSelection && setSidePanel('attributes')}>图片属性</button></div>{sidePanel === 'attributes' && hasVisualSelection ? <div className="arrange-attributes-content"><div className="visual-scale-controls" aria-label="图片视觉缩放"><span>图片显示</span><button type="button" className="zoom-btn" title="缩小图片" disabled={exporting} onClick={() => updateVisualScale(selectedVisualScale - CANVAS_DISPLAY_SCALE_STEP)}><ZoomOut size={15}/></button><input aria-label="图片显示百分比" type="number" min={25} max={300} step={1} value={visualScaleInput} disabled={exporting} onChange={event => setVisualScaleInput(event.target.value)} onBlur={commitVisualScale} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); commitVisualScale() } }}/><span>%</span><button type="button" className="zoom-btn" title="放大图片" disabled={exporting} onClick={() => updateVisualScale(selectedVisualScale + CANVAS_DISPLAY_SCALE_STEP)}><ZoomIn size={15}/></button><small>Alt＋滚轮调整图片大小（每次 10%）；仅改变显示，标尺同步缩放</small></div>{singleAssetSelection && selectedAssetId ? <ProductAttributesPanel allowGrouping={false} assets={assets} selectedAssetIds={selectedAssetIds} onConfirmAttributes={patch => onConfirmAssetAttributes(selectedAssetId, patch)} showSelectionSummary={false} disabled={exporting}/> : null}</div> : <div className="arrange-pool-content"><AssetPool assets={assets} pages={pages} mode="arrange" onAddAsset={onDropAsset} focusAssetId={poolFocusAssetId}/></div>}</div></div></aside>
   </main>
 }
 

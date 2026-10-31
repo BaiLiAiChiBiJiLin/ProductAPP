@@ -1,4 +1,5 @@
 import type { PackedItem } from './packingAlgorithms'
+import type { SourceImage } from '../../model'
 import { BOARD_HOLE_COLOR, BOARD_HOLE_STROKE_MM, boardHoleLayout, boardHolePath } from './impositionHoles'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -17,12 +18,12 @@ export function orderedImageLayers(source: ExportSvgSource, assigned: Record<str
     return layer.category === 'images' && isImageAssignment(assigned[layer.id])
   })
 }
-export type ExportSvgLayer = { id: string; label: string; tagName: string; category: SvgLayerCategory; defaultGroupId: SvgLayerAssignment; nodePath: number[] }
+export type ExportSvgLayer = { id: string; label: string; tagName: string; category: SvgLayerCategory; defaultGroupId: SvgLayerAssignment; nodePath: number[]; sourceNodeId?: string; role?: 'front' | 'window' | 'back' }
 export const canAssignSvgLayer = (layer: ExportSvgLayer, value: SvgLayerAssignment) => !isImageAssignment(value) || layer.category === 'images'
 function validateLayerAssignment(source: ExportSvgSource, layer: ExportSvgLayer, value: SvgLayerAssignment) {
   if (!canAssignSvgLayer(layer, value)) throw new Error(`${source.fileName}：图层“${layer.label}”为 ${layer.tagName}，不能作为图片正、图片背或其他图片，请重新选择类型`)
 }
-export type ExportSvgSource = { sourceId: string; fileName: string; svgText: string; layers: ExportSvgLayer[]; warnings: string[]; contourWarnings?: string[] }
+export type ExportSvgSource = { sourceId: string; fileName: string; svgText: string; layers: ExportSvgLayer[]; warnings: string[]; contourWarnings?: string[]; sourceImages?: SourceImage[]; sourceLayerRole?: 'front' | 'window' | 'back' | '' }
 export type ExportGroup = { id: string; name: string }
 export const IMPOSITION_EXPORT_TYPES: ExportGroup[] = [{ id: 'paths', name: '轮廓 / 路径' }, { id: 'images', name: '图片' }, { id: 'fills', name: '彩窗' }, { id: 'white', name: '白墨' }]
 export type ImpositionExportHoles = { count: number; sizeMm: number; gapMm: number; leftMm: number }
@@ -182,6 +183,17 @@ function freezeStyles(root: Element) {
   })
 }
 
+function explicitWindowSemantic(element: Element) {
+  const value = [
+    element.getAttribute('id'),
+    element.getAttribute('inkscape:label'),
+    element.getAttribute('aria-label'),
+    element.getAttribute('data-name'),
+    element.getAttribute('title'),
+  ].filter(Boolean).join(' ')
+  return /(?:^|[\s_-])(彩窗|色窗|color|window)(?:$|[\s_-])/iu.test(value)
+}
+
 function layerCategory(element: Element, rules: CssRule[], root: Element, visited = new Set<Element>()): SvgLayerCategory {
   if (tag(element) === 'image') return 'images'
   if (tag(element) === 'use') {
@@ -193,18 +205,67 @@ function layerCategory(element: Element, rules: CssRule[], root: Element, visite
     if (SHAPE_TAGS.has(tag(target))) {
       const explicit = declarations(target.getAttribute('style') ?? '').findLast(declaration => declaration.property === 'fill')?.value ?? target.getAttribute('fill')
       const fill = !explicit || explicit === 'inherit' || explicit === 'unset' ? paintProperty(element, 'fill', rules) : explicit
-      return tag(target) !== 'line' && fill !== 'none' ? 'fills' : 'paths'
+      return tag(target) !== 'line' && fill !== 'none' && (tag(target) !== 'path' || explicitWindowSemantic(element)) ? 'fills' : 'paths'
     }
     return layerCategory(target, rules, root, visited)
   }
   if (!SHAPE_TAGS.has(tag(element))) return 'unknown'
-  // Keep one paint operation in one output PDF. Filled-and-stroked objects are
-  // assigned wholly to fills, so their outline is never exported a second time.
-  if (tag(element) !== 'line' && paintProperty(element, 'fill', rules) !== 'none') return 'fills'
+  // A fill alone does not mean color window: Corel and other SVG exporters use
+  // filled paths for artwork, masks and auxiliary geometry. Only an explicit
+  // window/color semantic opts into the color-window group; users can still
+  // choose 彩窗 manually for an unnamed vector layer.
+  if (tag(element) !== 'line' && paintProperty(element, 'fill', rules) !== 'none' && (tag(element) !== 'path' || explicitWindowSemantic(element))) return 'fills'
   return 'paths'
 }
 
-export function parseImpositionSvgSource(input: { sourceId: string; fileName: string; svgText: string; widthMm?: number; heightMm?: number }): ExportSvgSource {
+function validSourceRole(value: string | undefined): 'front' | 'window' | 'back' | '' {
+  return value === 'front' || value === 'window' || value === 'back' ? value : ''
+}
+
+function inferredSourceRole(value: string | undefined, index: number, count: number): 'front' | 'window' | 'back' | '' {
+  const explicit = validSourceRole(value)
+  if (explicit) return explicit
+  if (count === 2) return index === 0 ? 'back' : index === 1 ? 'front' : ''
+  if (count === 3) return index === 0 ? 'back' : index === 1 ? 'window' : index === 2 ? 'front' : ''
+  return ''
+}
+
+/**
+ * Apply the roles created by the shared upload parser to only real <image>
+ * layers. Paths, filled shapes and other vector nodes can never become an
+ * image face. When metadata is absent (legacy records), keep the historical
+ * visual-order fallback so old jobs remain exportable.
+ */
+function applySourceImageRoles(layers: ExportSvgLayer[], sourceImages: readonly SourceImage[] | undefined, sourceLayerRole: string | undefined) {
+  const imageLayers = layers.filter(layer => layer.category === 'images')
+  if (!imageLayers.length) {
+    if (validSourceRole(sourceLayerRole) !== 'window') return false
+    const vectorLayers = layers.filter(layer => layer.category === 'paths' || layer.category === 'fills')
+    vectorLayers.forEach(layer => { layer.role = 'window'; layer.defaultGroupId = 'fills' })
+    return vectorLayers.length > 0
+  }
+  const byNodeId = new Map((sourceImages ?? []).filter(image => image.nodeId).map(image => [image.nodeId, image]))
+  const metadataRoles = imageLayers.map((layer, index) => {
+    const source = layer.sourceNodeId ? byNodeId.get(layer.sourceNodeId) : undefined
+    const image = source ?? (sourceImages?.length === imageLayers.length ? sourceImages[index] : undefined)
+    if (!image) return ''
+    const sourceIndex = sourceImages?.indexOf(image) ?? index
+    return inferredSourceRole(image.layerRole, sourceIndex, sourceImages?.length ?? imageLayers.length)
+  })
+  if (sourceLayerRole && imageLayers.length === 1) metadataRoles[0] = validSourceRole(sourceLayerRole)
+  const hasMetadata = metadataRoles.some(Boolean)
+  if (!hasMetadata) return false
+  imageLayers.forEach((layer, index) => {
+    const role = metadataRoles[index]
+    if (role) {
+      layer.role = role
+      layer.defaultGroupId = role === 'front' ? 'image-front' : role === 'back' ? 'image-back' : 'fills'
+    }
+  })
+  return true
+}
+
+export function parseImpositionSvgSource(input: { sourceId: string; fileName: string; svgText: string; widthMm?: number; heightMm?: number; sourceImages?: SourceImage[]; sourceLayerRole?: 'front' | 'window' | 'back' | '' }): ExportSvgSource {
   const root = parse(decodeSource(input.svgText, input.widthMm, input.heightMm))
   root.querySelectorAll('script').forEach(element => element.remove())
   freezeStyles(root)
@@ -214,15 +275,18 @@ export function parseImpositionSvgSource(input: { sourceId: string; fileName: st
     if (CONTAINER_TAGS.has(tag(element))) { children(element).forEach((child, index) => walk(child, [...path, index])); return }
     const category = layerCategory(element, rules, root)
     const label = element.getAttribute('inkscape:label') || element.getAttribute('aria-label') || element.getAttribute('id') || `${element.localName} ${layers.length + 1}`
-    layers.push({ id: `layer-${path.join('-')}`, label, tagName: element.localName, category, defaultGroupId: category === 'unknown' ? undefined : category, nodePath: path })
+    layers.push({ id: `layer-${path.join('-')}`, label, tagName: element.localName, category, defaultGroupId: category === 'unknown' ? undefined : category, nodePath: path, sourceNodeId: element.getAttribute('id') ?? undefined })
   }
   walk(root, [])
   const images = layers.filter(layer => layer.category === 'images')
-  // SVG paints later siblings above earlier siblings. The visual layer panel
-  // reads top to bottom, while node paths and rendering retain source order.
-  const visualImages = images.toReversed()
-  const visualDefaults = visualImages.length === 2 ? ['image-front', 'image-back'] : ['image-front', 'fills', 'image-back']
-  visualImages.forEach((layer, index) => { layer.defaultGroupId = visualDefaults[index] ?? 'images' })
+  const metadataApplied = applySourceImageRoles(layers, input.sourceImages, input.sourceLayerRole)
+  if (!metadataApplied) {
+    // SVG paints later siblings above earlier siblings. The visual layer panel
+    // reads top to bottom, while node paths and rendering retain source order.
+    const visualImages = images.toReversed()
+    const visualDefaults = visualImages.length === 2 ? ['image-front', 'image-back'] : ['image-front', 'fills', 'image-back']
+    visualImages.forEach((layer, index) => { layer.defaultGroupId = visualDefaults[index] ?? 'images' })
+  }
   const warnings: string[] = []
   if (layers.some(layer => layer.category === 'unknown')) warnings.push('未知图层需要选择导出类型，或明确选择不导出。')
   if (root.querySelector('use')) warnings.push('引用图层 use 会作为一个完整图层处理，保留它引用的原始资源。')
@@ -236,7 +300,7 @@ export function parseImpositionSvgSource(input: { sourceId: string; fileName: st
   const contourWarnings = images.length && !hasStrokedContour ? closedPaths
     .filter(({ element }) => paintProperty(element, 'fill', rules) === 'none' && paintProperty(element, 'stroke', rules) === 'none')
     .map(({ layer }) => `图层“${layer.label}”的闭合路径没有填充和描边，原始 SVG 缺少可见外轮廓；PDF / DXF 不会输出该路径，挂孔不代表外轮廓完整。`) : []
-  return { sourceId: input.sourceId, fileName: input.fileName, svgText: serialize(root), layers, warnings, contourWarnings }
+  return { sourceId: input.sourceId, fileName: input.fileName, svgText: serialize(root), layers, warnings, contourWarnings, sourceImages: input.sourceImages, sourceLayerRole: input.sourceLayerRole }
 }
 
 function resolveNode(root: Element, path: number[]) { return path.reduce((node, index) => children(node)[index], root) }

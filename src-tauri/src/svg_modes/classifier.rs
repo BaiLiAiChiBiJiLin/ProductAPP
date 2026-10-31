@@ -4,25 +4,7 @@ use roxmltree::Node;
 pub(crate) enum SvgKind {
     Whole,
     TopLevelGroups,
-    SceneTree,
-}
-
-fn drawable(name: &str) -> bool {
-    matches!(
-        name,
-        "g" | "path"
-            | "rect"
-            | "circle"
-            | "ellipse"
-            | "polygon"
-            | "polyline"
-            | "line"
-            | "text"
-            | "image"
-            | "use"
-            | "svg"
-            | "switch"
-    )
+    LayerGroups,
 }
 
 fn is_page_decoration(node: Node<'_, '_>) -> bool {
@@ -60,6 +42,24 @@ pub(crate) fn classify(data: &str) -> Result<SvgKind, String> {
     let has_complex_refs = root.descendants().any(|node| {
         node.is_element() && matches!(node.tag_name().name(), "clipPath" | "mask" | "filter")
     });
+    // Production files use one direct layer wrapper and one direct group per
+    // semantic layer. Keep that boundary explicit and avoid SceneTree's
+    // geometry-based descendant merging for this format.
+    let has_direct_layer_wrapper = direct_groups.iter().any(|group| {
+        let id = group.attribute("id").unwrap_or_default();
+        let name = group.attribute("data-name").unwrap_or_default();
+        let layer_name = id.contains("图层")
+            || name.contains("图层")
+            || id.to_ascii_lowercase().contains("layer")
+            || name.to_ascii_lowercase().contains("layer");
+        layer_name
+            && group.children().any(|child| {
+                child.is_element() && child.tag_name().name() == "g"
+            })
+    });
+    if has_direct_layer_wrapper {
+        return Ok(SvgKind::LayerGroups);
+    }
     let atomic_groups = direct_groups.len() >= 2
         && direct_groups.iter().all(|group| {
             !group
@@ -71,17 +71,10 @@ pub(crate) fn classify(data: &str) -> Result<SvgKind, String> {
     if atomic_groups {
         return Ok(SvgKind::TopLevelGroups);
     }
-    let drawable_count = root
-        .descendants()
-        .filter(|node| {
-            node.is_element() && drawable(node.tag_name().name()) && !is_page_decoration(*node)
-        })
-        .count();
-    if drawable_count >= 2 {
-        Ok(SvgKind::SceneTree)
-    } else {
-        Ok(SvgKind::Whole)
-    }
+    // Complex descendant splitting is no longer part of automatic upload.
+    // Unknown nested scenes stay as one source SVG so they cannot turn into
+    // a collection of unrelated path/image assets.
+    Ok(SvgKind::Whole)
 }
 
 pub(crate) fn is_decoration(node: Node<'_, '_>) -> bool {
@@ -99,8 +92,14 @@ mod tests {
     }
 
     #[test]
-    fn detects_nested_scene_tree() {
+    fn nested_scene_stays_whole_without_a_standard_layer_wrapper() {
         let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><g id="scene"><g id="item"><rect width="10" height="10"/></g><image width="10" height="10" href="data:image/png;base64,AA=="/></g></svg>"#;
-        assert_eq!(classify(svg).unwrap(), SvgKind::SceneTree);
+        assert_eq!(classify(svg).unwrap(), SvgKind::Whole);
+    }
+
+    #[test]
+    fn detects_standard_direct_layer_wrapper() {
+        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><g id="图层_1"><g id="front"><image width="10" height="10" href="data:image/png;base64,AA=="/></g><g id="back"><image width="10" height="10" href="data:image/png;base64,AA=="/></g></g></svg>"#;
+        assert_eq!(classify(svg).unwrap(), SvgKind::LayerGroups);
     }
 }

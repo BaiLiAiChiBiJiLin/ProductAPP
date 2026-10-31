@@ -618,14 +618,21 @@ export default function ImpositionPage({ active, revision, onReturned }: { activ
     operationLock.current = true
     setReturningId(id)
     setError('')
-    try {
-      await returnImpositionToReview(id)
-      setPoolRecords(current => current?.filter(record => record.id !== id))
-      if (detailId === id) setDetailId(undefined)
+    // Remove the row immediately; the cloud transition remains authoritative
+    // and is confirmed in the background so the workspace stays responsive.
+    setPoolRecords(current => current?.filter(record => record.id !== id))
+    setResult(current => ({ ...current, records: current.records.filter(record => record.id !== id), total: Math.max(0, current.total - 1) }))
+    if (detailId === id) setDetailId(undefined)
+    void returnImpositionToReview(id).then(() => {
       setRefresh(value => value + 1)
       onReturned?.()
-    } catch (reason) { setError(`回退到示意图审核失败：${String(reason)}`) }
-    finally { operationLock.current = false; setReturningId(undefined) }
+    }).catch(reason => {
+      setError(`回退到示意图审核失败：${String(reason)}`)
+      setRefresh(value => value + 1)
+    }).finally(() => {
+      operationLock.current = false
+      setReturningId(undefined)
+    })
   }
   if (screen === 'pools') return <ConfigProvider locale={zhCN}><ImpositionPools key={poolStorageKey()} active={active} revision={revision + refresh} onBack={() => setScreen('list')} onStart={records => { setPoolRecords(records); setWorkspaceJobId(records[0]?.id); setScreen('workspace') }}/></ConfigProvider>
   if (screen === 'workspace') return <ConfigProvider locale={zhCN}><ImpositionWorkspace jobs={workspaceJobs} initialPoolRecords={poolRecords} temporaryRecords={temporaryRecords} onImported={record => setTemporaryRecords(current => [...current.filter(item => item.id !== record.id), record])} onRemoveImported={id => { setTemporaryRecords(current => current.filter(record => record.id !== id)); setWorkspaceJobId(current => current === id ? undefined : current) }} activeJobId={workspaceJobId} onBack={() => setScreen(poolRecords ? 'pools' : 'list')} onSelectJob={setWorkspaceJobId} onReturn={returnToReview} returningId={returningId} loading={loading}/></ConfigProvider>

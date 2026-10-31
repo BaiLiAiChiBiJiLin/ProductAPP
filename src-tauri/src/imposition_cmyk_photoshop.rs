@@ -543,6 +543,7 @@ mod tests {
             inks: compressed(&[100; 18], false).unwrap(),
             mask: compressed(&[255; 2], false).unwrap(),
             layers: None,
+            window_skipped: false,
         };
         let sources = HashMap::from([("art".into(), Source::new(&data).unwrap())]);
         for c in 0..9 {

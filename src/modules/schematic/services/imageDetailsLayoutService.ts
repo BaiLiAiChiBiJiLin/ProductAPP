@@ -1,7 +1,7 @@
 import { DETAIL_ACCESSORY_SIZE_RATIO, DETAIL_AREA_RATIO, DETAIL_LABEL_FONT_SIZE, DETAIL_LINE_HEIGHT, type NoteImage } from '../../../model.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
 import { accessoryTopGap } from './accessoryFrameService.ts'
-import { getNoteImages } from './assetNotesService.ts'
+import { DEFAULT_NOTE_COLOR, DEFAULT_NOTE_FONT_SIZE, getNoteImages } from './assetNotesService.ts'
 
 /** Stack complete title/image blocks vertically in the available note column. */
 function noteImageBoxes(images: NoteImage[], x: number, y: number, width: number, height: number) {
@@ -132,9 +132,9 @@ export function imageDetailsLayout(group: ImageGroup, visualScale = 1) {
   const desiredAccessorySize = details?.accessoryImage ? Math.min(Math.max(1, width - 4), group.height * DETAIL_ACCESSORY_SIZE_RATIO * displayScale) : 0
   const noteOverride = details?.textOverrides?.note
   const noteText = noteOverride?.text ?? details?.note ?? ''
-  const noteColor = noteOverride?.color ?? '#475569'
+  const noteColor = noteOverride?.color ?? DEFAULT_NOTE_COLOR
   let noteFontSize = Number.isFinite(noteOverride?.fontSize)
-    ? Math.max(6, Math.min(72, noteOverride!.fontSize!)) : Math.min(8, fontSize)
+    ? Math.max(6, Math.min(72, noteOverride!.fontSize!)) : DEFAULT_NOTE_FONT_SIZE
   let noteLine = noteFontSize * 1.25
   let noteLines = !noteOverride?.hidden && noteText.trim() ? wrapNote(noteText, width, noteFontSize) : []
   const minimumMedia = images.length ? Math.min(bodyHeight * 0.65, images.length * 24)

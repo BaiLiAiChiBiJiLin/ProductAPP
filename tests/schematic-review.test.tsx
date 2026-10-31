@@ -105,6 +105,18 @@ it('persists all applied page margins and inner padding after returning to histo
   expect(JSON.parse(localStorage.getItem(layoutPreferenceKey)!)).toEqual(bounds)
 })
 
+it('Ctrl+Z restores the previous arrangement edit without affecting the source asset', async () => {
+  const record = fixture()
+  const originalX = record.pages[0].items[0].x
+  render(<SchematicPage initialRecord={record}/> )
+  await screen.findByText('恢复的排列页')
+  fireEvent.click(screen.getByRole('button', { name: '移动主图' }))
+  expect(latestArrange().pages[0].items[0].x).toBe(123)
+  act(() => fireEvent.keyDown(window, { key: 'z', ctrlKey: true }))
+  await waitFor(() => expect(latestArrange().pages[0].items[0].x).toBe(originalX))
+  expect(latestArrange().assets[0]).toEqual(asset)
+})
+
 it('opening an unchanged review uses its own margins without replacing the preference for the next batch', async () => {
   const bounds = { top: 110, left: 22, right: 31, bottom: 29 }
   localStorage.setItem(layoutPreferenceKey, JSON.stringify(bounds))

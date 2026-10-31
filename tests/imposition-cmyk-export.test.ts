@@ -44,6 +44,37 @@ test('visual default roles feed the real CMYK plan without manually classifying 
   expect(p.sources[0].window!()).not.toContain('RlJPTlQ=')
   expect(p.placements).toHaveLength(2)
 })
+
+test('shared upload role metadata drives imposition defaults and never promotes paths to images', () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10"><image id="back" href="data:image/png;base64,QkFDSw=="/><path id="cut" fill="none" stroke="red" d="M0 0H20V10Z"/><image id="front" href="data:image/png;base64,RlJPTlQ="/></svg>'
+  const source = parseImpositionSvgSource({
+    sourceId: 'art', fileName: 'art.svg', svgText: svg,
+    sourceImages: [
+      { nodeId: 'back', widthPx: 20, heightPx: 10, format: 'PNG', layerRole: 'back' },
+      { nodeId: 'front', widthPx: 20, heightPx: 10, format: 'PNG', layerRole: 'front' },
+    ],
+  })
+  const back = source.layers.find(layer => layer.label === 'back')!
+  const front = source.layers.find(layer => layer.label === 'front')!
+  const cut = source.layers.find(layer => layer.label === 'cut')!
+  expect(back.defaultGroupId).toBe('image-back')
+  expect(front.defaultGroupId).toBe('image-front')
+  expect(back.role).toBe('back')
+  expect(front.role).toBe('front')
+  expect(cut.category).toBe('paths')
+  expect(cut.defaultGroupId).toBe('paths')
+  expect(cut.role).toBeUndefined()
+})
+
+test('a single imported asset role is applied only to its image layer', () => {
+  const source = parseImpositionSvgSource({
+    sourceId: 'art', fileName: 'art.svg',
+    svgText: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10"><path id="cut" fill="none" stroke="red" d="M0 0H20V10Z"/><image id="artwork" href="data:image/png;base64,QQ=="/></svg>',
+    sourceLayerRole: 'front',
+  })
+  expect(source.layers.find(layer => layer.label === 'artwork')?.defaultGroupId).toBe('image-front')
+  expect(source.layers.find(layer => layer.label === 'cut')?.defaultGroupId).toBe('paths')
+})
 test('QT copies reuse one source and preserve each canvas placement and millimetre holes', () => {
   const m = model(images.split('<image id="back"')[0])
   const p = createCmykExportPlan(m, m.templates[0].id, settings)!

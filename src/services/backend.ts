@@ -71,7 +71,7 @@ export async function invoke<T>(command: string, args: Args = {}): Promise<T> {
     if (!versions.has(itemKey) && typeof item.version === 'number') versions.set(itemKey, item.version)
   }
   if (command === 'delete_batch' || command === 'delete_schematic_review' || command === 'send_shared_batch') versions.delete(key)
-  if (command === 'save_batch' && Array.isArray(args.assets)) {
+  if (command === 'save_batch' && args.preserveTempAssets !== true && Array.isArray(args.assets)) {
     const temporary = args.assets.filter(asset => asset && typeof asset === 'object' && asset.storagePath).map(asset => ({ id: asset.id, name: asset.name, width: asset.width, height: asset.height, productId: asset.productId, svg: '', storagePath: asset.storagePath }))
     if (temporary.length) void nativeInvoke('discard_temp_assets', { assets: temporary }).catch(error => console.warn('已保存批次的临时图片清理失败', error))
   }

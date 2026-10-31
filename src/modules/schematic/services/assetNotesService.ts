@@ -1,6 +1,8 @@
 import type { NoteImage } from '../../../model'
 
 export const MAX_NOTE_IMAGES = 3
+export const DEFAULT_NOTE_FONT_SIZE = 14
+export const DEFAULT_NOTE_COLOR = '#666666'
 type NoteImageSource = { noteImages?: NoteImage[]; noteImage?: string | null }
 
 /** An explicit empty list clears legacy images; absent lists preserve older batches. */

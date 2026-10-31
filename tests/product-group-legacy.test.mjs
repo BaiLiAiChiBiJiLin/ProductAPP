@@ -41,7 +41,9 @@ test('legacy color-only members recover product, independent notes and confirmat
   assert.equal(session.leaderId, '3')
   const reapplied = applyProductGroup(reloaded, session, products)
   // Confirming upgrades legacy noteImage into the equivalent named-image list.
-  assert.deepEqual(reapplied.map(({ productGroupPosition, finishMatchDisabled, ...asset }) => ({ ...asset, noteImages: getNoteImages(asset) })), reloaded.map(({ finishMatchDisabled, ...asset }) => ({ ...asset, noteImages: getNoteImages(asset) })))
+  assert.deepEqual(reapplied.map(({ productGroupPosition, finishMatchDisabled, noteFontSize, noteColor, ...asset }) => ({ ...asset, noteImages: getNoteImages(asset) })), reloaded.map(({ finishMatchDisabled, noteFontSize, noteColor, ...asset }) => ({ ...asset, noteImages: getNoteImages(asset) })))
+  assert.equal(reapplied[2].noteFontSize, 14)
+  assert.equal(reapplied[2].noteColor, '#666666')
   assert.deepEqual(Object.fromEntries(reapplied.map(asset => [asset.id, asset.productGroupPosition])), { '1': 2, '2': 3, '3': 1 })
 })
 

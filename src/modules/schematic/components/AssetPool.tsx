@@ -7,9 +7,9 @@ import useProductConfigs from '../hooks/useProductConfigs'
 import { getNoteImages } from '../services/assetNotesService'
 
 type PoolTab = 'all' | 'unused'
-type Props = { assets: Asset[]; pages?: Page[]; onAddAsset?: (assetId: string) => void; onRemoveAsset?: (assetId: string) => void; mode?: 'upload' | 'arrange'; selectedIds?: Set<string>; onSelectionChange?: (ids: Set<string>) => void }
+type Props = { assets: Asset[]; pages?: Page[]; onAddAsset?: (assetId: string) => void; onRemoveAsset?: (assetId: string) => void; mode?: 'upload' | 'arrange'; selectedIds?: Set<string>; onSelectionChange?: (ids: Set<string>) => void; focusAssetId?: string | null }
 
-export default function AssetPool({ assets, pages = [], onAddAsset, mode = 'upload', selectedIds: controlledSelectedIds, onSelectionChange }: Props) {
+export default function AssetPool({ assets, pages = [], onAddAsset, mode = 'upload', selectedIds: controlledSelectedIds, onSelectionChange, focusAssetId }: Props) {
   const [preview, setPreview] = useState<{ name: string; svg: string; src?: string } | null>(null)
   const [internalSelectedIds, setInternalSelectedIds] = useState<Set<string>>(new Set())
   const selectedIds = controlledSelectedIds ?? internalSelectedIds
@@ -24,6 +24,11 @@ export default function AssetPool({ assets, pages = [], onAddAsset, mode = 'uplo
   const activeProduct = products.includes(product) ? product : products[0]
   const productAssets = useMemo(() => assets.filter(asset => asset.productId === activeProduct), [assets, activeProduct])
   const visible = useMemo(() => productAssets.filter(asset => tab === 'all' || !usedIds.has(asset.id)), [productAssets, tab, usedIds])
+  useEffect(() => {
+    if (!focusAssetId) return
+    const focused = assets.find(asset => asset.id === focusAssetId)
+    if (focused) { setProduct(focused.productId); setTab('unused') }
+  }, [focusAssetId])
   useEffect(() => {
     const element = productStripRef.current
     if (!element) return

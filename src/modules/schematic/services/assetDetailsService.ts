@@ -4,7 +4,7 @@ import type { ImageDetails } from '../layoutTypes.ts'
 import type { ProductConfig } from './productConfigService.ts'
 import type { FinishLookup } from './finishService.ts'
 import { finishNameFromLookup } from './finishService.ts'
-import { getNoteImages } from './assetNotesService.ts'
+import { DEFAULT_NOTE_COLOR, DEFAULT_NOTE_FONT_SIZE, getNoteImages } from './assetNotesService.ts'
 
 const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase().replace(/[\s_-]+/g, '')
 export const cleanFinishLabel = (value: string) => value.replace(/^\s*\d+\s*\/\s*/, '').trim()
@@ -71,7 +71,13 @@ export function detailsForAsset(asset: Asset, configs: ProductConfig[] = []): Im
   const note = asset.note?.trim() || ''
   const noteImages = getNoteImages(asset)
   if (code) details.accessoryCode = code
-  if (note) details.note = note
+  if (note) {
+    details.note = note
+    details.textOverrides = { note: {
+      fontSize: Number.isFinite(asset.noteFontSize) ? Math.max(6, Math.min(72, asset.noteFontSize!)) : DEFAULT_NOTE_FONT_SIZE,
+      color: asset.noteColor || DEFAULT_NOTE_COLOR,
+    } }
+  }
   if (noteImages.length) { details.noteImages = noteImages; details.noteImage = noteImages[0].src }
   return details
 }

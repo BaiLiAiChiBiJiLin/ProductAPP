@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.1.36"
+version = "0.1.37"
 description = "PrintFlow production layout desktop app"
 authors = ["PrintFlow"]
 edition = "2021"
@@ -49,7 +49,7 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61.3", features = ["Win32_Graphics_DirectWrite"] }
+windows = { version = "0.61.3", features = ["Win32_Graphics_DirectWrite", "Win32_System_SystemInformation"] }
 
 # Keep Windows development builds within a bounded memory budget. Full debug
 # symbols and incremental state exhausted system commit during dependency mmap.

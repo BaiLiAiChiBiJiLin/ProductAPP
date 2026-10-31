@@ -51,6 +51,8 @@ ROOT = Path(__file__).resolve().parents[2]
 RUNTIME_RELATIVE = Path("src-tauri/src/imposition/local_nesting")
 SOURCE_FILES = tuple(str(RUNTIME_RELATIVE / name) for name in (
     "nesting_common.py", "nest_uniform.py", "local_tools_engine.py", "nesting_rust.py",
+    "nest_repeat_lots.py", "nest_repeat_patterns.py", "nest_repeat_portfolio.py",
+    "nest_order_search.py", "nest_combined.py", "nest_replan.py",
     "rust_core/Cargo.toml", "rust_core/Cargo.lock", "rust_core/src/lib.rs"))
 
 

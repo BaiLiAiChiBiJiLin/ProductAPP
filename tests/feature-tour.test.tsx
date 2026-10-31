@@ -15,6 +15,11 @@ const mount = (props: { enabled: boolean; requestOpen?: number; onOpenChange?: (
   render(<ConfigProvider theme={{ token: { motion: false } }}><FeatureTour {...props}/></ConfigProvider>)
 const next = () => fireEvent.click(screen.getByRole('button', { name: '下一项' }))
 const currentImage = () => screen.getByRole('img') as HTMLImageElement
+const slideAsset = (slide: FeatureTourRelease['slides'][number], prefer: 'animation' | 'poster' = 'animation') => {
+  const src = currentImage().getAttribute('src') ?? ''
+  const expected = prefer === 'animation' ? slide.animation : slide.poster
+  expect(src).toContain(expected)
+}
 
 beforeEach(() => {
   localStorage.removeItem(FEATURE_TOUR_STORAGE_KEY)
@@ -27,22 +32,20 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
-test('shows four individual demonstrations and only completes on the last page', async () => {
+test('shows each individual demonstration and only completes on the last page', async () => {
   const onOpenChange = vi.fn()
   mount({ enabled: true, onOpenChange })
-  await screen.findByRole('heading', { name: '块缩放，让布局更合适' })
-  expect(currentImage().getAttribute('src')).toContain('block-resize.gif')
+  await screen.findByRole('heading', { name: currentRelease.slides[0].title })
+  slideAsset(currentRelease.slides[0])
   expect(screen.getAllByRole('img')).toHaveLength(1)
   expect((screen.getByRole('button', { name: '上一项' }) as HTMLButtonElement).disabled).toBe(true)
   expect(screen.queryByRole('button', { name: '开始使用' })).toBeNull()
   expect(localStorage.getItem(FEATURE_TOUR_STORAGE_KEY)).toBeNull()
-  next()
-  expect(screen.getByRole('heading', { name: '图片大小，滚轮就能调' })).toBeTruthy()
-  expect(currentImage().getAttribute('src')).toContain('image-scale.gif')
-  next()
-  expect(currentImage().getAttribute('src')).toContain('manual-ruler.gif')
-  next()
-  expect(currentImage().getAttribute('src')).toContain('multi-combine.gif')
+  for (let index = 1; index < currentRelease.slides.length; index += 1) {
+    next()
+    expect(screen.getByRole('heading', { name: currentRelease.slides[index].title })).toBeTruthy()
+    slideAsset(currentRelease.slides[index])
+  }
   expect(screen.getAllByRole('img')).toHaveLength(1)
   expect(screen.queryByRole('button', { name: '下一项' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: '开始使用' }))
@@ -54,15 +57,16 @@ test('shows four individual demonstrations and only completes on the last page',
 test('supports direct slide selection, previous and keyboard arrows without auto-advancing', async () => {
   mount()
   await screen.findByRole('dialog')
-  fireEvent.click(screen.getByRole('button', { name: /^查看第 3 项/ }))
-  expect(currentImage().getAttribute('src')).toContain('manual-ruler.gif')
+  const targetIndex = Math.min(2, currentRelease.slides.length - 1)
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(`^查看第 ${targetIndex + 1} 项`) }))
+  slideAsset(currentRelease.slides[targetIndex])
   fireEvent.click(screen.getByRole('button', { name: '上一项' }))
-  expect(currentImage().getAttribute('src')).toContain('image-scale.gif')
+  slideAsset(currentRelease.slides[targetIndex - 1])
   fireEvent.keyDown(screen.getByLabelText('新功能轮播'), { key: 'ArrowRight' })
-  expect(currentImage().getAttribute('src')).toContain('manual-ruler.gif')
+  slideAsset(currentRelease.slides[targetIndex])
   fireEvent.keyDown(screen.getByLabelText('新功能轮播'), { key: 'ArrowLeft' })
-  expect(currentImage().getAttribute('src')).toContain('image-scale.gif')
-  expect(screen.getByRole('button', { name: /^查看第 2 项/ }).getAttribute('aria-current')).toBe('step')
+  slideAsset(currentRelease.slides[targetIndex - 1])
+  expect(screen.getByRole('button', { name: new RegExp(`^查看第 ${targetIndex} 项`) }).getAttribute('aria-current')).toBe('step')
   expect(hasSeenFeatureTour(currentRelease.version, currentRelease.id)).toBe(false)
 })
 
@@ -86,7 +90,7 @@ test('shows a different app version once and permits a manual replay of the curr
   fireEvent.click(screen.getByRole('button', { name: '跳过介绍' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   view.rerender(<ConfigProvider theme={{ token: { motion: false } }}><FeatureTour enabled requestOpen={1}/></ConfigProvider>)
-  await screen.findByRole('heading', { name: '块缩放，让布局更合适' })
+  await screen.findByRole('heading', { name: currentRelease.slides[0].title })
   expect(hasSeenFeatureTour(currentRelease.version, currentRelease.id)).toBe(true)
 })
 
@@ -104,7 +108,7 @@ test('waits for other dialogs and resumes the same slide without recording a fal
   expect(hasSeenFeatureTour(currentRelease.version, currentRelease.id)).toBe(false)
   expect(onOpenChange).toHaveBeenLastCalledWith(false)
   view.rerender(<ConfigProvider theme={{ token: { motion: false } }}><FeatureTour enabled onOpenChange={onOpenChange}/></ConfigProvider>)
-  await screen.findByRole('heading', { name: '图片大小，滚轮就能调' })
+  await screen.findByRole('heading', { name: currentRelease.slides[1]?.title ?? currentRelease.slides[0].title })
   expect(onOpenChange).toHaveBeenLastCalledWith(true)
 })
 
@@ -121,27 +125,35 @@ test('queues a manual replay request until enabled and remains stable in StrictM
   expect(screen.queryByRole('dialog')).toBeNull()
 })
 
-test('reduced motion defaults to a static poster and playback can be started and stopped', async () => {
+test('reduced motion defaults to a static poster and preserves static-only introductions', async () => {
   reducedMotion = true
   mount()
   await screen.findByRole('dialog')
-  expect(currentImage().getAttribute('src')).toContain('block-resize.png')
-  fireEvent.click(screen.getByRole('button', { name: '播放演示' }))
-  expect(currentImage().getAttribute('src')).toContain('block-resize.gif')
-  fireEvent.click(screen.getByRole('button', { name: '停止播放' }))
-  expect(currentImage().getAttribute('src')).toContain('block-resize.png')
+  slideAsset(currentRelease.slides[0], 'poster')
+  if (currentRelease.slides[0].animation === currentRelease.slides[0].poster) {
+    expect(screen.queryByRole('button', { name: '播放演示' })).toBeNull()
+  } else {
+    fireEvent.click(screen.getByRole('button', { name: '播放演示' }))
+    slideAsset(currentRelease.slides[0], 'animation')
+    fireEvent.click(screen.getByRole('button', { name: '停止播放' }))
+    slideAsset(currentRelease.slides[0], 'poster')
+  }
   next()
-  expect(currentImage().getAttribute('src')).toContain('image-scale.png')
+  slideAsset(currentRelease.slides[1], 'poster')
 })
 
 test('unavailable animation falls back to its poster while all navigation remains available', async () => {
   mount()
   await screen.findByRole('dialog')
-  fireEvent.error(currentImage())
-  expect(currentImage().getAttribute('src')).toContain('block-resize.png')
-  expect((screen.getByRole('button', { name: '演示暂不可用' }) as HTMLButtonElement).disabled).toBe(true)
+  if (currentRelease.slides[0].animation !== currentRelease.slides[0].poster) {
+    fireEvent.error(currentImage())
+    slideAsset(currentRelease.slides[0], 'poster')
+    expect((screen.getByRole('button', { name: '演示暂不可用' }) as HTMLButtonElement).disabled).toBe(true)
+  } else {
+    expect(screen.queryByRole('button', { name: '播放演示' })).toBeNull()
+  }
   next()
-  expect(currentImage().getAttribute('src')).toContain('image-scale.gif')
+  slideAsset(currentRelease.slides[1])
 })
 
 test('corrupt storage is ignored and unavailable storage still remembers a dismissal for the session', () => {

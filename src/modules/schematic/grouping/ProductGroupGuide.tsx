@@ -66,7 +66,7 @@ export default function ProductGroupGuide({ assets }: { assets: Asset[] }) {
             pointerRef.current = { id, pointerId: event.pointerId, x: event.clientX, y: event.clientY, active: false }
           }}
           onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return }; grouping.selectMember(id, 'thumbnail') }}>
-        <LazySvgImage svg={asset.svg} alt={asset.name} draggable={false} onDragStart={event => event.preventDefault()}/><span>NO: {orderedAssets.indexOf(asset) + 1}{id === session.leaderId ? ' · 主图' : ''}</span>{fixedSlots?.[slotIndex] && <span className="product-group-thumbnail-slot">{fixedSlots[slotIndex]}</span>}<span>{grouping.isPending(id) ? '待确认' : '已保存'}</span>
+        <LazySvgImage svg={asset.svg} storagePath={asset.storagePath} assetId={asset.id} alt={asset.name} draggable={false} onDragStart={event => event.preventDefault()}/><span>NO: {orderedAssets.indexOf(asset) + 1}{id === session.leaderId ? ' · 主图' : ''}</span>{fixedSlots?.[slotIndex] && <span className="product-group-thumbnail-slot">{fixedSlots[slotIndex]}</span>}<span>{grouping.isPending(id) ? '待确认' : '已保存'}</span>
         </button>
         {fixedSlots && index === 0 && !session.emptyFirstSlot && <Button type="default" size="small" className="product-group-empty-toggle" disabled={grouping.saving} onClick={() => grouping.setEmptyFirstSlot(true)}>置空</Button>}
         <Tooltip title="移出当前组并清空产品属性"><Button danger size="small" className="product-group-thumbnail-remove" aria-label={`移除组内图片 ${asset.name}`} disabled={grouping.saving || draggingId !== null} icon={grouping.removingId === id ? <Loading size="small" inline/> : <Trash2 size={14}/>} onClick={event => { event.stopPropagation(); void grouping.removeMember(id) }}/></Tooltip>

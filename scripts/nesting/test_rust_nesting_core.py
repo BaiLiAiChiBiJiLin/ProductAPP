@@ -42,6 +42,36 @@ def run_native(*args, **kwargs):
 
 
 class NativeFallbackTests(unittest.TestCase):
+    def test_compact_template_search_fallback_is_included_after_context_close(self):
+        bank = native.MaskBank()
+        bank._native_status = dict(backend='rust', current_backend='rust', threads=8,
+                                   rust_calls=3, python_calls=0, reason=None)
+        bank._child_core_status = [dict(backend='mixed', rust_calls=2, python_calls=1,
+                                       reason='temporary memory pressure', recovered=True)]
+        bank.close()
+        for _ in range(2):
+            status = native.core_status(bank)
+            self.assertEqual(status['backend'], 'mixed')
+            self.assertEqual((status['rust_calls'], status['python_calls']), (5, 1))
+            self.assertEqual(status['reason'], 'temporary memory pressure')
+            self.assertTrue(status['recovered'])
+        # Taking a snapshot must not fold counters back into the parent again.
+        self.assertEqual(bank._native_status['rust_calls'], 3)
+
+    def test_active_template_trial_reports_its_actual_backend_and_threads(self):
+        parent, child = native.MaskBank(), native.MaskBank()
+        parent._native_status = dict(backend='rust', current_backend='rust', threads=8,
+                                    rust_calls=3, python_calls=0, reason=None)
+        child._native_status = dict(backend='python', current_backend='python', threads=1,
+                                   rust_calls=0, python_calls=2, reason='temporary memory pressure')
+        parent._active_child_bank = child
+        status = native.core_status(parent)
+        self.assertEqual((status['backend'], status['current_backend']), ('mixed', 'python'))
+        self.assertEqual(status['threads'], 1)
+        self.assertEqual((status['rust_calls'], status['python_calls']), (3, 2))
+        del parent._active_child_bank
+        self.assertEqual(native.core_status(parent)['backend'], 'rust')
+
     def setUp(self):
         self.srcs = [dict(i=0, area=4)]
         self.bank = native.MaskBank({0: [mask_item(np.ones((2, 2), np.uint8))]})

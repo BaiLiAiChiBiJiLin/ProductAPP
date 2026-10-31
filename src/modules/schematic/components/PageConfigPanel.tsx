@@ -18,7 +18,7 @@ type Props = {
 }
 
 export default function PageConfigPanel({ metadata, onMetadataChange, bounds, onBoundsChange, pageId, headerBlocks, selectedHeaderBlock, onSelectHeaderBlock, onAddHeaderBlock, onChangeHeaderBlock, onRemoveHeaderBlock }: Props) {
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(true)
   const updateHeader = (key: keyof PageHeader, value: string) => onMetadataChange({ ...metadata, [key]: value })
   const toMm = (value: number) => Number((value * 210 / PAPER_WIDTH).toFixed(1))
   const updateBound = (key: keyof LayoutBounds, value: string) => {

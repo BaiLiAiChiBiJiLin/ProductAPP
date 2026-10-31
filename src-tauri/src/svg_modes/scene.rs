@@ -120,6 +120,12 @@ pub(crate) fn split_sources_with_workers<F: Fn(&str, usize, usize)>(
     // because the outline paths, circles and image remain in their authored
     // group and z-order.
     if let Some(layer) = find_atomic_layer_group(root) {
+        // Standard production SVGs use one layer wrapper whose direct child
+        // groups are the semantic picture layers. Keep each child whole; do
+        // not descend into its paths/images and do not run geometry merging.
+        // Path-only groups stay in the ordered output so a vector彩窗 is not
+        // lost; they are ignored only when counting image-bearing layers for
+        // a possible Front/Inside/Back interpretation.
         let groups: Vec<_> = layer
             .children()
             .filter(|node| {
@@ -403,7 +409,7 @@ pub(crate) fn find_atomic_layer_group<'a>(
         .descendants()
         .filter(|node| node.is_element() && node.tag_name().name() == "image")
         .count();
-    root.descendants()
+    root.children()
         .filter(|node| node.is_element() && node.tag_name().name() == "g")
         .filter(|node| {
             let id = node.attribute("id").unwrap_or_default();

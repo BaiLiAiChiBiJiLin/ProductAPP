@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <rect width="960" height="540" rx="24" fill="#f4f8ff"/>
+  <rect x="40" y="40" width="880" height="460" rx="18" fill="#fff" stroke="#d8e6fb" stroke-width="3"/>
+  <rect x="82" y="92" width="490" height="352" rx="14" fill="#fbfdff" stroke="#d9e7f8"/>
+  <rect x="126" y="145" width="400" height="230" rx="14" fill="#fff9e8" stroke="#eecb7c" stroke-width="3"/>
+  <text x="158" y="195" font-size="24" font-weight="700" fill="#72531a" font-family="Microsoft YaHei,Arial,sans-serif">备注</text>
+  <text x="158" y="250" font-size="28" fill="#344054" font-family="Microsoft YaHei,Arial,sans-serif">客户确认银色配件</text>
+  <rect x="158" y="287" width="92" height="42" rx="8" fill="#d7e9ff"/>
+  <circle cx="205" cy="308" r="14" fill="#1677ff"/><path d="M198 308h14M205 301v14" stroke="#fff" stroke-width="3"/>
+  <text x="612" y="143" font-size="26" font-weight="700" fill="#19345f" font-family="Microsoft YaHei,Arial,sans-serif">备注可以贴图</text>
+  <text x="612" y="191" font-size="20" fill="#627895" font-family="Microsoft YaHei,Arial,sans-serif">支持文字、粘贴图片和上传</text>
+  <rect x="612" y="232" width="106" height="42" rx="8" fill="#edf3fb"/><text x="635" y="260" font-size="18" fill="#526987" font-family="Microsoft YaHei,Arial,sans-serif">字号</text>
+  <rect x="730" y="232" width="106" height="42" rx="8" fill="#edf3fb"/><text x="752" y="260" font-size="18" fill="#526987" font-family="Microsoft YaHei,Arial,sans-serif">颜色</text>
+  <text x="92" y="480" font-size="18" fill="#6b7f9d" font-family="Microsoft YaHei,Arial,sans-serif">备注会随图片属性保存，切换图片不会串值</text>
+</svg>

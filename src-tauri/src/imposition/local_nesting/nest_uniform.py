@@ -10,6 +10,7 @@ import math
 
 from nesting_common import pack_one
 from nest_repeat_lots import improve_repeated_lots, template_key
+from nest_repeat_portfolio import improve_repeat_portfolio
 
 
 def _counts(placement):
@@ -162,7 +163,12 @@ def pack_uniform_boards(job, args, progress=None):
             placement, repeat = complete
             return ([placement] * repeat, [(placement, repeat)],
                     [dict(template=1, repeat=repeat, pieces_per_board=len(placement), remaining=0)])
-    improved = improve_repeated_lots(job, args, boards, progress)
+    # Different templates may have different production repeat counts. Search
+    # those inventories before whole-order lots, so their complete sheet bound
+    # can prune the later all-artwork mixed trials. Neither search receives task
+    # groups; the original all-artwork mixed plan remains a candidate.
+    improved = improve_repeat_portfolio(job, args, boards, progress)
+    improved = improve_repeated_lots(job, args, improved, progress)
     if improved is not boards:
         grouped = {}
         for board in improved:

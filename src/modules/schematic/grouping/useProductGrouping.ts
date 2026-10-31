@@ -1,4 +1,4 @@
-import { getNoteImages, noteImagesPatch } from '../services/assetNotesService'
+import { DEFAULT_NOTE_COLOR, DEFAULT_NOTE_FONT_SIZE, getNoteImages, noteImagesPatch } from '../services/assetNotesService'
 import { createContext, useContext, useRef, useState } from 'react'
 import type { Asset } from '../../../model'
 import type { ProductConfig } from '../services/productConfigService'
@@ -126,7 +126,7 @@ export function useProductGrouping({ assets, products, save, activate, revealAll
       delete drafts.current[id]; dirty.current.delete(id)
       const asset = next.assets.find(item => item.id === id)
       // Explicitly cleared cards must not inherit the last edited form on reselect.
-      clearedEditors.current[id] = { mode: 'existing', draft: { ...emptyAttributeDraft(), note: asset?.note ?? '', ...noteImagesPatch(getNoteImages(asset ?? {})) }, custom: emptyCustomProduct() }
+      clearedEditors.current[id] = { mode: 'existing', draft: { ...emptyAttributeDraft(), note: asset?.note ?? '', noteFontSize: asset?.noteFontSize ?? DEFAULT_NOTE_FONT_SIZE, noteColor: asset?.noteColor ?? DEFAULT_NOTE_COLOR, ...noteImagesPatch(getNoteImages(asset ?? {})) }, custom: emptyCustomProduct() }
       commit(next.session)
       activate(next.session?.activeId ?? null)
     } catch (reason) { setError(`移除失败：${String(reason)}`) }

@@ -34,6 +34,14 @@ pub struct ProductionImage {
     product_group_id: String,
     product_group_leader_id: String,
     product_group_position: u64,
+    /// Canonical SVG image metadata produced by the shared schematic importer.
+    /// Keeping this on the production record means the imposition exporter can
+    /// reuse front/window/back detection without reparsing or guessing from
+    /// generic DOM order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source_images: Option<Vec<crate::assets::SourceImage>>,
+    #[serde(default)]
+    source_layer_role: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -311,6 +319,8 @@ pub(crate) fn production_images(
             product_group_id: text(asset, "productGroupId"),
             product_group_leader_id: text(asset, "productGroupLeaderId"),
             product_group_position: asset["productGroupPosition"].as_u64().unwrap_or(0),
+            source_images: serde_json::from_value(asset["sourceImages"].clone()).ok(),
+            source_layer_role: text(asset, "sourceLayerRole"),
         });
     }
     if images.is_empty() {

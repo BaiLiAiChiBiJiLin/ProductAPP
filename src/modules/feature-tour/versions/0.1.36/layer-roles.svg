@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <rect width="960" height="540" rx="24" fill="#f4f8ff"/>
+  <rect x="40" y="40" width="880" height="460" rx="18" fill="#fff" stroke="#d8e6fb" stroke-width="3"/>
+  <rect x="76" y="92" width="476" height="352" rx="14" fill="#fbfdff" stroke="#d9e7f8"/>
+  <rect x="126" y="145" width="380" height="226" rx="16" fill="#eaf3ff" stroke="#76aaf4" stroke-width="4"/>
+  <circle cx="316" cy="258" r="72" fill="#fff" stroke="#2c9a70" stroke-width="5"/>
+  <path d="M262 301c34-40 74-40 108 0" fill="none" stroke="#1677ff" stroke-width="8"/>
+  <path d="M265 221c32 24 70 24 102 0" fill="none" stroke="#e06b77" stroke-width="8"/>
+  <text x="616" y="134" font-size="25" font-weight="700" fill="#19345f" font-family="Microsoft YaHei,Arial,sans-serif">图层自动归类</text>
+  <rect x="616" y="180" width="120" height="44" rx="22" fill="#dceaff"/><text x="649" y="209" font-size="19" fill="#1677ff" font-family="Microsoft YaHei,Arial,sans-serif">正面</text>
+  <rect x="752" y="180" width="120" height="44" rx="22" fill="#e9f8f0"/><text x="784" y="209" font-size="19" fill="#21865e" font-family="Microsoft YaHei,Arial,sans-serif">彩窗</text>
+  <rect x="616" y="244" width="120" height="44" rx="22" fill="#fff0f1"/><text x="649" y="273" font-size="19" fill="#c64b5a" font-family="Microsoft YaHei,Arial,sans-serif">背面</text>
+  <text x="616" y="344" font-size="20" fill="#627895" font-family="Microsoft YaHei,Arial,sans-serif">按 SVG 图层顺序导入</text>
+  <text x="92" y="480" font-size="18" fill="#6b7f9d" font-family="Microsoft YaHei,Arial,sans-serif">生成示意图时保持图片、描边和原始尺寸</text>
+</svg>

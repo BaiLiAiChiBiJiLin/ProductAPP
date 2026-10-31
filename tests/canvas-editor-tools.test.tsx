@@ -6,7 +6,7 @@ import Konva from 'konva'
 import { Group, Layer, Stage } from 'react-konva'
 import { defaultLayoutBounds, pageRasterSvg, pageSvg, type Asset, type Page } from '../src/model'
 import type { CanvasAnnotation } from '../src/modules/schematic/layoutTypes'
-import { annotationsSvg, deleteEditorSelection, manualRulerGeometry, measuredDistance, recolorBackground, rulerCalibration } from '../src/modules/schematic/services/canvasAnnotationService'
+import { annotationsSvg, constrainRulerPoint, deleteEditorSelection, manualRulerGeometry, measuredDistance, recolorBackground, rulerCalibration } from '../src/modules/schematic/services/canvasAnnotationService'
 import { groupBackgroundsSvg } from '../src/modules/schematic/services/groupBackgroundService'
 import { emptyArrangementDisplayState } from '../src/modules/schematic/services/arrangementDisplayState'
 import { createReviewRecord, loadReviewRecord, saveReviewRecord, type SchematicReviewRecord } from '../src/modules/schematic-review/reviewRecords'
@@ -360,12 +360,31 @@ it('review snapshots roundtrip page ordering, colors, deleted captions, annotati
 })
 
 describe('drawing surface', () => {
-  function drawing(tool: 'text' | 'ruler' = 'ruler') {
+  function drawing(tool: 'text' | 'ruler' = 'ruler', rulerMode: 'free' | 'vertical' | 'horizontal' = 'free') {
     const onText = vi.fn(), onRuler = vi.fn(), onCancel = vi.fn()
-    const rendered = render(<CanvasDrawingSurface tool={tool} page={page()} assets={assets} x={50} y={50} scale={2} color="#456abc"
+    const rendered = render(<CanvasDrawingSurface tool={tool} rulerMode={rulerMode} page={page()} assets={assets} x={50} y={50} scale={2} color="#456abc"
       toPaper={(x, y) => ({ x: (x - 50) / 2, y: (y - 50) / 2 })} onText={onText} onRuler={onRuler} onCancel={onCancel}/>)
     return { ...rendered, onText, onRuler, onCancel, surface: screen.getByLabelText(tool === 'ruler' ? '点击画布绘制标尺' : '点击画布添加文字') }
   }
+
+  it.each([
+    ['free', { x: 130, y: 260 }],
+    ['vertical', { x: 100, y: 260 }],
+    ['horizontal', { x: 130, y: 200 }],
+  ] as const)('constrains the second point for %s ruler mode', (mode, expected) => {
+    expect(constrainRulerPoint({ x: 100, y: 200 }, { x: 130, y: 260 }, mode)).toEqual(expected)
+  })
+
+  it.each([
+    ['vertical', { x: 100, y: 300 }, { x: 100, y: 300 }],
+    ['horizontal', { x: 150, y: 200 }, { x: 150, y: 200 }],
+  ] as const)('draws a %s ruler with an axis-locked measured baseline', (mode, expectedEnd, expectedSavedEnd) => {
+    const { surface, onRuler } = drawing('ruler', mode)
+    fireEvent.click(surface, { clientX: 250, clientY: 450 })
+    fireEvent.click(surface, { clientX: expectedEnd.x * 2 + 50, clientY: expectedEnd.y * 2 + 50 })
+    fireEvent.click(surface, { clientX: expectedEnd.x * 2 + 50, clientY: expectedEnd.y * 2 + 50 })
+    expect(onRuler).toHaveBeenCalledWith(expect.objectContaining({ x: 100, y: 200, x2: expectedSavedEnd.x, y2: expectedSavedEnd.y }))
+  })
 
   it('fixes two measured points then previews a parallel offset until the third click commits', () => {
     const { surface, container, onRuler } = drawing()

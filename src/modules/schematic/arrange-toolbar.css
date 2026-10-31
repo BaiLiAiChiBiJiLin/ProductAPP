@@ -15,3 +15,5 @@
 .toolbar-decimal-places .ant-input-number { width: 56px; }
 .toolbar .ruler-size-warning { color: #b45309; font-size: 12px; white-space: nowrap; }
 .stage-wrap.is-select-mode { touch-action: none; }
+.arrange-upload-action { flex-shrink: 0; padding: 10px 18px 0; background: #fff; }
+.arrange-upload-action .ant-btn { height: 34px; }

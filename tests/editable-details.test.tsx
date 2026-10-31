@@ -85,7 +85,7 @@ test('wrapped remarks open the shared editor with the complete original text ins
     act(() => node.fire('click', { evt: new MouseEvent('click') }, true))
     expect(select.mock.calls.at(-1)![0]).toMatchObject({ kind: 'detail', groupId: 'g', panelItemIds: ['a'], fieldKey: 'note' })
     act(() => node.fire('dblclick', { evt: new MouseEvent('dblclick') }, true))
-    expect(edit.mock.calls.at(-1)![0]).toMatchObject({ kind: 'detail', fieldKey: 'note', text: note, fontSize: layout.noteFontSize, color: '#475569' })
+    expect(edit.mock.calls.at(-1)![0]).toMatchObject({ kind: 'detail', fieldKey: 'note', text: note, fontSize: layout.noteFontSize, color: '#666666' })
   }
   expect(prompt).not.toHaveBeenCalled()
 })

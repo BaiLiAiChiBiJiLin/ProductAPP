@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
 import { PAPER_HEIGHT, PAPER_WIDTH, type Asset, type Page } from '../../../model'
 import type { CanvasAnnotation } from '../layoutTypes'
-import { manualRulerGeometry, manualRulerLabel, manualRulerPlacement, measuredDistance, rulerCalibration, type Point, type RulerCalibration } from '../services/canvasAnnotationService'
+import { constrainRulerPoint, manualRulerGeometry, manualRulerLabel, manualRulerPlacement, measuredDistance, rulerCalibration, type Point, type RulerCalibration, type RulerMode } from '../services/canvasAnnotationService'
 import { RULER_COLOR, RULER_STROKE_WIDTH } from '../services/imageDimensionService'
 
 /** An independent overlay keeps pointer previews from rerendering every SVG image. */
-export default function CanvasDrawingSurface({ tool, page, assets, scales, x, y, scale, toPaper, onText, onRuler, onCancel }: {
+export default function CanvasDrawingSurface({ tool, page, assets, scales, x, y, scale, toPaper, rulerMode = 'free', onText, onRuler, onCancel }: {
   tool: 'text' | 'ruler'; page: Page; assets: Map<string, Asset>; scales?: ReadonlyMap<string, number>
   x: number; y: number; scale: number; color: string; toPaper: (x: number, y: number) => Point
-  onText: (point: Point) => void; onRuler: (ruler: CanvasAnnotation) => void; onCancel: () => void
+  rulerMode?: RulerMode; onText: (point: Point) => void; onRuler: (ruler: CanvasAnnotation) => void; onCancel: () => void
 }) {
   const [start, setStart] = useState<{ point: Point; calibration: RulerCalibration } | null>(null)
   const [end, setEnd] = useState<Point | null>(null)
@@ -19,9 +19,10 @@ export default function CanvasDrawingSurface({ tool, page, assets, scales, x, y,
     return () => window.removeEventListener('keydown', cancel)
   }, [onCancel])
   const inside = (point: Point) => point.x >= 0 && point.y >= 0 && point.x <= PAPER_WIDTH && point.y <= PAPER_HEIGHT
+  const snap = (point: Point) => start ? constrainRulerPoint(start.point, point, rulerMode) : point
   return <div aria-label={tool === 'text' ? '点击画布添加文字' : '点击画布绘制标尺'} style={{ position: 'absolute', inset: 0, cursor: 'crosshair', touchAction: 'none' }}
     onPointerDown={event => { if (event.button === 0) { event.preventDefault(); event.stopPropagation() } }}
-    onPointerMove={event => { if (!start) return; const point = toPaper(event.clientX, event.clientY); if (inside(point)) { if (placement) setPlacement(point); else setEnd(point) } }}
+    onPointerMove={event => { if (!start) return; const point = toPaper(event.clientX, event.clientY); if (inside(point)) { if (placement) setPlacement(point); else setEnd(snap(point)) } }}
     onClick={event => {
       event.stopPropagation()
       const point = toPaper(event.clientX, event.clientY)
@@ -30,7 +31,9 @@ export default function CanvasDrawingSurface({ tool, page, assets, scales, x, y,
       if (!start) { setStart({ point, calibration: rulerCalibration(page, assets, point, scales) }); setEnd(point); return }
       if (!placement) {
         if (Math.hypot(point.x - start.point.x, point.y - start.point.y) < 1) return
-        setEnd(point); setPlacement(point); return
+        const constrained = snap(point)
+        if (Math.hypot(constrained.x - start.point.x, constrained.y - start.point.y) < 1) return
+        setEnd(constrained); setPlacement(point); return
       }
       if (!end) return
       onRuler({ id: crypto.randomUUID(), kind: 'ruler', ...manualRulerPlacement(start.point, end, point), color: RULER_COLOR,

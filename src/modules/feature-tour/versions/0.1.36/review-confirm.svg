@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <rect width="960" height="540" rx="24" fill="#f4f8ff"/>
+  <rect x="40" y="40" width="880" height="460" rx="18" fill="#fff" stroke="#d8e6fb" stroke-width="3"/>
+  <rect x="78" y="90" width="800" height="72" rx="13" fill="#eef5ff"/>
+  <text x="108" y="135" font-size="23" font-weight="700" fill="#19345f" font-family="Microsoft YaHei,Arial,sans-serif">确认生成示意图</text>
+  <text x="108" y="205" font-size="21" fill="#627895" font-family="Microsoft YaHei,Arial,sans-serif">按产品和印刷选项分组，数量多的优先排列</text>
+  <rect x="100" y="252" width="336" height="130" rx="14" fill="#e8f2ff" stroke="#b9d4fa"/>
+  <text x="132" y="298" font-size="22" fill="#19345f" font-family="Microsoft YaHei,Arial,sans-serif">钥匙扣 · 32 张</text>
+  <text x="132" y="340" font-size="18" fill="#627895" font-family="Microsoft YaHei,Arial,sans-serif">印刷：双面</text>
+  <rect x="500" y="252" width="336" height="130" rx="14" fill="#f1f8f4" stroke="#b7e1ca"/>
+  <text x="532" y="298" font-size="22" fill="#1e6f4e" font-family="Microsoft YaHei,Arial,sans-serif">冰箱贴 · 12 张</text>
+  <text x="532" y="340" font-size="18" fill="#627895" font-family="Microsoft YaHei,Arial,sans-serif">印刷：单面</text>
+  <rect x="690" y="414" width="146" height="44" rx="22" fill="#1677ff"/><text x="723" y="443" font-size="19" fill="#fff" font-family="Microsoft YaHei,Arial,sans-serif">确认并生成</text>
+  <text x="92" y="480" font-size="18" fill="#6b7f9d" font-family="Microsoft YaHei,Arial,sans-serif">检查图片池后自动进入排列页，放不下会自动新建页面</text>
+</svg>

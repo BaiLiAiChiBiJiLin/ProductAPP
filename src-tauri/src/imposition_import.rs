@@ -63,6 +63,7 @@ fn image_metadata(asset: &assets::Asset, path: &Path) -> Result<ProductionImage,
         "productId": "", "productName": "", "attributes": { "QT": "1" },
         "attributeImages": {}, "note": "", "noteImage": null, "noteImages": [],
         "productGroupId": "", "productGroupLeaderId": "", "productGroupPosition": 0,
+        "sourceImages": asset.source_images, "sourceLayerRole": asset.source_layer_role,
     }))
     .map_err(|error| format!("创建临时拼版图片失败：{error}"))
 }
@@ -306,6 +307,26 @@ mod tests {
         let stored = fs::read_to_string(json["images"][0]["filePath"].as_str().unwrap()).unwrap();
         assert!(stored.contains("M0 0H400V600H0Z"));
         assert!(source.exists());
+    }
+
+    #[test]
+    fn temporary_import_preserves_shared_front_back_window_roles() {
+        use base64::Engine;
+        let fixture = Fixture::new();
+        let bitmap = tiny_skia::Pixmap::new(2, 2).unwrap().encode_png().unwrap();
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bitmap);
+        let source = fixture.source(&format!(r##"<svg xmlns="http://www.w3.org/2000/svg" width="40mm" height="20mm" viewBox="0 0 400 200"><image id="back" x="0" y="0" width="400" height="200" href="data:image/png;base64,{encoded}"/><image id="window" x="0" y="0" width="400" height="200" href="data:image/png;base64,{encoded}"/><image id="front" x="0" y="0" width="400" height="200" href="data:image/png;base64,{encoded}"/></svg>"##));
+        let value = serde_json::to_value(fixture.import(&source, "roles").unwrap()).unwrap();
+        let images = value["images"].as_array().unwrap();
+        assert_eq!(images.len(), 1);
+        let roles = images[0]["sourceImages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|image| image["layerRole"].as_str().unwrap_or_default())
+            .collect::<Vec<_>>();
+        assert_eq!(roles, ["back", "window", "front"]);
+        assert_eq!(images[0]["sourceLayerRole"].as_str(), Some(""));
     }
 
     #[test]

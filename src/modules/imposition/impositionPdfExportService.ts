@@ -23,7 +23,7 @@ export interface ImpositionPdfExportEntry {
 }
 
 export interface ImpositionPdfExportProgress {
-  phase: 'prepare' | 'transfer' | 'queue' | 'resources' | 'flatten' | 'fonts' | 'parse' | 'convert' | 'merge' | 'write' | 'dxf' | 'cmyk-align' | 'cmyk-color' | 'cmyk-zip' | 'cmyk-photoshop' | 'complete'
+  phase: 'prepare' | 'transfer' | 'queue' | 'resources' | 'flatten' | 'fonts' | 'parse' | 'convert' | 'merge' | 'write' | 'dxf' | 'cmyk-align' | 'cmyk-color' | 'cmyk-zip' | 'cmyk-photoshop' | 'cmyk-window-skipped' | 'complete'
   completed: number
   total: number
   fileName: string
@@ -37,6 +37,7 @@ export interface ImpositionPdfExportResult {
   cancelled: false
   failedFile?: string
   error?: string
+  warnings?: string[]
   cleanupWarnings: string[]
 }
 
@@ -94,7 +95,7 @@ export async function exportImpositionPdfs(
   requestedEntries: readonly ImpositionPdfExportEntry[],
   onProgress?: (progress: ImpositionPdfExportProgress) => void,
 ): Promise<ImpositionPdfExportResult> {
-  const result: ImpositionPdfExportResult = { completedFiles: [], cancelled: false, cleanupWarnings: [] }
+  const result: ImpositionPdfExportResult = { completedFiles: [], cancelled: false, warnings: [], cleanupWarnings: [] }
   // A layout without content for any selected format produces no file/job.
   const entries = requestedEntries.filter(entry => entry.exportPdf !== false || entry.pages.some(page => page.exportDxf) || entry.cmyk)
   const states = new Map<string, PdfExportState>()
@@ -149,6 +150,12 @@ export async function exportImpositionPdfs(
       const index = event.payload.pageIndex
       const count = state.cmyk ? state.staged.entry.cmyk?.sources.length ?? 0 : state.staged.entry.pages.length
       if (index !== undefined && Number.isInteger(index) && index > 0 && index <= count) state.pageNumber = index
+      if (event.payload.phase === 'cmyk-window-skipped') {
+        const source = state.staged.entry.cmyk?.sources[state.pageNumber - 1]
+        const warning = `${state.fileName}：${source?.label ?? '当前图片'} 的彩窗图层没有可见像素（可能完全在版面外或无法渲染），已跳过该图片的彩窗像素并继续导出；CMYK 与 White/C2/M2/Y2/K2 通道仍会生成。`
+        const warnings = result.warnings ?? (result.warnings = [])
+        if (!warnings.includes(warning)) warnings.push(warning)
+      }
       report(state, event.payload.phase)
     })
 

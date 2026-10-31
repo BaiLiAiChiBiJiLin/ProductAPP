@@ -1,9 +1,11 @@
 //! Production CMYK + White/C2/M2/Y2/K2. Each distinct source/size is converted
 //! once; QT copies share the resulting nine-color image XObject.
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use flate2::{write::ZlibEncoder, Compression};
+use image::ImageFormat;
 use lcms2::{Intent, PixelFormat, Profile, Transform};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, io::Write};
+use std::{collections::HashSet, io::{Cursor, Write}};
 use tauri::Emitter;
 
 pub(crate) const ICC: &[u8] = include_bytes!("../resources/color/250icm.icc");
@@ -224,12 +226,148 @@ fn without_empty_groups(svg: &str) -> Result<String, String> {
     result.push_str(&svg[end..]);
     Ok(result)
 }
-fn layer(id: &str, client: &reqwest::blocking::Client, offset: Offset) -> Result<Layer, String> {
+
+fn svg_attribute<'a>(node: roxmltree::Node<'a, 'a>, local_name: &str) -> Option<&'a str> {
+    node.attributes().find_map(|attribute| {
+        (attribute.name() == local_name
+            || attribute.name().rsplit(':').next() == Some(local_name))
+            .then_some(attribute.value())
+    })
+}
+
+fn svg_numbers(value: &str) -> Vec<f64> {
+    value
+        .replace(',', " ")
+        .split_whitespace()
+        .filter_map(|part| part.parse::<f64>().ok())
+        .collect()
+}
+
+fn replace_xml_attribute(tag: &str, names: &[&str], value: &str) -> Option<String> {
+    for name in names {
+        for quote in ['"', '\''] {
+            let marker = format!("{name}={quote}");
+            let Some(start) = tag.find(&marker) else { continue };
+            let value_start = start + marker.len();
+            let Some(relative_end) = tag[value_start..].find(quote) else { continue };
+            let value_end = value_start + relative_end;
+            let mut result = String::with_capacity(tag.len() + value.len());
+            result.push_str(&tag[..value_start]);
+            result.push_str(value);
+            result.push_str(&tag[value_end..]);
+            return Some(result);
+        }
+    }
+    None
+}
+
+/// Corel may place a color-window bitmap in a very large coordinate box and
+/// use a product clip path to reveal only a small part of it. Browser SVG
+/// renderers handle this, but resvg intentionally caps giant intermediate
+/// layers and can discard the bitmap entirely. Crop the embedded bitmap to
+/// the document viewBox while preserving the exact source-to-page mapping;
+/// the original clip paths remain in place and continue to define the real
+/// product contour.
+fn normalize_large_raster_images(svg: &str) -> Result<String, String> {
+    let document = roxmltree::Document::parse(svg)
+        .map_err(|error| format!("CMYK 彩窗 SVG 解析失败：{error}"))?;
+    let root = document.root_element();
+    let view_box = root
+        .attribute("viewBox")
+        .map(svg_numbers)
+        .filter(|values| values.len() == 4 && values[2] > 0.0 && values[3] > 0.0);
+    let Some(view_box) = view_box else { return Ok(svg.to_owned()) };
+    let [view_x, view_y, view_width, view_height] = [
+        view_box[0], view_box[1], view_box[2], view_box[3],
+    ];
+    let mut replacements = Vec::<(std::ops::Range<usize>, String)>::new();
+    for node in root.descendants().filter(|node| node.has_tag_name(("http://www.w3.org/2000/svg", "image"))) {
+        let Some(x) = svg_attribute(node, "x").and_then(|value| value.parse::<f64>().ok()) else { continue };
+        let Some(y) = svg_attribute(node, "y").and_then(|value| value.parse::<f64>().ok()) else { continue };
+        let Some(width) = svg_attribute(node, "width").and_then(|value| value.parse::<f64>().ok()) else { continue };
+        let Some(height) = svg_attribute(node, "height").and_then(|value| value.parse::<f64>().ok()) else { continue };
+        if !(width > 0.0 && height > 0.0)
+            || (width <= view_width * 4.0 && height <= view_height * 4.0)
+        {
+            continue;
+        }
+        let Some(href) = node
+            .attribute(("http://www.w3.org/1999/xlink", "href"))
+            .or_else(|| node.attribute("href"))
+        else { continue };
+        let Some(comma) = href.find(',') else { continue };
+        if !href[..comma].to_ascii_lowercase().contains("image/png") {
+            continue;
+        }
+        let Ok(bytes) = BASE64.decode(&href[comma + 1..]) else { continue };
+        let Ok(image) = image::load_from_memory(&bytes) else { continue };
+        let source_width = image.width() as f64;
+        let source_height = image.height() as f64;
+        if source_width <= 0.0 || source_height <= 0.0 { continue }
+        let crop_x0 = x.max(view_x);
+        let crop_y0 = y.max(view_y);
+        let crop_x1 = (x + width).min(view_x + view_width);
+        let crop_y1 = (y + height).min(view_y + view_height);
+        if crop_x1 <= crop_x0 || crop_y1 <= crop_y0 { continue }
+        let source_x0 = (((crop_x0 - x) / width) * source_width).floor().clamp(0.0, source_width - 1.0) as u32;
+        let source_y0 = (((crop_y0 - y) / height) * source_height).floor().clamp(0.0, source_height - 1.0) as u32;
+        let source_x1 = (((crop_x1 - x) / width) * source_width).ceil().clamp((source_x0 + 1) as f64, source_width) as u32;
+        let source_y1 = (((crop_y1 - y) / height) * source_height).ceil().clamp((source_y0 + 1) as f64, source_height) as u32;
+        let cropped = image.crop_imm(source_x0, source_y0, source_x1 - source_x0, source_y1 - source_y0);
+        let mut encoded = Cursor::new(Vec::new());
+        cropped
+            .write_to(&mut encoded, ImageFormat::Png)
+            .map_err(|error| format!("CMYK 彩窗图片裁剪失败：{error}"))?;
+        let data_url = format!("data:image/png;base64,{}", BASE64.encode(encoded.into_inner()));
+
+        let range = node.range();
+        let source = &svg[range.clone()];
+        let Some(open_end) = source.find('>') else { continue };
+        let (opening, suffix) = source.split_at(open_end);
+        let mut opening = opening.to_owned();
+        for (name, value) in [
+            ("x", format!("{crop_x0:.6}")),
+            ("y", format!("{crop_y0:.6}")),
+            ("width", format!("{:.6}", crop_x1 - crop_x0)),
+            ("height", format!("{:.6}", crop_y1 - crop_y0)),
+        ] {
+            if let Some(updated) = replace_xml_attribute(&opening, &[name], &value) {
+                opening = updated;
+            }
+        }
+        if let Some(updated) = replace_xml_attribute(&opening, &["xlink:href", "href"], &data_url) {
+            opening = updated;
+        } else {
+            continue;
+        }
+        let mut replacement = opening;
+        replacement.push_str(suffix);
+        replacements.push((range, replacement));
+    }
+    if replacements.is_empty() { return Ok(svg.to_owned()) }
+    let mut result = svg.to_owned();
+    for (range, replacement) in replacements.into_iter().rev() {
+        result.replace_range(range, &replacement);
+    }
+    Ok(result)
+}
+
+fn layer(
+    id: &str,
+    client: &reqwest::blocking::Client,
+    offset: Offset,
+    allow_empty: bool,
+) -> Result<Layer, String> {
     let text =
         std::fs::read_to_string(crate::staged_artwork::path(id)?).map_err(|e| e.to_string())?;
     let embedded = crate::embed_external_raster_images(text, client, &mut Default::default())?;
+    let embedded = if allow_empty {
+        normalize_large_raster_images(&embedded)?
+    } else {
+        embedded
+    };
     let tree = crate::imposition_pdf::parse_board_svg(&without_empty_groups(&embedded)?)?;
-    if tree.root().children().is_empty() {
+    if !allow_empty && tree.root().children().is_empty() {
         return Err("所选图层没有可绘制内容".into());
     }
     Ok(Layer { tree, offset })
@@ -257,12 +395,10 @@ fn raster_center(pixmap: &tiny_skia::Pixmap) -> Result<(f64, f64), String> {
         (bounds.1 + bounds.3) as f64 / 2.,
     ))
 }
-fn render_layer(
+fn render_layer_bitmap(
     layer: &Layer,
     w: u32,
     h: u32,
-    mm: (f64, f64),
-    reference: Option<(f64, f64)>,
 ) -> Result<tiny_skia::Pixmap, String> {
     let mut pixmap = tiny_skia::Pixmap::new(w, h).ok_or("CMYK 图片缓冲区分配失败")?;
     let transform = tiny_skia::Transform::from_scale(
@@ -270,14 +406,29 @@ fn render_layer(
         h as f32 / layer.tree.size().height(),
     );
     resvg::render(&layer.tree, transform, &mut pixmap.as_mut());
+    Ok(pixmap)
+}
+
+fn align_layer(
+    mut pixmap: tiny_skia::Pixmap,
+    offset: &Offset,
+    mm: (f64, f64),
+    reference: Option<(f64, f64)>,
+    required: bool,
+) -> Result<Option<tiny_skia::Pixmap>, String> {
     // Visible, clipped alpha bounds are the registration reference. Authored
     // geometry bounds include invisible areas outside Corel's clip paths.
-    let current = raster_center(&pixmap)?;
+    let current = match raster_center(&pixmap) {
+        Ok(center) => center,
+        Err(error) if required => return Err(error),
+        Err(_) => return Ok(None),
+    };
     let delta = reference.map_or((0., 0.), |r| (r.0 - current.0, r.1 - current.1));
-    let dx = delta.0 + layer.offset.x_mm * w as f64 / mm.0;
-    let dy = delta.1 + layer.offset.y_mm * h as f64 / mm.1;
+    let dx = delta.0 + offset.x_mm * pixmap.width() as f64 / mm.0;
+    let dy = delta.1 + offset.y_mm * pixmap.height() as f64 / mm.1;
     if dx != 0. || dy != 0. {
-        let mut shifted = tiny_skia::Pixmap::new(w, h).ok_or("CMYK 对齐缓冲区分配失败")?;
+        let mut shifted = tiny_skia::Pixmap::new(pixmap.width(), pixmap.height())
+            .ok_or("CMYK 对齐缓冲区分配失败")?;
         let paint = tiny_skia::PixmapPaint {
             quality: tiny_skia::FilterQuality::Bilinear,
             ..Default::default()
@@ -290,10 +441,49 @@ fn render_layer(
             tiny_skia::Transform::from_translate(dx as f32, dy as f32),
             None,
         );
-        raster_center(&shifted)?;
-        return Ok(shifted);
+        if raster_center(&shifted).is_err() {
+            return if required {
+                Err("所选图片为空或完全超出产品区域".into())
+            } else {
+                Ok(None)
+            };
+        }
+        pixmap = shifted;
     }
-    Ok(pixmap)
+    Ok(Some(pixmap))
+}
+
+fn render_layer(
+    layer: &Layer,
+    w: u32,
+    h: u32,
+    mm: (f64, f64),
+    reference: Option<(f64, f64)>,
+) -> Result<tiny_skia::Pixmap, String> {
+    align_layer(
+        render_layer_bitmap(layer, w, h)?,
+        &layer.offset,
+        mm,
+        reference,
+        true,
+    )?
+    .ok_or_else(|| "所选图片为空或完全超出产品区域".into())
+}
+
+fn render_window_layer(
+    layer: &Layer,
+    w: u32,
+    h: u32,
+    mm: (f64, f64),
+    reference: Option<(f64, f64)>,
+) -> Result<Option<tiny_skia::Pixmap>, String> {
+    align_layer(
+        render_layer_bitmap(layer, w, h)?,
+        &layer.offset,
+        mm,
+        reference,
+        false,
+    )
 }
 pub(crate) struct Converted {
     pub width: u32,
@@ -301,6 +491,7 @@ pub(crate) struct Converted {
     pub inks: Vec<u8>,
     pub mask: Vec<u8>,
     pub layers: Option<std::sync::Arc<SourceLayers>>,
+    pub window_skipped: bool,
 }
 pub(crate) struct LayerChannels {
     /// Four straight CMYK ink planes followed by alpha, all losslessly zipped.
@@ -388,7 +579,7 @@ fn convert_source(
         return Err("当前可用内存不足以处理该图片，请释放内存或选择 300 ppi 后重试".into());
     }
     report("cmyk-align");
-    let front_layer = layer(&source.front_id, client, Offset::default())?;
+    let front_layer = layer(&source.front_id, client, Offset::default(), false)?;
     let front = render_layer(
         &front_layer,
         w,
@@ -403,7 +594,7 @@ fn convert_source(
     };
     drop(front_layer);
     let back = if let Some(id) = &source.back_id {
-        let b = layer(id, client, source.back_offset.clone())?;
+        let b = layer(id, client, source.back_offset.clone(), false)?;
         Some(render_layer(
             &b,
             w,
@@ -415,17 +606,18 @@ fn convert_source(
         None
     };
     let window = if let Some(id) = &source.window_id {
-        let b = layer(id, client, source.window_offset.clone())?;
-        Some(render_layer(
+        let b = layer(id, client, source.window_offset.clone(), true)?;
+        render_window_layer(
             &b,
             w,
             h,
             (source.width_mm, source.height_mm),
             reference,
-        )?)
+        )?
     } else {
         None
     };
+    let window_skipped = source.window_id.is_some() && window.is_none();
     let back = back.as_ref().unwrap_or(&front);
     let different_back = job.different_back && source.back_id.is_some();
     // Every picture needs an independent layer if any product on the board
@@ -542,6 +734,7 @@ fn convert_source(
                 }))
             })
             .transpose()?,
+        window_skipped,
     })
 }
 
@@ -639,7 +832,10 @@ pub(crate) fn render_job(
                 })
                 .collect::<Result<Vec<_>, String>>()
         })?;
-        for (source, data) in job.sources[index..end].iter().zip(converted) {
+        for (offset, (source, data)) in job.sources[index..end].iter().zip(converted).enumerate() {
+            if data.window_skipped {
+                report(index + offset + 1, "cmyk-window-skipped");
+            }
             pdf.add_source(&source.key, data)?;
         }
         index = end;
@@ -698,7 +894,7 @@ mod tests {
         let mut fixture = Fixture::new();
         let id = fixture.stage(svg);
         let client = reqwest::blocking::Client::new();
-        let layer = layer(&id, &client, Offset::default()).unwrap();
+        let layer = layer(&id, &client, Offset::default(), false).unwrap();
         let raster = render_layer(&layer, 420, 760, (42., 76.), None).unwrap();
         assert!(raster.pixels().iter().filter(|p| p.alpha() > 0).count() > 100_000);
         assert_eq!(
@@ -709,6 +905,44 @@ mod tests {
         assert!(without_empty_groups(svg)
             .unwrap()
             .contains("clip-path=\"url(#shape)\""));
+    }
+    #[test]
+    fn window_outside_picture_alpha_is_kept_without_failing_source() {
+        let mut fixture = Fixture::new();
+        let mut job = fixture.job(false, true);
+        job.auto_align = false;
+        let window = fixture.stage(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="10mm" height="10mm" viewBox="0 0 10 10"><rect x="0" y="0" width="1" height="10" fill="green"/></svg>"#,
+        );
+        job.sources[0].window_id = Some(window);
+        let data = convert_source(
+            &job,
+            &job.sources[0],
+            &reqwest::blocking::Client::new(),
+            &color_transform().unwrap(),
+            |_| {},
+        )
+        .unwrap();
+        assert!(!data.window_skipped);
+        assert!(data.layers.as_ref().unwrap().window.is_some());
+        assert!(inflate(&data.mask).contains(&255));
+    }
+    #[test]
+    fn normalize_large_raster_image_keeps_clip_visible() {
+        let mut png = tiny_skia::Pixmap::new(2, 2).unwrap();
+        png.fill(tiny_skia::Color::from_rgba8(255, 200, 61, 255));
+        let data = BASE64.encode(png.encode_png().unwrap());
+        let source = format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><defs><clipPath id="product"><rect x="20" y="20" width="60" height="60"/></clipPath></defs><image x="-1000" y="-1000" width="3000" height="3000" preserveAspectRatio="none" clip-path="url(#product)" href="data:image/png;base64,{data}"/></svg>"#
+        );
+        let normalized = normalize_large_raster_images(&source).unwrap();
+        assert_ne!(normalized, source);
+        let tree = crate::imposition_pdf::parse_board_svg(&normalized).unwrap();
+        let layer = Layer { tree, offset: Offset::default() };
+        let pixmap = render_layer_bitmap(&layer, 100, 100).unwrap();
+        assert!(pixmap.pixels().iter().any(|pixel| pixel.alpha() > 0));
+        assert_eq!(pixmap.pixel(0, 0).unwrap().alpha(), 0);
+        assert!(pixmap.pixel(50, 50).unwrap().alpha() > 0);
     }
     struct Fixture {
         ids: Vec<String>,
@@ -859,7 +1093,7 @@ mod tests {
                     assert_eq!(
                         window_alpha[edge / 9],
                         192,
-                        "two half-transparent windows merge in both modes"
+                        "window pixels outside the picture remain in the product window"
                     );
                     assert_eq!(
                         window_alpha[middle / 9],

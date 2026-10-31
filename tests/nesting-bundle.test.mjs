@@ -9,6 +9,7 @@ test('Windows installer includes the local nesting adapter and its self-containe
   const bundler = readFileSync(new URL('../scripts/nesting/bundle_runtime.py', import.meta.url), 'utf8')
   assert.match(bundler, /MODULES\s*=\s*\[[^\]]*'nest_replan\.py'/, '跨方案特殊重排模块必须随安装包一同发布')
   assert.match(bundler, /MODULES\s*=\s*\[[^\]]*'nest_combined\.py'/, '综合最少模块必须随安装包一同发布')
+  assert.match(bundler, /MODULES\s*=\s*\[[^\]]*'nest_repeat_portfolio\.py'/, '全批多重复次数模板搜索必须随安装包一同发布')
   assert.match(bundler, /request\['templateRepack'\]/, '安装运行时验证必须真实执行已有版式补排')
   assert.match(bundler, /'template-repack-combined'/, '安装运行时必须验证综合最少的跨方案重排')
 })

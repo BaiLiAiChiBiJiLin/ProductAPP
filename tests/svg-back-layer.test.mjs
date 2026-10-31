@@ -36,3 +36,9 @@ test('standee back can fit its first authored image viewport without changing de
  assert.match(cropped,/viewBox="200 100 300 500"/)
  assert.equal((cropped.match(/<image\b/g) ?? []).length,1)
 })
+test('a generated Back keeps the shared color-window image with the back face',()=>{
+ const source='<svg xmlns="http://www.w3.org/2000/svg"><image id="back" href="back.png"/><image id="window" href="window.png"/><image id="front" href="front.png"/></svg>'
+ const result=backLayerSvg(source,false,[{layerRole:'back'},{layerRole:'window'},{layerRole:'front'}])
+ const doc=new JSDOM(result,{contentType:'image/svg+xml'}).window.document
+ assert.deepEqual([...doc.querySelectorAll('image')].map(image=>image.id),['back','window'])
+})

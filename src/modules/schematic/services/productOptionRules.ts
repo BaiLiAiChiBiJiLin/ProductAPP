@@ -12,6 +12,8 @@ export type ProductAttributePatch = {
   clearAttributeKeys?: string[]
   attributeImage?: { key: string; url: string }
   note?: string
+  noteFontSize?: number
+  noteColor?: string
   noteImage?: string
   noteImages?: NoteImage[]
   /** Prevent the save-time Finish matcher from restoring an explicitly cleared value. */
@@ -110,6 +112,8 @@ export function applyProductAttributePatch(asset: Asset, patch: ProductAttribute
     attributes: applyAttributeValues(asset.attributes, patch),
     attributeImages: applyAttributeImages(asset.attributeImages, patch),
     ...(patch.note !== undefined ? { note: patch.note } : {}),
+    ...(patch.noteFontSize !== undefined ? { noteFontSize: patch.noteFontSize } : {}),
+    ...(patch.noteColor !== undefined ? { noteColor: patch.noteColor } : {}),
     ...(patch.noteImages !== undefined || patch.noteImage !== undefined ? noteImagesPatch(getNoteImages(patch)) : {}),
     ...(patch.suppressFinishMatch !== undefined ? { finishMatchDisabled: patch.suppressFinishMatch } : {}),
   }

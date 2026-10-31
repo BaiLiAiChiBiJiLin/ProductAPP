@@ -37,6 +37,7 @@ test('card right click opens details for that asset without changing selection o
   expect(select).not.toHaveBeenCalled()
   expect(screen.getAllByRole('dialog')).toHaveLength(1)
   expect((screen.getByRole('checkbox', { name: '选择 另一张图' }) as HTMLInputElement).checked).toBe(true)
+  expect(screen.queryByText('背面 / 正面')).toBeNull()
 })
 
 test('legacy assets and vector-only assets have different empty states', () => {
@@ -44,6 +45,32 @@ test('legacy assets and vector-only assets have different empty states', () => {
   expect(screen.getByText('此资产未记录图片尺寸，重新导入后会记录。')).toBeTruthy()
   rerender(<AssetDetailsModal asset={{ ...asset, sourceImages: [] }} products={[]} onClose={vi.fn()}/>)
   expect(screen.getByText('此资产未发现位图，无独立图片尺寸。')).toBeTruthy()
+})
+
+test('asset details show the default standard layer role', () => {
+  render(<AssetDetailsModal asset={{ ...asset, sourceLayerRole: 'window' }} products={[]} onClose={vi.fn()}/>)
+  expect(screen.getByText('彩窗')).toBeTruthy()
+})
+
+test('asset details show roles for multiple embedded images', () => {
+  render(<AssetDetailsModal asset={{ ...asset, sourceLayerRole: '', sourceImages: [
+    { ...asset.sourceImages![0], layerRole: 'back' }, { ...asset.sourceImages![1], layerRole: 'front' },
+  ] }} products={[]} onClose={vi.fn()}/>)
+  expect(screen.getAllByText('背面').length).toBeGreaterThan(0)
+  expect(screen.getAllByText('正面').length).toBeGreaterThan(0)
+  expect(screen.getAllByText('图层标记').length).toBeGreaterThan(0)
+})
+
+test('legacy two-image assets infer back and front labels', () => {
+  render(<AssetDetailsModal asset={{ ...asset, sourceLayerRole: '', sourceImages: asset.sourceImages!.map(({ layerRole: _role, ...image }) => image) }} products={[]} onClose={vi.fn()}/>)
+  expect(screen.getAllByText('背面').length).toBeGreaterThan(0)
+  expect(screen.getAllByText('正面').length).toBeGreaterThan(0)
+})
+
+test('legacy single-image assets infer a front label', () => {
+  render(<AssetDetailsModal asset={{ ...asset, sourceLayerRole: '', sourceImages: [{ ...asset.sourceImages![0], layerRole: undefined }] }} products={[]} onClose={vi.fn()}/> )
+  expect(screen.getAllByText('正面').length).toBeGreaterThan(0)
+  expect(screen.queryByText('未标记')).toBeNull()
 })
 
 test('old pixel-only metadata is not converted using an invented raster DPI', () => {

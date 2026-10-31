@@ -7,6 +7,8 @@ test('catalog Finish is stored once as the canonical process field', () => {
   const product = { id: 'standees', title: 'Clear Acrylic Standees', options: [{ name: 'Finish', values: [{ name: 'Front Side Epoxy' }] }] }
   const patch = catalogConfirmationPatch({ ...emptyAttributeDraft(), attributes: { Finish: 'Front Side Epoxy' } }, product)
   assert.deepEqual(patch.attributes, { '工艺': 'Front Side Epoxy' })
+  assert.equal(patch.noteFontSize, 14)
+  assert.equal(patch.noteColor, '#666666')
 })
 
 test('blank images start fresh while populated images hydrate only their own values', () => {

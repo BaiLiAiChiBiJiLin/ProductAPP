@@ -2,7 +2,7 @@ import CanvasAnnotations from './components/CanvasAnnotations'
 import CanvasDrawingSurface from './components/CanvasDrawingSurface'
 import type { CanvasAnnotation } from './layoutTypes'
 import type { DetailTextDraft } from './services/detailTextService'
-import type { CanvasTool, EditorSelection, Point } from './services/canvasAnnotationService'
+import type { CanvasTool, EditorSelection, Point, RulerMode } from './services/canvasAnnotationService'
 import type { EditRulerValue } from './components/ImageDimensionMarkers'
 import { POOL_DROP_EVENT, poolDropPoint, type PoolImageDrop } from './services/poolDragService'
 import { itemsInSelection, selectionBounds, type CanvasPoint } from './services/canvasSelectionService'
@@ -130,7 +130,7 @@ function ArtworkImages({ page, assets, selected, selectedIds = [], onSelect, onC
   </>
 }
 
-export default function ArtworkCanvas({ page, assets, selected, selectedIds = [], onBoxSelect, selectedGroupIds = [], onSelect, onSelectGroup, onResizeGroup, onSelectAccessory, selectedAccessoryKey, accessoryVisuals, onChangeAccessory, onChange, onDropAsset, metadata, totalPages, mode = 'select', zoom = 1, onZoomChange, layoutBounds = defaultLayoutBounds, onHeaderBlockChange, dimensionPrecision = 'default', dimensionDecimalPlaces = 1, dimensionItemIds = [], dimensionDisplayOverrides, visualScales, onChangeRuler, onEditText, onArtworkContextMenu, pageNumber = page.id, editorSelection, onSelectEditor, onChangeAnnotation, onEditAnnotation, onPlaceText, onAddRuler, onCancelTool, textColor = '#000000', onEditRuler, onEditDetailText }: {
+export default function ArtworkCanvas({ page, assets, selected, selectedIds = [], onBoxSelect, selectedGroupIds = [], onSelect, onSelectGroup, onResizeGroup, onSelectAccessory, selectedAccessoryKey, accessoryVisuals, onChangeAccessory, onChange, onDropAsset, metadata, totalPages, mode = 'select', rulerMode = 'free', zoom = 1, onZoomChange, layoutBounds = defaultLayoutBounds, onHeaderBlockChange, dimensionPrecision = 'default', dimensionDecimalPlaces = 1, dimensionItemIds = [], dimensionDisplayOverrides, visualScales, onChangeRuler, onEditText, onArtworkContextMenu, pageNumber = page.id, editorSelection, onSelectEditor, onChangeAnnotation, onEditAnnotation, onPlaceText, onAddRuler, onCancelTool, textColor = '#000000', onEditRuler, onEditDetailText }: {
   pageNumber?: number; onEditDetailText?: (draft: DetailTextDraft) => void; editorSelection?: EditorSelection | null; onSelectEditor?: (selection: EditorSelection) => void
   onChangeAnnotation?: (annotation: CanvasAnnotation) => void; onEditAnnotation?: (annotation: CanvasAnnotation) => void
   onPlaceText?: (point: Point) => void; onAddRuler?: (ruler: CanvasAnnotation) => void; onCancelTool?: () => void; textColor?: string; onEditRuler?: EditRulerValue
@@ -140,7 +140,7 @@ export default function ArtworkCanvas({ page, assets, selected, selectedIds = []
   selectedGroupIds?: string[]; onSelectGroup?: (id: string, ctrlKey: boolean) => void
   onResizeGroup?: (groupId: string, rect: GroupRect) => void
   onChange: (item: Item) => void; onDropAsset: (assetId: string, x: number, y: number) => void; metadata?: PageHeader; totalPages?: number
-  mode?: CanvasTool; zoom?: number; onZoomChange?: (zoom: number) => void
+  mode?: CanvasTool; rulerMode?: RulerMode; zoom?: number; onZoomChange?: (zoom: number) => void
   layoutBounds?: LayoutBounds; onHeaderBlockChange: (block: HeaderBlock) => void
   dimensionPrecision?: DimensionDisplayPrecision; dimensionDecimalPlaces?: number; dimensionItemIds?: string[]; dimensionDisplayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>; visualScales?: ReadonlyMap<string, number>; selectedAccessoryKey?: string; accessoryVisuals?: ReadonlyMap<string, AccessoryVisual>; onSelectAccessory?: (key: string) => void; onChangeAccessory?: (key: string, patch: Partial<AccessoryVisual>) => void; onChangeRuler?: RulerChange; onEditText?: EditImageGroupText
 }) {
@@ -299,7 +299,7 @@ export default function ArtworkCanvas({ page, assets, selected, selectedIds = []
           onPreview={previewGroupSize} onCommit={rect => onResizeGroup(resizeGroup.id, rect)}/>}
       </Group></Layer>
     </Stage>}
-    {(mode === 'text' || mode === 'ruler') && !panMode && <CanvasDrawingSurface key={`${page.id}:${mode}`} tool={mode} page={page} assets={assets} scales={visualScales} x={x} y={y} scale={scale} color={textColor} toPaper={pointerToPaper} onText={point => onPlaceText?.(point)} onRuler={ruler => onAddRuler?.(ruler)} onCancel={() => onCancelTool?.()}/>}
+    {(mode === 'text' || mode === 'ruler') && !panMode && <CanvasDrawingSurface key={`${page.id}:${mode}:${rulerMode}`} tool={mode} rulerMode={rulerMode} page={page} assets={assets} scales={visualScales} x={x} y={y} scale={scale} color={textColor} toPaper={pointerToPaper} onText={point => onPlaceText?.(point)} onRuler={ruler => onAddRuler?.(ruler)} onCancel={() => onCancelTool?.()}/>}\r
   </div>
 }
 

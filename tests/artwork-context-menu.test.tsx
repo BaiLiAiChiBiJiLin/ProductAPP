@@ -42,9 +42,10 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); Konva.autoDrawEnabled = true })
 
-function mount(onReplace = vi.fn().mockResolvedValue(undefined), replacingArtwork = false, items: Item[] = [front, back]) {
+function mount(onReplace = vi.fn().mockResolvedValue(undefined), replacingArtwork = false, items: Item[] = [front, back], singleDelete = false) {
   const current: { page?: Page } = {}
   const onDelete = vi.fn()
+  const onDeleteItems = vi.fn()
   function Harness() {
     const [page, setPage] = useState<Page>({ id: 1, name: 'test', items, imageGroups: [{ id: 'group', itemIds: ['front', 'back'], x: 20, y: 150, width: 300, height: 150 }] })
     const [selected, setSelected] = useState<string | null>('front')
@@ -52,11 +53,11 @@ function mount(onReplace = vi.fn().mockResolvedValue(undefined), replacingArtwor
     current.page = page
     return <ArrangePage displayState={display} onDisplayStateChange={setDisplay} context={null} assets={[asset]} pages={[page]} activePage={1} selectedItem={selected} selectedGroupIds={[]} sortMode="default"
       onSelectPage={noop} onSelectItem={setSelected} onChangeItem={item => setPage(previous => ({ ...previous, items: previous.items.map(value => value.id === item.id ? item : value) }))}
-      onReplaceArtwork={onReplace} replacingArtwork={replacingArtwork} onDropAsset={noop} onDeleteGroups={onDelete} onConfirmAssetAttributes={async () => {}} onAddPage={noop} onAutoArrange={noop} onCombine={noop} onSelectGroup={noop}
+      onReplaceArtwork={onReplace} replacingArtwork={replacingArtwork} onDropAsset={noop} onDeleteGroups={onDelete} onDeleteItems={singleDelete ? onDeleteItems : undefined} onConfirmAssetAttributes={async () => {}} onAddPage={noop} onAutoArrange={noop} onCombine={noop} onSelectGroup={noop}
       onBack={noop} onBackToHistory={noop} onExport={noop} onMetadataChange={noop} layoutBounds={defaultLayoutBounds} onBoundsChange={noop} onAddHeaderBlock={noop} onChangeHeaderBlock={noop} onRemoveHeaderBlock={noop}/>
   }
   render(<Harness/> )
-  return { page: () => current.page!, onReplace, onDelete }
+  return { page: () => current.page!, onReplace, onDelete, onDeleteItems }
 }
 
 async function rightClick(id: string) {
@@ -287,6 +288,23 @@ test('right-click replacement passes the single Back instance to the existing im
   expect(current.page().items).toEqual([front, back])
 })
 
+test('switching a marked front layer keeps the color-window layer in the arrangement artwork', async () => {
+  const windowSvg = '<svg xmlns="http://www.w3.org/2000/svg"><image id="back" href="back.png"/><image id="window" href="window.png"/><image id="front" href="front.png"/></svg>'
+  const windowAsset: Asset = { ...asset, svg: windowSvg, sourceImages: [{ nodeId: 'back', widthPx: 10, heightPx: 10, format: 'PNG', layerRole: 'back' }, { nodeId: 'window', widthPx: 10, heightPx: 10, format: 'PNG', layerRole: 'window' }, { nodeId: 'front', widthPx: 10, heightPx: 10, format: 'PNG', layerRole: 'front' }] }
+  const onChange = vi.fn()
+  render(<ArtworkContextMenu target={{ itemId: 'front', x: 240, y: 220 }} item={front} asset={windowAsset} onClose={noop} onChange={onChange}/>)
+  fireEvent.click(await screen.findByRole('menuitem', { name: /^切换图层/ }))
+  expect(await screen.findByRole('menuitem', { name: 'back（背面）' })).toBeTruthy()
+  expect(await screen.findByRole('menuitem', { name: 'window（彩窗）' })).toBeTruthy()
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'front（正面）' }))
+  await confirmLayers()
+  const changed = onChange.mock.calls[0][0] as Item
+  expect(changed.backSvg).toContain('id="window"')
+  expect(changed.backSvg).toContain('id="front"')
+  expect(changed.backSvg).not.toContain('id="back"')
+  expect(changed.svgLayerIds).toEqual(['svg-layer-1', 'svg-layer-2'])
+})
+
 test('replacement blocks keyboard deletion and makes the editing panels inert', () => {
   const current = mount(vi.fn(), true)
   expect(screen.getByText('正在更换图片')).toBeTruthy()
@@ -299,4 +317,11 @@ test('keyboard deletion still works when no replacement or menu is open', () => 
   const current = mount()
   fireEvent.keyDown(window, { key: 'Delete' })
   expect(current.onDelete).toHaveBeenCalledExactlyOnceWith(['group'])
+})
+
+test('keyboard deletion removes only the selected image when single-item deletion is enabled', () => {
+  const current = mount(vi.fn().mockResolvedValue(undefined), false, [front, back], true)
+  fireEvent.keyDown(window, { key: 'Delete' })
+  expect(current.onDeleteItems).toHaveBeenCalledExactlyOnceWith(['front'])
+  expect(current.onDelete).not.toHaveBeenCalled()
 })

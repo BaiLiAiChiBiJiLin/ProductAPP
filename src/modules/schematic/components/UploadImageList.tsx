@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { Button, Dropdown, Modal, Popconfirm, Tag } from 'antd'
 import type { Asset } from '../../../model'
-import { svgDataUrl } from '../../../model'
+import { svgObjectUrl } from '../../../model'
 import LazySvgImage from './LazySvgImage'
 import type { ProductConfig } from '../services/productConfigService'
 import { useProductGroup } from '../grouping/useProductGrouping'
@@ -11,9 +11,10 @@ import UploadImageGrid from './UploadImageGrid'
 import AssetDetailsModal from './AssetDetailsModal'
 import { ImageUp, Info, Trash2 } from 'lucide-react'
 import { getNoteImages } from '../services/assetNotesService'
+import { loadAssetSvg } from '../services/assetSvgService'
 
-export default function UploadImageList({ assets, allAssets, selectedIds, onSelectionChange, products, disabled, onDelete, onReplace }: {
-  assets: Asset[]; allAssets: Asset[]; selectedIds: Set<string>; onSelectionChange: (ids: Set<string>) => void; products: ProductConfig[]; disabled: boolean; onDelete: (asset: Asset) => Promise<void>; onReplace?: (asset: Asset) => Promise<void>
+export default function UploadImageList({ assets, allAssets, selectedIds, onSelectionChange, products, disabled, onDelete, onReplace, batchId }: {
+  assets: Asset[]; allAssets: Asset[]; selectedIds: Set<string>; onSelectionChange: (ids: Set<string>) => void; products: ProductConfig[]; disabled: boolean; onDelete: (asset: Asset) => Promise<void>; onReplace?: (asset: Asset) => Promise<void>; batchId?: string
 }) {
   const anchor = useRef<string | null>(null)
   const grouping = useProductGroup()
@@ -25,7 +26,20 @@ export default function UploadImageList({ assets, allAssets, selectedIds, onSele
   }, [assets, orderedAllAssets])
   const groups = [...new Set(orderedAllAssets.map(asset => asset.productGroupId).filter(Boolean))]
   const [preview, setPreview] = useState<{ name: string; src: string } | null>(null)
+  const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null)
   const [detailsId, setDetailsId] = useState<string | null>(null)
+  const openAssetPreview = async (asset: Asset) => {
+    if (previewLoadingId === asset.id) return
+    try {
+      setPreviewLoadingId(asset.id)
+      const svg = await loadAssetSvg(asset, batchId)
+      setPreview({ name: asset.name, src: svgObjectUrl(svg) })
+    } catch {
+      // The card remains usable when a staged resource is temporarily unavailable.
+    } finally {
+      setPreviewLoadingId(current => current === asset.id ? null : current)
+    }
+  }
   const select = (asset: Asset, event: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) => {
     if (disabled) return
     if (session) { if (canSelectGroupAsset(asset, session.memberIds, 'list', session.trigger.kind === 'free')) grouping!.selectMember(asset.id); return }
@@ -50,7 +64,7 @@ export default function UploadImageList({ assets, allAssets, selectedIds, onSele
       }}><article data-asset-id={asset.id} data-product-group={asset.productGroupId || undefined} style={{ backgroundColor: member ? '#e6f4ff' : blocked ? undefined : asset.productGroupId ? asset.productGroupColor : undefined }} className={`upload-image-card ${(session ? Boolean(member) : selectedIds.has(asset.id)) ? 'is-selected' : ''} ${session ? blocked ? 'is-guide-blocked' : member ? 'is-guide-member' : 'is-guide-dimmed' : ''}`} onMouseDown={event => { if (event.shiftKey) event.preventDefault() }} onClick={event => select(asset, event)}>
       <div className="upload-image-card-head"><label onClick={event => event.stopPropagation()}><input type="checkbox" checked={session ? Boolean(member) : selectedIds.has(asset.id)} disabled={disabled || blocked} aria-label={`选择 ${asset.name}`} onChange={() => {}} onClick={event => select(asset, event)}/><span>NO: {orderedAllAssets.indexOf(asset) + 1}</span></label><span className="upload-image-card-actions" onClick={event => event.stopPropagation()} onMouseDown={event => event.stopPropagation()}><Tag color={member ? 'blue' : asset.attributesConfirmed ? blocked ? 'red' : 'blue' : 'default'} title={blocked ? '已选产品，不能加入当前组' : undefined}>{asset.attributesConfirmed ? '已选产品' : '未选产品'}</Tag><Popconfirm title="删除这张图片？" description="删除后将从当前批次中移除，无法在列表中恢复。" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => onDelete(asset)}><Button type="text" danger size="small" icon={<Trash2 size={14}/>} aria-label={`删除 ${asset.name}`} title="删除图片" disabled={disabled || Boolean(session)} onClick={event => event.stopPropagation()}/></Popconfirm></span></div>
       <div className="upload-image-card-media">
-        <button type="button" className="upload-image-art" aria-label={`预览 ${asset.name}`} onClick={event => { event.stopPropagation(); setPreview({ name: asset.name, src: svgDataUrl(asset.svg) }) }}><LazySvgImage svg={asset.svg} alt={asset.name}/></button>
+        <button type="button" className="upload-image-art" aria-label={`预览 ${asset.name}`} aria-busy={previewLoadingId === asset.id} onClick={event => { event.stopPropagation(); void openAssetPreview(asset) }}><LazySvgImage svg={asset.svg} storagePath={asset.storagePath} assetId={asset.id} batchId={batchId} alt={asset.name}/></button>
         {accessoryImage && <button type="button" className="card-accessory-preview" aria-label={`预览配件颜色 ${asset.name}`} onClick={event => { event.stopPropagation(); setPreview({ name: `${asset.name} · 配件颜色`, src: accessoryImage }) }}><img src={accessoryImage} alt={`${asset.name} · 配件颜色`} loading="lazy" decoding="async"/></button>}
       </div>
       <div className="upload-image-card-info"><strong>{asset.name}</strong>

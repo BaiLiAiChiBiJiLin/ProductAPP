@@ -8,6 +8,7 @@ import { updateDetailText, type DetailTextSelection } from './detailTextService.
 
 export type EditorSelection = { kind: 'annotation'; id: string } | { kind: 'caption'; id: string } | { kind: 'empty-caption'; id: string; groupId: string } | DetailTextSelection
 export type CanvasTool = 'select' | 'pan' | 'text' | 'ruler'
+export type RulerMode = 'free' | 'vertical' | 'horizontal'
 export type Point = { x: number; y: number }
 export type RulerCalibration = { x: number; y: number; rotation: number; sourceItemId?: string }
 export type BackgroundScope = 'batch' | 'page' | 'group'
@@ -32,6 +33,15 @@ export function measuredDistance(start: Point, end: Point, calibration: RulerCal
   const dx = end.x - start.x, dy = end.y - start.y
   return Math.hypot((dx * Math.cos(calibration.rotation) + dy * Math.sin(calibration.rotation)) * calibration.x,
     (-dx * Math.sin(calibration.rotation) + dy * Math.cos(calibration.rotation)) * calibration.y)
+}
+
+/** Lock the measured baseline to the selected ruler direction. The third
+ * placement click remains unconstrained so the user can choose either side
+ * and length of the extension lines independently. */
+export function constrainRulerPoint(start: Point, point: Point, mode: RulerMode): Point {
+  if (mode === 'vertical') return { x: start.x, y: point.y }
+  if (mode === 'horizontal') return { x: point.x, y: start.y }
+  return point
 }
 
 export function manualRulerLabel(mm: number) { return `${Number(mm.toFixed(2))} mm` }

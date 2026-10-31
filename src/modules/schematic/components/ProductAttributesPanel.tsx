@@ -106,7 +106,7 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
     setError('')
     try {
       let patch: ProductAttributePatch
-      if (mode === 'custom') { const saved = await saveCustomProduct(custom); setCustom(saved); patch = { ...customProductPatch(saved), note: draft.note, ...noteImagesPatch(getNoteImages(draft)) } }
+      if (mode === 'custom') { const saved = await saveCustomProduct(custom); setCustom(saved); patch = { ...customProductPatch(saved), note: draft.note, noteFontSize: draft.noteFontSize, noteColor: draft.noteColor, ...noteImagesPatch(getNoteImages(draft)) } }
       else patch = catalogConfirmationPatch(draft, product!)
       await onConfirmAttributes(patch)
       grouping?.clearDrafts(selected.map(asset => asset.id))
@@ -133,7 +133,7 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
         </div>
       </div>
       <div hidden={mode !== 'custom'}><CustomProductForm draft={custom} onDraftChange={changeCustom} productLocked={productLocked}/></div>
-      <AssetNotesEditor assets={selected.map(asset => ({ ...asset, note: draft.note, ...noteImagesPatch(getNoteImages(draft)) }))} onUploadingChange={setUploadingNote} onAssign={patch => changeEditor({ ...editor, draft: { ...draft, ...(patch.note !== undefined ? { note: patch.note } : {}), ...(patch.noteImages !== undefined || patch.noteImage !== undefined ? noteImagesPatch(getNoteImages(patch)) : {}) } })}/>
+      <AssetNotesEditor assets={selected.map(asset => ({ ...asset, note: draft.note, noteFontSize: draft.noteFontSize, noteColor: draft.noteColor, ...noteImagesPatch(getNoteImages(draft)) }))} onUploadingChange={setUploadingNote} onAssign={patch => changeEditor({ ...editor, draft: { ...draft, ...(patch.note !== undefined ? { note: patch.note } : {}), ...(patch.noteFontSize !== undefined ? { noteFontSize: patch.noteFontSize } : {}), ...(patch.noteColor !== undefined ? { noteColor: patch.noteColor } : {}), ...(patch.noteImages !== undefined || patch.noteImage !== undefined ? noteImagesPatch(getNoteImages(patch)) : {}) } })}/>
     </fieldset>
     {error && <div role="alert" className="product-config-error">{error}</div>}
     <ProductGroupGuide assets={assets}/>

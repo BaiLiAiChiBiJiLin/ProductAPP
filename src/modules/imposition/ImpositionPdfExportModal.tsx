@@ -31,7 +31,7 @@ function readExportFormats(): typeof DEFAULT_EXPORT_FORMATS {
 
 const CATEGORIES = { paths: '轮廓 / 路径', images: '图片', fills: '彩窗', white: '白墨', unknown: '待确认' }
 const TYPE_OPTIONS = [{ value: 'paths', label: '轮廓 / 路径' }, { value: 'image-front', label: '图片正' }, { value: 'image-back', label: '图片背' }, { value: 'images', label: '其他图片' }, { value: 'fills', label: '彩窗' }, { value: 'white', label: '白墨' }, { value: OMIT, label: '不导出' }]
-const PHASES: Record<ImpositionPdfExportProgress['phase'], string> = { prepare: '组合图层', transfer: '传输 SVG', queue: '等待 CPU / 内存额度', resources: '读取图片资源', flatten: '处理渐变和透明度', fonts: '加载字体', parse: '解析 SVG', convert: '生成 PDF', merge: '合并版式资源', write: '写入文件', dxf: '生成轮廓 DXF', 'cmyk-align': '检查正背与彩窗对齐', 'cmyk-color': 'ICC 转色与生成白墨', 'cmyk-zip': '无损压缩专色通道', 'cmyk-photoshop': '生成 Photoshop 整板专色通道', complete: '已完成' }
+const PHASES: Record<ImpositionPdfExportProgress['phase'], string> = { prepare: '组合图层', transfer: '传输 SVG', queue: '等待 CPU / 内存额度', resources: '读取图片资源', flatten: '处理渐变和透明度', fonts: '加载字体', parse: '解析 SVG', convert: '生成 PDF', merge: '合并版式资源', write: '写入文件', dxf: '生成轮廓 DXF', 'cmyk-align': '检查正背与彩窗对齐', 'cmyk-color': 'ICC 转色与生成白墨', 'cmyk-zip': '无损压缩专色通道', 'cmyk-photoshop': '生成 Photoshop 整板专色通道', 'cmyk-window-skipped': '彩窗图层为空，跳过彩窗继续导出', complete: '已完成' }
 
 function layerDisplayName(name: string) {
   const normalized = name.toLowerCase()
@@ -119,6 +119,7 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<ImpositionPdfExportProgress>()
   const [completedFiles, setCompletedFiles] = useState<string[]>([])
+  const [exportWarnings, setExportWarnings] = useState<string[]>([])
   const [cleanupWarnings, setCleanupWarnings] = useState<string[]>([])
   const [date, setDate] = useState(() => new Date())
   const [exportFormats, setExportFormats] = useState(readExportFormats)
@@ -159,12 +160,12 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
         try {
           const svgText = imageSources[sourceId] ?? await loadImpositionImage(image.filePath)
           if (cancelled) return
-          sources[sourceId] = parseImpositionSvgSource({ sourceId, fileName, svgText, widthMm: image.widthMm, heightMm: image.heightMm })
+          sources[sourceId] = parseImpositionSvgSource({ sourceId, fileName, svgText, widthMm: image.widthMm, heightMm: image.heightMm, sourceImages: image.sourceImages, sourceLayerRole: image.sourceLayerRole })
         } catch (reason) {
           failures[sourceId] = `${fileName}：读取 SVG 图层失败，${reason instanceof Error ? reason.message : String(reason)}`
           // Retain the affected template in the list so it can be identified
           // and deselected without blocking unrelated templates.
-          sources[sourceId] = parseImpositionSvgSource({ sourceId, fileName, svgText: '<svg xmlns="http://www.w3.org/2000/svg"/>', widthMm: image.widthMm, heightMm: image.heightMm })
+          sources[sourceId] = parseImpositionSvgSource({ sourceId, fileName, svgText: '<svg xmlns="http://www.w3.org/2000/svg"/>', widthMm: image.widthMm, heightMm: image.heightMm, sourceImages: image.sourceImages, sourceLayerRole: image.sourceLayerRole })
         }
         completed++
         setPreparing({ completed, total: unique.size, fileName })
@@ -277,7 +278,7 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
   async function exportPdf() {
     if (operationLock.current || !selectedModel || !outputCount || exportPlan.issue || cmykPlan.issue || pendingCount > 0 || geometryChecking || selectedGeometryIssue || selectedSourceIssue) return
     operationLock.current = true
-    setBusy(true); setProgress(undefined); setError(''); setCompletedFiles([]); setCleanupWarnings([]); setRuntimeIssues({})
+    setBusy(true); setProgress(undefined); setError(''); setCompletedFiles([]); setExportWarnings([]); setCleanupWarnings([]); setRuntimeIssues({})
     try {
       const directory = await chooseImpositionPdfDirectory()
       if (!directory) return
@@ -289,6 +290,7 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
         cmyk: includeCmyk ? createCmykExportPlan(selectedModel, entry.templateId, cmykSettings) : undefined,
         pages: entry.pages.map(page => ({ label: page.groupName, exportDxf: includeDxf && page.groupId === 'paths', renderSvg: () => renderImpositionSvgExport(selectedModel, page) })) })), setProgress)
       setCompletedFiles(result.completedFiles)
+      setExportWarnings(result.warnings ?? [])
       setCleanupWarnings(result.cleanupWarnings)
       if (result.error) {
         setError(`${result.failedFile ? `导出 ${result.failedFile} 失败：` : ''}${result.error}`)
@@ -347,7 +349,8 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
             <div className="imposition-export-layer-actions"><Checkbox aria-label="选择全部图层" checked={layerIds.length === source.layers.length} indeterminate={!!layerIds.length && layerIds.length !== source.layers.length} disabled={busy} onChange={event => setLayerIds(event.target.checked ? source.layers.map(layer => layer.id) : [])}>全选</Checkbox></div>
             <div className="imposition-export-layer-list">{source.layers.toReversed().map(layer => {
               const displayName = layerDisplayName(layer.label)
-              return <div key={layer.id} className={`imposition-export-layer ${assignments[layer.id] === undefined ? 'unassigned' : ''}`}><Checkbox aria-label={`选择图层 ${displayName}`} checked={layerIds.includes(layer.id)} disabled={busy} onChange={event => setLayerIds(current => event.target.checked ? [...current, layer.id] : current.filter(id => id !== layer.id))}/><div title={displayName}><span>{displayName}</span><small>{layer.tagName} · {CATEGORIES[layer.category]}{sourceImageChannels.has(layer.id) ? ` · 全板图片 ${sourceImageChannels.get(layer.id)}` : ''}</small></div><Select aria-label={`图层 ${displayName} 类型`} placeholder="待确认" value={assignments[layer.id] === null ? OMIT : assignments[layer.id]} disabled={busy} options={TYPE_OPTIONS.filter(option => canAssignSvgLayer(layer, option.value))} onChange={value => assignLayer(layer.id, value)}/></div>
+              const roleLabel = layer.role === 'front' ? '正面' : layer.role === 'back' ? '背面' : layer.role === 'window' ? '彩窗' : ''
+              return <div key={layer.id} className={`imposition-export-layer ${assignments[layer.id] === undefined ? 'unassigned' : ''}`}><Checkbox aria-label={`选择图层 ${displayName}`} checked={layerIds.includes(layer.id)} disabled={busy} onChange={event => setLayerIds(current => event.target.checked ? [...current, layer.id] : current.filter(id => id !== layer.id))}/><div title={displayName}><span>{displayName}</span><small>{layer.tagName} · {CATEGORIES[layer.category]}{roleLabel ? ` · 自动识别：${roleLabel}` : ''}{sourceImageChannels.has(layer.id) ? ` · 全板图片 ${sourceImageChannels.get(layer.id)}` : ''}</small></div><Select aria-label={`图层 ${displayName} 类型`} placeholder="待确认" value={assignments[layer.id] === null ? OMIT : assignments[layer.id]} disabled={busy} options={TYPE_OPTIONS.filter(option => canAssignSvgLayer(layer, option.value))} onChange={value => assignLayer(layer.id, value)}/></div>
             })}</div>
             <Button type="primary" disabled={busy} onClick={applyToSameName}>应用到同名svg</Button>
             {appliedMessage && <small className="imposition-export-apply-message" role="status">{appliedMessage}</small>}
@@ -361,6 +364,7 @@ export default function ImpositionPdfExportModal({ pages, imageSources, widthMm,
       {!includePdf && !includeDxf && !includeCmyk && <Alert type="warning" showIcon message="请选择至少一种导出文件类型。"/>}
       {busy && <div className="imposition-export-progress" role="status"><Loading size="small" inline text={progress ? `${PHASES[progress.phase]}：${progress.fileName}${progress.pageNumber ? ` · 第 ${progress.pageNumber}/${progress.pageCount} ${progress.fileName.startsWith('CMYK_') ? '个原图' : '页'}${progress.pageName ? ` ${progress.pageName}` : ''}` : ''}` : '请选择导出文件夹…'}/><Progress percent={progress ? Math.round(progress.completed / Math.max(1, progress.total) * 100) : 0}/><small>已完成 {progress?.completed ?? 0}/{progress?.total ?? exportPlan.entries.length} 种版式</small></div>}
       {completedFiles.length > 0 && <Alert type={error ? 'warning' : 'success'} showIcon message={`已导出 ${completedSummary}`} description={<details><summary>查看保存路径</summary>{completedFiles.map(path => <div key={path}>{path}</div>)}</details>}/>}
+      {exportWarnings.map(warning => <Alert type="warning" showIcon key={warning} message={warning}/>)}
       {cleanupWarnings.map(warning => <Tag color="warning" key={warning}>{warning}</Tag>)}
     </>}
   </Modal>

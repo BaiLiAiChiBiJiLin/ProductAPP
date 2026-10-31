@@ -8,6 +8,7 @@ vi.mock('../src/modules/schematic/components/ProductAttributesPanel',()=>({defau
 vi.mock('../src/modules/schematic/components/AssetPool',()=>({default:()=>null}))
 vi.mock('../src/modules/schematic/components/PageThumbnail',()=>({default:()=>null}))
 import ArrangePage from '../src/modules/schematic/ArrangePage'
+import CanvasTools from '../src/modules/schematic/components/CanvasTools'
 import { emptyArrangementDisplayState } from '../src/modules/schematic/services/arrangementDisplayState'
 afterEach(cleanup)
 const asset={id:'a',name:'a',productId:'a',width:100,height:200,svg:'<svg/>',previewUrl:'',thumbnailUrl:''}
@@ -35,6 +36,19 @@ it('selected image unit and independent dimension controls update the item; dese
  expect((screen.getByLabelText('标尺单位') as HTMLSelectElement).disabled).toBe(true)
 })
 
+it('shows the three ruler directions only after activating the ruler tool', () => {
+ function RulerToolHarness() {
+  const [mode, setMode] = useState<'free' | 'vertical' | 'horizontal'>('free')
+  return <CanvasTools tool="ruler" rulerMode={mode} onRulerMode={setMode} background="#d4e9da" onBackground={() => {}} hasGroup disabled={false}/>
+ }
+ render(<RulerToolHarness />)
+ expect(screen.getByRole('group', { name: '标尺方向' })).toBeTruthy()
+ expect(screen.getByRole('button', { name: '自由标尺' }).getAttribute('aria-pressed')).toBe('true')
+ fireEvent.click(screen.getByRole('button', { name: '垂直标尺' }))
+ expect(screen.getByRole('button', { name: '垂直标尺' }).getAttribute('aria-pressed')).toBe('true')
+ fireEvent.click(screen.getByRole('button', { name: '水平标尺' }))
+ expect(screen.getByRole('button', { name: '水平标尺' }).getAttribute('aria-pressed')).toBe('true')
+})
 it('exports saved zero-decimal settings even after the image is deselected', () => {
  const onExport = vi.fn()
  render(<Harness onExport={onExport}/> )
