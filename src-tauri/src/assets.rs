@@ -862,14 +862,18 @@ fn largest_image_index(images: &[SourceImage]) -> Option<usize> {
     window_index_against_front(&scores)
 }
 
-fn source_window_index(
+/// A layer wrapper is also used for sheets of unrelated products. Source
+/// paint order only has front/back meaning when the groups occupy the same
+/// product region before each source is cropped to its own viewport.
+fn source_group_roles(
     sources: &[(String, String)],
     options: &usvg::Options,
-) -> Result<Option<usize>, String> {
+) -> Result<Vec<&'static str>, String> {
     if !matches!(sources.len(), 2 | 3) {
-        return Ok(None);
+        return Ok(vec![""; sources.len()]);
     }
     let mut scores = Vec::with_capacity(sources.len());
+    let mut bounds = Vec::with_capacity(sources.len());
     for (_, source) in sources {
         let tree = usvg::Tree::from_str(source, options).map_err(|error| error.to_string())?;
         let document = roxmltree::Document::parse_with_options(
@@ -882,21 +886,41 @@ fn source_window_index(
         .map_err(|error| error.to_string())?;
         let images = asset_images::collect(&tree, &document);
         scores.push(images.iter().filter_map(image_area_score).reduce(f64::max));
+        bounds.push(source_group_viewport_bounds(source, &tree));
     }
-    Ok(window_index_against_front(&scores))
+    let related = bounds.last().copied().flatten().is_some_and(|front| {
+        bounds[..bounds.len() - 1].iter().all(|bounds| {
+            bounds.is_some_and(|bounds| {
+                // Bounds already include ancestor transforms and use authored
+                // contour geometry when present. Merely touching at an edge
+                // does not associate two distinct products.
+                bounds[0].max(front[0]) < bounds[2].min(front[2])
+                    && bounds[1].max(front[1]) < bounds[3].min(front[3])
+            })
+        })
+    });
+    if !related {
+        return Ok(vec![""; sources.len()]);
+    }
+    let window_index = window_index_against_front(&scores);
+    Ok((0..sources.len())
+        .map(|index| source_layer_role(
+            svg_modes::classifier::SvgKind::LayerGroups,
+            index,
+            sources.len(),
+            window_index,
+        ))
+        .collect())
 }
 
 fn annotate_source_image_roles(
     kind: svg_modes::classifier::SvgKind,
-    asset_index: usize,
-    asset_count: usize,
     images: &mut [SourceImage],
-    window_index: Option<usize>,
+    group_role: &str,
 ) {
     // A standard layer group can contain several raster nodes (for example a
     // face plus an embedded texture). All of those nodes inherit the group
     // role; they are not separate front/back layers.
-    let group_role = source_layer_role(kind, asset_index, asset_count, window_index);
     if !group_role.is_empty() {
         for image in images {
             image.layer_role = group_role.to_owned();
@@ -1078,20 +1102,18 @@ pub fn import_with_stage_workers(
     };
     let options = options();
     let total = sources.len();
-    // In a standard layered file, the front is the last paint-order layer.
-    // A preceding layer becomes the color window only when its embedded image
-    // is larger than that front. Compute this once before the worker pass so
-    // every generated asset receives the same cross-layer classification while
-    // delivery remains ordered.
-    let window_asset_index = if svg_kind == svg_modes::classifier::SvgKind::LayerGroups {
-        source_window_index(&sources, &options)?
+    // Only spatially associated groups share front/window/back roles. Keep
+    // unrelated products independent even when they share a named SVG layer.
+    // Calculate before per-product cropping so source positions remain valid.
+    let group_roles = if svg_kind == svg_modes::classifier::SvgKind::LayerGroups {
+        source_group_roles(&sources, &options)?
     } else {
-        None
+        vec![""; total]
     };
     log::info!(target: "printflow::import", "SVG 资源生成 request={} assets={} workers={}", request_id, total, workers.max(1).min(total.max(1)));
     progress("generate", 0, total.max(1));
     let mut assets = Vec::new();
-    let generate = |index, (part_name, source): (String, String)| {
+    let generate = |index: usize, (part_name, source): (String, String)| {
         let tree =
             usvg::Tree::from_str(&source, &options).map_err(|e| format!("图形解析失败：{e}"))?;
         if !tree.root().children().is_empty() {
@@ -1158,13 +1180,11 @@ pub fn import_with_stage_workers(
             let mut source_images = asset_images::collect(&tree, &source_doc);
             annotate_source_image_roles(
                 svg_kind,
-                index,
-                total,
                 &mut source_images,
-                window_asset_index,
+                group_roles[index],
             );
             let asset_layer_role = if source_images.len() == 1 {
-                let group_role = source_layer_role(svg_kind, index, total, window_asset_index);
+                let group_role = group_roles[index];
                 if group_role.is_empty() { "front" } else { group_role }
             } else {
                 ""
@@ -1374,6 +1394,56 @@ mod tests {
         assert_eq!(super::source_layer_role(SvgKind::LayerGroups, 0, 4, None), "");
     }
 
+    fn import_role_fixture(groups: &str) -> Vec<super::Asset> {
+        const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+        let file = tempfile::Builder::new().suffix(".svg").tempfile().unwrap();
+        let svg = format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="-100 -100 500 500"><g id="layer_1">{groups}</g></svg>"#
+        ).replace("@PNG@", PNG);
+        std::fs::write(file.path(), svg).unwrap();
+        super::import_with_stage_workers(
+            file.path(), "", "auto", "role-fixture", 1, |_, _, _| {}, |_| {},
+        ).unwrap()
+    }
+
+    #[test]
+    fn independent_products_in_a_layer_wrapper_each_default_to_front() {
+        let assets = import_role_fixture(
+            r#"<g id="first" transform="translate(20 180)"><image id="first-image" x="10" y="10" width="80" height="60" href="data:image/png;base64,@PNG@"/></g><g id="second" transform="translate(-50 -50)"><image id="second-image" x="10" y="10" width="80" height="60" href="data:image/png;base64,@PNG@"/></g>"#,
+        );
+        assert_eq!(assets.len(), 2, "splitting still preserves both products");
+        for asset in &assets {
+            assert_eq!(asset.source_layer_role, "front", "{}", asset.name);
+            assert_eq!(asset.source_images.as_ref().unwrap()[0].layer_role, "front");
+        }
+    }
+
+    #[test]
+    fn overlapping_layer_groups_keep_front_back_roles() {
+        let assets = import_role_fixture(
+            r#"<g id="first" transform="translate(20 30)"><image id="first-image" width="80" height="60" href="data:image/png;base64,@PNG@"/></g><g id="second"><image id="second-image" x="20" y="30" width="80" height="60" href="data:image/png;base64,@PNG@"/></g>"#,
+        );
+        assert_eq!(assets.len(), 2);
+        assert_eq!(assets[0].source_layer_role, "back");
+        assert_eq!(assets[1].source_layer_role, "front");
+    }
+
+    #[test]
+    fn independent_products_keep_their_internal_front_back_images() {
+        let assets = import_role_fixture(
+            r#"<g id="first"><image id="first-back" width="80" height="60" href="data:image/png;base64,@PNG@"/><image id="first-front" width="80" height="60" href="data:image/png;base64,@PNG@"/></g><g id="second" transform="translate(0 180)"><image id="second-back" width="80" height="60" href="data:image/png;base64,@PNG@"/><image id="second-front" width="80" height="60" href="data:image/png;base64,@PNG@"/></g>"#,
+        );
+        assert_eq!(assets.len(), 2);
+        for asset in &assets {
+            assert_eq!(asset.source_layer_role, "");
+            assert_eq!(
+                asset.source_images.as_ref().unwrap().iter().map(|image| image.layer_role.as_str()).collect::<Vec<_>>(),
+                ["back", "front"],
+            );
+        }
+    }
+
+
     #[test]
     fn single_raster_asset_is_marked_as_front() {
         use super::svg_modes::classifier::SvgKind;
@@ -1387,7 +1457,7 @@ mod tests {
                 format: "PNG".into(),
                 layer_role: String::new(),
             }];
-            super::annotate_source_image_roles(kind, 0, 1, &mut images, None);
+            super::annotate_source_image_roles(kind, &mut images, "");
             assert_eq!(images[0].layer_role, "front");
         }
     }
@@ -1406,8 +1476,8 @@ mod tests {
             ("back".into(), source(20, 20)),
         ];
         assert_eq!(
-            super::source_window_index(&sources, &super::options()).unwrap(),
-            Some(1)
+            super::source_group_roles(&sources, &super::options()).unwrap(),
+            ["back", "window", "front"]
         );
         let front_is_largest = vec![
             ("back".into(), source(60, 60)),
@@ -1415,8 +1485,8 @@ mod tests {
             ("front".into(), source(80, 80)),
         ];
         assert_eq!(
-            super::source_window_index(&front_is_largest, &super::options()).unwrap(),
-            None
+            super::source_group_roles(&front_is_largest, &super::options()).unwrap(),
+            ["back", "window", "front"]
         );
     }
 
@@ -1443,7 +1513,7 @@ mod tests {
                 layer_role: String::new(),
             },
         ];
-        super::annotate_source_image_roles(SvgKind::Whole, 0, 1, &mut images, None);
+        super::annotate_source_image_roles(SvgKind::Whole, &mut images, "");
         assert_eq!(
             images.iter().map(|image| image.layer_role.as_str()).collect::<Vec<_>>(),
             ["back", "front"]
@@ -1451,7 +1521,7 @@ mod tests {
         for image in &mut images {
             image.layer_role.clear();
         }
-        super::annotate_source_image_roles(SvgKind::LayerGroups, 0, 1, &mut images, None);
+        super::annotate_source_image_roles(SvgKind::LayerGroups, &mut images, "");
         assert_eq!(
             images.iter().map(|image| image.layer_role.as_str()).collect::<Vec<_>>(),
             ["back", "front"]
@@ -1490,7 +1560,7 @@ mod tests {
                 layer_role: String::new(),
             },
         ];
-        super::annotate_source_image_roles(SvgKind::Whole, 0, 1, &mut images, None);
+        super::annotate_source_image_roles(SvgKind::Whole, &mut images, "");
         assert_eq!(
             images.iter().map(|image| image.layer_role.as_str()).collect::<Vec<_>>(),
             ["back", "window", "front"]
@@ -1500,7 +1570,7 @@ mod tests {
         for image in &mut images {
             image.layer_role.clear();
         }
-        super::annotate_source_image_roles(SvgKind::Whole, 0, 1, &mut images, None);
+        super::annotate_source_image_roles(SvgKind::Whole, &mut images, "");
         assert_eq!(
             images.iter().map(|image| image.layer_role.as_str()).collect::<Vec<_>>(),
             ["window", "back", "front"]
@@ -1530,7 +1600,7 @@ mod tests {
                 layer_role: String::new(),
             },
         ];
-        super::annotate_source_image_roles(SvgKind::Whole, 0, 1, &mut images, None);
+        super::annotate_source_image_roles(SvgKind::Whole, &mut images, "");
         assert_eq!(
             images.iter().map(|image| image.layer_role.as_str()).collect::<Vec<_>>(),
             ["window", "front"]
@@ -1540,7 +1610,7 @@ mod tests {
         for image in &mut images {
             image.layer_role.clear();
         }
-        super::annotate_source_image_roles(SvgKind::Whole, 0, 1, &mut images, None);
+        super::annotate_source_image_roles(SvgKind::Whole, &mut images, "");
         assert_eq!(
             images.iter().map(|image| image.layer_role.as_str()).collect::<Vec<_>>(),
             ["back", "front"]

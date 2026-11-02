@@ -82,5 +82,5 @@ export function placeProductGroup(items: Item[], group: ImageGroup, x: number, y
     }
     return { ...item, w: widthScaled, h: heightScaled, x: imageCenterWithDimensionGutter(cell, widthScaled, vertical), y: cell.y + cell.height / 2 }
   })
-  return { items: placed, group: { ...group, x, y, width, height, imageColumns: columns, imageCells, detailWidth: compactDetailWidth, detailsX: x + imageAreaWidth } }
+  return { items: placed, group: { ...group, x, y, width, height, imageColumns: columns, imageCells, detailWidth: compactDetailWidth, detailsX: x + imageAreaWidth, detailsOffsetY: undefined } }
 }

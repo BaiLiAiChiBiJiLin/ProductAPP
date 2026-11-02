@@ -44,9 +44,9 @@ function mount(options: { selected?: string | null; exporting?: boolean; busy?: 
     const [groups, setGroups] = useState<string[]>([])
     state = display
     return <ArrangePage displayState={display} onDisplayStateChange={setDisplay} context={null} assets={[asset]} pages={[page]} activePage={1}
-      selectedItem={selected} selectedGroupIds={groups} sortMode="default" onSelectPage={noop} onSelectItem={id => { setSelected(id); setGroups([]) }}
+      selectedItem={selected} selectedGroupIds={groups} onSelectPage={noop} onSelectItem={id => { setSelected(id); setGroups([]) }}
       onSelectGroup={id => { setGroups([id]); setSelected(null) }} onChangeItem={changeItem} onDropAsset={noop} onDeleteGroups={noop}
-      onConfirmAssetAttributes={async () => {}} onAddPage={noop} onAutoArrange={noop} onCombine={noop} onBack={noop} onBackToHistory={noop}
+      onConfirmAssetAttributes={async () => {}} onAddPage={noop} onRefresh={noop} onCombine={noop} onBack={noop} onBackToHistory={noop}
       onExport={noop} exporting={options.exporting} replacingArtwork={options.busy} onMetadataChange={noop} layoutBounds={defaultLayoutBounds}
       onBoundsChange={noop} onAddHeaderBlock={noop} onChangeHeaderBlock={noop} onRemoveHeaderBlock={noop} onResizeGroup={resizeGroup}/>
   }

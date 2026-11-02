@@ -35,6 +35,7 @@ export function equalizeRowBackgrounds(groups: ImageGroup[]): ImageGroup[] {
   const tolerance = 0.1
   return groups.map(group => {
     if (group.manualSize) return { ...group, backgroundHeight: group.height }
+    if (group.preserveBackgroundHeight) return group
     const row = groups.filter(other => Math.abs(other.y - group.y) <= tolerance)
     const bottom = Math.max(...row.map(other => other.y + other.height))
     const obstructed = row.some(member => groups.some(other => !row.includes(other)

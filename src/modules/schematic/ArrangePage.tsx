@@ -8,7 +8,7 @@ import { rulerDimensionValue } from './services/imageDimensionService'
 import { updateRulerDimensionValue } from './services/rulerValueEditService'
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction, type ReactNode } from 'react'
 import { Button, ColorPicker, Input, InputNumber, Modal } from 'antd'
-import { Download, Hand, MousePointer2, Plus, WandSparkles, ZoomIn, ZoomOut, ArrowLeft, Combine, Upload } from 'lucide-react'
+import { Download, Hand, MousePointer2, Plus, RefreshCw, ZoomIn, ZoomOut, ArrowLeft, Combine, Upload } from 'lucide-react'
 import type { Asset, HeaderBlock, Item, LayoutBounds, Page, PageHeader } from '../../model'
 import { rulerAxes, type RulerPatch } from './services/canvasSelectionService'
 import { dimensionForItem, type DimensionDisplayOverride, type DimensionDisplayPrecision } from './services/imageDimensionService'
@@ -32,10 +32,10 @@ type Props = {
   onReorderPages?: (source: number, target: number) => void
   onBackgroundChange?: (scope: BackgroundScope, color: string, groupIds: string[]) => void
   onHorizontalGroup?: (itemId: string) => void
+  onShowBack?: (itemId: string) => void
   onResizeGroup?: (groupId: string, rect: { x: number; y: number; width: number; height: number }) => void
   displayState: ArrangementDisplayState
   onDisplayStateChange: Dispatch<SetStateAction<ArrangementDisplayState>>
-  sortMode: 'default' | 'upload'
   context: ReactNode
   assets: Asset[]
   pages: Page[]
@@ -58,7 +58,7 @@ type Props = {
   onDeleteItems?: (ids: string[]) => void
   onConfirmAssetAttributes: (assetId: string, patch: ProductAttributePatch) => Promise<void>
   onAddPage: () => void
-  onAutoArrange: (mode?: 'default' | 'upload') => void
+  onRefresh: () => void
   onCombine: () => void
   onSelectGroup: (id: string, ctrlKey: boolean) => void
   onBack: () => void
@@ -75,7 +75,7 @@ type Props = {
   onRemoveHeaderBlock: (id: string) => void
 }
 
-export default function ArrangePage({ processingLabel, onChangePage, onReorderPages, onBackgroundChange, onHorizontalGroup, onResizeGroup, displayState, onDisplayStateChange, context, assets, pages, activePage, selectedItem, selectedGroupIds, sortMode, onSelectPage, onSelectItem, onSelectGroup, onChangeItem, onReplaceArtwork, replacingArtwork = false, onChangeRulers, onChangeRuler = () => {}, onEditText = () => {}, onDropAsset, onUpload, uploadDropActive = false, poolFocusAssetId, onDeleteGroups, onDeleteItems, onConfirmAssetAttributes, onAddPage, onAutoArrange, onCombine, onBack, onBackToHistory, onExport, exporting = false, exportProgress = { phase: 'rendering', completed: 0, total: 1 }, metadata = {}, onMetadataChange, layoutBounds, onBoundsChange, onAddHeaderBlock, onChangeHeaderBlock, onRemoveHeaderBlock }: Props) {
+export default function ArrangePage({ processingLabel, onChangePage, onReorderPages, onBackgroundChange, onHorizontalGroup, onShowBack, onResizeGroup, displayState, onDisplayStateChange, context, assets, pages, activePage, selectedItem, selectedGroupIds, onSelectPage, onSelectItem, onSelectGroup, onChangeItem, onReplaceArtwork, replacingArtwork = false, onChangeRulers, onChangeRuler = () => {}, onEditText = () => {}, onDropAsset, onUpload, uploadDropActive = false, poolFocusAssetId, onDeleteGroups, onDeleteItems, onConfirmAssetAttributes, onAddPage, onRefresh, onCombine, onBack, onBackToHistory, onExport, exporting = false, exportProgress = { phase: 'rendering', completed: 0, total: 1 }, metadata = {}, onMetadataChange, layoutBounds, onBoundsChange, onAddHeaderBlock, onChangeHeaderBlock, onRemoveHeaderBlock }: Props) {
   const workspaceRef = useRef<HTMLElement>(null)
   const [artworkMenu, setArtworkMenu] = useState<ArtworkMenuTarget | null>(null)
   useEffect(() => { setArtworkMenu(null) }, [activePage, exporting, replacingArtwork])
@@ -332,7 +332,7 @@ export default function ArrangePage({ processingLabel, onChangePage, onReorderPa
         <Button type="text" className={canvasMode === 'select' ? 'toolbar-mode-active' : ''} icon={<MousePointer2 size={15}/>} onClick={() => setCanvasMode('select')}>选择</Button>
         <Button type="text" className={canvasMode === 'pan' ? 'toolbar-mode-active' : ''} icon={<Hand size={15}/>} onClick={() => setCanvasMode('pan')}>平移</Button>
         <span className="toolbar-divider" role="separator" aria-orientation="vertical"/>
-        <Button type="text" icon={<WandSparkles size={15}/>} title={`点击后按${sortMode === 'default' ? '上传顺序' : '产品排序'}重新排列当前画布`} onClick={() => { setSelectedAccessoryKey(null); setBoxSelection([]); onAutoArrange(sortMode === 'default' ? 'upload' : 'default') }}>切换为{sortMode === 'default' ? '上传顺序' : '产品排序'}</Button>
+        <Button type="text" icon={<RefreshCw size={15}/>} title="将当前页及后续页面的图片块向前补空位，保留块内调整" disabled={exporting || replacingArtwork} onClick={() => { setSelectedAccessoryKey(null); setBoxSelection([]); setEditorSelection(null); setArtworkMenu(null); setCanvasMode('select'); onRefresh() }}>刷新</Button>
         <span className="toolbar-divider" role="separator" aria-orientation="vertical"/>
         <Button type="text" icon={<Combine size={15}/>} disabled={selectedGroupIds.length < 2 || exporting || replacingArtwork} onClick={() => { setBoxSelection([]); onCombine() }}>组合</Button>
         {selectedGroupIds.length > 0 && <span className="muted">已选 {selectedGroupIds.length} 组（按住 Ctrl 多选）</span>}
@@ -365,7 +365,7 @@ export default function ArrangePage({ processingLabel, onChangePage, onReorderPa
       <Modal title="修改标尺数值" open={Boolean(rulerEdit)} destroyOnHidden onCancel={() => setRulerEdit(null)} onOk={confirmRulerEdit} okText="确认" cancelText="取消" okButtonProps={{ disabled: !rulerEdit?.value || rulerEdit.value <= 0 }}>
         <InputNumber aria-label="标尺数值" autoFocus min={0.000001} value={rulerEdit?.value} onChange={value => setRulerEdit(previous => previous ? { ...previous, value } : previous)} onPressEnter={confirmRulerEdit} addonAfter={rulerEdit?.unit}/>
       </Modal>
-      {artworkMenu && menuItem && menuAsset && <ArtworkContextMenu target={artworkMenu} item={menuItem} asset={menuAsset} onClose={() => setArtworkMenu(null)} onChange={onChangeItem} onReplace={onReplaceArtwork} onHorizontal={onHorizontalGroup}/>}
+      {artworkMenu && menuItem && menuAsset && <ArtworkContextMenu target={artworkMenu} item={menuItem} asset={menuAsset} onClose={() => setArtworkMenu(null)} onChange={onChangeItem} onReplace={onReplaceArtwork} onHorizontal={onHorizontalGroup} onShowBack={onShowBack}/>}
       <div className="canvas-footer"><span>画布尺寸：A4 · 210 × 297 mm</span><span>当前页面 {page?.items.filter(item => !item.derivedFrom).length ?? 0} 张 · 全部页面 {pages.reduce((total, item) => total + item.items.filter(image => !image.derivedFrom).length, 0)} 张</span><span className="saved" title="导出成功后保存当前排列与调整，可在示意图审核中恢复"><i/>导出后保存到审核</span></div>
     </section>
     <aside className="assets-panel" inert={replacingArtwork}><PageConfigPanel metadata={metadata} onMetadataChange={onMetadataChange} bounds={layoutBounds} onBoundsChange={onBoundsChange} pageId={pageNumber} headerBlocks={page?.headerBlocks ?? []} selectedHeaderBlock={selectedItem} onSelectHeaderBlock={selectOne} onAddHeaderBlock={onAddHeaderBlock} onChangeHeaderBlock={onChangeHeaderBlock} onRemoveHeaderBlock={onRemoveHeaderBlock}/><div className="arrange-upload-action"><button type="button" className={`upload-zone large arrange-upload-zone ${uploadDropActive ? 'is-drop-active' : ''}`} title="上传 SVG 图片到图片池" disabled={exporting || replacingArtwork || !onUpload} onClick={onUpload}><Upload size={30}/><strong>{uploadDropActive ? '松开鼠标开始上传' : '上传 SVG 文件'}</strong><span>{uploadDropActive ? '仅支持 SVG 文件' : '点击选择或将 SVG 文件拖到这里'}</span></button></div><div className="asset-section arrange-pool-section"><div className="arrange-pool-shell"><div className="arrange-side-tabs" role="tablist" aria-label="排列页图片面板"><button type="button" role="tab" aria-selected={sidePanel === 'pool'} className={sidePanel === 'pool' ? 'active' : ''} onClick={() => setSidePanel('pool')}>图片池</button><button type="button" role="tab" aria-selected={sidePanel === 'attributes'} className={sidePanel === 'attributes' ? 'active' : ''} disabled={!hasVisualSelection} title={hasVisualSelection ? '调整选中图片的画布显示大小' : '请先在画布中选择图片或图片组'} onClick={() => hasVisualSelection && setSidePanel('attributes')}>图片属性</button></div>{sidePanel === 'attributes' && hasVisualSelection ? <div className="arrange-attributes-content"><div className="visual-scale-controls" aria-label="图片视觉缩放"><span>图片显示</span><button type="button" className="zoom-btn" title="缩小图片" disabled={exporting} onClick={() => updateVisualScale(selectedVisualScale - CANVAS_DISPLAY_SCALE_STEP)}><ZoomOut size={15}/></button><input aria-label="图片显示百分比" type="number" min={25} max={300} step={1} value={visualScaleInput} disabled={exporting} onChange={event => setVisualScaleInput(event.target.value)} onBlur={commitVisualScale} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); commitVisualScale() } }}/><span>%</span><button type="button" className="zoom-btn" title="放大图片" disabled={exporting} onClick={() => updateVisualScale(selectedVisualScale + CANVAS_DISPLAY_SCALE_STEP)}><ZoomIn size={15}/></button><small>Alt＋滚轮调整图片大小（每次 10%）；仅改变显示，标尺同步缩放</small></div>{singleAssetSelection && selectedAssetId ? <ProductAttributesPanel allowGrouping={false} assets={assets} selectedAssetIds={selectedAssetIds} onConfirmAttributes={patch => onConfirmAssetAttributes(selectedAssetId, patch)} showSelectionSummary={false} disabled={exporting}/> : null}</div> : <div className="arrange-pool-content"><AssetPool assets={assets} pages={pages} mode="arrange" onAddAsset={onDropAsset} focusAssetId={poolFocusAssetId}/></div>}</div></div></aside>

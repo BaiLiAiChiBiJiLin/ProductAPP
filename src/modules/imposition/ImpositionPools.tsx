@@ -56,6 +56,7 @@ export default function ImpositionPools({ active, revision, onBack, onStart }: P
   const [storageError, setStorageError] = useState(saved.error)
   const [poolSaving, setPoolSaving] = useState(false)
   const poolSaveLock = useRef(false)
+  const poolSaveGeneration = useRef(0)
   const configReady = !storageError && !poolSaving && !loading && !loadError
   const [refresh, setRefresh] = useState(0)
   const [editor, setEditor] = useState<PoolEditor>()
@@ -75,8 +76,13 @@ export default function ImpositionPools({ active, revision, onBack, onStart }: P
   useEffect(() => {
     if (!active) return
     const controller = new AbortController()
+    const generation = poolSaveGeneration.current
     setLoading(true); setLoadError('')
-    void Promise.all([loadPoolRecords(controller.signal), storageMode().then(async mode => mode?.shared ? (await invoke<{ pools: ImpositionPool[] }>('load_cloud_pools')).pools : null)]).then(([next, sharedPools]) => { if (!controller.signal.aborted) { setRecords(next); if (sharedPools) { setPools(sharedPools); setStorageError('') } } })
+    void Promise.all([loadPoolRecords(controller.signal), storageMode().then(async mode => mode?.shared ? (await invoke<{ pools: ImpositionPool[] }>('load_cloud_pools')).pools : null)]).then(([next, sharedPools]) => {
+      if (controller.signal.aborted) return
+      setRecords(next)
+      if (sharedPools && generation === poolSaveGeneration.current && !poolSaveLock.current) { setPools(sharedPools); setStorageError('') }
+    })
       .catch(reason => { if (!controller.signal.aborted) setLoadError(`加载图片失败：${String(reason)}`) })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
@@ -108,12 +114,13 @@ export default function ImpositionPools({ active, revision, onBack, onStart }: P
   async function commit(next: ImpositionPool[]): Promise<boolean> {
     if (poolSaveLock.current) return false
     poolSaveLock.current = true; setPoolSaving(true)
+    poolSaveGeneration.current++
     try {
       if ((await storageMode())?.shared) await invoke('save_cloud_pools', { pools: next })
       else localStorage.setItem(saved.storageKey, JSON.stringify(next))
       setPools(next); setStorageError(''); return true
     } catch (reason) { setStorageError(`保存拼版池失败：${String(reason)}。本次修改未保存，请刷新后重试。`); return false }
-    finally { poolSaveLock.current = false; setPoolSaving(false) }
+    finally { poolSaveGeneration.current++; poolSaveLock.current = false; setPoolSaving(false) }
   }
   function select(id: string) { setSelectedId(id); setCustomer(undefined); setImagePage(1); setCheckedKeys([]); setPreviewCustomer(undefined); setPreviewPage(1); setTab('customers') }
   function openManager(pool: ImpositionPool) { setManageId(pool.id); setManageKeys((byPool.get(pool.id) ?? []).map(item => item.key)); setManageQuery(''); setManageFilter('all') }

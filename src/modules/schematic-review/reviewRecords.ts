@@ -50,10 +50,19 @@ export function createReviewRecord(workspace: ReviewWorkspace, display: Arrangem
 }
 
 export const listReviewRecords = (query: ReviewListQuery = { page: 1, pageSize: 20 }) => invoke<ReviewListResult>('list_schematic_reviews', { query })
-export const deleteReviewRecord = (id: string) => invoke<void>('delete_schematic_review', { id })
 const reviewResourceCache = new Map<string, Promise<string>>()
-function loadReviewResource(id: string, resourceId: string, decoder: TextDecoder) {
-  const key = `${id}\u0000${resourceId}`
+function invalidateReviewResources(id: string) {
+  const prefix = `${id}\u0000`
+  for (const key of reviewResourceCache.keys()) if (key.startsWith(prefix)) reviewResourceCache.delete(key)
+}
+export async function deleteReviewRecord(id: string): Promise<void> {
+  await invoke<void>('delete_schematic_review', { id })
+  invalidateReviewResources(id)
+}
+function loadReviewResource(id: string, savedAt: string, resourceId: string, decoder: TextDecoder) {
+  // Local re-exports reuse r1/r2 resource IDs. A refreshed manifest must not
+  // share artwork with a previous revision of the same review.
+  const key = `${id}\u0000${savedAt}\u0000${resourceId}`
   const cached = reviewResourceCache.get(key)
   if (cached) return cached
   const pending = invoke<ArrayBuffer>('load_schematic_review_resource', { id, resourceId }).then(bytes => decoder.decode(bytes))
@@ -67,6 +76,7 @@ export async function saveReviewRecord(record: SchematicReviewRecord): Promise<v
     const manifest = stageLargeWorkspaceValues(record, resources)
     await resources.write()
     await invoke<void>('save_schematic_review', { record: manifest })
+    invalidateReviewResources(record.id)
   } finally { await resources.dispose() }
 }
 export async function loadReviewRecord(id: string): Promise<SchematicReviewRecord> {
@@ -80,7 +90,7 @@ export async function loadReviewRecord(id: string): Promise<SchematicReviewRecor
   const decoder = new TextDecoder('utf-8', { fatal: true })
   const entries = [...references.keys()]
   let cursor = 0
-  const worker = async () => { while (cursor < entries.length) { const reference = entries[cursor++]; references.set(reference, await loadReviewResource(id, reference.slice(REVIEW_ARTWORK_PREFIX.length), decoder)) } }
+  const worker = async () => { while (cursor < entries.length) { const reference = entries[cursor++]; references.set(reference, await loadReviewResource(id, record.savedAt, reference.slice(REVIEW_ARTWORK_PREFIX.length), decoder)) } }
   await Promise.all(Array.from({ length: Math.min(4, entries.length) }, () => worker()))
   return copyWorkspaceValue(record, text => references.get(text) ?? text)
 }

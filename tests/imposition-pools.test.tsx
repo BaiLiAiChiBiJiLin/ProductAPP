@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ConfigProvider } from 'antd'
 import ImpositionPools from '../src/modules/imposition/ImpositionPools'
 import PoolCustomerPie from '../src/modules/imposition/PoolCustomerPie'
@@ -8,12 +8,15 @@ import { loadPoolRecords, poolImages, poolCustomers, readPools, recordsForPool, 
 import type { ImpositionRecord } from '../src/modules/imposition/impositionRecords'
 
 const invoke = vi.hoisted(() => vi.fn())
+const storageMode = vi.hoisted(() => vi.fn())
+vi.mock('../src/services/backend', () => ({ invoke, storageMode }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke, isTauri: () => false }))
 vi.mock('../src/modules/imposition/ImpositionKonvaCanvas', () => ({ default: () => null }))
 const records: ImpositionRecord[] = ['one', 'two'].map((id, index) => ({ id, sourceReviewId: id, customerName: index ? '客户乙' : '客户甲', output: `${id}.pdf`, submittedAt: '2026-10-19T01:00:00Z', paymentStatus: 'paid', status: 'pending', imageCount: 2, images: ['same-asset', 'other'].map(asset => ({ id: asset, name: `${id}-${asset}.svg`, sourceFileName: `${asset}.svg`, filePath: `D:/assets/${id}-${asset}.svg`, widthMm: 30, heightMm: 40, productId: 'product', productName: '照片夹', attributes: { QT: '8', Finish: 'Epoxy' }, attributeImages: {}, note: '', noteImage: null, productGroupId: '', productGroupLeaderId: '', productGroupPosition: 0 })) }))
 
 beforeEach(() => {
   localStorage.clear()
+  storageMode.mockResolvedValue({ shared: false })
   Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} }) })
   globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} }
   invoke.mockImplementation(async (command, args) => {
@@ -112,7 +115,39 @@ it('retains the pool boundary when the workspace saves QT using a full job respo
   fireEvent.change(quantity, { target: { value: '9' } })
   fireEvent.blur(quantity)
   await waitFor(() => expect(invoke).toHaveBeenCalledWith('update_imposition_image_quantity', { jobId: 'one', imageId: 'same-asset', quantity: 9 }))
-  await waitFor(() => expect(screen.getByText('已选 1 张图片 · QT 9 份 · 间距 3 mm')).toBeTruthy())
+  fireEvent.mouseOver(screen.getByRole('switch', { name: '底座混排' }).closest('label')!)
+  await screen.findByText('已选 1 张图片 · QT 9 份 · 间距 3 mm')
   expect(screen.queryByRole('spinbutton', { name: 'QT one-other.svg' })).toBeNull()
   expect(screen.queryByRole('spinbutton', { name: 'QT two-same-asset.svg' })).toBeNull()
+})
+
+it('keeps newly saved shared pool membership when an older refresh returns last', async () => {
+  storageMode.mockResolvedValue({ shared: true })
+  const pools = readPools()
+  let finishSave!: () => void
+  let finishRead!: (value: unknown) => void
+  let reads = 0
+  const original = invoke.getMockImplementation()!
+  invoke.mockImplementation(async (command, args) => {
+    if (command === 'load_cloud_pools') {
+      if (++reads === 1) return { pools }
+      return new Promise(resolve => { finishRead = resolve })
+    }
+    if (command === 'save_cloud_pools') return new Promise<void>(resolve => { finishSave = resolve })
+    return original(command, args)
+  })
+  const props = { active: true, revision: 0, onBack: () => {}, onStart: () => {} }
+  const view = render(<ImpositionPools {...props}/>)
+  await waitFor(() => expect((screen.getByRole('button', { name: /^新建池子/ }) as HTMLButtonElement).disabled).toBe(false))
+  fireEvent.click(screen.getByRole('button', { name: /^新建池子/ }))
+  const dialog = await screen.findByRole('dialog')
+  fireEvent.change(within(dialog).getByLabelText('池子名称'), { target: { value: '刚保存的池子' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: /保\s*存/ }))
+  await waitFor(() => expect(finishSave).toBeTypeOf('function'))
+  view.rerender(<ImpositionPools {...props} revision={1}/>)
+  await waitFor(() => expect(finishRead).toBeTypeOf('function'))
+  await act(async () => finishSave())
+  await screen.findByRole('button', { name: '查看刚保存的池子' })
+  await act(async () => finishRead({ pools }))
+  expect(screen.queryByRole('button', { name: '查看刚保存的池子' })).not.toBeNull()
 })

@@ -96,7 +96,8 @@ function resizeContent(page: Page, group: ImageGroup, rect: GroupRect, scales?: 
   return { items: page.items.map(item => resized.get(item.id) ?? item), group: { ...group, ...rect, manualSize: true, backgroundHeight: rect.height,
     imageCells: nextCells, detailWidth: group.detailWidth === undefined ? undefined : group.detailWidth * sx,
     detailsX: group.detailsX === undefined ? undefined : rect.x + (group.detailsX - group.x) * sx,
-    detailsHeight: group.detailsHeight === undefined ? undefined : group.detailsHeight * sy } }
+    detailsHeight: group.detailsHeight === undefined ? undefined : group.detailsHeight * sy,
+    detailsOffsetY: group.detailsOffsetY === undefined ? undefined : group.detailsOffsetY * sy } }
 }
 
 /** Local preview changes only the selected block and its own artwork. */

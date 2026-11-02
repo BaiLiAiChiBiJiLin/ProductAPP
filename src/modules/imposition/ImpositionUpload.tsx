@@ -45,6 +45,7 @@ export default function ImpositionUpload({ disabled = false, onImported, onBusyC
   }, [disabled, onImported, onBusyChange, onError])
 
   useEffect(() => {
+    if (disabled) { setDropActive(false); return }
     if (!isTauri()) return
     let disposed = false
     let unlisten = () => {}

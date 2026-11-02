@@ -7,6 +7,7 @@ import { fillFreeRegions } from './freeRegionPacking.ts'
 import { applyPhysicalImageScale } from './physicalImageSizing.ts'
 import { imageDetailsLayout } from '../services/imageDetailsLayoutService.ts'
 import { accessoryFrame } from '../services/accessoryFrameService.ts'
+import { centerHolderContents } from './holderContentAlignment.ts'
 import type { ProductConfig } from '../services/productConfigService.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
 
@@ -461,7 +462,13 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
   const arranged = fillFreeRegions(backfillPages(pages, area), area)
   const physicalSizes = new Map(units.flatMap(unit => unit.assets.map(asset => [asset.id,
     unit.kind === 'chain' ? chainSourceSize(asset) : physicalSourceSize(asset)] as const)))
-  return applyPhysicalImageScale(arranged, physicalSizes)
+  applyPhysicalImageScale(arranged, physicalSizes)
+  const holderAssets = new Set(units.filter(unit => unit.kind === 'holder').flatMap(unit => unit.assets.map(asset => asset.id)))
+  for (const page of arranged) for (const group of page.imageGroups ?? []) {
+    const items = page.items.filter(item => group.itemIds.includes(item.id))
+    if (items.some(item => holderAssets.has(item.assetId))) centerHolderContents(group, items)
+  }
+  return arranged
 }
 
 

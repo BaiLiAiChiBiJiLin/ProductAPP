@@ -13,6 +13,8 @@ export type ImageGroup = {
   manualSize?: boolean
   /** Visual row background only; does not resize artwork or packing bounds. */
   backgroundHeight?: number
+  /** Gap filling preserves the visible block and note layout when row neighbors change. */
+  preserveBackgroundHeight?: boolean
   details?: ImageDetails
   productGroupId?: string
   /** Normalized product identity used to keep adjacent rows together. */
@@ -33,6 +35,8 @@ export type ImageGroup = {
   detailWidth?: number
   detailsX?: number
   detailsHeight?: number
+  /** Relative vertical placement of a centered holder/shaker property panel. */
+  detailsOffsetY?: number
   /** A combined group keeps its source images stacked vertically. */
   stacked?: 'vertical'
 }

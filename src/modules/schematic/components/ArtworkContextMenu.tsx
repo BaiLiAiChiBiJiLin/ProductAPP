@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Button, Dropdown } from 'antd'
-import { Check, ImageUp, Layers } from 'lucide-react'
+import { Check, FlipHorizontal2, ImageUp, Layers } from 'lucide-react'
 import type { Asset, Item } from '../../../model'
 import { selectSvgLayer, selectSvgLayers, svgLayers, withWindowLayerOverlay } from '../services/svgLayerService'
 import './artwork-context-menu.css'
@@ -34,9 +34,10 @@ function SvgLayerThumbnail({ svg, layerId }: { svg: string; layerId: string }) {
   return <img ref={imageRef} className="artwork-layer-thumbnail" data-layer-id={layerId} src={src} alt="" draggable={false} decoding="async" />
 }
 
-export default function ArtworkContextMenu({ target, item, asset, onClose, onChange, onReplace, onHorizontal }: {
+export default function ArtworkContextMenu({ target, item, asset, onClose, onChange, onReplace, onHorizontal, onShowBack }: {
   target: ArtworkMenuTarget; item: Item; asset: Asset; onClose: () => void
   onHorizontal?: (itemId: string) => void; onChange: (item: Item) => void; onReplace?: (itemId: string) => Promise<void>
+  onShowBack?: (itemId: string) => void
 }) {
   // Enumerate only when the user opens the menu, always against the original
   // document so switching one layer never discards the other choices.
@@ -81,10 +82,12 @@ export default function ArtworkContextMenu({ target, item, asset, onClose, onCha
           ...layers.map(layer => layerOption(layer.id, layer.label)),
           { type: 'group', key: 'layer-actions', className: 'artwork-layer-actions', label: <Button type="primary" aria-label="确认" disabled={!selectedIds.length} onClick={confirm}>确认</Button> },
         ] },
+        ...(layers.some(layer => layer.role === 'back') ? [{ key: 'show-back', label: '展示背面', icon: <FlipHorizontal2 size={14}/>, disabled: !onShowBack }] : []),
         { key: 'horizontal', label: '横排', disabled: !onHorizontal },
         { key: 'replace', label: '更换图片', icon: <ImageUp size={14}/>, disabled: !onReplace },
       ],
       onClick: ({ key }) => {
+        if (key === 'show-back') { onClose(); onShowBack?.(item.id); return }
         if (key === 'horizontal') { onClose(); onHorizontal?.(item.id); return }
         if (key === 'replace') { onClose(); void onReplace?.(item.id); return }
         if (!key.startsWith('layer:')) return

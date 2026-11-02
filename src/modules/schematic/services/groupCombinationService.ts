@@ -92,7 +92,7 @@ export function combineImageGroupsAcrossPages(pages: Page[], selections: GroupSe
   const combined: ImageGroup = { ...first, id, productGroupId: id, itemIds, x, y, width, height, backgroundHeight: height,
     stacked: 'vertical', layoutMode: undefined, imageColumns: undefined, detailColumns: undefined,
     imageCells: cells.length ? cells : undefined, detailGroups: combinedDetails(locations, byAsset),
-    detailsX: x + width - detailWidth, detailWidth, detailsHeight: undefined,
+    detailsX: x + width - detailWidth, detailWidth, detailsHeight: undefined, detailsOffsetY: undefined,
     protectPageFill: locations.some(location => location.group.protectPageFill),
   }
   return pages.map((page, index) => {

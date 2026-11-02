@@ -50,9 +50,9 @@ function mount(initialPage = fixture()) {
     const [page, setPage] = useState(initialPage)
     const [display, setDisplay] = useState(emptyArrangementDisplayState)
     return <ArrangePage displayState={display} onDisplayStateChange={setDisplay} context={null} assets={[asset]} pages={[page]} activePage={1}
-      selectedItem={null} selectedGroupIds={[]} sortMode="default" onSelectPage={noop} onSelectItem={noop} onSelectGroup={noop} onChangeItem={noop}
+      selectedItem={null} selectedGroupIds={[]} onSelectPage={noop} onSelectItem={noop} onSelectGroup={noop} onChangeItem={noop}
       onChangePage={setPage} onDropAsset={noop} onDeleteGroups={mocks.deleteGroups} onConfirmAssetAttributes={async () => {}} onAddPage={noop}
-      onAutoArrange={noop} onCombine={noop} onBack={noop} onBackToHistory={noop} onExport={noop} onMetadataChange={noop} layoutBounds={defaultLayoutBounds}
+      onRefresh={noop} onCombine={noop} onBack={noop} onBackToHistory={noop} onExport={noop} onMetadataChange={noop} layoutBounds={defaultLayoutBounds}
       onBoundsChange={noop} onAddHeaderBlock={noop} onChangeHeaderBlock={noop} onRemoveHeaderBlock={noop}/>
   }
   return render(<ConfigProvider theme={{ token: { motion: false } }}><Harness/></ConfigProvider>)

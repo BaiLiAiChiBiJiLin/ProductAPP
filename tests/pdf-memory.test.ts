@@ -32,10 +32,12 @@ test('review restore loads original and derived resources one at a time without 
   const references = ['printflow-review:r1', 'printflow-review:r2']
   const manifest = { schemaVersion: 1, assets: [{ id: 'a', svg: references[0], width: 42.756 }], pages: [{ items: [{ id: 'i', backSvg: references[1], rulerHeightRange: [0.2, 0.8] }] }], metadata: {}, layoutBounds: {}, display: { dimensionDisplayOverrides: [['i', { decimalPlaces: 0 }]] } }
   let active = 0
+  let peak = 0
   mocks.invoke.mockImplementation(async (command, args) => {
     if (command === 'load_schematic_review') return manifest
     if (command === 'load_schematic_review_resource') {
-      expect(++active).toBe(1)
+      peak = Math.max(peak, ++active)
+      expect(active).toBeLessThanOrEqual(4)
       await Promise.resolve()
       active--
       return new TextEncoder().encode(`<svg>${args.resourceId}原图🌸</svg>`).buffer
@@ -46,6 +48,7 @@ test('review restore loads original and derived resources one at a time without 
   expect(record.pages[0].items[0].backSvg).toBe('<svg>r2原图🌸</svg>')
   expect(record.display).toEqual(manifest.display)
   expect(record.assets[0].width).toBe(42.756)
+  expect(peak).toBeGreaterThan(1)
 })
 
 test('large original and derived artwork never enter page or review IPC as giant JSON strings', async () => {

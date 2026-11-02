@@ -74,3 +74,34 @@ test('custom product catalog stays local even when shared storage is offline', a
   expect(await invoke('list_custom_products')).toEqual([{ id: 7, name: '我的产品' }])
   expect(api.invoke.mock.calls.some(([command]) => command === 'storage_mode' || command === 'cloud_operation')).toBe(false)
 })
+
+test('a slow record read cannot roll the known save revision backwards', async () => {
+  let resolveRead!: (value: unknown) => void
+  shared(command => command === 'load_batch'
+    ? new Promise(resolve => { resolveRead = resolve })
+    : { result: { version: 3 } })
+  const { invoke } = await import('../src/services/backend')
+  const read = invoke('load_batch', { id: 'b' })
+  await vi.waitFor(() => expect(resolveRead).toBeTypeOf('function'))
+  await invoke('save_batch', { id: 'b', assets: [] })
+  resolveRead({ id: 'b', version: 2 })
+  await expect(read).rejects.toThrow('读取的云端记录已过期')
+  await invoke('save_batch', { id: 'b', assets: [] })
+  expect(api.invoke.mock.calls.at(-1)?.[1].expectedVersion).toBe(3)
+})
+
+test('a late list reply cannot roll back the revision for a newer list action', async () => {
+  let resolveList!: (value: unknown) => void
+  let reads = 0
+  shared(command => command === 'list_batches'
+    ? ++reads === 1 ? new Promise(resolve => { resolveList = resolve }) : { records: [{ id: 'b', version: 3 }] }
+    : { result: {} })
+  const { invoke } = await import('../src/services/backend')
+  const oldRead = invoke('list_batches')
+  await vi.waitFor(() => expect(resolveList).toBeTypeOf('function'))
+  await invoke('list_batches')
+  resolveList({ records: [{ id: 'b', version: 2 }] })
+  await oldRead
+  await invoke('delete_batch', { id: 'b' })
+  expect(api.invoke.mock.calls.at(-1)?.[1].expectedVersion).toBe(3)
+})

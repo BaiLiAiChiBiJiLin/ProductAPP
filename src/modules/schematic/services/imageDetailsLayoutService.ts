@@ -88,13 +88,14 @@ export function imageDetailsLayout(group: ImageGroup, visualScale = 1) {
   const requestedX = group.detailsX ?? groupRight - detailPanelWidth
   const detailsX = Math.max(group.x, Math.min(requestedX, groupRight - detailPanelWidth))
   const x = Math.min(groupRight - 1, detailsX + 4)
-  const y = group.y + 4
+  const detailsOffsetY = group.detailsOffsetY ?? 0
+  const y = group.y + detailsOffsetY + 4
   const width = Math.max(1, detailPanelWidth - 8)
   // Standee bases and holder role rows reserve the rest of the group. A
   // background extended to the row bottom must not enlarge that details slot.
-  const contentHeight = group.detailsHeight === undefined
+  const contentHeight = Math.min(group.detailsHeight === undefined
     ? Math.max(group.height, group.backgroundHeight ?? group.height)
-    : Math.min(group.height, group.detailsHeight)
+    : Math.min(group.height, group.detailsHeight), Math.max(group.height, group.backgroundHeight ?? group.height) - Math.max(0, detailsOffsetY))
   // Product groups may contain longer product names/individual option lists.
   // Wrap those fields instead of truncating them in Canvas or overflowing SVG.
   if (details) {
@@ -129,7 +130,7 @@ export function imageDetailsLayout(group: ImageGroup, visualScale = 1) {
   const finishReserve = hasFinish ? 18 : 0
   const bodyHeight = Math.max(0, contentHeight - 8 - fieldHeight - finishReserve)
   const accessoryExtra = details?.accessoryImage ? (details.accessoryCode ? 17 : 4) + accessoryTopGap(details.accessoryImage) : 0
-  const desiredAccessorySize = details?.accessoryImage ? Math.min(Math.max(1, width - 4), group.height * DETAIL_ACCESSORY_SIZE_RATIO * displayScale) : 0
+  const desiredAccessorySize = details?.accessoryImage ? Math.min(Math.max(1, width - 4), (group.height - Math.max(0, detailsOffsetY)) * DETAIL_ACCESSORY_SIZE_RATIO * displayScale) : 0
   const noteOverride = details?.textOverrides?.note
   const noteText = noteOverride?.text ?? details?.note ?? ''
   const noteColor = noteOverride?.color ?? DEFAULT_NOTE_COLOR

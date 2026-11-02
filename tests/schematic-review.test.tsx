@@ -3,10 +3,10 @@ import type { ComponentProps } from 'react'
 import { ConfigProvider } from 'antd'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { defaultLayoutBounds, type Asset } from '../src/model'
+import { artworkBounds, defaultLayoutBounds, GROUP_GAP, HEADER_BLOCK_HEIGHT, type Asset } from '../src/model'
 import { paginateAssets } from '../src/modules/schematic/services/paginationService'
 import { emptyArrangementDisplayState, restoreArrangementDisplay } from '../src/modules/schematic/services/arrangementDisplayState'
-import { createReviewRecord, exportAndRecord, loadReviewRecord, type SchematicReviewRecord } from '../src/modules/schematic-review/reviewRecords'
+import { createReviewRecord, exportAndRecord, loadReviewRecord, saveReviewRecord, deleteReviewRecord, type SchematicReviewRecord } from '../src/modules/schematic-review/reviewRecords'
 import type ArrangePage from '../src/modules/schematic/ArrangePage'
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), save: vi.fn(), exportPdf: vi.fn(), exportPage: vi.fn(), arrange: vi.fn(), autoArrange: vi.fn() }))
@@ -54,6 +54,78 @@ function fixture() {
 const summary = (record: SchematicReviewRecord) => ({ id: record.id, savedAt: record.savedAt, output: record.output, format: record.format, paymentStatus: record.paymentStatus, customerName: record.metadata.customerName, pageCount: record.pages.length, imageCount: 1 })
 const latestArrange = () => mocks.arrange.mock.calls.at(-1)![0] as ComponentProps<typeof ArrangePage>
 const layoutPreferenceKey = 'printflow-schematic-layout-bounds'
+
+it('re-exporting a review refreshes a reused resource ID instead of restoring cached old artwork', async () => {
+  const record = fixture()
+  record.assets[0].svg = 'printflow-review:r1'
+  let artwork = '<svg>old artwork</svg>'
+  mocks.invoke.mockImplementation(async (command: string) => {
+    if (command === 'load_schematic_review') return record
+    if (command === 'load_schematic_review_resource') return new TextEncoder().encode(artwork).buffer
+    if (command === 'save_schematic_review') artwork = '<svg>new artwork</svg>'
+  })
+  expect((await loadReviewRecord(record.id)).assets[0].svg).toBe('<svg>old artwork</svg>')
+  await saveReviewRecord({ ...record, assets: [{ ...record.assets[0], svg: '<svg>new artwork</svg>' }] })
+  expect((await loadReviewRecord(record.id)).assets[0].svg).toBe('<svg>new artwork</svg>')
+})
+
+it('an old resource read cannot contaminate a review after a newer save completes', async () => {
+  const record = fixture()
+  record.assets[0].svg = 'printflow-review:r1'
+  let finishOld!: (value: ArrayBuffer) => void
+  let resourceReads = 0
+  mocks.invoke.mockImplementation(async (command: string) => {
+    if (command === 'load_schematic_review') return record
+    if (command === 'load_schematic_review_resource') {
+      resourceReads++
+      if (resourceReads === 1) return new Promise<ArrayBuffer>(resolve => { finishOld = resolve })
+      return new TextEncoder().encode('<svg>new artwork</svg>').buffer
+    }
+  })
+  const oldLoad = loadReviewRecord(record.id)
+  await waitFor(() => expect(resourceReads).toBe(1))
+  await saveReviewRecord(record)
+  const newLoad = loadReviewRecord(record.id)
+  finishOld(new TextEncoder().encode('<svg>old artwork</svg>').buffer)
+  await oldLoad
+  expect((await newLoad).assets[0].svg).toBe('<svg>new artwork</svg>')
+  expect((await loadReviewRecord(record.id)).assets[0].svg).toBe('<svg>new artwork</svg>')
+})
+
+it('a refreshed review revision uses new resources and deletion invalidates its cached artwork', async () => {
+  let record = fixture()
+  record.assets[0].svg = 'printflow-review:r1'
+  let artwork = '<svg>old artwork</svg>'
+  mocks.invoke.mockImplementation(async (command: string) => {
+    if (command === 'load_schematic_review') return record
+    if (command === 'load_schematic_review_resource') return new TextEncoder().encode(artwork).buffer
+  })
+  await loadReviewRecord(record.id)
+  record = { ...record, savedAt: '2026-11-02T12:00:00Z' }
+  artwork = '<svg>remote update</svg>'
+  expect((await loadReviewRecord(record.id)).assets[0].svg).toBe(artwork)
+  await deleteReviewRecord(record.id)
+  artwork = '<svg>recreated record</svg>'
+  expect((await loadReviewRecord(record.id)).assets[0].svg).toBe(artwork)
+})
+
+it('leaving review while an edit is loading prevents its old response from replacing the current workspace', async () => {
+  const record = fixture()
+  const edit = vi.fn()
+  let finish!: (value: SchematicReviewRecord) => void
+  mocks.invoke.mockImplementation(async (command: string) => {
+    if (command === 'list_schematic_reviews') return { records: [summary(record)], total: 1, page: 1, pageSize: 20 }
+    if (command === 'load_schematic_review') return new Promise<SchematicReviewRecord>(resolve => { finish = resolve })
+  })
+  const view = render(<SchematicReviewPage active revision={0} onEdit={edit}/>)
+  fireEvent.click(await screen.findByRole('button', { name: '编辑' }))
+  await waitFor(() => expect(finish).toBeDefined())
+  view.rerender(<SchematicReviewPage active={false} revision={0} onEdit={edit}/>)
+  view.rerender(<SchematicReviewPage active revision={0} onEdit={edit}/>)
+  await act(async () => finish(record))
+  expect(edit).not.toHaveBeenCalled()
+})
+
 beforeEach(() => {
   vi.clearAllMocks()
   localStorage.setItem('printflow-account-name', '审核测试用户')
@@ -115,6 +187,95 @@ it('Ctrl+Z restores the previous arrangement edit without affecting the source a
   act(() => fireEvent.keyDown(window, { key: 'z', ctrlKey: true }))
   await waitFor(() => expect(latestArrange().pages[0].items[0].x).toBe(originalX))
   expect(latestArrange().assets[0]).toEqual(asset)
+})
+
+it('showing a back preserves current scale through export and undoes the added placement in one step', async () => {
+  const record = fixture()
+  record.assets[0].svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><image id="f" width="100" height="100" href="front.png"/><image id="b" width="100" height="100" href="back.png"/><image id="w" width="100" height="100" href="window.png"/></svg>'
+  record.assets[0].sourceImages = (['front', 'back', 'window'] as const).map((layerRole, index) => ({ nodeId: ['f', 'b', 'w'][index], layerRole, widthPx: 100, heightPx: 100, format: 'png' }))
+  const source = record.pages[0].items[0]
+  source.w = 30; source.h = 40
+  source.svgLayerIds = ['svg-layer-0', 'svg-layer-2']
+  const before = structuredClone(record.pages)
+  render(<SchematicPage initialRecord={record}/> )
+  await screen.findByText('恢复的排列页')
+  act(() => latestArrange().onShowBack?.(source.id))
+  const result = latestArrange()
+  const back = result.pages.flatMap(page => page.items).find(item => item.manualBack)!
+  expect(back).toBeTruthy()
+  expect(back).toMatchObject({ w: source.w, h: source.h, derivedFrom: source.id, mirrorX: true })
+  expect(back.backSvg).toContain('back.png')
+  expect(back.backSvg).toContain('window.png')
+  expect(back.backSvg).not.toContain('front.png')
+  expect(result.displayState.visualScales.get(back.id)).toBe(1.6)
+  expect(result.selectedItem).toBe(back.id)
+  act(() => latestArrange().onShowBack?.(source.id))
+  expect(latestArrange().pages.flatMap(page => page.items).filter(item => item.manualBack)).toHaveLength(1)
+  fireEvent.click(screen.getByRole('button', { name: '导出测试 PDF' }))
+  await waitFor(() => expect(mocks.exportPdf).toHaveBeenCalledOnce())
+  expect(mocks.exportPdf.mock.calls[0][0].flatMap((page: { items: unknown[] }) => page.items)).toContainEqual(back)
+  expect(mocks.exportPdf.mock.calls[0][8].get(back.id)).toBe(1.6)
+  await waitFor(() => expect(latestArrange().exporting).toBe(false))
+  act(() => fireEvent.keyDown(window, { key: 'z', ctrlKey: true }))
+  expect(latestArrange().pages).toEqual(before)
+  expect(latestArrange().displayState.visualScales.has(back.id)).toBe(false)
+  expect(mocks.autoArrange).not.toHaveBeenCalled()
+})
+
+it('refresh fills deleted rows using existing blocks, exports the result and undoes as one step', async () => {
+  const record = fixture()
+  const source = record.pages[0]
+  const prototype = source.imageGroups![0]
+  const bounds = artworkBounds(record.layoutBounds)
+  const top = bounds.top + HEADER_BLOCK_HEIGHT + GROUP_GAP * 2
+  const headers = source.headerBlocks!.map(header => ({ ...header, x: bounds.left, y: bounds.top + GROUP_GAP, width: prototype.width }))
+  const makeGroup = (id: string, y: number) => ({ ...prototype, id: `group-${id}`, itemIds: [id], x: bounds.left, y, height: 170,
+    backgroundHeight: 170, details: { ...prototype.details!, size: '自定义 Size', note: '保留备注', textOverrides: { qt: { text: 'QT: 123', color: '#123456', fontSize: 16 } } } })
+  const makeItem = (id: string, y: number) => ({ ...source.items[0], id, x: bounds.left + 60, y: y + 70, w: 48, h: 70 })
+  record.pages = [
+    { ...source, headerBlocks: headers, imageGroups: [makeGroup('deleted', top), makeGroup('remaining', top + 240)], items: [makeItem('deleted', top), makeItem('remaining', top + 240)],
+      annotations: [{ id: 'manual-ruler', kind: 'ruler', x: bounds.left + 10, y: top + 260, x2: bounds.left + 10, y2: top + 350, measuredMm: 52, color: '#2f6fa3', sourceItemId: 'remaining', extensionOffset: -12 }] },
+    { ...source, id: 2, name: '后续页', headerBlocks: headers, imageGroups: [makeGroup('later', top)], items: [makeItem('later', top)] },
+  ]
+  record.display.visualScales = [['remaining', 1.2], ['later', .8]]
+  record.display.accessoryVisuals = [['group-remaining:note', { scale: 1.3, x: 9, y: -6 }]]
+  record.display.dimensionDisplayOverrides = [['remaining', { decimalPlaces: 2, precision: 'default' }]]
+  const original = structuredClone(record.pages)
+  render(<SchematicPage initialRecord={record}/> )
+  await screen.findByText('恢复的排列页')
+  act(() => latestArrange().onDeleteGroups(['group-deleted']))
+  const afterDelete = structuredClone(latestArrange().pages)
+  act(() => latestArrange().onRefresh())
+  const refreshed = latestArrange().pages
+  expect(refreshed).toHaveLength(1)
+  expect(refreshed[0].items.map(item => item.id)).toEqual(['remaining', 'later'])
+  expect(refreshed[0].imageGroups![0].y).toBeCloseTo(top)
+  for (const group of refreshed[0].imageGroups!) {
+    const before = original.flatMap(page => page.imageGroups!).find(value => value.id === group.id)!
+    const oldItem = original.flatMap(page => page.items).find(item => item.id === group.itemIds[0])!
+    const newItem = refreshed[0].items.find(item => item.id === oldItem.id)!
+    expect(newItem).toEqual({ ...oldItem, x: oldItem.x + group.x - before.x, y: oldItem.y + group.y - before.y })
+    expect(group.details).toEqual(before.details)
+    expect(group.width).toBe(before.width)
+    expect(group.height).toBe(before.height)
+  }
+  expect(refreshed[0].annotations![0]).toMatchObject({ id: 'manual-ruler', y: top + 20, y2: top + 110, measuredMm: 52, extensionOffset: -12 })
+  expect(latestArrange().displayState).toEqual(restoreArrangementDisplay(record.display))
+  expect(latestArrange().assets).toEqual(record.assets)
+  expect(mocks.autoArrange).not.toHaveBeenCalled()
+
+  fireEvent.click(screen.getByText('导出测试 PDF'))
+  await waitFor(() => expect(mocks.invoke.mock.calls.some(([command]) => command === 'save_schematic_review')).toBe(true))
+  const saved = mocks.invoke.mock.calls.find(([command]) => command === 'save_schematic_review')![1].record as SchematicReviewRecord
+  expect(saved.pages).toEqual(refreshed)
+  expect(saved.display).toEqual(record.display)
+  expect(saved.arrangementSort).toBe('upload')
+  expect(mocks.exportPdf.mock.calls[0][0]).toEqual(refreshed)
+  await waitFor(() => expect(latestArrange().exporting).toBe(false))
+  act(() => fireEvent.keyDown(window, { key: 'z', ctrlKey: true }))
+  expect(latestArrange().pages).toEqual(afterDelete)
+  act(() => fireEvent.keyDown(window, { key: 'z', ctrlKey: true }))
+  expect(latestArrange().pages).toEqual(original)
 })
 
 it('opening an unchanged review uses its own margins without replacing the preference for the next batch', async () => {
@@ -199,7 +360,6 @@ it('restores exact arrangement, text, rulers and independent visuals without aut
   expect(props.assets).toEqual(record.assets)
   expect(props.metadata).toEqual(record.metadata)
   expect(props.layoutBounds).toEqual(record.layoutBounds)
-  expect(props.sortMode).toBe('upload')
   expect(props.displayState).toEqual(restoreArrangementDisplay(record.display))
   expect(mocks.autoArrange).not.toHaveBeenCalled()
 })

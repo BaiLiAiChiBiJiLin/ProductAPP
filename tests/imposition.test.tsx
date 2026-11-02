@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { ConfigProvider } from 'antd'
 import ImpositionPage from '../src/modules/imposition/ImpositionPage'
 import ImpositionThumbnail from '../src/modules/imposition/ImpositionThumbnail'
-import { expandImpositionImages, getImpositionQuantity, type ImpositionJob, type ImpositionRecord, type ProductionImage } from '../src/modules/imposition/impositionRecords'
+import { expandImpositionImages, forgetImpositionGeometry, getImpositionQuantity, loadImpositionJob, updateImpositionImageQuantity, updateImpositionImageQuantities, type ImpositionJob, type ImpositionRecord, type ProductionImage } from '../src/modules/imposition/impositionRecords'
 import type { PackedImpositionItem } from '../src/modules/imposition/ImpositionKonvaCanvas'
 import { applyPackingEdit, type PackingEdit } from '../src/modules/imposition/packingEdits'
 import { IMPOSITION_THREADS_STORAGE_KEY } from '../src/modules/imposition/useImpositionThreads'
@@ -881,7 +881,14 @@ it('limits thumbnail loads to two concurrent requests and skips queued thumbnail
   expect(screen.getAllByRole('img')).toHaveLength(3)
 })
 
+const realNow = Date.now
+let cacheTestClock = 0
 beforeEach(() => {
+  // Fixtures intentionally reuse job IDs and paths; each test represents an
+  // independent dataset, not another read of the preceding test's cache.
+  forgetImpositionGeometry(mocks.invoke.mock.calls.filter(([command]) => command === 'load_imposition_geometry').map(([, args]) => args.path))
+  cacheTestClock += 10_000
+  vi.spyOn(Date, 'now').mockImplementation(() => realNow() + cacheTestClock)
   vi.clearAllMocks()
   localStorage.removeItem(IMPOSITION_THREADS_STORAGE_KEY)
   localStorage.removeItem(LAYOUT_PRESET_STORAGE_KEY)
@@ -955,6 +962,47 @@ it('keeps the pending row on return failure and allows retry', async () => {
   fireEvent.click(screen.getByRole('button', { name: '回退' }))
   fireEvent.click(within(await screen.findByRole('tooltip')).getByRole('button', { name: /回\s*退/ }))
   await waitFor(() => expect(onReturned).toHaveBeenCalledOnce())
+})
+
+it('keeps a returning task hidden when a list refresh finishes before the cloud return', async () => {
+  let finishReturn!: () => void
+  let returned = false
+  mocks.invoke.mockImplementation(async command => {
+    if (command === 'list_pending_impositions') return { records: returned ? [] : [jobs[0]], total: returned ? 0 : 1, page: 1, pageSize: 20 }
+    if (command === 'return_imposition_to_review') return new Promise<void>(resolve => { finishReturn = () => { returned = true; resolve() } })
+  })
+  render(<ConfigProvider theme={{ token: { motion: false } }}><ImpositionPage active revision={0}/></ConfigProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: '回退' }))
+  fireEvent.click(within(await screen.findByRole('tooltip')).getByRole('button', { name: /回\s*退/ }))
+  await waitFor(() => expect(screen.queryByText('生产客户0')).toBeNull())
+  fireEvent.click(screen.getByRole('button', { name: /刷\s*新/ }))
+  await waitFor(() => expect(mocks.invoke.mock.calls.filter(([command]) => command === 'list_pending_impositions')).toHaveLength(2))
+  await waitFor(() => expect((screen.getByRole('button', { name: /刷\s*新/ }) as HTMLButtonElement).className).not.toContain('ant-btn-loading'))
+  try {
+    expect(screen.queryByText('生产客户0')).toBeNull()
+    expect(screen.getByText('共 0 条待拼版记录')).toBeTruthy()
+  } finally { await act(async () => finishReturn()) }
+})
+
+it.each(['single', 'batch'])('does not replace an in-flight %s QT write with a stale detail read after the cache TTL', async kind => {
+  let now = Date.now()
+  vi.spyOn(Date, 'now').mockImplementation(() => now)
+  const id = `slow-quantity-${kind}`
+  const before = { ...detail, id }
+  const updated = { ...before, images: before.images.map(image => ({ ...image, attributes: { ...image.attributes, QT: '23' } })) }
+  let finishSave!: (value: ImpositionRecord) => void
+  mocks.invoke.mockImplementation(async command => {
+    if (command.startsWith('update_imposition_image_quantit')) return new Promise<ImpositionRecord>(resolve => { finishSave = resolve })
+    if (command === 'load_imposition_job') return before
+  })
+  const save = kind === 'single' ? updateImpositionImageQuantity(id, 'asset', 23) : updateImpositionImageQuantities(id, ['asset'], 23)
+  now += 4000
+  const reading = loadImpositionJob(id)
+  finishSave(updated)
+  await save
+  expect((await reading).images[0].attributes.QT).toBe('23')
+  expect((await loadImpositionJob(id)).images[0].attributes.QT).toBe('23')
+  expect(mocks.invoke.mock.calls.some(([command]) => command === 'load_imposition_job')).toBe(false)
 })
 
 

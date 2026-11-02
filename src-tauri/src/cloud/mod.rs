@@ -246,13 +246,7 @@ pub fn dispatch(
         "load_batch" => batches::load(conn, env, user, required(args, "id")?),
         "load_batch_asset_svg" => batches::artwork(conn, env, user, args),
         "load_batch_thumbnails" => batches::thumbnails(conn, env, user, required(args, "id")?),
-        "delete_batch" => {
-            let id = required(args, "id")?;
-            let batch = batches::get(conn, id, user, true)?;
-            store::check_version(Some(&batch), expected)?;
-            store::remove(conn, "batch", id)?;
-            Ok(Value::Null)
-        }
+        "delete_batch" => batches::delete(conn, user, required(args, "id")?, expected),
         "delete_asset" => {
             let id = required(args, "batchId")?;
             let Some(batch) = store::read(conn, "batch", id, true)? else {

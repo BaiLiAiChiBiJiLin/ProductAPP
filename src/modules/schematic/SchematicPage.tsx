@@ -2,6 +2,8 @@ import { recolorBackground } from './services/canvasAnnotationService'
 import { imageGroupsForPage } from './services/groupBackgroundService'
 import { createHorizontalGroupReflowRequest, applyHorizontalGroupReflow } from './services/horizontalGroupReflowService'
 import { resizeGroupPages, type GroupRect } from './services/groupResizeService'
+import { refreshArrangementPages } from './services/refreshArrangementService'
+import { showBackArtwork } from './services/showBackArtworkService'
 import { calculateHorizontalReflow } from './services/horizontalReflowWorkerService'
 import { exportFileName } from './services/exportFileName'
 import { removeCanvasGroups } from './services/removeCanvasGroups'
@@ -45,7 +47,9 @@ import BatchHistoryPanel from './history/BatchHistoryPanel'
 import ReviewAssetPicker from './components/ReviewAssetPicker'
 import { currentSharedUser } from './services/sharedTransferService'
 import { ArrowLeft, Trash2 } from 'lucide-react'
-import { defaultBatchMetadata, type BatchMetadata } from './types'
+import type { BatchMetadata } from './types'
+import { initializeBatchMetadata } from './services/batchMetadataService'
+import { reconcileCloudBatchAssets, reconcileCloudBatchMetadata } from './services/cloudBatchReconciliation'
 import Loading from '../../components/Loading'
 import { classifyAssetsByProductAndPrint } from './services/classificationService'
 import { combineImageGroupsAcrossPages } from './services/groupCombinationService'
@@ -58,7 +62,7 @@ import { loadFinishNames } from './services/finishService'
 import { setFinishLookup } from './services/assetDetailsService'
 
 import { orderAssetsByProductGroup } from './services/productGroupOrdering'
-import { discardTemporaryAssets, loadHistoryBatch, type BatchSummary, type BatchLoadProgress } from './services/batchHistoryService'
+import { deleteHistoryBatch, discardTemporaryAssets, loadHistoryBatch, type BatchSummary, type BatchLoadProgress } from './services/batchHistoryService'
 import { loadAssetSvg } from './services/assetSvgService'
 type SaveBatchResult = { assets: Asset[]; duplicate: boolean; batchId: string; metadata?: BatchMetadata }
 const assetForPersistence = (asset: Asset): Asset => asset.svg && asset.storagePath ? { ...asset, svg: '' } : asset
@@ -102,8 +106,8 @@ const arrangementSignature = (pages: Page[], displayState: ArrangementDisplaySta
   arrangementSort,
   defaultArrangementIds,
 })
-type Props = { initialRecord?: SchematicReviewRecord; onRecordSaved?: () => void; onWorkingChange?: (working: boolean) => void; userName?: string; onSharedRecordsChanged?: () => void }
-export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingChange, userName = currentSharedUser(), onSharedRecordsChanged }: Props = {}) { const [toast, context] = message.useMessage(); const [assets, setAssets] = useState<Asset[]>(initialRecord?.assets ?? []); const [batchOpen, setBatchOpen] = useState(Boolean(initialRecord)); const [loadingBatchId, setLoadingBatchId] = useState<string | null>(null); const [busy, setBusy] = useState(false); const [dropActive, setDropActive] = useState(false); const [progress, setProgress] = useState<{ parse: ImportProgress; generate: ImportProgress }>({ parse: { phase: 'parse', completed: 0, total: 0 }, generate: { phase: 'generate', completed: 0, total: 0 } }); const [reviewOpen, setReviewOpen] = useState(false); const [confirmingReview, setConfirmingReview] = useState(false); const [externalImportPath, setExternalImportPath] = useState<string | null>(null); const [screen, setScreen] = useState<'upload' | 'arrange'>(initialRecord ? 'arrange' : 'upload'); const [uploadFromArrange, setUploadFromArrange] = useState(false); const [pages, setPages] = useState<Page[]>(initialRecord?.pages ?? []); const [activePage, setActivePage] = useState(initialRecord?.activePage ?? 1); const [selectedItem, setSelectedItem] = useState<string | null>(null); const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([])
+type Props = { active?: boolean; initialRecord?: SchematicReviewRecord; onRecordSaved?: () => void; onWorkingChange?: (working: boolean) => void; userName?: string; onSharedRecordsChanged?: () => void }
+export default function SchematicPage({ active = true, initialRecord, onRecordSaved, onWorkingChange, userName = currentSharedUser(), onSharedRecordsChanged }: Props = {}) { const [toast, context] = message.useMessage(); const [assets, setAssets] = useState<Asset[]>(initialRecord?.assets ?? []); const [batchOpen, setBatchOpen] = useState(Boolean(initialRecord)); const [loadingBatchId, setLoadingBatchId] = useState<string | null>(null); const [busy, setBusy] = useState(false); const [dropActive, setDropActive] = useState(false); const [progress, setProgress] = useState<{ parse: ImportProgress; generate: ImportProgress }>({ parse: { phase: 'parse', completed: 0, total: 0 }, generate: { phase: 'generate', completed: 0, total: 0 } }); const [reviewOpen, setReviewOpen] = useState(false); const [confirmingReview, setConfirmingReview] = useState(false); const [externalImportPath, setExternalImportPath] = useState<string | null>(null); const [screen, setScreen] = useState<'upload' | 'arrange'>(initialRecord ? 'arrange' : 'upload'); const [uploadFromArrange, setUploadFromArrange] = useState(false); const [pages, setPages] = useState<Page[]>(initialRecord?.pages ?? []); const [activePage, setActivePage] = useState(initialRecord?.activePage ?? 1); const [selectedItem, setSelectedItem] = useState<string | null>(null); const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([])
   const assetsRef = useRef<Asset[]>(assets)
   const [arrangementSort, setArrangementSort] = useState<'default' | 'upload'>(initialRecord?.arrangementSort ?? 'default')
   const [defaultArrangementIds, setDefaultArrangementIds] = useState<string[]>(initialRecord?.defaultArrangementIds ?? [])
@@ -133,7 +137,8 @@ export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingC
   const [classifiedAssets, setClassifiedAssets] = useState<Asset[] | null>(null)
   const [reviewSelectedIds, setReviewSelectedIds] = useState<Set<string>>(new Set())
   const [classifying, setClassifying] = useState(false)
-  const [batchMetadata, setBatchMetadata] = useState<BatchMetadata>(initialRecord?.metadata ?? defaultBatchMetadata)
+  const [batchMetadata, setBatchMetadata] = useState<BatchMetadata>(() => initialRecord?.metadata ?? initializeBatchMetadata(userName))
+  const batchMetadataRef = useRef(batchMetadata)
   const [layoutBounds, setLayoutBounds] = useState<LayoutBounds>(() => initialRecord?.layoutBounds ?? loadLayoutBounds())
   const [historyTransition, setHistoryTransition] = useState<'' | 'forward' | 'back'>('')
   const [savingBatch, setSavingBatch] = useState(false)
@@ -224,16 +229,19 @@ export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingC
   }, [screen, exporting, reflowing, busy, savingBatch, transferring, confirmingReview, classifying, undoArrangement])
   useEffect(() => { assetsRef.current = assets; setSelectedAssetIds(current => new Set([...current].filter(id => assets.some(asset => asset.id === id)))) }, [assets])
   useEffect(() => { currentBatchIdRef.current = currentBatchId }, [currentBatchId])
+  useEffect(() => { batchMetadataRef.current = batchMetadata }, [batchMetadata])
   useEffect(() => onCloudBatchSaveComplete(event => {
     if (event.id !== currentBatchIdRef.current || !Array.isArray(event.result.assets)) return
     const persisted = event.result.assets as Asset[]
     if (!persisted.length) return
-    setAssets(current => { const next = mergePersistedAssetMetadata(current, persisted); assetsRef.current = next; return next })
+    setAssets(current => { const next = reconcileCloudBatchAssets(current, event.submitted.assets as Asset[], persisted); assetsRef.current = next; return next })
     if (event.result.batchId) {
       currentBatchIdRef.current = event.result.batchId
       setCurrentBatchId(event.result.batchId)
     }
-    if (event.result.metadata && typeof event.result.metadata === 'object') setBatchMetadata(event.result.metadata as BatchMetadata)
+    if (event.submitted.metadata && event.result.metadata && typeof event.result.metadata === 'object') {
+      setBatchMetadata(current => reconcileCloudBatchMetadata(current, event.submitted.metadata as BatchMetadata, event.result.metadata as BatchMetadata))
+    }
   }), [])
   useEffect(() => {
     let cancelled = false
@@ -251,20 +259,25 @@ export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingC
   useEffect(() => { onWorkingChange?.(reflowing || busy || exporting || savingBatch || transferring || confirmingReview || classifying || Boolean(loadingBatchId)) }, [reflowing, busy, exporting, savingBatch, transferring, confirmingReview, classifying, loadingBatchId, onWorkingChange])
   const saveBatch = async (confirmedAssets?: Asset[], options: { background?: boolean } = {}) => {
     if (saveLock.current) throw new Error('批次正在保存，请稍候')
-    const initialSavingAssets = repairLegacyProductGroups(confirmedAssets ?? assetsRef.current, productConfigs)
+    const editBaseAssets = assetsRef.current
+    const initialSavingAssets = repairLegacyProductGroups(confirmedAssets ?? editBaseAssets, productConfigs)
     if (!initialSavingAssets.length) return
     if (!isTauri()) { if (confirmedAssets) throw new Error('请在桌面软件中确认并保存'); return }
     const recordId = currentBatchId ?? crypto.randomUUID()
     if (options.background && currentBatchId) {
       const mode = await storageMode().catch(() => ({ shared: false }))
+      if (currentBatchIdRef.current !== recordId) throw new Error('当前批次已切换，请在打开的批次中重新修改')
       if (mode.shared) {
-        const next = { id: recordId, savedAt: new Date().toISOString(), assets: initialSavingAssets, metadata: batchMetadata }
-        setAssets(initialSavingAssets)
+        // A previous upload may finish during the mode lookup. Retain its
+        // permanent paths instead of enqueuing temporary files already cleaned up.
+        const nextAssets = reconcileCloudBatchAssets(initialSavingAssets, editBaseAssets, assetsRef.current)
+        const next = { id: recordId, savedAt: new Date().toISOString(), assets: nextAssets, metadata: batchMetadataRef.current }
+        assetsRef.current = nextAssets
+        setAssets(nextAssets)
         currentBatchIdRef.current = recordId; setCurrentBatchId(recordId)
-        setBatchMetadata(batchMetadata)
-        if (screen === 'arrange') setPages(current => autoArrangePages(current, activePage, assetsForArrangement(current, arrangementSort, initialSavingAssets), layoutBounds, productConfigs, [], displayState.visualScales))
-        enqueueCloudBatchSave({ ...next, assets: initialSavingAssets.map(assetForPersistence) })
-        return { assets: initialSavingAssets, duplicate: false, batchId: recordId, metadata: batchMetadata }
+        if (screen === 'arrange') setPages(current => autoArrangePages(current, activePage, assetsForArrangement(current, arrangementSort, nextAssets), layoutBounds, productConfigs, [], displayState.visualScales))
+        enqueueCloudBatchSave({ ...next, assets: nextAssets.map(assetForPersistence) })
+        return { ...next, duplicate: false, batchId: recordId }
       }
     }
     saveLock.current = true
@@ -341,29 +354,31 @@ export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingC
     return () => window.cancelAnimationFrame(frame)
   }, [scrollToAssetId, category, visibleAssets.length])
   const changeCategory = (id: string) => { setCategory(id); setSelectedAssetIds(new Set()) }
-  const discardBatch = () => { setScreen('upload'); setSelectedGroupIds([]); grouping.reset(); setUploadPanelTab('upload'); const pendingAssets = assets; setCategory(UNASSIGNED_PRODUCT_CATEGORY); setHistoryTransition('back'); setUploadFromArrange(false); setPages([]); resetArrangementDisplay(); setSelectedItem(null); setAssets([]); setSelectedAssetIds(new Set()); currentBatchIdRef.current = null; setCurrentBatchId(null); setBatchOpen(false); setBatchMetadata(defaultBatchMetadata); toast.success('已返回批次列表'); if (pendingAssets.length && isTauri()) void discardTemporaryAssets(pendingAssets).catch(e => toast.error(`临时文件清理失败：${String(e)}`)) }
+  const discardBatch = () => { setScreen('upload'); setSelectedGroupIds([]); grouping.reset(); setUploadPanelTab('upload'); const pendingAssets = assets; setCategory(UNASSIGNED_PRODUCT_CATEGORY); setHistoryTransition('back'); setUploadFromArrange(false); setPages([]); resetArrangementDisplay(); setSelectedItem(null); setAssets([]); setSelectedAssetIds(new Set()); currentBatchIdRef.current = null; setCurrentBatchId(null); setBatchOpen(false); setBatchMetadata(initializeBatchMetadata(userName)); toast.success('已返回批次列表'); if (pendingAssets.length && isTauri()) void discardTemporaryAssets(pendingAssets).catch(e => toast.error(`临时文件清理失败：${String(e)}`)) }
   const deleteAssetsFromBatch = async (targets: Asset[]) => {
     const uniqueTargets = [...new Map(targets.map(asset => [asset.id, asset])).values()]
     if (!uniqueTargets.length || busy || savingBatch || saveLock.current || guideActive || transferring) return
     const deletedIds = new Set(uniqueTargets.map(asset => asset.id))
-    const remainingAssets = assets.filter(asset => !deletedIds.has(asset.id))
+    const batchId = currentBatchIdRef.current
     saveLock.current = true
     setBusy(true)
     let cloudQueued = false
     try {
       if (isTauri()) {
         const shared = (await storageMode()).shared
-        if (shared && currentBatchId && remainingAssets.length) {
-          enqueueCloudBatchSave({ id: currentBatchId, savedAt: new Date().toISOString(), assets: remainingAssets.map(assetForPersistence), metadata: batchMetadata })
+        if (currentBatchIdRef.current !== batchId) throw new Error('当前批次已切换，请在打开的批次中重新删除')
+        // Upload completion may replace temporary paths while storage mode is
+        // loading. Delete from the latest snapshot, never requeue cleaned files.
+        const remainingAssets = assetsRef.current.filter(asset => !deletedIds.has(asset.id))
+        if (shared && batchId && remainingAssets.length) {
+          enqueueCloudBatchSave({ id: batchId, savedAt: new Date().toISOString(), assets: remainingAssets.map(assetForPersistence), metadata: batchMetadataRef.current })
           cloudQueued = true
-        } else if (shared && currentBatchId) {
-          clearCloudBatchSave(currentBatchId)
-          await flushCloudSyncQueue()
-          await invoke('delete_batch', { id: currentBatchId })
+        } else if (shared && batchId) {
+          await deleteHistoryBatch(batchId)
         } else if (shared) {
           await discardTemporaryAssets(uniqueTargets)
         } else {
-          for (const asset of uniqueTargets) await invoke('delete_asset', { id: asset.id, batchId: currentBatchId })
+          for (const asset of uniqueTargets) await invoke('delete_asset', { id: asset.id, batchId })
         }
       }
       setAssets(current => current.filter(item => !deletedIds.has(item.id)))
@@ -454,7 +469,7 @@ export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingC
     grouping.reset(); setLoadingBatchId(record.id); setHistoryTransition('forward');
     try {
       const loaded = await loadHistoryBatch(record.id, setBatchLoadProgress)
-      setUploadPanelTab('upload'); setCategory(UNASSIGNED_PRODUCT_CATEGORY); setUploadFromArrange(false); setPages([]); resetArrangementDisplay(); setSelectedItem(null); setAssets(repairLegacyProductGroups(loaded.assets, productConfigs)); setSelectedAssetIds(new Set()); currentBatchIdRef.current = loaded.id; setCurrentBatchId(loaded.id); setBatchMetadata(loaded.metadata ?? defaultBatchMetadata); setBatchOpen(true); toast.success('已打开历史批次')
+      setUploadPanelTab('upload'); setCategory(UNASSIGNED_PRODUCT_CATEGORY); setUploadFromArrange(false); setPages([]); resetArrangementDisplay(); setSelectedItem(null); setAssets(repairLegacyProductGroups(loaded.assets, productConfigs)); setSelectedAssetIds(new Set()); currentBatchIdRef.current = loaded.id; setCurrentBatchId(loaded.id); setBatchMetadata(initializeBatchMetadata(userName, { metadata: loaded.metadata, savedAt: loaded.savedAt })); setBatchOpen(true); toast.success('已打开历史批次')
     } catch (error) { toast.error(`历史批次加载失败：${String(error)}`) }
     finally { batchLoadLock.current = false; setLoadingBatchId(null) }
   }
@@ -465,13 +480,13 @@ export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingC
     const importBatchId = wasOpen && currentBatchId ? currentBatchId : crypto.randomUUID()
     if (forceNewBatch) {
       grouping.reset(); setPages([]); resetArrangementDisplay(); setSelectedItem(null); setSelectedGroupIds([])
-      setAssets([]); setSelectedAssetIds(new Set()); setBatchOpen(false); setBatchMetadata(defaultBatchMetadata)
+      setAssets([]); setSelectedAssetIds(new Set()); setBatchOpen(false); setBatchMetadata(initializeBatchMetadata(userName))
       if (assets.length && isTauri()) void discardTemporaryAssets(assets).catch(() => {})
     }
     currentBatchIdRef.current = importBatchId; setCurrentBatchId(importBatchId); setBusy(true); setDropActive(false)
     setProgress({ parse: { phase: 'parse', completed: 0, total: 0 }, generate: { phase: 'generate', completed: 0, total: 0 } })
     const streamedIds = new Set<string>()
-    let metadata = wasOpen ? batchMetadata : { ...defaultBatchMetadata }
+    let metadata = wasOpen ? batchMetadata : initializeBatchMetadata(userName)
     let initializedName = false
     const initializeBatchName = (imported: Asset[]) => {
       if (wasOpen || initializedName || !imported.length) return
@@ -502,12 +517,32 @@ export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingC
       if (streamedIds.size) {
         setAssets(current => current.filter(asset => !streamedIds.has(asset.id)))
         setSelectedAssetIds(current => new Set([...current].filter(id => !streamedIds.has(id))))
-        if (!wasOpen) { setBatchOpen(false); currentBatchIdRef.current = null; setCurrentBatchId(null); setBatchMetadata(defaultBatchMetadata) }
+        if (!wasOpen) { setBatchOpen(false); currentBatchIdRef.current = null; setCurrentBatchId(null); setBatchMetadata(initializeBatchMetadata(userName)) }
       }
       toast.error(String(error))
     } finally { uploadLock.current = false; setBusy(false) }
-  }, [assets, batchMetadata, batchOpen, currentBatchId, transferring, busy, savingBatch, screen, toast])
-  useEffect(() => { if (!isTauri()) return; let cancelled = false; let unlisten = () => {}; const onDrop = (event: Event<DragDropEvent>) => { if ((screen !== 'upload' && screen !== 'arrange') || busy || savingBatch || transferring || guideActive) return; if (event.payload.type === 'enter' || event.payload.type === 'over') setDropActive(true); else if (event.payload.type === 'leave') setDropActive(false); else if (event.payload.type === 'drop') { setDropActive(false); const path = event.payload.paths.find(item => /\.svg$/i.test(item)); if (path) void upload(path); else toast.error('仅支持 SVG 文件') } }; void Promise.resolve().then(() => getCurrentWebview()).then(webview => webview.onDragDropEvent(onDrop)).then(stop => { if (cancelled) stop(); else unlisten = stop }).catch(() => {}); return () => { cancelled = true; unlisten() } }, [screen, busy, savingBatch, transferring, guideActive, upload, toast])
+  }, [assets, batchMetadata, batchOpen, currentBatchId, transferring, busy, savingBatch, screen, toast, userName])
+  // Tauri drops are window-wide: hidden, retained modules must not consume them.
+  useEffect(() => {
+    if (!active) { setDropActive(false); return }
+    if (!isTauri()) return
+    let cancelled = false
+    let unlisten = () => {}
+    const onDrop = (event: Event<DragDropEvent>) => {
+      if (cancelled || busy || savingBatch || transferring || guideActive) return
+      if (event.payload.type === 'enter' || event.payload.type === 'over') setDropActive(true)
+      else if (event.payload.type === 'leave') setDropActive(false)
+      else if (event.payload.type === 'drop') {
+        setDropActive(false)
+        const path = event.payload.paths.find(item => /\.svg$/i.test(item))
+        if (path) void upload(path)
+        else toast.error('仅支持 SVG 文件')
+      }
+    }
+    void Promise.resolve().then(() => getCurrentWebview()).then(webview => webview.onDragDropEvent(onDrop))
+      .then(stop => { if (cancelled) stop(); else unlisten = stop }).catch(() => {})
+    return () => { cancelled = true; unlisten() }
+  }, [active, busy, savingBatch, transferring, guideActive, upload, toast])
   useEffect(() => { if (!isTauri()) return; let cancelled = false; let unlisten = () => {}; void listen<{ path: string }>('external-svg-import', event => { if (cancelled) return; if (screen === 'upload') void upload(event.payload.path); else { setExternalImportPath(event.payload.path); void getCurrentWindow().setFocus().catch(() => {}) } }).then(stop => { if (cancelled) stop(); else unlisten = stop }).catch(() => {}); return () => { cancelled = true; unlisten() } }, [screen, upload])
   const externalImportDialog = <Modal open={Boolean(externalImportPath)} title="接受到新图片是否处理新批次" footer={<><Button onClick={() => setExternalImportPath(null)}>取消</Button><Button onClick={() => { const path = externalImportPath; if (!path) return; setExternalImportPath(null); setUploadFromArrange(true); setScreen('upload'); void upload(path) }}>追加当前批次</Button><Button type="primary" onClick={() => { const path = externalImportPath; if (!path) return; setExternalImportPath(null); setUploadFromArrange(true); setScreen('upload'); void upload(path, true) }}>新建批次</Button></>}><p>当前正在示意图排列页，请选择如何处理这张 SVG。</p></Modal>
   const openReview = async () => { if (!assets.length || busy || confirmingReview || classifying) return; setClassifying(true); await new Promise<void>(resolve => window.setTimeout(resolve, 120)); const classified = classifyAssetsByProductAndPrint(assets); setClassifiedAssets(classified); setReviewSelectedIds(new Set(classified.map(asset => asset.id))); setClassifying(false); setReviewOpen(true) }
@@ -671,6 +706,22 @@ export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingC
     if (from < 0 || to < 0 || from === to) return current
     const next = [...current]; const [moved] = next.splice(from, 1); next.splice(to, 0, moved); return next
   })
+  const showArtworkBack = (itemId: string) => {
+    if (reflowLock.current || exportLock.current || busy) return
+    const page = pages.find(page => page.id === activePage)
+    const item = page?.items.find(item => item.id === itemId)
+    const asset = item && assets.find(asset => asset.id === item.assetId)
+    if (!page || !asset) return
+    try {
+      const result = showBackArtwork(page, itemId, asset, displayState, layoutBounds)
+      if (!result) return
+      const changed = pages.map(page => page.id === activePage ? result.page : page)
+      const next = result.requiresReflow ? refreshArrangementPages(changed, activePage, layoutBounds) : changed
+      setPages(next); setDisplayState(result.display)
+      setActivePage(next.find(page => page.items.some(item => item.id === result.itemId))?.id ?? activePage)
+      setSelectedItem(result.itemId); setSelectedGroupIds([])
+    } catch (error) { toast.error(String(error)) }
+  }
   const horizontalGroup = async (itemId: string) => {
     if (reflowLock.current || exportLock.current || busy) return
     const currentPage = pages.find(page => page.id === activePage)
@@ -731,17 +782,17 @@ export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingC
     if (!defaultArrangementIds.length) return classifyAssetsByProductAndPrint(sourceAssets)
     return [...sourceAssets].sort((a, b) => (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.id) ?? Number.MAX_SAFE_INTEGER))
   }
-  const autoArrange = (requestedMode: 'default' | 'upload' = arrangementSort) => {
+  const refreshArrangement = () => {
+    if (reflowLock.current || exportLock.current || busy) return
     try {
-      setArrangementSort(requestedMode)
-      const orderedAssets = assetsForArrangement(pages, requestedMode)
-      const nextPages = autoArrangePages(pages, activePage, orderedAssets, layoutBounds, productConfigs, [], displayState.visualScales)
+      const nextPages = refreshArrangementPages(pages, activePage, layoutBounds)
       setPages(nextPages)
       if (!nextPages.some(page => page.id === activePage)) setActivePage(nextPages.at(-1)?.id ?? 1)
       setSelectedItem(null)
       setSelectedGroupIds([])
+      toast.success('已刷新排列，保留块内调整并向前补位')
     }
-    catch (error) { toast.error(String(error)) }
+    catch (error) { toast.error(`刷新排列失败：${String(error)}`) }
   }
   const exportCurrent = async (format: 'jpg' | 'png' | 'svg' | 'pdf', displayOverrides: ReadonlyMap<string, DimensionDisplayOverride>) => {
     if (exportLock.current || reflowLock.current) return
@@ -784,7 +835,7 @@ export default function SchematicPage({ initialRecord, onRecordSaved, onWorkingC
     } catch (error) { toast.error(String(error)) }
     finally { exportLock.current = false; setExporting(false) }
   }
-  if (screen === 'arrange') return <ProductGroupingContext.Provider value={grouping}>{externalImportDialog}<ArrangePage onChangePage={next => setPages(current => current.map(page => page.id === next.id ? next : page))} onReorderPages={reorderPages} onBackgroundChange={(scope, color, ids) => setPages(current => recolorBackground(current, activePage, ids, scope, color))} onHorizontalGroup={itemId => void horizontalGroup(itemId)} onResizeGroup={(groupId, rect) => void resizeGroup(groupId, rect)} processingLabel={reflowing ? '正在调整块布局及后续页面…' : undefined} displayState={displayState} onDisplayStateChange={setDisplayState} context={context} assets={assets} pages={pages} activePage={activePage} selectedItem={selectedItem} selectedGroupIds={selectedGroupIds} sortMode={arrangementSort} onSelectPage={id => { setActivePage(id); setSelectedItem(null) }} onSelectItem={id => { setSelectedItem(id); setSelectedGroupIds([]) }} onSelectGroup={selectGroup} onChangeRulers={(ids, patch) => setPages(current => current.map(page => page.id === activePage ? updateSelectedRulers(page, ids, patch, new Map(assets.map(asset => [asset.id, asset]))) : page))} onChangeRuler={changeRuler} onEditText={editCanvasText} onChangeItem={updatePageItem} onReplaceArtwork={replaceCanvasImage} replacingArtwork={busy || reflowing} onDropAsset={addAssetToPage} onUpload={() => void upload()} uploadDropActive={dropActive} poolFocusAssetId={arrangementPoolFocusId} onDeleteGroups={deleteCanvasGroups} onDeleteItems={deleteCanvasItems} onConfirmAssetAttributes={confirmArrangeAttributes} onAddPage={addPage} onAutoArrange={autoArrange} onCombine={combineSelectedGroups} onBack={() => { setSelectedGroupIds([]); setUploadFromArrange(true); setScreen('upload') }} onBackToHistory={discardBatch} onExport={exportCurrent} exporting={exporting} exportProgress={exportProgress} metadata={batchMetadata} onMetadataChange={value => setBatchMetadata(current => ({ ...current, ...value }))} layoutBounds={layoutBounds} onBoundsChange={changeLayoutBounds} onAddHeaderBlock={addHeaderBlock} onChangeHeaderBlock={changeHeaderBlock} onRemoveHeaderBlock={removeHeaderBlock}/></ProductGroupingContext.Provider>
+  if (screen === 'arrange') return <ProductGroupingContext.Provider value={grouping}>{externalImportDialog}<ArrangePage onChangePage={next => setPages(current => current.map(page => page.id === next.id ? next : page))} onReorderPages={reorderPages} onBackgroundChange={(scope, color, ids) => setPages(current => recolorBackground(current, activePage, ids, scope, color))} onHorizontalGroup={itemId => void horizontalGroup(itemId)} onShowBack={showArtworkBack} onResizeGroup={(groupId, rect) => void resizeGroup(groupId, rect)} processingLabel={reflowing ? '正在调整块布局及后续页面…' : undefined} displayState={displayState} onDisplayStateChange={setDisplayState} context={context} assets={assets} pages={pages} activePage={activePage} selectedItem={selectedItem} selectedGroupIds={selectedGroupIds} onSelectPage={id => { setActivePage(id); setSelectedItem(null) }} onSelectItem={id => { setSelectedItem(id); setSelectedGroupIds([]) }} onSelectGroup={selectGroup} onChangeRulers={(ids, patch) => setPages(current => current.map(page => page.id === activePage ? updateSelectedRulers(page, ids, patch, new Map(assets.map(asset => [asset.id, asset]))) : page))} onChangeRuler={changeRuler} onEditText={editCanvasText} onChangeItem={updatePageItem} onReplaceArtwork={replaceCanvasImage} replacingArtwork={busy || reflowing} onDropAsset={addAssetToPage} onUpload={() => void upload()} uploadDropActive={dropActive} poolFocusAssetId={arrangementPoolFocusId} onDeleteGroups={deleteCanvasGroups} onDeleteItems={deleteCanvasItems} onConfirmAssetAttributes={confirmArrangeAttributes} onAddPage={addPage} onRefresh={refreshArrangement} onCombine={combineSelectedGroups} onBack={() => { setSelectedGroupIds([]); setUploadFromArrange(true); setScreen('upload') }} onBackToHistory={discardBatch} onExport={exportCurrent} exporting={exporting} exportProgress={exportProgress} metadata={batchMetadata} onMetadataChange={value => setBatchMetadata(current => ({ ...current, ...value }))} layoutBounds={layoutBounds} onBoundsChange={changeLayoutBounds} onAddHeaderBlock={addHeaderBlock} onChangeHeaderBlock={changeHeaderBlock} onRemoveHeaderBlock={removeHeaderBlock}/></ProductGroupingContext.Provider>
   return <ProductGroupingContext.Provider value={grouping}>{externalImportDialog}<main className={`product-upload-page ${showProductCategories ? 'has-product-categories' : ''} ${uploadFromArrange ? 'upload-page-enter-left' : ''} history-transition-${historyTransition}`}>{context}{showProductCategories && <ProductCategoryNav assets={assets} products={productConfigs} value={category} onChange={changeCategory} disabled={busy || savingBatch || guideActive}/>}<section className="uploaded-assets-panel" inert={savingBatch || transferring}><div className="upload-page-title">{batchOpen && <Button className="batch-back-button" type="text" icon={<ArrowLeft size={18}/>} aria-label="返回批次列表" title="返回批次列表并清除未保存内容" onClick={discardBatch} disabled={busy || savingBatch || confirmingReview || classifying || guideActive}/>}<div><h1>{batchOpen ? '当前批次图片' : schematicCopy.recent}</h1>{batchOpen ? <Tag color="blue">共 {assets.length} 张</Tag> : <p>默认不加载历史记录，请直接上传图片。</p>}</div>{batchOpen && <div className="batch-summary"><Button type="default" size="small" onClick={() => selectAssets(allAssetsSelected ? new Set() : new Set(visibleAssets.map(asset => asset.id)))} disabled={!assets.length || busy || savingBatch || confirmingReview || classifying || guideActive}>{allAssetsSelected ? '取消全选' : '全选'}</Button><Popconfirm title={`删除选中的 ${selectedAssetIds.size} 张图片？`} description="删除后将从当前批次中移除，无法在列表中恢复。" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => void deleteSelectedAssets()}><Button type="default" danger size="small" icon={<Trash2 size={14}/>} aria-label="删除选中图片" disabled={!selectedAssetIds.size || busy || savingBatch || transferring || confirmingReview || classifying || guideActive || grouping.saving}>删除</Button></Popconfirm><Button type="default" size="small" onClick={() => guideActive ? grouping.cancelGuide() : setSelectedAssetIds(new Set())} title={guideActive ? "退出引导并放弃未保存的修改，保留已保存内容" : undefined} disabled={!selectedAssetIds.size || busy || savingBatch || confirmingReview || classifying || grouping.saving}>取消选择</Button><Button type="primary" size="small" loading={savingBatch} onClick={() => void (guideActive ? grouping.persist(false) : saveBatch())} disabled={!assets.length || busy || savingBatch || confirmingReview || classifying || grouping.saving}>保存批次</Button></div>}</div>{batchOpen && <UploadImageList assets={visibleAssets} allAssets={assets} products={productConfigs} selectedIds={selectedAssetIds} onSelectionChange={selectAssets} disabled={busy || savingBatch || transferring} onDelete={deleteAssetFromBatch} onReplace={replaceImage} batchId={currentBatchId ?? undefined}/>}<BatchHistoryPanel active={!batchOpen} openingId={loadingBatchId} progress={batchLoadProgress} onOpen={record => void openBatch(record)} userName={userName} onSharedRecordsChanged={onSharedRecordsChanged} onTransferringChange={setTransferring}/></section><div className="upload-column"><UploadPanel busy={busy || savingBatch || transferring || Boolean(loadingBatchId)} dropActive={dropActive} progress={progress} metadata={batchMetadata} onMetadataChange={setBatchMetadata} onUpload={() => void upload()} batchOpen={batchOpen} activeTab={uploadPanelTab} onTabChange={setUploadPanelTab} selectedAssetIds={selectedAssetIds} onConfirmAttributes={confirmAttributes} assets={assets}/><Button className="generate-schematic-button" type="primary" size="large" icon={classifying ? <Loading size="small" inline /> : undefined} disabled={!assets.length || busy || savingBatch || confirmingReview || classifying || guideActive} onClick={() => void openReview()}>{classifying ? '正在分类…' : '生成示意图'}</Button></div><ReviewAssetPicker open={reviewOpen} assets={orderAssetsByProductGroup(assets)} batchId={currentBatchId ?? undefined} selectedIds={reviewSelectedIds} confirming={confirmingReview} onChange={setReviewSelectedIds} onCancel={() => { if (!confirmingReview) { setReviewOpen(false); setClassifiedAssets(null); setReviewSelectedIds(new Set()) } }} onConfirm={() => void confirmReview()} /></main></ProductGroupingContext.Provider> }
 
 

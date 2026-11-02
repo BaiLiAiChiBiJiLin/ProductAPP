@@ -24,6 +24,12 @@ export default function SchematicReviewPage({ active, revision, working = false,
   const [pagination, setPagination] = useState({ page: 1, pageSize: 20 })
   const [refresh, setRefresh] = useState(0)
   const operationLock = useRef(false)
+  const editGeneration = useRef(0)
+  useEffect(() => {
+    // Switching modules cancels only navigation from an outstanding read;
+    // mutations still finish and refresh their lists normally.
+    return () => { editGeneration.current++ }
+  }, [active, working])
   const [modal, modalContext] = Modal.useModal()
   const { token } = theme.useToken()
   const paymentColors = {
@@ -54,11 +60,15 @@ export default function SchematicReviewPage({ active, revision, working = false,
   }, [active, revision, refresh, pagination, search, dateFrom, dateTo])
   const edit = async (id: string) => {
     if (operationLock.current || working || loading || result.records.find(record => record.id === id)?.impositionJobId) return
+    const generation = ++editGeneration.current
     operationLock.current = true
     setEditingId(id)
     setError('')
-    try { onEdit(await loadReviewRecord(id)) }
-    catch (reason) { setError(`打开示意图失败：${String(reason)}`) }
+    try {
+      const record = await loadReviewRecord(id)
+      if (generation === editGeneration.current) onEdit(record)
+    }
+    catch (reason) { if (generation === editGeneration.current) setError(`打开示意图失败：${String(reason)}`) }
     finally { operationLock.current = false; setEditingId(null) }
   }
   const remove = (record: SchematicReviewSummary) => {

@@ -4,6 +4,8 @@ import { paginateThreeColumns } from '../arrangement/threeColumnLayout.ts'
 import { rulerDimensionLabel } from './imageDimensionService.ts'
 import { horizontalGroupPages } from './horizontalGroupReflowService.ts'
 import { resizeImageGroup } from './groupResizeService.ts'
+import { restoreManualBackBlocks, translateManualBackAnnotations } from './manualBackRestoreService.ts'
+import { refreshArrangementPages } from './refreshArrangementService.ts'
 
 /** Follow image identities when regeneration splits, merges, or reorders pages. */
 function restorePageEdits(previous: Page[], generated: Page[]) {
@@ -209,8 +211,26 @@ export function autoArrangePages(pages: Page[], _activePage: number, assets: Ass
       }
     }
   }
+  const manualBackBlocks = restoreManualBackBlocks(pages, result)
   let restored = restorePageEdits(pages, result)
+  if (manualBackBlocks.length) {
+    translateManualBackAnnotations(restored, manualBackBlocks)
+    const protectedPage = (page: Page) => page.imageGroups?.some(group => group.protectPageFill || /stickers?|贴纸/i.test(group.productKey ?? ''))
+    const first = restored.find(page => !protectedPage(page) && manualBackBlocks.some(block => block.page.id === page.id))
+    if (first) restored = refreshArrangementPages(restored, first.id, bounds)
+    // Protected sticker pages only repack locally. Preserve the same isolation
+    // when several manually edited blocks belong to separate sticker pages.
+    const refreshed = new Set<number>()
+    for (const block of manualBackBlocks) {
+      const destination = restored.find(page => page.imageGroups?.some(group => group.id === block.original.id))
+      if (destination && protectedPage(destination) && !refreshed.has(destination.id)) {
+        refreshed.add(destination.id)
+        restored = refreshArrangementPages(restored, destination.id, bounds)
+      }
+    }
+  }
   for (const id of horizontalIds) {
+    if (manualBackBlocks.some(block => block.original.id === id)) continue
     const page = restored.find(page => page.imageGroups?.some(group => group.id === id))
     if (page) restored = horizontalGroupPages(restored, page.id, id, bounds, visualScales)
   }

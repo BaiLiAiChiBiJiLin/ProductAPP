@@ -199,7 +199,7 @@ export function applyHorizontalGroupReflow(pages: Page[], plan: HorizontalGroupR
         imageCells: original.imageCells?.map(cell => ({ ...cell, x: cell.x + dx, y: cell.y + dy })),
         ...(isHorizontal ? { layoutMode: 'horizontal', stacked: undefined, imageColumns: plan.horizontal.imageColumns,
           imageCells: plan.horizontal.imageCells, detailWidth: plan.horizontal.detailWidth, detailColumns: 1,
-          detailsX: placement.x + placement.width - plan.horizontal.detailWidth, detailsHeight: undefined } : {}) })
+          detailsX: placement.x + placement.width - plan.horizontal.detailWidth, detailsHeight: undefined, detailsOffsetY: undefined } : {}) })
     }
     page.headerBlocks = plan.headers.filter(header => header.pageId === pageId).map(header => {
       const previousHeader = pageById.get(header.sourcePageId)?.headerBlocks?.find(candidate => candidate.id === header.sourceId)

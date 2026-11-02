@@ -82,7 +82,7 @@ test('portrait holder roles share the enlarged image area and mixed headers surv
       assert.equal(cells.length, 4)
       for (const cell of cells) {
         close(cell.width, holder.width * .8 / 4)
-        close(cell.y, holder.y)
+        close(cell.y, holder.y + (holder.detailsOffsetY ?? 0))
         assert.ok(cell.x + cell.width <= holder.detailsX + 1e-7)
       }
       pages = autoArrangePages(pages, 1, sources, defaultLayoutBounds)

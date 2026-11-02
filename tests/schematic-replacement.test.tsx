@@ -19,12 +19,11 @@ vi.mock('../src/modules/schematic/components/CorelDrawTool', () => ({ default: (
 vi.mock('../src/modules/schematic/history/BatchHistoryPanel', () => ({ default: () => null }))
 vi.mock('../src/modules/schematic/ArrangePage', () => ({ default: (props: React.ComponentProps<typeof import('../src/modules/schematic/ArrangePage').default>) => <>
   {props.context}
-  <output data-testid="canvas-state">{JSON.stringify({ assets: props.assets, pages: props.pages, selectedItem: props.selectedItem, sortMode: props.sortMode, dimensionDisplayOverrides: [...props.displayState.dimensionDisplayOverrides] })}</output>
+  <output data-testid="canvas-state">{JSON.stringify({ assets: props.assets, pages: props.pages, selectedItem: props.selectedItem, dimensionDisplayOverrides: [...props.displayState.dimensionDisplayOverrides], visualScales: [...props.displayState.visualScales], accessoryVisuals: [...props.displayState.accessoryVisuals] })}</output>
   <button disabled={props.replacingArtwork} onClick={() => props.onReplaceArtwork?.('front')}>更换 Front</button>
   <button disabled={props.replacingArtwork} onClick={() => props.onReplaceArtwork?.('back')}>更换 Back</button>
   <button onClick={props.onBack}>返回图片列表</button>
-  <button onClick={() => props.onAutoArrange('default')}>按产品顺序排列</button>
-  <button onClick={() => props.onAutoArrange('upload')}>按上传顺序排列</button>
+  <button disabled={props.replacingArtwork || props.exporting} onClick={props.onRefresh}>刷新</button>
 </> }))
 vi.mock('../src/modules/schematic/components/LazySvgImage', () => ({ default: ({ alt }: { alt: string }) => <img alt={alt}/> }))
 import SchematicPage from '../src/modules/schematic/SchematicPage'
@@ -85,16 +84,18 @@ test('cancel or an SVG containing multiple imported pictures never replaces the 
   expect(mocks.discard).toHaveBeenCalledWith([replacement, expect.objectContaining({ id: 'extra' })])
 })
 
-function mountArrangement() {
+function mountArrangement(groupTop = 110) {
   const source: Asset = { ...original, productId: 'keychains', productName: 'Keychains', attributes: { ...original.attributes, 'Print Option': 'Double Sided Different Design' } }
-  const front: Page['items'][number] = { id: 'front', assetId: source.id, x: 60, y: 170, w: 50, h: 100, rotation: 7, caption: 'Front', rulerWidth: true, rulerHeight: true, sizeAxis: 'height', rulerUnit: 'mm', rulerWidthRange: [0.15, 0.85], rulerHeightRange: [0.1, 0.9] }
-  const page: Page = { id: 1, name: '页面 1', items: [front, { ...front, id: 'back', derivedFrom: front.id, caption: 'Back', x: 180, mirrorX: true, rulerWidth: false, backSvg: '<svg>old-back</svg>' }], imageGroups: [{ id: 'group', itemIds: ['front', 'back'], x: 10, y: 110, width: 250, height: 150, details: { size: '20.0 mm', qt: '0', finish: '' } }] }
+  const front: Page['items'][number] = { id: 'front', assetId: source.id, x: 60, y: groupTop + 60, w: 50, h: 100, rotation: 7, caption: 'Front', rulerWidth: true, rulerHeight: true, sizeAxis: 'height', rulerUnit: 'mm', rulerWidthRange: [0.15, 0.85], rulerHeightRange: [0.1, 0.9] }
+  const page: Page = { id: 1, name: '页面 1', items: [front, { ...front, id: 'back', derivedFrom: front.id, caption: 'Back', x: 180, mirrorX: true, rulerWidth: false, backSvg: '<svg>old-back</svg>' }], imageGroups: [{ id: 'group', itemIds: ['front', 'back'], x: 10, y: groupTop, width: 250, height: 150, details: { size: '20.0 mm', qt: '0', finish: '' } }] }
   const display = emptyArrangementDisplayState()
   display.dimensionDisplayOverrides.set('front', { decimalPlaces: 2, precision: 'round' })
   display.dimensionDisplayOverrides.set('back', { decimalPlaces: 3, precision: 'truncate' })
+  display.visualScales.set('front', 1.4)
+  display.visualScales.set('back', 0.85)
   const record = createReviewRecord({ assets: [source], pages: [page], activePage: 1, metadata: defaultBatchMetadata, layoutBounds: defaultLayoutBounds, arrangementSort: 'default', defaultArrangementIds: [source.id] }, display, 'pdf', 'test.pdf')
   render(<SchematicPage initialRecord={record}/> )
-  return { state: () => JSON.parse(screen.getByTestId('canvas-state').textContent!) as { assets: Asset[]; pages: Page[]; selectedItem: string | null; sortMode: 'default' | 'upload'; dimensionDisplayOverrides: typeof record.display.dimensionDisplayOverrides }, page, source }
+  return { state: () => JSON.parse(screen.getByTestId('canvas-state').textContent!) as { assets: Asset[]; pages: Page[]; selectedItem: string | null; dimensionDisplayOverrides: typeof record.display.dimensionDisplayOverrides; visualScales: typeof record.display.visualScales; accessoryVisuals: typeof record.display.accessoryVisuals }, page, source }
 }
 
 test.each(['front', 'back'])('canvas %s replacement updates the one batch asset and both faces while preserving placement, rulers and precision', async id => {
@@ -141,15 +142,19 @@ test('returning to the image list after a canvas replacement shows and saves onl
   await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('save_batch', expect.objectContaining({ assets: [expect.objectContaining({ id: 'new', storagePath: 'temp-assets/new.svg', svg: '', width: 30, height: 40, productId: current.source.productId, productName: current.source.productName, attributes: current.source.attributes, note: original.note })] })))
 })
 
-test('switching arrangement order repeatedly keeps both replacement faces without restoring or duplicating the old source', async () => {
+test('repeated refresh moves the replacement block forward while keeping both faces and every internal adjustment', async () => {
   mocks.importAssets.mockReset().mockResolvedValueOnce([replacement])
-  const current = mountArrangement()
+  const current = mountArrangement(300)
   fireEvent.click(screen.getByRole('button', { name: '更换 Back' }))
   await waitFor(() => expect(current.state().assets.map(asset => asset.id)).toEqual(['new']))
   await waitFor(() => expect(screen.getByRole<HTMLButtonElement>('button', { name: '更换 Back' }).disabled).toBe(false))
-  for (const mode of ['upload', 'default', 'upload', 'default'] as const) {
-    fireEvent.click(screen.getByRole('button', { name: mode === 'upload' ? '按上传顺序排列' : '按产品顺序排列' }))
-    await waitFor(() => expect(current.state().sortMode).toBe(mode))
+  const before = current.state()
+  const originalGroup = before.pages[0].imageGroups![0]
+  let firstRefresh: Page[] | undefined
+  for (let pass = 0; pass < 3; pass++) {
+    fireEvent.click(screen.getByRole('button', { name: '刷新', exact: true }))
+    await waitFor(() => expect(current.state().pages[0].imageGroups![0].y).toBeLessThan(originalGroup.y))
+    await waitFor(() => expect(screen.getByRole('button', { name: '刷新', exact: true })).toHaveProperty('disabled', false))
     const result = current.state()
     expect(result.assets.map(asset => asset.id)).toEqual(['new'])
     const items = result.pages.flatMap(page => page.items)
@@ -162,7 +167,23 @@ test('switching arrangement order repeatedly keeps both replacement faces withou
     expect(back.derivedFrom).toBe(front.id)
     expect(back.backSvg).toContain('new-back-artwork')
     expect(back.backSvg).not.toContain('new-front-artwork')
+    const group = result.pages[0].imageGroups![0]
+    expect(group.id).toBe(originalGroup.id)
+    expect(group.itemIds).toEqual(originalGroup.itemIds)
+    expect([group.width, group.height, group.details]).toEqual([originalGroup.width, originalGroup.height, originalGroup.details])
+    for (const originalItem of before.pages[0].items) {
+      const moved = items.find(item => item.id === originalItem.id)!
+      expect(moved.x - originalItem.x).toBeCloseTo(group.x - originalGroup.x)
+      expect(moved.y - originalItem.y).toBeCloseTo(group.y - originalGroup.y)
+      expect(moved).toEqual({ ...originalItem, x: moved.x, y: moved.y })
+    }
+    expect(result.dimensionDisplayOverrides).toEqual(before.dimensionDisplayOverrides)
+    expect(result.visualScales).toEqual(before.visualScales)
+    expect(result.accessoryVisuals).toEqual(before.accessoryVisuals)
+    if (firstRefresh) expect(result.pages).toEqual(firstRefresh)
+    else firstRefresh = result.pages
   }
+  expect(mocks.importAssets).toHaveBeenCalledTimes(1)
 })
 
 test('cancelling a canvas replacement leaves the complete arrangement untouched', async () => {

@@ -38,25 +38,28 @@ export type NestResult = { placements: Array<{ id: string; sheetIndex: number; x
 export const submitReviewToImposition = (id: string, paymentStatus: PaymentStatus) => invoke<ImpositionJob>('submit_schematic_review_to_imposition', { id, paymentStatus })
 export const listPendingImpositions = (query: { page: number; pageSize: number; search?: string }) => invoke<ImpositionListResult>('list_pending_impositions', { query })
 const impositionRecordCache = new Map<string, { promise: Promise<ImpositionRecord>; expiresAt: number }>()
+function cacheImpositionRecord(id: string, request: Promise<ImpositionRecord>) {
+  // TTL measures completed data, not network latency. A slow QT write remains
+  // the authoritative read until it settles, so a read cannot replace it.
+  const entry = { promise: request, expiresAt: Infinity }
+  impositionRecordCache.set(id, entry)
+  void request.then(() => {
+    if (impositionRecordCache.get(id) === entry) entry.expiresAt = Date.now() + 3_000
+  }, () => {
+    if (impositionRecordCache.get(id) === entry) impositionRecordCache.delete(id)
+  })
+  return request
+}
 export const loadImpositionJob = (id: string) => {
   const cached = impositionRecordCache.get(id)
   if (cached && cached.expiresAt > Date.now()) return cached.promise
-  const pending = invoke<ImpositionRecord>('load_imposition_job', { id })
-  impositionRecordCache.set(id, { promise: pending, expiresAt: Date.now() + 3_000 })
-  void pending.catch(() => { if (impositionRecordCache.get(id)?.promise === pending) impositionRecordCache.delete(id) })
-  return pending
+  return cacheImpositionRecord(id, invoke<ImpositionRecord>('load_imposition_job', { id }))
 }
 export const updateImpositionImageQuantity = (jobId: string, imageId: string, quantity: number) => {
-  const pending = invoke<ImpositionRecord>('update_imposition_image_quantity', { jobId, imageId, quantity })
-  impositionRecordCache.set(jobId, { promise: pending, expiresAt: Date.now() + 3_000 })
-  void pending.catch(() => { if (impositionRecordCache.get(jobId)?.promise === pending) impositionRecordCache.delete(jobId) })
-  return pending
+  return cacheImpositionRecord(jobId, invoke<ImpositionRecord>('update_imposition_image_quantity', { jobId, imageId, quantity }))
 }
 export const updateImpositionImageQuantities = (jobId: string, imageIds: string[], quantity: number) => {
-  const pending = invoke<ImpositionRecord>('update_imposition_image_quantities', { jobId, imageIds, quantity })
-  impositionRecordCache.set(jobId, { promise: pending, expiresAt: Date.now() + 3_000 })
-  void pending.catch(() => { if (impositionRecordCache.get(jobId)?.promise === pending) impositionRecordCache.delete(jobId) })
-  return pending
+  return cacheImpositionRecord(jobId, invoke<ImpositionRecord>('update_imposition_image_quantities', { jobId, imageIds, quantity }))
 }
 export const loadImpositionImage = (path: string) => invoke<string>('load_imposition_image', { path })
 export const packImpositionIrregular = (request: NestRequest) => invoke<NestResult>('pack_imposition_irregular', { request })

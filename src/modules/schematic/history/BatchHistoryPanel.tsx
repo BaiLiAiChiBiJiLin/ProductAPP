@@ -6,6 +6,7 @@ import { Trash2, RefreshCw, Send } from 'lucide-react'
 import { listen } from '@tauri-apps/api/event'
 import { isTauri } from '@tauri-apps/api/core'
 import Loading from '../../../components/Loading'
+import { flushCloudSyncQueue } from '../../../services/cloudSyncQueue'
 import { deleteHistoryBatch, listHistoryBatches, type BatchListResult, type BatchLoadProgress, type BatchSummary } from '../services/batchHistoryService'
 import BatchHistoryPreview from './BatchHistoryPreview'
 import { useBatchHistoryFilters } from './useBatchHistoryFilters'
@@ -21,6 +22,7 @@ export default function BatchHistoryPanel({ active, openingId, progress, onOpen,
   const [result, setResult] = useState(emptyResult)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [deleteError, setDeleteError] = useState('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [revision, setRevision] = useState(0)
   const [syncing, setSyncing] = useState(false)
@@ -39,7 +41,7 @@ export default function BatchHistoryPanel({ active, openingId, progress, onOpen,
     if (!active) return
     let cancelled = false
     setLoading(true)
-    setError('')
+    setError(''); setDeleteError('')
     void listHistoryBatches(query).then(value => {
       if (cancelled) return
       setResult(value)
@@ -73,9 +75,12 @@ export default function BatchHistoryPanel({ active, openingId, progress, onOpen,
 
   const remove = async (id: string) => {
     if (deleteLock.current || syncLock.current || transferLock.current || disabled) return
-    deleteLock.current = true; setDeletingId(id); setError('')
-    try { await deleteHistoryBatch(id); setRevision(current => current + 1) }
-    catch (failure) { setError(`删除失败：${String(failure)}`) }
+    deleteLock.current = true; setDeletingId(id); setDeleteError('')
+    try {
+      await deleteHistoryBatch(id)
+      setRevision(current => current + 1)
+    }
+    catch (failure) { setDeleteError(`删除失败：${String(failure)}`) }
     finally { deleteLock.current = false; setDeletingId(null) }
   }
   const transfer = async (recipient: string) => {
@@ -83,6 +88,8 @@ export default function BatchHistoryPanel({ active, openingId, progress, onOpen,
     transferLock.current = true; onTransferringChange?.(true)
     setSyncError(''); notice.destroy()
     try {
+      // Transfer only after the recipient's batch includes all confirmed edits.
+      await flushCloudSyncQueue()
       const sent = await sendBatchTransfer(transferRecord.id, userName, recipient)
       setTransferRecord(null)
       void notice.success(sent.shared ? `批次已转移给 ${sent.recipient}，对方刷新历史记录即可查看。` : `已向 ${sent.recipient} 发送批次，对方在历史记录页刷新即可接收。`)
@@ -115,6 +122,7 @@ export default function BatchHistoryPanel({ active, openingId, progress, onOpen,
     </div>
     {syncError && <Alert type="warning" showIcon message={syncError} action={<Button size="small" disabled={disabled} onClick={() => void refresh()}>重试接收</Button>}/>}
     {error && <Alert type="error" showIcon message={error} action={<Button size="small" onClick={() => setRevision(value => value + 1)} disabled={disabled}>重试</Button>}/>}
+    {deleteError && <Alert type="error" showIcon message={deleteError}/>}
     <div className="batch-history-results" ref={scrollArea} aria-busy={loading || syncing}>
       {loading || syncing ? <div className="history-loading"><Loading size="large" text={syncing ? syncProgress?.total ? `正在接收共享数据（${syncProgress.completed}/${syncProgress.total}）…` : '正在检查共享收件目录…' : '正在加载历史记录…'}/></div> : error ? null : result.records.length ? <div className="batch-history-grid">
         {result.records.map(record => <Dropdown key={record.id} trigger={['contextMenu']} disabled={disabled} menu={{

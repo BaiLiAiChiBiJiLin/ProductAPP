@@ -24,6 +24,10 @@ let registeredName = ''
 
 type Args = Record<string, unknown>
 type Versioned = { version?: number; records?: Array<{ id: string; version?: number }> }
+function rememberVersion(cache: Map<string, number>, key: string, version: number) {
+  // A slower read/list response must not roll back an already acknowledged write.
+  cache.set(key, Math.max(cache.get(key) ?? 0, version))
+}
 function recordKey(command: string, args: Args): string {
   if (command.includes('pools')) return 'pools:shared'
   if (command.includes('imposition') && command !== 'submit_schematic_review_to_imposition') return `job:${args.jobId ?? args.id ?? ''}`
@@ -62,11 +66,16 @@ export async function invoke<T>(command: string, args: Args = {}): Promise<T> {
   const result = writes.has(command) ? (response as { result: T }).result : response as T
   if (writes.has(command)) retries.delete(retryKey)
   const versioned = result as Versioned | null
-  if (typeof versioned?.version === 'number') { versions.set(key, versioned.version); listedVersions.set(key, versioned.version) }
+  if (!writes.has(command) && typeof versioned?.version === 'number' && versioned.version < (versions.get(key) ?? 0)) {
+    // Never pair obsolete record contents with the newer optimistic-write
+    // version: doing so would let a later save overwrite newer cloud data.
+    throw new Error('读取的云端记录已过期，请重新打开或刷新后重试')
+  }
+  if (typeof versioned?.version === 'number') { rememberVersion(versions, key, versioned.version); rememberVersion(listedVersions, key, versioned.version) }
   const listKind = command === 'list_batches' ? 'batch' : command === 'list_schematic_reviews' ? 'review' : command === 'list_pending_impositions' ? 'job' : undefined
   if (listKind) for (const item of versioned?.records ?? []) {
     const itemKey = `${listKind}:${item.id}`
-    if (typeof item.version === 'number') listedVersions.set(itemKey, item.version)
+    if (typeof item.version === 'number') rememberVersion(listedVersions, itemKey, item.version)
     // Listing must not advance an open editor's revision behind its back.
     if (!versions.has(itemKey) && typeof item.version === 'number') versions.set(itemKey, item.version)
   }

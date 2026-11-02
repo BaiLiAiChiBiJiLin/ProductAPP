@@ -21,7 +21,7 @@ export function buildProductGroupDetails(items: Item[], assets: Map<string, Asse
 
 /** Give each details panel its own bounds inside the group's property area. */
 export function detailPanelsForGroup(group: ImageGroup): ImageGroup[] {
-  if (!group.detailGroups?.length) return [{ ...group, height: group.detailsHeight ?? group.height }]
+  if (!group.detailGroups?.length) return [{ ...group, height: group.detailsHeight === undefined ? group.height : Math.min(group.height, group.detailsHeight + (group.detailsOffsetY ?? 0)) }]
   const count = group.detailGroups.length
   const columns = Math.min(group.detailColumns ?? group.imageColumns ?? 1, count)
   const rows = Math.ceil(count / columns)

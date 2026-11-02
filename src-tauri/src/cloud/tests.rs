@@ -111,6 +111,45 @@ fn two_users_shared_business_roundtrip() {
     let batch = json!({"id":"batch-1","assets":[asset],"metadata":{"customerName":"客户甲"}});
     let saved = request(&mut conn, &env, alice, "save_batch", batch.clone(), 0).unwrap();
     assert_eq!(saved["version"], 1);
+    // Cancelling an upload which never reached the database is safe. This
+    // exception must not bypass ownership or stale-version protection.
+    for _ in 0..2 {
+        assert_eq!(
+            request(
+                &mut conn,
+                &env,
+                alice,
+                "delete_batch",
+                json!({"id":"never-saved"}),
+                0,
+            )
+            .unwrap(),
+            Value::Null
+        );
+    }
+    assert!(request(
+        &mut conn,
+        &env,
+        alice,
+        "delete_batch",
+        json!({"id":"never-saved"}),
+        1,
+    )
+    .is_err());
+    for (user, version) in [(bob, 1), (alice, 0)] {
+        assert!(request(
+            &mut conn,
+            &env,
+            user,
+            "delete_batch",
+            json!({"id":"batch-1"}),
+            version,
+        )
+        .is_err());
+        assert!(store::read(&mut conn, "batch", "batch-1", false)
+            .unwrap()
+            .is_some());
+    }
     let responses: Vec<String> = conn
         .query("SELECT CAST(response AS CHAR) FROM pf_requests")
         .unwrap();

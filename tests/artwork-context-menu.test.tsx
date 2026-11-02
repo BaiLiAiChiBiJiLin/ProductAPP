@@ -42,23 +42,61 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); Konva.autoDrawEnabled = true })
 
-function mount(onReplace = vi.fn().mockResolvedValue(undefined), replacingArtwork = false, items: Item[] = [front, back], singleDelete = false) {
+test('show back is visible only for a marked back layer and invokes the selected artwork action', async () => {
+  const onShowBack = vi.fn(), onClose = vi.fn(), onChange = vi.fn()
+  const props = { target: { itemId: front.id, x: 200, y: 200 }, item: front, onShowBack, onClose, onChange }
+  const view = render(<ArtworkContextMenu {...props} asset={asset}/>)
+  await screen.findByRole('menuitem', { name: /切换图层/ })
+  expect(screen.queryByRole('menuitem', { name: '展示背面' })).toBeNull()
+  const marked: Asset = { ...asset,
+    svg: '<svg><image id="front" href="front.png"/><image id="back" href="back.png"/></svg>',
+    sourceImages: [{ nodeId: 'front', layerRole: 'front', widthPx: 100, heightPx: 100, format: 'png' },
+      { nodeId: 'back', layerRole: 'back', widthPx: 100, heightPx: 100, format: 'png' }] }
+  view.rerender(<ArtworkContextMenu {...props} asset={marked}/>)
+  fireEvent.click(await screen.findByRole('menuitem', { name: '展示背面' }))
+  expect(onShowBack).toHaveBeenCalledExactlyOnceWith(front.id)
+  expect(onClose).toHaveBeenCalledOnce()
+  expect(onChange).not.toHaveBeenCalled()
+  view.rerender(<ArtworkContextMenu {...props} asset={{ ...marked, sourceImages: marked.sourceImages!.map(image => ({ ...image, layerRole: 'front' })) }}/>)
+  expect(screen.queryByRole('menuitem', { name: '展示背面' })).toBeNull()
+})
+
+function mount(onReplace = vi.fn().mockResolvedValue(undefined), replacingArtwork = false, items: Item[] = [front, back], singleDelete = false, exporting = false) {
   const current: { page?: Page } = {}
   const onDelete = vi.fn()
   const onDeleteItems = vi.fn()
+  const onRefresh = vi.fn()
   function Harness() {
     const [page, setPage] = useState<Page>({ id: 1, name: 'test', items, imageGroups: [{ id: 'group', itemIds: ['front', 'back'], x: 20, y: 150, width: 300, height: 150 }] })
     const [selected, setSelected] = useState<string | null>('front')
     const [display, setDisplay] = useState(emptyArrangementDisplayState)
     current.page = page
-    return <ArrangePage displayState={display} onDisplayStateChange={setDisplay} context={null} assets={[asset]} pages={[page]} activePage={1} selectedItem={selected} selectedGroupIds={[]} sortMode="default"
+    return <ArrangePage displayState={display} onDisplayStateChange={setDisplay} context={null} assets={[asset]} pages={[page]} activePage={1} selectedItem={selected} selectedGroupIds={[]}
       onSelectPage={noop} onSelectItem={setSelected} onChangeItem={item => setPage(previous => ({ ...previous, items: previous.items.map(value => value.id === item.id ? item : value) }))}
-      onReplaceArtwork={onReplace} replacingArtwork={replacingArtwork} onDropAsset={noop} onDeleteGroups={onDelete} onDeleteItems={singleDelete ? onDeleteItems : undefined} onConfirmAssetAttributes={async () => {}} onAddPage={noop} onAutoArrange={noop} onCombine={noop} onSelectGroup={noop}
-      onBack={noop} onBackToHistory={noop} onExport={noop} onMetadataChange={noop} layoutBounds={defaultLayoutBounds} onBoundsChange={noop} onAddHeaderBlock={noop} onChangeHeaderBlock={noop} onRemoveHeaderBlock={noop}/>
+      onReplaceArtwork={onReplace} replacingArtwork={replacingArtwork} onDropAsset={noop} onDeleteGroups={onDelete} onDeleteItems={singleDelete ? onDeleteItems : undefined} onConfirmAssetAttributes={async () => {}} onAddPage={noop} onRefresh={onRefresh} onCombine={noop} onSelectGroup={noop}
+      onBack={noop} onBackToHistory={noop} onExport={noop} exporting={exporting} onMetadataChange={noop} layoutBounds={defaultLayoutBounds} onBoundsChange={noop} onAddHeaderBlock={noop} onChangeHeaderBlock={noop} onRemoveHeaderBlock={noop}/>
   }
   render(<Harness/> )
-  return { page: () => current.page!, onReplace, onDelete, onDeleteItems }
+  return { page: () => current.page!, onReplace, onDelete, onDeleteItems, onRefresh }
 }
+
+test('the toolbar refresh action replaces the order toggle and invokes gap filling once', () => {
+  const current = mount()
+  const refresh = screen.getByRole('button', { name: '刷新', exact: true })
+  expect(refresh.getAttribute('title')).toContain('保留块内调整')
+  expect(screen.queryByRole('button', { name: /切换为.*顺序|切换为产品排序/ })).toBeNull()
+  fireEvent.click(refresh)
+  expect(current.onRefresh).toHaveBeenCalledExactlyOnceWith()
+  expect(current.page().items).toEqual([front, back])
+})
+
+test.each(['replacement', 'export'] as const)('refresh is disabled during %s', mode => {
+  const current = mount(undefined, mode === 'replacement', [front, back], false, mode === 'export')
+  const refresh = screen.getByRole('button', { name: '刷新', exact: true })
+  expect(refresh).toHaveProperty('disabled', true)
+  fireEvent.click(refresh)
+  expect(current.onRefresh).not.toHaveBeenCalled()
+})
 
 async function rightClick(id: string) {
   await waitFor(() => expect(Konva.stages.at(-1)?.findOne(`#${id}`)).toBeTruthy())

@@ -372,7 +372,7 @@ test('size values keep units on one line and accessory title is omitted', async 
  const layout=imageDetailsLayout(page.imageGroups[0])
  assert.deepEqual(layout.fields.filter(field=>field.key.startsWith('size')).map(field=>field.text),['Size: 50.7 mm'])
  assert.ok(!layout.fields.some(field=>field.text.includes('Accessory:')))
- assert.equal(layout.fields.find(field=>field.key==='size').fontSize,undefined,'Size uses the shared QT font size')
+ assert.equal(layout.fields.find(field=>field.key==='size').fontSize,layout.fontSize,'Size uses the shared detail font size')
  assert.ok(sizeLabelWidth('50.7 mm',layout.fontSize) <= layout.width + 1e-8)
  const svg=pageSvg(page,new Map([['a',asset('a')]]))
  assert.ok(svg.includes('Size: 50.7 mm'))

@@ -11,6 +11,47 @@ pub fn get(conn: &mut impl Queryable, id: &str, user: &str, lock: bool) -> Resul
     store::owned(&record, user)?;
     Ok(record)
 }
+
+pub fn delete(conn: &mut impl Queryable, user: &str, id: &str, expected: u64) -> Result<Value> {
+    let batch = store::read(conn, "batch", id, true)?;
+    validate_delete(batch.as_ref(), user, expected)?;
+    if batch.is_some() {
+        store::remove(conn, "batch", id)?;
+    }
+    Ok(Value::Null)
+}
+
+fn validate_delete(batch: Option<&Record>, user: &str, expected: u64) -> Result<()> {
+    let batch = batch.ok_or("历史批次不存在")?;
+    store::owned(batch, user)?;
+    store::check_version(Some(batch), expected)
+}
+
+#[cfg(test)]
+mod deletion_tests {
+    use super::*;
+
+    #[test]
+    fn cancelling_an_unsaved_batch_is_idempotent() {
+        assert!(validate_delete(None, "alice", 0).is_ok());
+        assert!(validate_delete(None, "alice", 1).is_err());
+    }
+
+    #[test]
+    fn existing_batches_still_require_the_owner_and_current_version() {
+        let batch = Record {
+            value: Value::Null,
+            summary: Value::Null,
+            version: 2,
+            owner: Some("alice".into()),
+        };
+        assert!(validate_delete(Some(&batch), "alice", 2).is_ok());
+        assert!(validate_delete(Some(&batch), "bob", 2).is_err());
+        assert!(validate_delete(Some(&batch), "alice", 0).is_err());
+        assert!(validate_delete(Some(&batch), "alice", 1).is_err());
+    }
+}
+
 pub fn save(
     conn: &mut impl Queryable,
     env: &Environment,

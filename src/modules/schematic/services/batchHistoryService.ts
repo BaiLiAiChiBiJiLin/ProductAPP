@@ -1,5 +1,6 @@
 import { isTauri } from '@tauri-apps/api/core'
 import { invoke } from '../../../services/backend'
+import { deleteBatchWithPendingSync, flushCloudSyncQueue, pendingCloudAssetPaths } from '../../../services/cloudSyncQueue'
 import type { Asset } from '../../../model'
 import type { BatchMetadata } from '../types'
 
@@ -15,16 +16,19 @@ export function listHistoryBatches(query: BatchListQuery): Promise<BatchListResu
 }
 
 export function deleteHistoryBatch(id: string): Promise<void> {
-  return invoke('delete_batch', { id })
+  return deleteBatchWithPendingSync(id)
 }
 
 export function discardTemporaryAssets(assets: Asset[]): Promise<void> {
   // Returning to history only needs file references for temporary-file cleanup.
   // Sending the SVGs back would reintroduce a batch-sized IPC request.
-  return invoke('discard_temp_assets', { assets: assets.map(asset => ({ ...asset, svg: '', previewUrl: '', thumbnailUrl: '' })) })
+  const pending = pendingCloudAssetPaths()
+  const unused = assets.filter(asset => !asset.storagePath || !pending.has(asset.storagePath))
+  return unused.length ? invoke('discard_temp_assets', { assets: unused.map(asset => ({ ...asset, svg: '', previewUrl: '', thumbnailUrl: '' })) }) : Promise.resolve()
 }
 
 export async function loadHistoryBatch(id: string, onProgress?: (progress: BatchLoadProgress) => void): Promise<BatchRecord> {
+  await flushCloudSyncQueue()
   const record = await invoke<BatchRecord>('load_batch', { id })
   const assets: Asset[] = []
   const decoder = new TextDecoder('utf-8', { fatal: true })

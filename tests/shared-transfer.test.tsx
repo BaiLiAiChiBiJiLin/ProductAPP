@@ -49,7 +49,7 @@ test('history card right-click transfers its saved batch without opening artwork
   expect(screen.queryByText(/确认后先保存当前批次/)).toBeNull()
   const confirm = screen.getByRole('button', { name: '确认转移' })
   fireEvent.click(confirm); fireEvent.click(confirm)
-  expect(api.send).toHaveBeenCalledTimes(1)
+  await waitFor(() => expect(api.send).toHaveBeenCalledTimes(1))
   expect(api.send).toHaveBeenCalledWith('old', '发送用户', '接收用户')
   expect(busy).toHaveBeenLastCalledWith(true)
   api.list.mockResolvedValue({ records: [], total: 0, page: 1, pageSize: 12 })

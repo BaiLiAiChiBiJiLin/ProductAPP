@@ -24,7 +24,7 @@ import ModulePage from '../../components/ModulePage'
 import Loading from '../../components/Loading'
 import './imposition.css'
 
-type WorkspaceProps = { jobs: ImpositionJob[]; initialPoolRecords?: ImpositionRecord[]; temporaryRecords: ImpositionRecord[]; onImported: (record: ImpositionRecord) => void; onRemoveImported: (id: string) => void; activeJobId?: string; onBack: () => void; onSelectJob: (id: string) => void; onReturn: (id: string) => void; returningId?: string; loading: boolean }
+type WorkspaceProps = { active: boolean; jobs: ImpositionJob[]; initialPoolRecords?: ImpositionRecord[]; temporaryRecords: ImpositionRecord[]; onImported: (record: ImpositionRecord) => void; onRemoveImported: (id: string) => void; activeJobId?: string; onBack: () => void; onSelectJob: (id: string) => void; onReturn: (id: string) => void; returningId?: string; loading: boolean }
 const EMPTY_IMPOSITION_IMAGES: ProductionImage[] = []
 const EMPTY_PACKED_PAGES: PackingPlan['pages'] = []
 type PackingProgressStage = 'outline' | 'prepare' | 'search' | 'validate' | 'render'
@@ -35,7 +35,7 @@ const PACKING_PROGRESS_COPY: Record<PackingProgressStage, { title: string; detai
   validate: { title: '校验排版结果', detail: '正在检查边界、图片间距和未放置图片…', progress: 88 },
   render: { title: '加载排版预览', detail: '正在加载已放置的原图并准备画布…', progress: 96 },
 }
-function ImpositionWorkspace({ jobs, initialPoolRecords, temporaryRecords, onImported, onRemoveImported, activeJobId, onBack, onSelectJob, onReturn, returningId, loading }: WorkspaceProps) {
+function ImpositionWorkspace({ active, jobs, initialPoolRecords, temporaryRecords, onImported, onRemoveImported, activeJobId, onBack, onSelectJob, onReturn, returningId, loading }: WorkspaceProps) {
   const isDevelopment = import.meta.env.DEV
   const [details, setDetails] = useState<Record<string, ImpositionRecord>>(() => Object.fromEntries((initialPoolRecords ?? []).map(record => [record.id, record])))
   const [imagePolygons, setImagePolygons] = useState<Record<string, Array<[number, number]>>>({})
@@ -526,7 +526,7 @@ function ImpositionWorkspace({ jobs, initialPoolRecords, temporaryRecords, onImp
         </section>
         <div className="imposition-header-export"><Button type="primary" icon={<Download size={15}/>} disabled={!layoutPresets.ready || packingLoading || !!deletingJobId || !activePlan.placedCount} onClick={() => setExportSnapshot({ pages: (committedPages.current ?? packedPages).map(page => page.map(item => ({ ...item, rotation: item.rotation ?? 0 }))), sources: {}, geometry: { polygons: imagePolygons, region: { left: effectiveX, top: effectiveY, right: effectiveX + effectiveDisplayWidth, bottom: effectiveY + layout.effectiveHeight }, spacing: layout.spacing } })}>导出 PDF</Button></div>
       </div>
-      <div className="imposition-header-import"><ImpositionUpload disabled={packingLoading || !!deletingJobId} onBusyChange={setUploading} onError={setDetailError} onImported={record => { onImported(record); setDetails(current => ({ ...current, [record.id]: record })); onSelectJob(record.id) }}/></div>
+      <div className="imposition-header-import"><ImpositionUpload disabled={!active || packingLoading || !!deletingJobId} onBusyChange={setUploading} onError={setDetailError} onImported={record => { onImported(record); setDetails(current => ({ ...current, [record.id]: record })); onSelectJob(record.id) }}/></div>
     </header>
     <div className="imposition-workspace-body">
     <main className="imposition-canvas-region">{packingLoading && <div className="imposition-calculating-overlay" role="status" aria-live="polite"><div className="imposition-calculating-dialog"><Loading size="large"/><strong>{comparisonStep || PACKING_PROGRESS_COPY[packingProgressStage].title}</strong><span>{packingProgressDetail || PACKING_PROGRESS_COPY[packingProgressStage].detail}</span><div className="imposition-progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={packingProgress} aria-label={PACKING_PROGRESS_COPY[packingProgressStage].title}><div className="imposition-progress-value" style={{ width: `${packingProgress}%` }}/></div><small>{packingProgress}% · 已运行 {Math.floor(packingElapsedMs / 1000)} 秒 · {packingProgressCounts.total ? `已处理 ${packingProgressCounts.completed}/${packingProgressCounts.total} 项 · ` : ''}{images.length} 个基础图片 / {packingImages.length} 个数量</small></div></div>}{detailError && <Alert type="error" message={detailError} showIcon/>}{interactionHint && <div className="imposition-interaction-hint" role="status">{interactionHint}</div>}<div ref={canvasRef} className={`imposition-canvas-scroll ${panMode || spacePressed ? 'is-pan-mode' : ''}`} onWheel={onCanvasWheel} onPointerDown={onCanvasPointerDown} onPointerMove={onCanvasPointerMove} onPointerUp={onCanvasPointerUp}>{!backendPlan && !packingLoading && <div className="imposition-empty-canvas">{packingChoices.length ? '选择上方方案以查看拼版结果' : '勾选右侧图片，点击“智能拼版”生成拼版'}</div>}<ImpositionKonvaCanvas collapseRepeatedLayouts={collapseRepeatedLayouts} onInteractionHint={setInteractionHint} onEdit={recordEdit} pages={packedPages} imagePaths={imagePaths} polygons={imagePolygons} boardWidth={boardWidth} boardHeight={boardHeight} boardScale={boardScale} effectiveX={effectiveX} effectiveY={effectiveY} effectiveWidth={effectiveDisplayWidth} effectiveHeight={layout.effectiveHeight} spacing={layout.spacing} holeCount={layout.holeCount} holeSize={layout.holeSize} holeLeft={layout.holeLeft} holeGap={layout.holeGap} zoom={zoom} panOffset={panOffset} panMode={panMode || spacePressed || packingLoading} selectedImageId={selectedImageId} onSelectImage={setSelectedImageId} onPagesChange={pages => { committedPages.current = pages }}/></div><footer className="imposition-canvas-footer"><div className="imposition-mode"><Button type="text" className={!panMode ? 'active' : ''} icon={<MousePointer2 size={14}/>} onClick={() => setPanMode(false)}>选择</Button><Button type="text" className={panMode ? 'active' : ''} icon={<Hand size={14}/>} onClick={() => setPanMode(value => !value)}>平移</Button><span className="imposition-shortcut">空格：平移 · Ctrl + 滚轮：缩放</span></div><div className="imposition-workspace-actions">{activeObjective !== 'least-material' && backendPlan && <Button onClick={() => { setAllSheetsExpanded(value => !value); setSelectedImageId(undefined) }}>{collapseRepeatedLayouts ? '展开全部板材' : '折叠重复方案'}</Button>}<Button aria-label="缩小" icon={<ZoomOut size={15}/>} onClick={() => updateZoom(-.1)} >缩小</Button><span>{Math.round(zoom * 100)}%</span><Button aria-label="放大" icon={<ZoomIn size={15}/>} onClick={() => updateZoom(.1)}>放大</Button><span>{collapseRepeatedLayouts ? `${displayedSheetCount} 种版式 · 共 ${activePlan.sheetsUsed} 块板材` : `${packedPages.length} 个版面`} · 选中 {selectedImageId ? 1 : 0} 张图片</span></div></footer></main>
@@ -579,7 +579,10 @@ export default function ImpositionPage({ active, revision, onReturned }: { activ
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [returningId, setReturningId] = useState<string>()
+  const [returnError, setReturnError] = useState('')
   const operationLock = useRef(false)
+  const returningJob = useRef<string | undefined>(undefined)
+  const listGeneration = useRef(0)
   const [detailId, setDetailId] = useState<string>()
   const [detail, setDetail] = useState<ImpositionRecord>()
   const [detailError, setDetailError] = useState('')
@@ -594,13 +597,15 @@ export default function ImpositionPage({ active, revision, onReturned }: { activ
   useEffect(() => {
     if (!active) return
     let cancelled = false
+    const generation = listGeneration.current
     setLoading(true)
     setError('')
     void listPendingImpositions({ ...pagination, search }).then(next => {
-      if (cancelled) return
-      setResult(next)
+      if (cancelled || generation !== listGeneration.current) return
+      const records = next.records.filter(record => record.id !== returningJob.current)
+      setResult({ ...next, records, total: Math.max(0, next.total - (next.records.length - records.length)) })
       if (next.page !== pagination.page || next.pageSize !== pagination.pageSize) setPagination({ page: next.page, pageSize: next.pageSize })
-    }).catch(reason => { if (!cancelled) setError(`加载待拼版记录失败：${String(reason)}`) })
+    }).catch(reason => { if (!cancelled && generation === listGeneration.current) setError(`加载待拼版记录失败：${String(reason)}`) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [active, revision, refresh, pagination, search])
@@ -616,30 +621,35 @@ export default function ImpositionPage({ active, revision, onReturned }: { activ
   const returnToReview = async (id: string) => {
     if (operationLock.current || loading) return
     operationLock.current = true
+    returningJob.current = id
+    listGeneration.current++
     setReturningId(id)
     setError('')
+    setReturnError('')
     // Remove the row immediately; the cloud transition remains authoritative
     // and is confirmed in the background so the workspace stays responsive.
     setPoolRecords(current => current?.filter(record => record.id !== id))
     setResult(current => ({ ...current, records: current.records.filter(record => record.id !== id), total: Math.max(0, current.total - 1) }))
     if (detailId === id) setDetailId(undefined)
     void returnImpositionToReview(id).then(() => {
-      setRefresh(value => value + 1)
       onReturned?.()
     }).catch(reason => {
-      setError(`回退到示意图审核失败：${String(reason)}`)
-      setRefresh(value => value + 1)
+      setReturnError(`回退到示意图审核失败：${String(reason)}`)
     }).finally(() => {
+      // Reads started before this mutation settled may still contain the row.
+      listGeneration.current++
+      returningJob.current = undefined
       operationLock.current = false
       setReturningId(undefined)
+      setRefresh(value => value + 1)
     })
   }
   if (screen === 'pools') return <ConfigProvider locale={zhCN}><ImpositionPools key={poolStorageKey()} active={active} revision={revision + refresh} onBack={() => setScreen('list')} onStart={records => { setPoolRecords(records); setWorkspaceJobId(records[0]?.id); setScreen('workspace') }}/></ConfigProvider>
-  if (screen === 'workspace') return <ConfigProvider locale={zhCN}><ImpositionWorkspace jobs={workspaceJobs} initialPoolRecords={poolRecords} temporaryRecords={temporaryRecords} onImported={record => setTemporaryRecords(current => [...current.filter(item => item.id !== record.id), record])} onRemoveImported={id => { setTemporaryRecords(current => current.filter(record => record.id !== id)); setWorkspaceJobId(current => current === id ? undefined : current) }} activeJobId={workspaceJobId} onBack={() => setScreen(poolRecords ? 'pools' : 'list')} onSelectJob={setWorkspaceJobId} onReturn={returnToReview} returningId={returningId} loading={loading}/></ConfigProvider>
+  if (screen === 'workspace') return <ConfigProvider locale={zhCN}><ImpositionWorkspace active={active} jobs={workspaceJobs} initialPoolRecords={poolRecords} temporaryRecords={temporaryRecords} onImported={record => setTemporaryRecords(current => [...current.filter(item => item.id !== record.id), record])} onRemoveImported={id => { setTemporaryRecords(current => current.filter(record => record.id !== id)); setWorkspaceJobId(current => current === id ? undefined : current) }} activeJobId={workspaceJobId} onBack={() => setScreen(poolRecords ? 'pools' : 'list')} onSelectJob={setWorkspaceJobId} onReturn={returnToReview} returningId={returningId} loading={loading}/></ConfigProvider>
   return <ConfigProvider locale={zhCN}>
     <ModulePage className="imposition-page" style={colors} title="生产拼版" description="示意图审核转入的记录在这里等待拼版。"
       actions={<div className="imposition-list-actions"><Button icon={<RefreshCw size={15}/>} loading={loading} onClick={() => setRefresh(value => value + 1)}>刷新</Button><Button type="primary" onClick={() => { setPoolRecords(undefined); setWorkspaceJobId(result.records[0]?.id); setScreen('workspace') }}>开始拼版</Button><Button icon={<Layers size={15}/>} onClick={() => setScreen('pools')}>拼版池</Button></div>}
-      notice={error && <Alert type="error" message={error} showIcon/>}
+      notice={(returnError || error) && <Alert type="error" message={returnError || error} showIcon/>}
       toolbar={<><h2>待拼版</h2><Input aria-label="搜索待拼版记录" placeholder="搜索客户或导出文件名" allowClear value={query} onChange={event => { setQuery(event.target.value); setPagination(current => ({ ...current, page: 1 })) }}/></>}
       footer={<><span>共 {result.total} 条待拼版记录</span><Pagination current={result.page} pageSize={result.pageSize} total={result.total} disabled={loading} showSizeChanger pageSizeOptions={[20, 50, 100]} showQuickJumper onChange={(page, pageSize) => setPagination({ page: pageSize === pagination.pageSize ? page : 1, pageSize })}/></>}>
       <div className="module-page-table imposition-table"><Table<ImpositionJob> rowKey="id" dataSource={result.records} loading={loading} pagination={false} scroll={{ x: 950 }} rowClassName={record => record.paymentStatus === 'paid' ? 'imposition-paid' : 'imposition-unpaid'} locale={{ emptyText: search ? '没有匹配的待拼版记录' : '暂无待拼版记录，请在示意图审核中选择拼版' }} columns={[
