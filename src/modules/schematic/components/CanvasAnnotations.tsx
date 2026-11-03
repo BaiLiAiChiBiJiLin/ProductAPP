@@ -78,7 +78,7 @@ function RulerAnnotation({ annotation, selected, interactive, onSelect, onChange
     onDragStart={event => { event.cancelBubble = true; onSelect() }} onDragEnd={rootDragEnd}>
     {geometry.extension.map((line, index) => <Line key={`extension-${index}`} name="manual-ruler-extension" points={[line[0] - annotation.x, line[1] - annotation.y, line[2] - annotation.x, line[3] - annotation.y]} stroke={RULER_COLOR} strokeWidth={RULER_STROKE_WIDTH} listening={false}/>) }
     {geometry.segment.map((line, index) => <Line key={`segment-${index}`} name="manual-ruler-segment" points={[line[0] - annotation.x, line[1] - annotation.y, line[2] - annotation.x, line[3] - annotation.y]} stroke={RULER_COLOR} strokeWidth={RULER_STROKE_WIDTH} lineCap="round" listening={false}/>) }
-    <Text name="manual-ruler-label" x={geometry.textX - annotation.x} y={geometry.textY - annotation.y} offsetX={geometry.textWidth / 2} offsetY={4} width={geometry.textWidth} height={8} rotation={geometry.textRotation} text={manualRulerLabel(display.measuredMm)} fontSize={8} align="center" fill={RULER_COLOR}
+    <Text name="manual-ruler-label" x={geometry.textX - annotation.x} y={geometry.textY - annotation.y} offsetX={geometry.textWidth / 2} offsetY={4} width={geometry.textWidth} height={8} rotation={geometry.textRotation} text={manualRulerLabel(display.measuredMm, display.label)} fontSize={8} align="center" fill={RULER_COLOR}
       onClick={event => { event.cancelBubble = true; onSelect() }} onTap={event => { event.cancelBubble = true; onSelect() }}
       onDblClick={event => { event.cancelBubble = true; onEdit() }} onDblTap={event => { event.cancelBubble = true; onEdit() }}/>
     {!interactive && <>

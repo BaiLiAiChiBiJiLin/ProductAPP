@@ -85,7 +85,7 @@ export default function ArrangePage({ processingLabel, onChangePage, onReorderPa
   const [editorSelection, setEditorSelection] = useState<EditorSelection | null>(null)
   const [textColor, setTextColor] = useState('#000000')
   const [textEdit, setTextEdit] = useState<Extract<CanvasAnnotation, { kind: 'text' }> | DetailTextDraft | null>(null)
-  const [rulerEdit, setRulerEdit] = useState<{ id: string; axis?: 'width' | 'height'; value: number | null; unit: string } | null>(null)
+  const [rulerEdit, setRulerEdit] = useState<{ id: string; axis?: 'width' | 'height'; input: string; unit: string } | null>(null)
   const [sidePanel, setSidePanel] = useState<'pool' | 'attributes'>('pool')
   const { zoom, dimensionDisplayOverrides, visualScales, accessoryVisuals } = displayState
   const updateDisplay = <K extends keyof ArrangementDisplayState>(key: K, update: SetStateAction<ArrangementDisplayState[K]>) => {
@@ -135,16 +135,28 @@ export default function ArrangePage({ processingLabel, onChangePage, onReorderPa
     ...backgroundGroups.filter(group => group.itemIds.includes(selectedItem ?? '') || group.itemIds.some(id => boxSelection.includes(id))).map(group => group.id),
   ])).filter(id => backgroundGroups.some(group => group.id === id))
   const backgroundColor = page?.imageGroups?.find(group => selectedBackgroundGroups.includes(group.id))?.backgroundColor ?? page?.backgroundColor ?? GROUP_BACKGROUND
+  const rulerInputText = (value: number) => Number.isFinite(value) ? String(value) : ''
+  const parseRulerInput = (input: string) => {
+    const text = input.trim()
+    if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(text)) return undefined
+    const value = Number(text)
+    return Number.isFinite(value) && value > 0 ? value : undefined
+  }
   const editRuler = (id: string, axis: 'width' | 'height') => {
     const item = page?.items.find(item => item.id === id), asset = assets.find(asset => asset.id === item?.assetId)
-    if (item && asset) setRulerEdit({ id, axis, value: rulerDimensionValue(asset, item, axis), unit: item.rulerUnit ?? 'mm' })
+    if (item && asset) setRulerEdit({ id, axis, input: rulerInputText(rulerDimensionValue(asset, item, axis)), unit: item.rulerUnit ?? 'mm' })
   }
   const confirmRulerEdit = () => {
-    if (!page || !rulerEdit || !Number.isFinite(rulerEdit.value) || rulerEdit.value! <= 0) return
-    if (rulerEdit.axis) onChangePage?.(updateRulerDimensionValue(page, rulerEdit.id, rulerEdit.axis, rulerEdit.value!, new Map(assets.map(asset => [asset.id, asset])), dimensionDisplayOverrides))
+    if (!page || !rulerEdit) return
+    const value = parseRulerInput(rulerEdit.input)
+    if (value === undefined) return
+    if (rulerEdit.axis) onChangePage?.(updateRulerDimensionValue(page, rulerEdit.id, rulerEdit.axis, value, new Map(assets.map(asset => [asset.id, asset])), dimensionDisplayOverrides))
     else {
       const annotation = page.annotations?.find(item => item.id === rulerEdit.id)
-      if (annotation?.kind === 'ruler') changeAnnotation({ ...annotation, measuredMm: rulerEdit.value! })
+      if (annotation?.kind === 'ruler') {
+        const label = rulerEdit.input.trim().replace(/\.$/, '')
+        changeAnnotation({ ...annotation, measuredMm: value, label })
+      }
     }
     setRulerEdit(null)
   }
@@ -354,7 +366,7 @@ export default function ArrangePage({ processingLabel, onChangePage, onReorderPa
       </div>
       <div className="canvas-editor-surface">
       <CanvasTools tool={canvasMode} rulerMode={rulerMode} onRulerMode={setRulerMode} onTool={tool => { setCanvasMode(tool); setArtworkMenu(null) }} background={backgroundColor} onBackground={color => onBackgroundChange?.('group', color, selectedBackgroundGroups)} hasGroup={selectedBackgroundGroups.length > 0} disabled={exporting || replacingArtwork}/>
-      {page && <ArtworkCanvas rulerMode={rulerMode} onEditDetailText={draft => { chooseEditor(draft); setTextEdit(draft) }} page={page} pageNumber={pageNumber} editorSelection={editorSelection} onSelectEditor={chooseEditor} textColor={textColor} onPlaceText={placeText} onCancelTool={() => setCanvasMode('select')} onAddRuler={ruler => { changeAnnotation(ruler); chooseEditor({ kind: 'annotation', id: ruler.id }); setCanvasMode('select') }} onChangeAnnotation={changeAnnotation} onEditAnnotation={annotation => annotation.kind === 'text' ? setTextEdit(annotation) : setRulerEdit({ id: annotation.id, value: annotation.measuredMm, unit: 'mm' })} onEditRuler={editRuler} assets={assetMap} selected={selectedItem} selectedIds={boxSelection} onBoxSelect={ids => { setEditorSelection(null); setSelectedAccessoryKey(null); onSelectItem(null); setBoxSelection(ids) }} selectedGroupIds={selectedGroupIds} onSelect={selectOne} onSelectGroup={selectGroup} onResizeGroup={exporting || replacingArtwork ? undefined : onResizeGroup} onSelectAccessory={selectAccessory} selectedAccessoryKey={selectedAccessoryKey ?? undefined} accessoryVisuals={accessoryVisuals} onChangeAccessory={changeAccessory} onChange={onChangeItem} onDropAsset={onDropAsset} metadata={metadata} totalPages={pages.length} mode={canvasMode} zoom={zoom} onZoomChange={setZoom} layoutBounds={layoutBounds} onHeaderBlockChange={onChangeHeaderBlock} dimensionItemIds={dimensionItemIds} dimensionPrecision={dimensionPrecision} dimensionDecimalPlaces={dimensionDecimalPlaces} dimensionDisplayOverrides={dimensionDisplayOverrides} visualScales={visualScales} onChangeRuler={onChangeRuler} onEditText={onEditText} onArtworkContextMenu={exporting || replacingArtwork ? undefined : (itemId, point) => setArtworkMenu({ itemId, ...point })}/>}
+      {page && <ArtworkCanvas rulerMode={rulerMode} onEditDetailText={draft => { chooseEditor(draft); setTextEdit(draft) }} page={page} pageNumber={pageNumber} editorSelection={editorSelection} onSelectEditor={chooseEditor} textColor={textColor} onPlaceText={placeText} onCancelTool={() => setCanvasMode('select')} onAddRuler={ruler => { changeAnnotation(ruler); chooseEditor({ kind: 'annotation', id: ruler.id }); setCanvasMode('select') }} onChangeAnnotation={changeAnnotation} onEditAnnotation={annotation => annotation.kind === 'text' ? setTextEdit(annotation) : setRulerEdit({ id: annotation.id, input: annotation.label ?? rulerInputText(annotation.measuredMm), unit: 'mm' })} onEditRuler={editRuler} assets={assetMap} selected={selectedItem} selectedIds={boxSelection} onBoxSelect={ids => { setEditorSelection(null); setSelectedAccessoryKey(null); onSelectItem(null); setBoxSelection(ids) }} selectedGroupIds={selectedGroupIds} onSelect={selectOne} onSelectGroup={selectGroup} onResizeGroup={exporting || replacingArtwork ? undefined : onResizeGroup} onSelectAccessory={selectAccessory} selectedAccessoryKey={selectedAccessoryKey ?? undefined} accessoryVisuals={accessoryVisuals} onChangeAccessory={changeAccessory} onChange={onChangeItem} onDropAsset={onDropAsset} metadata={metadata} totalPages={pages.length} mode={canvasMode} zoom={zoom} onZoomChange={setZoom} layoutBounds={layoutBounds} onHeaderBlockChange={onChangeHeaderBlock} dimensionItemIds={dimensionItemIds} dimensionPrecision={dimensionPrecision} dimensionDecimalPlaces={dimensionDecimalPlaces} dimensionDisplayOverrides={dimensionDisplayOverrides} visualScales={visualScales} onChangeRuler={onChangeRuler} onEditText={onEditText} onArtworkContextMenu={exporting || replacingArtwork ? undefined : (itemId, point) => setArtworkMenu({ itemId, ...point })}/>}
       {(canvasMode === 'text' || canvasMode === 'ruler') && <div className="canvas-tool-hint"><span>{canvasMode === 'text' ? '点击画布放置文字 · Esc 取消' : `${rulerMode === 'vertical' ? '垂直' : rulerMode === 'horizontal' ? '水平' : '自由'}标尺：点击起点、终点，再移动鼠标确定标尺位置，第三次点击完成 · Esc 取消`}</span></div>}
       </div>
       <Modal title="编辑文字" open={Boolean(textEdit)} destroyOnHidden onCancel={() => setTextEdit(null)} okText="确认" cancelText="取消" okButtonProps={{ disabled: !textEdit?.text.trim() }} onOk={() => { if (!textEdit?.text.trim()) return; if (textEdit.kind === 'detail') { if (page) onChangePage?.(updateDetailText(page, textEdit, { text: textEdit.text, fontSize: textEdit.fontSize, color: textEdit.color, hidden: false })); chooseEditor(textEdit) } else { changeAnnotation(textEdit); chooseEditor({ kind: 'annotation', id: textEdit.id }) } setTextEdit(null) }}>
@@ -362,8 +374,8 @@ export default function ArrangePage({ processingLabel, onChangePage, onReorderPa
         <label>字号 <InputNumber aria-label="文字字号" min={6} max={72} precision={2} value={textEdit?.fontSize ?? 12} onChange={value => setTextEdit(previous => previous ? { ...previous, fontSize: value ?? 12 } : previous)}/></label>
         <label>文字颜色 <ColorPicker aria-label="文字颜色" value={textEdit?.color ?? '#000000'} disabledAlpha onChangeComplete={color => { const value = color.toHexString(); setTextColor(value); setTextEdit(previous => previous ? { ...previous, color: value } : previous) }}/></label>
       </Modal>
-      <Modal title="修改标尺数值" open={Boolean(rulerEdit)} destroyOnHidden onCancel={() => setRulerEdit(null)} onOk={confirmRulerEdit} okText="确认" cancelText="取消" okButtonProps={{ disabled: !rulerEdit?.value || rulerEdit.value <= 0 }}>
-        <InputNumber aria-label="标尺数值" autoFocus min={0.000001} value={rulerEdit?.value} onChange={value => setRulerEdit(previous => previous ? { ...previous, value } : previous)} onPressEnter={confirmRulerEdit} addonAfter={rulerEdit?.unit}/>
+      <Modal title="修改标尺数值" open={Boolean(rulerEdit)} destroyOnHidden onCancel={() => setRulerEdit(null)} onOk={confirmRulerEdit} okText="确认" cancelText="取消" okButtonProps={{ disabled: parseRulerInput(rulerEdit?.input ?? '') === undefined }}>
+        <Input aria-label="标尺数值" autoFocus inputMode="decimal" value={rulerEdit?.input ?? ''} onChange={event => setRulerEdit(previous => previous ? { ...previous, input: event.target.value } : previous)} onPressEnter={confirmRulerEdit} addonAfter={rulerEdit?.unit}/>
       </Modal>
       {artworkMenu && menuItem && menuAsset && <ArtworkContextMenu target={artworkMenu} item={menuItem} asset={menuAsset} onClose={() => setArtworkMenu(null)} onChange={onChangeItem} onReplace={onReplaceArtwork} onHorizontal={onHorizontalGroup} onShowBack={onShowBack}/>}
       <div className="canvas-footer"><span>画布尺寸：A4 · 210 × 297 mm</span><span>当前页面 {page?.items.filter(item => !item.derivedFrom).length ?? 0} 张 · 全部页面 {pages.reduce((total, item) => total + item.items.filter(image => !image.derivedFrom).length, 0)} 张</span><span className="saved" title="导出成功后保存当前排列与调整，可在示意图审核中恢复"><i/>导出后保存到审核</span></div>

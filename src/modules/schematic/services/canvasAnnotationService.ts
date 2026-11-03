@@ -44,7 +44,13 @@ export function constrainRulerPoint(start: Point, point: Point, mode: RulerMode)
   return point
 }
 
-export function manualRulerLabel(mm: number) { return `${Number(mm.toFixed(2))} mm` }
+const MANUAL_RULER_NUMBER = /^(?:\d+(?:\.\d*)?|\.\d+)$/
+
+/** Keep an edited label's decimal text intact; new rulers use the two-place default. */
+export function manualRulerLabel(mm: number, raw?: string) {
+  const text = raw?.trim()
+  return `${text && MANUAL_RULER_NUMBER.test(text) ? text : Number(mm.toFixed(2))} mm`
+}
 
 /** Place the dimension line parallel to two measured points at the chosen signed offset. */
 export function manualRulerPlacement(start: Point, end: Point, pointer: Point) {
@@ -66,7 +72,7 @@ export function manualRulerGeometry(annotation: Extract<CanvasAnnotation, { kind
   const ux = dx / length, uy = dy / length
   const nx = -uy, ny = ux
   const extensionLength = Number.isFinite(annotation.extensionOffset) ? annotation.extensionOffset! : Math.min(18, Math.max(8, length * 0.22))
-  const textWidth = Math.max(16, manualRulerLabel(annotation.measuredMm).length * 4 + 4)
+  const textWidth = Math.max(16, manualRulerLabel(annotation.measuredMm, annotation.label).length * 4 + 4)
   const gap = Math.min(textWidth / 2 + 3, Math.max(0, length / 2 - 5))
   const mx = (x + x2) / 2, my = (y + y2) / 2
   const angle = Math.atan2(dy, dx) * 180 / Math.PI
@@ -113,6 +119,6 @@ export function annotationsSvg(annotations: CanvasAnnotation[] = []) {
     const geometry = manualRulerGeometry(annotation)
     const line = ([x1, y1, x2, y2]: [number, number, number, number]) => `<path d="M${x1} ${y1}L${x2} ${y2}" stroke="${color}" stroke-width="${RULER_STROKE_WIDTH}" stroke-linecap="round"/>`
     const polygon = (points: [number, number, number, number, number, number]) => `<path d="M${points[0]} ${points[1]}L${points[2]} ${points[3]}L${points[4]} ${points[5]}Z" fill="${color}" stroke="${color}" stroke-width="${RULER_STROKE_WIDTH}"/>`
-    return `<g>${geometry.extension.map(line).join('')}${geometry.segment.map(line).join('')}${polygon(geometry.arrowStart)}${polygon(geometry.arrowEnd)}<text x="${geometry.textX}" y="${geometry.textY}" text-anchor="middle" dominant-baseline="central" transform="rotate(${geometry.textRotation} ${geometry.textX} ${geometry.textY})" font-size="8" fill="${color}">${manualRulerLabel(annotation.measuredMm)}</text></g>`
+    return `<g>${geometry.extension.map(line).join('')}${geometry.segment.map(line).join('')}${polygon(geometry.arrowStart)}${polygon(geometry.arrowEnd)}<text x="${geometry.textX}" y="${geometry.textY}" text-anchor="middle" dominant-baseline="central" transform="rotate(${geometry.textRotation} ${geometry.textX} ${geometry.textY})" font-size="8" fill="${color}">${manualRulerLabel(annotation.measuredMm, annotation.label)}</text></g>`
   }).join('')}</g>`
 }

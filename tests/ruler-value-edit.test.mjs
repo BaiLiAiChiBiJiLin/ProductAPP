@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { dimensionForItem, dimensionGroups, imageDimensionMarkerLayout, imageDimensionMarkersSvg, rulerDimensionLabel, rulerDimensionValue } from '../src/modules/schematic/services/imageDimensionService.ts'
+import { annotationsSvg, manualRulerGeometry, manualRulerLabel } from '../src/modules/schematic/services/canvasAnnotationService.ts'
 import { updateRulerDimensionValue } from '../src/modules/schematic/services/rulerValueEditService.ts'
 import { groupForDimensionDisplay, pageForDimensionDisplay } from '../src/modules/schematic/services/dimensionDisplayService.ts'
 import { updateSelectedRulers } from '../src/modules/schematic/services/canvasSelectionService.ts'
@@ -90,4 +91,11 @@ test('auto arrange preserves edited ruler dimensions and regenerated Size', () =
   const result = autoArrangePages([edited], edited.id, [source])
   assert.equal(result[0].items[0].rulerHeightMm, 63.5)
   assert.equal(result[0].imageGroups[0].details.size, '63.5 mm')
+})
+
+test('custom ruler edits preserve entered decimal text in canvas geometry and export', () => {
+  const annotation = { id: 'custom', kind: 'ruler', x: 10, y: 20, x2: 100, y2: 20, measuredMm: 12.3, label: '12.30', color: '#2f6fa3' }
+  assert.equal(manualRulerLabel(annotation.measuredMm, annotation.label), '12.30 mm')
+  assert.ok(manualRulerGeometry(annotation).textWidth > manualRulerGeometry({ ...annotation, label: '12.3' }).textWidth)
+  assert.match(annotationsSvg([annotation]), />12\.30 mm<\/text>/)
 })

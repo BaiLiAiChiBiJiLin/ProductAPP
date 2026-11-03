@@ -43,7 +43,7 @@ export type ImageGroup = {
 
 export type CanvasAnnotation =
   | { id: string; kind: 'text'; x: number; y: number; text: string; color: string; fontSize: number }
-  | { id: string; kind: 'ruler'; x: number; y: number; x2: number; y2: number; color: string; measuredMm: number; sourceItemId?: string; extensionOffset?: number }
+  | { id: string; kind: 'ruler'; x: number; y: number; x2: number; y2: number; color: string; measuredMm: number; /** Preserve edited decimal text, including trailing zeroes. */ label?: string; sourceItemId?: string; extensionOffset?: number }
 
 export type ImageDetails = {
   /** Canvas-only text edits; source dimensions and quantities remain unchanged. */
