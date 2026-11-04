@@ -492,6 +492,8 @@ test('additional attribute editors add typed values and save independent product
     fireEvent.change(screen.getByLabelText(`${id}中文名称`), { target: { value: `测试${label}` } })
     const row = document.querySelector(`[data-value-id="${id}"]`)!
     expect(row.getAttribute('data-entity-key')).toBe(key)
+    expect(within(row as HTMLElement).getByRole('switch', { name: `${id}启用` }).getAttribute('aria-checked')).toBe('false')
+    fireEvent.click(within(row as HTMLElement).getByRole('switch', { name: `${id}启用` }))
     await select(`预览${label}`, `测试${label}`)
   }
   fireEvent.click(screen.getByRole('button', { name: /保\s*存$/ }))
@@ -507,7 +509,7 @@ test('additional attribute editors add typed values and save independent product
   validateBundle(saved)
 }, 15000)
 
-test('sizes appear first and new shared size values are enabled only for the current product', async () => {
+test('sizes appear first and new shared size values are closed until enabled for a product', async () => {
   render(<ProductOptionsSettings/> )
   await screen.findByLabelText('产品中文名')
   const attributes = screen.getByRole('navigation', { name: '产品属性' })
@@ -519,6 +521,9 @@ test('sizes appear first and new shared size values are enabled only for the cur
   const sizeId = `S${initialBundle.catalogs['sizes.json'].nextId}`
   fireEvent.click(screen.getByRole('button', { name: '新增值' }))
   fireEvent.change(screen.getByLabelText(`${sizeId}中文名称`), { target: { value: '当前产品的新尺寸' } })
+  const addedSize = document.querySelector(`[data-value-id="${sizeId}"]`)!
+  expect(within(addedSize as HTMLElement).getByRole('switch', { name: `${sizeId}启用` }).getAttribute('aria-checked')).toBe('false')
+  fireEvent.click(within(addedSize as HTMLElement).getByRole('switch', { name: `${sizeId}启用` }))
   fireEvent.click(screen.getByRole('button', { name: /保\s*存$/ }))
   await screen.findByText('配置已保存')
   const saved = api.invoke.mock.calls.at(-1)![1].bundle as typeof initialBundle
@@ -566,6 +571,9 @@ test('native controls add and edit nested colors, set defaults, reorder, disable
   fireEvent.click(screen.getByRole('switch', { name: '启用配件样式' }))
   fireEvent.click(screen.getByRole('button', { name: '新增颜色' }))
   fireEvent.change(screen.getByLabelText('P-C138中文名称'), { target: { value: '测试蓝色' } })
+  const addedColor = document.querySelector('[data-value-id="P-C138"]') as HTMLElement
+  expect(within(addedColor).getByRole('switch', { name: 'P-C138启用' }).getAttribute('aria-checked')).toBe('false')
+  fireEvent.click(within(addedColor).getByRole('switch', { name: 'P-C138启用' }))
   fireEvent.click(screen.getByRole('switch', { name: 'P-C138默认选中' }))
   fireEvent.change(screen.getByLabelText('P-C138序号'), { target: { value: '2' } })
   fireEvent.blur(screen.getByLabelText('P-C138序号'))
@@ -603,6 +611,8 @@ test('category editor adds unclassified children and releases existing children,
   fireEvent.click(screen.getByRole('button', { name: '新增新产品类别产品' }))
   expect((screen.getByLabelText('产品名称') as HTMLInputElement).value).toBe('New Product')
   fireEvent.click(screen.getByRole('button', { name: /^新\s*增$/ }))
+  expect(screen.getByRole('switch', { name: '启用新选项' }).getAttribute('aria-checked')).toBe('false')
+  fireEvent.click(screen.getByRole('switch', { name: '启用新选项' }))
   fireEvent.click(screen.getByRole('button', { name: '新增值' }))
   expect(screen.getByLabelText('X1中文名称')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: /保\s*存$/ }))
@@ -669,6 +679,8 @@ test('preview respects whole-attribute switches, product value exclusions, defau
   fireEvent.click(screen.getByRole('button', { name: /^配件样式已/ }))
   fireEvent.click(screen.getByRole('switch', { name: '启用配件样式' }))
   fireEvent.click(screen.getByRole('button', { name: '新增颜色' }))
+  expect(screen.getByRole('switch', { name: 'P-C138启用' }).getAttribute('aria-checked')).toBe('false')
+  fireEvent.click(screen.getByRole('switch', { name: 'P-C138启用' }))
   fireEvent.click(screen.getByRole('switch', { name: 'P-C138默认选中' }))
   await select('预览配件样式', '爱心玫红')
   expect(document.querySelector('.po-preview')!.textContent).toContain('新颜色')
