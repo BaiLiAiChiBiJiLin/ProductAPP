@@ -28,7 +28,7 @@ export function discardTemporaryAssets(assets: Asset[]): Promise<void> {
 }
 
 export async function loadHistoryBatch(id: string, onProgress?: (progress: BatchLoadProgress) => void): Promise<BatchRecord> {
-  await flushCloudSyncQueue()
+  await flushCloudSyncQueue(id)
   const record = await invoke<BatchRecord>('load_batch', { id })
   const assets: Asset[] = []
   const decoder = new TextDecoder('utf-8', { fatal: true })

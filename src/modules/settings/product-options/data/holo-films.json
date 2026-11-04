@@ -9,7 +9,7 @@
       "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1779689605207-1778662569890-_-_.png",
       "isDefault": false,
       "sortOrder": 1,
-      "id": "M1"
+      "holoFilmId": "M1"
     },
     {
       "name": "Holo Heart",
@@ -17,7 +17,7 @@
       "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778672940632-_.png",
       "isDefault": false,
       "sortOrder": 2,
-      "id": "M2"
+      "holoFilmId": "M2"
     },
     {
       "name": "Double-Sided Star Holo",
@@ -25,7 +25,7 @@
       "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778739887358-_.png",
       "isDefault": false,
       "sortOrder": 3,
-      "id": "M3"
+      "holoFilmId": "M3"
     },
     {
       "name": "Holo Broken Glass",
@@ -33,7 +33,7 @@
       "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778662323967-_.png",
       "isDefault": false,
       "sortOrder": 4,
-      "id": "M4"
+      "holoFilmId": "M4"
     },
     {
       "name": "Double-Sided Broken Glass",
@@ -41,7 +41,7 @@
       "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778662328554-_.png",
       "isDefault": false,
       "sortOrder": 5,
-      "id": "M5"
+      "holoFilmId": "M5"
     },
     {
       "name": "Holo Star",
@@ -49,7 +49,7 @@
       "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778669523119-_.png",
       "isDefault": false,
       "sortOrder": 6,
-      "id": "M6"
+      "holoFilmId": "M6"
     },
     {
       "name": "Double-Sided Rainbow Holo",
@@ -57,7 +57,7 @@
       "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778836512787-_02.png",
       "isDefault": false,
       "sortOrder": 7,
-      "id": "M7"
+      "holoFilmId": "M7"
     },
     {
       "name": "Double-Sided Heart Holo",
@@ -65,7 +65,7 @@
       "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778668940325-_-02.png",
       "isDefault": false,
       "sortOrder": 8,
-      "id": "M8"
+      "holoFilmId": "M8"
     },
     {
       "name": "Heart Holo ",
@@ -73,7 +73,7 @@
       "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1779787005673-_-02.png",
       "isDefault": false,
       "sortOrder": 9,
-      "id": "M9"
+      "holoFilmId": "M9"
     },
     {
       "name": "Star Holo ",
@@ -81,7 +81,7 @@
       "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1779786994245-_.png",
       "isDefault": false,
       "sortOrder": 10,
-      "id": "M10"
+      "holoFilmId": "M10"
     },
     {
       "name": "Broken Glass Holo ",
@@ -89,7 +89,7 @@
       "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1779787021223-1778662328554-_.png",
       "isDefault": false,
       "sortOrder": 11,
-      "id": "M11"
+      "holoFilmId": "M11"
     },
     {
       "name": "Holo Heart",
@@ -97,7 +97,7 @@
       "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1780380004981-_-02.png",
       "isDefault": false,
       "sortOrder": 12,
-      "id": "M12"
+      "holoFilmId": "M12"
     },
     {
       "name": "Holo Star",
@@ -105,7 +105,7 @@
       "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1780380010714-_.png",
       "isDefault": false,
       "sortOrder": 13,
-      "id": "M13"
+      "holoFilmId": "M13"
     },
     {
       "name": "Holo Broken Glass",
@@ -113,8 +113,46 @@
       "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1780380014268-1778662328554-_.png",
       "isDefault": false,
       "sortOrder": 14,
-      "id": "M14"
+      "holoFilmId": "M14"
+    },
+    {
+      "name": "Single-Sided Star Holo",
+      "labelZh": "单面星星镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778672940632-_.png",
+      "isDefault": false,
+      "sortOrder": 15,
+      "holoFilmId": "M15"
+    },
+    {
+      "name": "Single-Sided Broken Glass",
+      "labelZh": "单面碎玻璃镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778662323967-_.png",
+      "isDefault": false,
+      "sortOrder": 16,
+      "holoFilmId": "M16"
+    },
+    {
+      "name": "Single-Sided Heart Holo",
+      "labelZh": "单面爱心镭射",
+      "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778669523119-_.png",
+      "isDefault": false,
+      "sortOrder": 17,
+      "holoFilmId": "M17"
+    },
+    {
+      "name": "Front side holographic",
+      "labelZh": "正面镭射",
+      "isDefault": false,
+      "sortOrder": 18,
+      "holoFilmId": "M18"
+    },
+    {
+      "name": "Double Side Holographic",
+      "labelZh": "双面镭射",
+      "isDefault": false,
+      "sortOrder": 19,
+      "holoFilmId": "M19"
     }
   ],
-  "nextId": 15
+  "nextId": 20
 }

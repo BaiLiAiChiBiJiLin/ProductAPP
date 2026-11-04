@@ -282,7 +282,7 @@ export default function SchematicPage({ active = true, initialRecord, onRecordSa
     }
     saveLock.current = true
     setSavingBatch(true)
-    try { await flushCloudSyncQueue() } catch (error) {
+    try { await flushCloudSyncQueue(recordId) } catch (error) {
       saveLock.current = false; setSavingBatch(false)
       if (confirmedAssets) throw error
       toast.error(`同步等待失败：${String(error)}`)
@@ -554,9 +554,10 @@ export default function SchematicPage({ active = true, initialRecord, onRecordSa
     if (!isTauri()) return
     setConfirmingReview(true)
     try {
-      await flushCloudSyncQueue()
+      const recordId = currentBatchId ?? crypto.randomUUID()
+      await flushCloudSyncQueue(recordId)
       const latestAssets = assetsRef.current
-      const record = { id: currentBatchId ?? crypto.randomUUID(), savedAt: new Date().toISOString(), assets: latestAssets, metadata: batchMetadata }
+      const record = { id: recordId, savedAt: new Date().toISOString(), assets: latestAssets, metadata: batchMetadata }
       const result = await invoke<SaveBatchResult>('save_batch', { ...record, assets: latestAssets.map(assetForPersistence) })
       clearCloudBatchSave(record.id)
       const persisted = mergePersistedAssetMetadata(latestAssets, result.assets)

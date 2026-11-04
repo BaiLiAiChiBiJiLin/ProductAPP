@@ -169,3 +169,70 @@ test('a failed delete keeps recovery data paused until deletion is retried', asy
     expect(localStorage.getItem('printflow-cloud-sync-queue-v1')).toBe('[]')
   } finally { clearCloudBatchSave('delete-retry') }
 })
+
+test('a missing source does not stop later background saves and its error stays visible', async () => {
+  vi.useFakeTimers()
+  let rejectBroken!: (reason: unknown) => void
+  api.invoke.mockImplementation((command: string, args: { id: string }) => {
+    if (command !== 'save_batch') return Promise.resolve()
+    if (args.id === 'broken') return new Promise((_, reject) => { rejectBroken = reject })
+    return Promise.resolve({ batchId: args.id, assets: [] })
+  })
+  const status = vi.fn()
+  const stop = onCloudSyncStatus(status)
+  try {
+    enqueueCloudBatchSave({ id: 'broken', savedAt: 'now', assets: [{ storagePath: 'temp-assets/missing.svg' }] })
+    await Promise.resolve()
+    enqueueCloudBatchSave({ id: 'healthy', savedAt: 'now', assets: [] })
+    const flushed = expect(flushCloudSyncQueue()).rejects.toThrow('源文件不可访问')
+    rejectBroken(new Error('源文件不可访问'))
+    await flushed
+    expect(api.invoke).toHaveBeenCalledWith('save_batch', expect.objectContaining({ id: 'healthy' }))
+    const entries = JSON.parse(localStorage.getItem('printflow-cloud-sync-queue-v1') ?? '[]')
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toMatchObject({ args: { id: 'broken' }, error: 'Error: 源文件不可访问' })
+    expect(status).toHaveBeenLastCalledWith({ state: 'error', pending: 1, error: 'Error: 源文件不可访问' })
+    expect(pendingCloudAssetPaths()).toContain('temp-assets/missing.svg')
+  } finally {
+    clearCloudBatchSave('broken'); clearCloudBatchSave('healthy'); stop()
+    vi.clearAllTimers(); vi.useRealTimers()
+  }
+})
+
+test('a batch barrier resolves as soon as that batch saves, without waiting for the next upload', async () => {
+  const saves = new Map<string, (result: unknown) => void>()
+  api.invoke.mockImplementation((command: string, args: { id: string }) => command === 'save_batch'
+    ? new Promise(resolve => { saves.set(args.id, resolve) }) : Promise.resolve())
+  try {
+    enqueueCloudBatchSave({ id: 'first', savedAt: 'now', assets: [] })
+    await vi.waitFor(() => expect(saves.has('first')).toBe(true))
+    enqueueCloudBatchSave({ id: 'second', savedAt: 'now', assets: [] })
+    const completed = vi.fn()
+    const flushing = flushCloudSyncQueue('first').then(completed)
+    saves.get('first')?.({ batchId: 'first', assets: [] })
+    await vi.waitFor(() => expect(completed).toHaveBeenCalledOnce())
+    await flushing
+    expect(saves.has('second')).toBe(true)
+    expect(localStorage.getItem('printflow-cloud-sync-queue-v1')).toContain('second')
+  } finally {
+    clearCloudBatchSave('first'); clearCloudBatchSave('second')
+    saves.get('second')?.({ batchId: 'second', assets: [] })
+    await flushCloudSyncQueue()
+  }
+})
+
+test('a batch barrier reports its own failure instead of an unrelated saved error', async () => {
+  vi.useFakeTimers()
+  api.invoke.mockImplementation((command: string, args: { id: string }) => command === 'save_batch'
+    ? Promise.reject(new Error(`${args.id} source missing`)) : Promise.resolve())
+  try {
+    enqueueCloudBatchSave({ id: 'one', savedAt: 'now', assets: [] })
+    await expect(flushCloudSyncQueue('one')).rejects.toThrow('one source missing')
+    enqueueCloudBatchSave({ id: 'two', savedAt: 'now', assets: [] })
+    await expect(flushCloudSyncQueue('two')).rejects.toThrow('two source missing')
+  } finally {
+    clearCloudBatchSave('one'); clearCloudBatchSave('two')
+    await flushCloudSyncQueue()
+    vi.clearAllTimers(); vi.useRealTimers()
+  }
+})

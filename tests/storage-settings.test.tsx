@@ -4,6 +4,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import SettingsModal from '../src/modules/settings/SettingsModal'
 import { initialBundle } from '../src/modules/settings/product-options/service'
 import { clone } from '../src/modules/settings/product-options/model'
+import { initialDocument } from '../src/modules/settings/quantity-pricing/service'
+import { initialDocument as initialProductPrices } from '../src/modules/settings/product-pricing/service'
 
 const api = vi.hoisted(() => ({ invoke: vi.fn(), open: vi.fn() }))
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true, invoke: api.invoke }))
@@ -147,4 +149,97 @@ test('shared storage is read only and migration is an explicit resumable action'
   expect(await screen.findByText(/已迁移 4 条/)).toBeTruthy()
   expect(await screen.findByText(/review broken: source missing/)).toBeTruthy()
   await waitFor(() => expect((screen.getByRole('button', { name: /迁移数据/ }) as HTMLButtonElement).disabled).toBe(false))
+})
+
+test('quantity pricing keeps its draft across settings sections and locks navigation while saving', async () => {
+  const snapshot = {
+    document: structuredClone(initialDocument),
+    categories: initialBundle.main.categories.map(category => ({ categoryId: category.name, title: category.title, titleZh: category.titleZh, productCount: category.products.length })),
+    version: 'tiers-v1', directory: 'D:\\settings\\quantity-pricing',
+  }
+  api.invoke.mockImplementation(async command => command === 'load_quantity_pricing_settings' ? snapshot : defaults)
+  const close = vi.fn()
+  render(<SettingsModal open onClose={close}/> )
+  await screen.findByLabelText('历史记录保存目录')
+  const tierTab = screen.getByRole('button', { name: '价格阶梯' })
+  const storageTab = screen.getByRole('button', { name: '历史记录保存目录' })
+  const productTab = screen.getByRole('button', { name: '产品选项配置' })
+  fireEvent.click(tierTab)
+  fireEvent.change(await screen.findByLabelText('第2档减价比例', {}, { timeout: 5000 }), { target: { value: '36' } })
+  fireEvent.click(storageTab)
+  fireEvent.change(screen.getByLabelText('历史记录保存目录'), { target: { value: 'E:\\目录草稿' } })
+  fireEvent.click(tierTab)
+  expect(Number((screen.getByLabelText('第2档减价比例') as HTMLInputElement).value)).toBe(36)
+  expect(api.invoke.mock.calls.filter(([command]) => command === 'load_quantity_pricing_settings')).toHaveLength(1)
+  let resolve!: (value: typeof snapshot) => void
+  api.invoke.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+  fireEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }))
+  expect((storageTab as HTMLButtonElement).disabled).toBe(true)
+  expect((productTab as HTMLButtonElement).disabled).toBe(true)
+  expect((tierTab as HTMLButtonElement).disabled).toBe(true)
+  expect(screen.queryByRole('button', { name: 'Close' })).toBeNull()
+  const call = api.invoke.mock.calls.find(([command]) => command === 'save_quantity_pricing_settings')!
+  expect(call[1].expectedVersion).toBe('tiers-v1')
+  expect(call[1].document.categoryRules.find((rule: { categoryId: string }) => rule.categoryId === 'keychains').tiers[1].discountPercent).toBe(36)
+  await act(async () => resolve({ ...snapshot, document: call[1].document, version: 'tiers-v2' }))
+  await screen.findByText('价格阶梯已保存')
+  expect((storageTab as HTMLButtonElement).disabled).toBe(false)
+  fireEvent.click(storageTab)
+  expect((screen.getByLabelText('历史记录保存目录') as HTMLInputElement).value).toBe('E:\\目录草稿')
+  expect(close).not.toHaveBeenCalled()
+})
+
+test('closing settings confirms discarding a quantity pricing draft even from another section', async () => {
+  const snapshot = {
+    document: structuredClone(initialDocument),
+    categories: initialBundle.main.categories.map(category => ({ categoryId: category.name, title: category.title, titleZh: category.titleZh, productCount: category.products.length })),
+    version: 'tiers-v1', directory: 'D:\\settings\\quantity-pricing',
+  }
+  api.invoke.mockImplementation(async command => command === 'load_quantity_pricing_settings' ? snapshot : defaults)
+  const close = vi.fn()
+  render(<SettingsModal open onClose={close}/>)
+  await screen.findByLabelText('历史记录保存目录')
+  fireEvent.click(screen.getByRole('button', { name: '价格阶梯' }))
+  fireEvent.change(await screen.findByLabelText('第2档减价比例'), { target: { value: '36' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+  expect(await screen.findByText('放弃未保存的价格阶梯修改？')).toBeTruthy()
+  expect(close).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: '继续编辑' }))
+  expect(Number((screen.getByLabelText('第2档减价比例') as HTMLInputElement).value)).toBe(36)
+  fireEvent.click(screen.getByRole('button', { name: '历史记录保存目录' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+  fireEvent.click(await screen.findByRole('button', { name: '放弃并关闭' }))
+  expect(close).toHaveBeenCalledOnce()
+  expect(api.invoke.mock.calls.some(([command]) => command === 'save_quantity_pricing_settings')).toBe(false)
+})
+
+test('product pricing is independent, retains its draft, guards close and locks navigation during saving', async () => {
+  const snapshot = { document: structuredClone(initialProductPrices), bundle: clone(initialBundle), quantityPricing: structuredClone(initialDocument), version: 'prices-v1', directory: 'D:/settings/product-pricing' }
+  snapshot.document.products = snapshot.document.products.filter(product => product.productId === 'P31')
+  snapshot.document.products[0].basePrices = snapshot.document.products[0].basePrices.slice(0, 1)
+  snapshot.bundle.main.categories = snapshot.bundle.main.categories.filter(category => category.name === 'keychains')
+  snapshot.bundle.main.categories[0].products = snapshot.bundle.main.categories[0].products.filter(product => product.productId === 'P31')
+  snapshot.bundle.main.uncategorizedProducts = []
+  api.invoke.mockImplementation(async command => command === 'load_product_pricing_settings' ? snapshot : defaults)
+  const close = vi.fn()
+  render(<SettingsModal open onClose={close}/>)
+  await screen.findByLabelText('历史记录保存目录')
+  fireEvent.click(screen.getByRole('button', { name: '产品定价' }))
+  fireEvent.change(await screen.findByLabelText('1 英寸 主体基本价'), { target: { value: '1.75' } })
+  fireEvent.click(screen.getByRole('button', { name: '历史记录保存目录' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+  expect(await screen.findByText('放弃未保存的产品定价修改？')).toBeTruthy()
+  expect(close).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: '继续编辑' }))
+  fireEvent.click(screen.getByRole('button', { name: '产品定价' }))
+  expect((await screen.findByLabelText('1 英寸 主体基本价') as HTMLInputElement).value).toBe('1.7500')
+  let reject!: (reason: string) => void
+  api.invoke.mockImplementationOnce(() => new Promise((_, failed) => { reject = failed }))
+  fireEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }))
+  expect((screen.getByRole('button', { name: '价格阶梯' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(screen.queryByRole('button', { name: 'Close' })).toBeNull()
+  await act(async () => reject('产品定价保存失败'))
+  expect(await screen.findByText('产品定价保存失败')).toBeTruthy()
+  expect((screen.getByRole('button', { name: '价格阶梯' }) as HTMLButtonElement).disabled).toBe(false)
+  expect((screen.getByLabelText('1 英寸 主体基本价') as HTMLInputElement).value).toBe('1.7500')
 })

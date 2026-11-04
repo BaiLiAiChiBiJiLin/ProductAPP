@@ -9,14 +9,14 @@
       "image": "",
       "isDefault": false,
       "sortOrder": 1,
-      "id": "Y1"
+      "printOptionId": "Y1"
     },
     {
       "name": "Double Sided Different Design",
       "labelZh": "双面不同图",
       "isDefault": false,
       "sortOrder": 2,
-      "id": "Y2"
+      "printOptionId": "Y2"
     }
   ],
   "nextId": 3

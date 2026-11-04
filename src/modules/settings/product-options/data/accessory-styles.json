@@ -10,7 +10,7 @@
       "isDefault": false,
       "colors": [],
       "sortOrder": 1,
-      "id": "P1"
+      "accessoryStyleId": "P1"
     },
     {
       "name": "140- Heart White",
@@ -19,7 +19,7 @@
       "isDefault": false,
       "colors": [],
       "sortOrder": 2,
-      "id": "P2"
+      "accessoryStyleId": "P2"
     },
     {
       "name": "141- Round Blue",
@@ -28,7 +28,7 @@
       "isDefault": false,
       "colors": [],
       "sortOrder": 3,
-      "id": "P3"
+      "accessoryStyleId": "P3"
     },
     {
       "name": "142- Round White",
@@ -37,7 +37,7 @@
       "isDefault": false,
       "colors": [],
       "sortOrder": 4,
-      "id": "P4"
+      "accessoryStyleId": "P4"
     },
     {
       "name": "143- Round Pink",
@@ -46,7 +46,7 @@
       "isDefault": false,
       "colors": [],
       "sortOrder": 5,
-      "id": "P5"
+      "accessoryStyleId": "P5"
     },
     {
       "name": "144-Round Brooch Silver",
@@ -55,7 +55,7 @@
       "isDefault": false,
       "colors": [],
       "sortOrder": 6,
-      "id": "P6"
+      "accessoryStyleId": "P6"
     },
     {
       "name": "145-Round Brooch Antique Bronze",
@@ -64,7 +64,7 @@
       "isDefault": false,
       "colors": [],
       "sortOrder": 7,
-      "id": "P7"
+      "accessoryStyleId": "P7"
     },
     {
       "name": "U style",
@@ -78,7 +78,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827283218-24.png",
           "isDefault": false,
           "sortOrder": 1,
-          "id": "P-C1"
+          "accessoryColorId": "P-C1"
         },
         {
           "name": "U style-25",
@@ -86,7 +86,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827377179-25.png",
           "isDefault": false,
           "sortOrder": 2,
-          "id": "P-C2"
+          "accessoryColorId": "P-C2"
         },
         {
           "name": "U style-26",
@@ -94,7 +94,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827381261-26.png",
           "isDefault": false,
           "sortOrder": 3,
-          "id": "P-C3"
+          "accessoryColorId": "P-C3"
         },
         {
           "name": "U style-27",
@@ -102,7 +102,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778828412624-27.png",
           "isDefault": false,
           "sortOrder": 4,
-          "id": "P-C4"
+          "accessoryColorId": "P-C4"
         },
         {
           "name": "U style-28",
@@ -110,7 +110,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827387798-28.png",
           "isDefault": false,
           "sortOrder": 5,
-          "id": "P-C5"
+          "accessoryColorId": "P-C5"
         },
         {
           "name": "U style-29",
@@ -118,7 +118,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827390675-29.png",
           "isDefault": false,
           "sortOrder": 6,
-          "id": "P-C6"
+          "accessoryColorId": "P-C6"
         },
         {
           "name": "U style-30",
@@ -126,7 +126,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827569808-30.png",
           "isDefault": false,
           "sortOrder": 7,
-          "id": "P-C7"
+          "accessoryColorId": "P-C7"
         },
         {
           "name": "U style-31",
@@ -134,7 +134,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827399259-31.png",
           "isDefault": false,
           "sortOrder": 8,
-          "id": "P-C8"
+          "accessoryColorId": "P-C8"
         },
         {
           "name": "U style-78",
@@ -142,7 +142,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778828008073-78.png",
           "isDefault": false,
           "sortOrder": 9,
-          "id": "P-C9"
+          "accessoryColorId": "P-C9"
         },
         {
           "name": "U style-79",
@@ -150,7 +150,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827958530-79.png",
           "isDefault": false,
           "sortOrder": 10,
-          "id": "P-C10"
+          "accessoryColorId": "P-C10"
         },
         {
           "name": "U style-80",
@@ -158,7 +158,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827956310-80.png",
           "isDefault": false,
           "sortOrder": 11,
-          "id": "P-C11"
+          "accessoryColorId": "P-C11"
         },
         {
           "name": "U style-81",
@@ -166,7 +166,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778828395325-81.png",
           "isDefault": false,
           "sortOrder": 12,
-          "id": "P-C12"
+          "accessoryColorId": "P-C12"
         },
         {
           "name": "U style-82",
@@ -174,7 +174,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827940112-82.png",
           "isDefault": false,
           "sortOrder": 13,
-          "id": "P-C13"
+          "accessoryColorId": "P-C13"
         },
         {
           "name": "U style-83",
@@ -182,7 +182,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827932645-83.png",
           "isDefault": false,
           "sortOrder": 14,
-          "id": "P-C14"
+          "accessoryColorId": "P-C14"
         },
         {
           "name": "U style-84",
@@ -190,7 +190,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827920784-84.png",
           "isDefault": false,
           "sortOrder": 15,
-          "id": "P-C15"
+          "accessoryColorId": "P-C15"
         },
         {
           "name": "U style-85",
@@ -198,7 +198,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827916886-85.png",
           "isDefault": false,
           "sortOrder": 16,
-          "id": "P-C16"
+          "accessoryColorId": "P-C16"
         },
         {
           "name": "U style-86",
@@ -206,7 +206,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827907414-86.png",
           "isDefault": false,
           "sortOrder": 17,
-          "id": "P-C17"
+          "accessoryColorId": "P-C17"
         },
         {
           "name": "U style-87",
@@ -214,7 +214,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827881282-87.png",
           "isDefault": false,
           "sortOrder": 18,
-          "id": "P-C18"
+          "accessoryColorId": "P-C18"
         },
         {
           "name": "U style-88",
@@ -222,7 +222,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827873052-88.png",
           "isDefault": false,
           "sortOrder": 19,
-          "id": "P-C19"
+          "accessoryColorId": "P-C19"
         },
         {
           "name": "U style-89",
@@ -230,7 +230,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827860238-89.png",
           "isDefault": false,
           "sortOrder": 20,
-          "id": "P-C20"
+          "accessoryColorId": "P-C20"
         },
         {
           "name": "U style-90",
@@ -238,7 +238,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827852953-90.png",
           "isDefault": false,
           "sortOrder": 21,
-          "id": "P-C21"
+          "accessoryColorId": "P-C21"
         },
         {
           "name": "U style-91",
@@ -246,7 +246,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827843485-91.png",
           "isDefault": false,
           "sortOrder": 22,
-          "id": "P-C22"
+          "accessoryColorId": "P-C22"
         },
         {
           "name": "U style-92",
@@ -254,7 +254,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827832443-92.png",
           "isDefault": false,
           "sortOrder": 23,
-          "id": "P-C23"
+          "accessoryColorId": "P-C23"
         },
         {
           "name": "U style-93",
@@ -262,7 +262,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827827194-93.png",
           "isDefault": false,
           "sortOrder": 24,
-          "id": "P-C24"
+          "accessoryColorId": "P-C24"
         },
         {
           "name": "U style-94",
@@ -270,7 +270,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827820236-94.png",
           "isDefault": false,
           "sortOrder": 25,
-          "id": "P-C25"
+          "accessoryColorId": "P-C25"
         },
         {
           "name": "U style-95",
@@ -278,11 +278,11 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827815873-95.png",
           "isDefault": false,
           "sortOrder": 26,
-          "id": "P-C26"
+          "accessoryColorId": "P-C26"
         }
       ],
       "sortOrder": 8,
-      "id": "P8"
+      "accessoryStyleId": "P8"
     },
     {
       "name": "Star Hook Clasp",
@@ -296,7 +296,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778829473082-9.png",
           "isDefault": false,
           "sortOrder": 1,
-          "id": "P-C27"
+          "accessoryColorId": "P-C27"
         },
         {
           "name": "Star Hook Clasp-9",
@@ -304,7 +304,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778829484383-10.png",
           "isDefault": false,
           "sortOrder": 2,
-          "id": "P-C28"
+          "accessoryColorId": "P-C28"
         },
         {
           "name": "Star Hook Clasp-41",
@@ -312,7 +312,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778829503837-41.png",
           "isDefault": false,
           "sortOrder": 3,
-          "id": "P-C29"
+          "accessoryColorId": "P-C29"
         },
         {
           "name": "Star Hook Clasp-42",
@@ -320,7 +320,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778829638294-42.png",
           "isDefault": false,
           "sortOrder": 4,
-          "id": "P-C30"
+          "accessoryColorId": "P-C30"
         },
         {
           "name": "Star Hook Clasp-43",
@@ -328,7 +328,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778829640556-43.png",
           "isDefault": false,
           "sortOrder": 5,
-          "id": "P-C31"
+          "accessoryColorId": "P-C31"
         },
         {
           "name": "Star Hook Clasp-44",
@@ -336,7 +336,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778829644237-44.png",
           "isDefault": false,
           "sortOrder": 6,
-          "id": "P-C32"
+          "accessoryColorId": "P-C32"
         },
         {
           "name": "Star Hook Clasp-45",
@@ -344,7 +344,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778829646822-45.png",
           "isDefault": false,
           "sortOrder": 7,
-          "id": "P-C33"
+          "accessoryColorId": "P-C33"
         },
         {
           "name": "Star Hook Clasp-46",
@@ -352,7 +352,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778829650284-46.png",
           "isDefault": false,
           "sortOrder": 8,
-          "id": "P-C34"
+          "accessoryColorId": "P-C34"
         },
         {
           "name": "Star Hook Clasp-47",
@@ -360,7 +360,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778829652729-47.png",
           "isDefault": false,
           "sortOrder": 9,
-          "id": "P-C35"
+          "accessoryColorId": "P-C35"
         },
         {
           "name": "Star Hook Clasp-48",
@@ -368,7 +368,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778829658565-48.png",
           "isDefault": false,
           "sortOrder": 10,
-          "id": "P-C36"
+          "accessoryColorId": "P-C36"
         },
         {
           "name": "Star Hook Clasp-49",
@@ -376,7 +376,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778829842829-49.png",
           "isDefault": false,
           "sortOrder": 11,
-          "id": "P-C37"
+          "accessoryColorId": "P-C37"
         },
         {
           "name": "Star Hook Clasp-176",
@@ -384,7 +384,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778829537085-176.png",
           "isDefault": false,
           "sortOrder": 12,
-          "id": "P-C38"
+          "accessoryColorId": "P-C38"
         },
         {
           "name": "Star Hook Clasp-179",
@@ -392,11 +392,11 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778829521436-179.png",
           "isDefault": false,
           "sortOrder": 13,
-          "id": "P-C39"
+          "accessoryColorId": "P-C39"
         }
       ],
       "sortOrder": 9,
-      "id": "P9"
+      "accessoryStyleId": "P9"
     },
     {
       "name": "Heart Hook Clasp",
@@ -410,7 +410,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778830298320-11.png",
           "isDefault": false,
           "sortOrder": 1,
-          "id": "P-C40"
+          "accessoryColorId": "P-C40"
         },
         {
           "name": "Heart Hook Clasp-12",
@@ -418,7 +418,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778830303388-12.png",
           "isDefault": false,
           "sortOrder": 2,
-          "id": "P-C41"
+          "accessoryColorId": "P-C41"
         },
         {
           "name": "Heart Hook Clasp-32",
@@ -426,7 +426,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778830344855-32.png",
           "isDefault": false,
           "sortOrder": 3,
-          "id": "P-C42"
+          "accessoryColorId": "P-C42"
         },
         {
           "name": "Heart Hook Clasp-33",
@@ -434,7 +434,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778830359290-33.png",
           "isDefault": false,
           "sortOrder": 4,
-          "id": "P-C43"
+          "accessoryColorId": "P-C43"
         },
         {
           "name": "Heart Hook Clasp-34",
@@ -442,7 +442,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778830364264-34.png",
           "isDefault": false,
           "sortOrder": 5,
-          "id": "P-C44"
+          "accessoryColorId": "P-C44"
         },
         {
           "name": "Heart Hook Clasp-35",
@@ -450,7 +450,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778830367544-35.png",
           "isDefault": false,
           "sortOrder": 6,
-          "id": "P-C45"
+          "accessoryColorId": "P-C45"
         },
         {
           "name": "Heart Hook Clasp-36",
@@ -458,7 +458,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778830376184-36.png",
           "isDefault": false,
           "sortOrder": 7,
-          "id": "P-C46"
+          "accessoryColorId": "P-C46"
         },
         {
           "name": "Heart Hook Clasp-37",
@@ -466,7 +466,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778830382422-37.png",
           "isDefault": false,
           "sortOrder": 8,
-          "id": "P-C47"
+          "accessoryColorId": "P-C47"
         },
         {
           "name": "Heart Hook Clasp-38",
@@ -474,7 +474,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778830389362-38.png",
           "isDefault": false,
           "sortOrder": 9,
-          "id": "P-C48"
+          "accessoryColorId": "P-C48"
         },
         {
           "name": "Heart Hook Clasp-39",
@@ -482,7 +482,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778830395754-39.png",
           "isDefault": false,
           "sortOrder": 10,
-          "id": "P-C49"
+          "accessoryColorId": "P-C49"
         },
         {
           "name": "Heart Hook Clasp-40",
@@ -490,7 +490,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778830402241-40.png",
           "isDefault": false,
           "sortOrder": 11,
-          "id": "P-C50"
+          "accessoryColorId": "P-C50"
         },
         {
           "name": "Heart Hook Clasp-180",
@@ -498,11 +498,11 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778830593328-180.png",
           "isDefault": false,
           "sortOrder": 12,
-          "id": "P-C51"
+          "accessoryColorId": "P-C51"
         }
       ],
       "sortOrder": 10,
-      "id": "P10"
+      "accessoryStyleId": "P10"
     },
     {
       "name": "Phone strap",
@@ -516,7 +516,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907785053-50.png",
           "isDefault": false,
           "sortOrder": 1,
-          "id": "P-C52"
+          "accessoryColorId": "P-C52"
         },
         {
           "name": "Phone strap-51",
@@ -524,7 +524,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907786954-51.png",
           "isDefault": false,
           "sortOrder": 2,
-          "id": "P-C53"
+          "accessoryColorId": "P-C53"
         },
         {
           "name": "Phone strap-52",
@@ -532,7 +532,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907791073-52.png",
           "isDefault": false,
           "sortOrder": 3,
-          "id": "P-C54"
+          "accessoryColorId": "P-C54"
         },
         {
           "name": "Phone strap-53",
@@ -540,7 +540,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907794499-53.png",
           "isDefault": false,
           "sortOrder": 4,
-          "id": "P-C55"
+          "accessoryColorId": "P-C55"
         },
         {
           "name": "Phone strap-54",
@@ -548,7 +548,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907798278-54.png",
           "isDefault": false,
           "sortOrder": 5,
-          "id": "P-C56"
+          "accessoryColorId": "P-C56"
         },
         {
           "name": "Phone strap-55",
@@ -556,7 +556,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907802485-55.png",
           "isDefault": false,
           "sortOrder": 6,
-          "id": "P-C57"
+          "accessoryColorId": "P-C57"
         },
         {
           "name": "Phone strap-56",
@@ -564,7 +564,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907805649-56.png",
           "isDefault": false,
           "sortOrder": 7,
-          "id": "P-C58"
+          "accessoryColorId": "P-C58"
         },
         {
           "name": "Phone strap-57",
@@ -572,7 +572,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907810222-57.png",
           "isDefault": false,
           "sortOrder": 8,
-          "id": "P-C59"
+          "accessoryColorId": "P-C59"
         },
         {
           "name": "Phone strap-58",
@@ -580,7 +580,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907813983-58.png",
           "isDefault": false,
           "sortOrder": 9,
-          "id": "P-C60"
+          "accessoryColorId": "P-C60"
         },
         {
           "name": "Phone strap-59",
@@ -588,7 +588,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907817483-59.png",
           "isDefault": false,
           "sortOrder": 10,
-          "id": "P-C61"
+          "accessoryColorId": "P-C61"
         },
         {
           "name": "Phone strap-60",
@@ -596,7 +596,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907820585-60.png",
           "isDefault": false,
           "sortOrder": 11,
-          "id": "P-C62"
+          "accessoryColorId": "P-C62"
         },
         {
           "name": "Phone strap-61",
@@ -604,11 +604,11 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907824739-61.png",
           "isDefault": false,
           "sortOrder": 12,
-          "id": "P-C63"
+          "accessoryColorId": "P-C63"
         }
       ],
       "sortOrder": 11,
-      "id": "P11"
+      "accessoryStyleId": "P11"
     },
     {
       "name": "Polyester Phone Strap",
@@ -622,7 +622,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907856486-97.png",
           "isDefault": false,
           "sortOrder": 1,
-          "id": "P-C64"
+          "accessoryColorId": "P-C64"
         },
         {
           "name": "Polyester Phone Strap-98",
@@ -630,7 +630,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907858917-98.png",
           "isDefault": false,
           "sortOrder": 2,
-          "id": "P-C65"
+          "accessoryColorId": "P-C65"
         },
         {
           "name": "Polyester Phone Strap-99",
@@ -638,7 +638,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907863182-99.png",
           "isDefault": false,
           "sortOrder": 3,
-          "id": "P-C66"
+          "accessoryColorId": "P-C66"
         },
         {
           "name": "Polyester Phone Strap-100",
@@ -646,7 +646,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907866453-100.png",
           "isDefault": false,
           "sortOrder": 4,
-          "id": "P-C67"
+          "accessoryColorId": "P-C67"
         },
         {
           "name": "Polyester Phone Strap-101",
@@ -654,7 +654,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907870736-101.png",
           "isDefault": false,
           "sortOrder": 5,
-          "id": "P-C68"
+          "accessoryColorId": "P-C68"
         },
         {
           "name": "Polyester Phone Strap-102",
@@ -662,7 +662,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907874535-102.png",
           "isDefault": false,
           "sortOrder": 6,
-          "id": "P-C69"
+          "accessoryColorId": "P-C69"
         },
         {
           "name": "Polyester Phone Strap-103",
@@ -670,7 +670,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907878237-103.png",
           "isDefault": false,
           "sortOrder": 7,
-          "id": "P-C70"
+          "accessoryColorId": "P-C70"
         },
         {
           "name": "Polyester Phone Strap-104",
@@ -678,7 +678,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907885969-104.png",
           "isDefault": false,
           "sortOrder": 8,
-          "id": "P-C71"
+          "accessoryColorId": "P-C71"
         },
         {
           "name": "Polyester Phone Strap-105",
@@ -686,7 +686,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907890498-105.png",
           "isDefault": false,
           "sortOrder": 9,
-          "id": "P-C72"
+          "accessoryColorId": "P-C72"
         },
         {
           "name": "Polyester Phone Strap-106",
@@ -694,7 +694,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907722327-106.png",
           "isDefault": false,
           "sortOrder": 10,
-          "id": "P-C73"
+          "accessoryColorId": "P-C73"
         },
         {
           "name": "Polyester Phone Strap-107",
@@ -702,7 +702,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778904593439-107.png",
           "isDefault": false,
           "sortOrder": 11,
-          "id": "P-C74"
+          "accessoryColorId": "P-C74"
         },
         {
           "name": "Polyester Phone Strap-108",
@@ -710,7 +710,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778904596372-108.png",
           "isDefault": false,
           "sortOrder": 12,
-          "id": "P-C75"
+          "accessoryColorId": "P-C75"
         },
         {
           "name": "Polyester Phone Strap-109",
@@ -718,7 +718,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778904599607-109.png",
           "isDefault": false,
           "sortOrder": 13,
-          "id": "P-C76"
+          "accessoryColorId": "P-C76"
         },
         {
           "name": "Polyester Phone Strap-120",
@@ -726,7 +726,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778904604822-120.png",
           "isDefault": false,
           "sortOrder": 14,
-          "id": "P-C77"
+          "accessoryColorId": "P-C77"
         },
         {
           "name": "Polyester Phone Strap-121",
@@ -734,7 +734,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778904608838-121.png",
           "isDefault": false,
           "sortOrder": 15,
-          "id": "P-C78"
+          "accessoryColorId": "P-C78"
         },
         {
           "name": "Polyester Phone Strap-122",
@@ -742,7 +742,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778904612244-122.png",
           "isDefault": false,
           "sortOrder": 16,
-          "id": "P-C79"
+          "accessoryColorId": "P-C79"
         },
         {
           "name": "Polyester Phone Strap-123",
@@ -750,11 +750,11 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778904615390-123.png",
           "isDefault": false,
           "sortOrder": 17,
-          "id": "P-C80"
+          "accessoryColorId": "P-C80"
         }
       ],
       "sortOrder": 12,
-      "id": "P12"
+      "accessoryStyleId": "P12"
     },
     {
       "name": "Ball Bead Chain",
@@ -768,7 +768,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778906678592-62.png",
           "isDefault": false,
           "sortOrder": 1,
-          "id": "P-C81"
+          "accessoryColorId": "P-C81"
         },
         {
           "name": "Ball Bead Chain-63",
@@ -776,7 +776,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778906713917-63.png",
           "isDefault": false,
           "sortOrder": 2,
-          "id": "P-C82"
+          "accessoryColorId": "P-C82"
         },
         {
           "name": "Ball Bead Chain-64",
@@ -784,7 +784,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778906720013-64.png",
           "isDefault": false,
           "sortOrder": 3,
-          "id": "P-C83"
+          "accessoryColorId": "P-C83"
         },
         {
           "name": "Ball Bead Chain-65",
@@ -792,7 +792,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907978911-65.png",
           "isDefault": false,
           "sortOrder": 4,
-          "id": "P-C84"
+          "accessoryColorId": "P-C84"
         },
         {
           "name": "Ball Bead Chain-66",
@@ -800,7 +800,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907974965-66.png",
           "isDefault": false,
           "sortOrder": 5,
-          "id": "P-C85"
+          "accessoryColorId": "P-C85"
         },
         {
           "name": "Ball Bead Chain-67",
@@ -808,7 +808,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907970002-67.png",
           "isDefault": false,
           "sortOrder": 6,
-          "id": "P-C86"
+          "accessoryColorId": "P-C86"
         },
         {
           "name": "Ball Bead Chain-68",
@@ -816,7 +816,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907966588-68.png",
           "isDefault": false,
           "sortOrder": 7,
-          "id": "P-C87"
+          "accessoryColorId": "P-C87"
         },
         {
           "name": "Ball Bead Chain-69",
@@ -824,7 +824,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778906794594-69.png",
           "isDefault": false,
           "sortOrder": 8,
-          "id": "P-C88"
+          "accessoryColorId": "P-C88"
         },
         {
           "name": "Ball Bead Chain-70",
@@ -832,7 +832,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778906791161-70.png",
           "isDefault": false,
           "sortOrder": 9,
-          "id": "P-C89"
+          "accessoryColorId": "P-C89"
         },
         {
           "name": "Ball Bead Chain-71",
@@ -840,7 +840,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778906786991-71.png",
           "isDefault": false,
           "sortOrder": 10,
-          "id": "P-C90"
+          "accessoryColorId": "P-C90"
         },
         {
           "name": "Ball Bead Chain-72",
@@ -848,7 +848,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778906784029-72.png",
           "isDefault": false,
           "sortOrder": 11,
-          "id": "P-C91"
+          "accessoryColorId": "P-C91"
         },
         {
           "name": "Ball Bead Chain-73",
@@ -856,7 +856,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778906781473-73.png",
           "isDefault": false,
           "sortOrder": 12,
-          "id": "P-C92"
+          "accessoryColorId": "P-C92"
         },
         {
           "name": "Ball Bead Chain-74",
@@ -864,7 +864,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778906777827-74.png",
           "isDefault": false,
           "sortOrder": 13,
-          "id": "P-C93"
+          "accessoryColorId": "P-C93"
         },
         {
           "name": "Ball Bead Chain-75",
@@ -872,7 +872,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907952277-75.png",
           "isDefault": false,
           "sortOrder": 14,
-          "id": "P-C94"
+          "accessoryColorId": "P-C94"
         },
         {
           "name": "Ball Bead Chain-76",
@@ -880,7 +880,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778906769329-76.png",
           "isDefault": false,
           "sortOrder": 15,
-          "id": "P-C95"
+          "accessoryColorId": "P-C95"
         },
         {
           "name": "Ball Bead Chain-77",
@@ -888,11 +888,11 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778906766392-77.png",
           "isDefault": false,
           "sortOrder": 16,
-          "id": "P-C96"
+          "accessoryColorId": "P-C96"
         }
       ],
       "sortOrder": 13,
-      "id": "P13"
+      "accessoryStyleId": "P13"
     },
     {
       "name": "Circle Split Ring + Chain",
@@ -906,7 +906,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778835259358-02.png",
           "isDefault": false,
           "sortOrder": 1,
-          "id": "P-C97"
+          "accessoryColorId": "P-C97"
         },
         {
           "name": "Circle Split Ring -03",
@@ -914,7 +914,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778835256477-03.png",
           "isDefault": false,
           "sortOrder": 2,
-          "id": "P-C98"
+          "accessoryColorId": "P-C98"
         },
         {
           "name": "Circle Split Ring -178",
@@ -922,11 +922,11 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778835254478-178.png",
           "isDefault": false,
           "sortOrder": 3,
-          "id": "P-C99"
+          "accessoryColorId": "P-C99"
         }
       ],
       "sortOrder": 14,
-      "id": "P14"
+      "accessoryStyleId": "P14"
     },
     {
       "name": "D Hook Clasp",
@@ -940,11 +940,11 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778908726051-5.jpg",
           "isDefault": false,
           "sortOrder": 1,
-          "id": "P-C100"
+          "accessoryColorId": "P-C100"
         }
       ],
       "sortOrder": 15,
-      "id": "P15"
+      "accessoryStyleId": "P15"
     },
     {
       "name": "Bell Charm Lobster Clasp",
@@ -958,7 +958,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778908073208-148.png",
           "isDefault": false,
           "sortOrder": 1,
-          "id": "P-C101"
+          "accessoryColorId": "P-C101"
         },
         {
           "name": "Bell Charm Lobster -149",
@@ -966,7 +966,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778908122496-149.png",
           "isDefault": false,
           "sortOrder": 2,
-          "id": "P-C102"
+          "accessoryColorId": "P-C102"
         },
         {
           "name": "Bell Charm Lobster -150",
@@ -974,7 +974,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778908125967-150.png",
           "isDefault": false,
           "sortOrder": 3,
-          "id": "P-C103"
+          "accessoryColorId": "P-C103"
         },
         {
           "name": "Bell Charm Lobster -151",
@@ -982,7 +982,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778908108805-151.png",
           "isDefault": false,
           "sortOrder": 4,
-          "id": "P-C104"
+          "accessoryColorId": "P-C104"
         },
         {
           "name": "Bell Charm Lobster -152",
@@ -990,7 +990,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778908114276-152.png",
           "isDefault": false,
           "sortOrder": 5,
-          "id": "P-C105"
+          "accessoryColorId": "P-C105"
         },
         {
           "name": "Bell Charm Lobster -153",
@@ -998,7 +998,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778908136318-153.png",
           "isDefault": false,
           "sortOrder": 6,
-          "id": "P-C106"
+          "accessoryColorId": "P-C106"
         },
         {
           "name": "Bell Charm Lobster -154",
@@ -1006,7 +1006,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778908139717-154.png",
           "isDefault": false,
           "sortOrder": 7,
-          "id": "P-C107"
+          "accessoryColorId": "P-C107"
         },
         {
           "name": "Bell Charm Lobster -155",
@@ -1014,11 +1014,11 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778908144240-155.png",
           "isDefault": false,
           "sortOrder": 8,
-          "id": "P-C108"
+          "accessoryColorId": "P-C108"
         }
       ],
       "sortOrder": 16,
-      "id": "P16"
+      "accessoryStyleId": "P16"
     },
     {
       "name": "Lobster Hook Clasp + Circle Split Ring + Chain",
@@ -1032,11 +1032,11 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778908736457-4.jpg",
           "isDefault": false,
           "sortOrder": 1,
-          "id": "P-C109"
+          "accessoryColorId": "P-C109"
         }
       ],
       "sortOrder": 17,
-      "id": "P17"
+      "accessoryStyleId": "P17"
     },
     {
       "name": "Wing Hook Clasp",
@@ -1050,7 +1050,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778894797490-15.png",
           "isDefault": false,
           "sortOrder": 1,
-          "id": "P-C110"
+          "accessoryColorId": "P-C110"
         },
         {
           "name": "Wing Hook-16",
@@ -1058,11 +1058,11 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778894856783-16.png",
           "isDefault": false,
           "sortOrder": 2,
-          "id": "P-C111"
+          "accessoryColorId": "P-C111"
         }
       ],
       "sortOrder": 18,
-      "id": "P18"
+      "accessoryStyleId": "P18"
     },
     {
       "name": "Bow Tie Hook Clasp",
@@ -1076,7 +1076,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778894542643-13.png",
           "isDefault": false,
           "sortOrder": 1,
-          "id": "P-C112"
+          "accessoryColorId": "P-C112"
         },
         {
           "name": "Bow Tie Hook-14",
@@ -1084,11 +1084,11 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778894552970-14.png",
           "isDefault": false,
           "sortOrder": 2,
-          "id": "P-C113"
+          "accessoryColorId": "P-C113"
         }
       ],
       "sortOrder": 19,
-      "id": "P19"
+      "accessoryStyleId": "P19"
     },
     {
       "name": "Rabbit Hook Clasp",
@@ -1102,7 +1102,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778894885266-19.png",
           "isDefault": false,
           "sortOrder": 1,
-          "id": "P-C114"
+          "accessoryColorId": "P-C114"
         },
         {
           "name": "Rabbit Hook-20",
@@ -1110,11 +1110,11 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778894887192-20.png",
           "isDefault": false,
           "sortOrder": 2,
-          "id": "P-C115"
+          "accessoryColorId": "P-C115"
         }
       ],
       "sortOrder": 20,
-      "id": "P20"
+      "accessoryStyleId": "P20"
     },
     {
       "name": "Bat Hook Clasp",
@@ -1128,7 +1128,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778894199917-17.png",
           "isDefault": false,
           "sortOrder": 1,
-          "id": "P-C116"
+          "accessoryColorId": "P-C116"
         },
         {
           "name": "Bat Hook-18",
@@ -1136,11 +1136,11 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778894214267-18.png",
           "isDefault": false,
           "sortOrder": 2,
-          "id": "P-C117"
+          "accessoryColorId": "P-C117"
         }
       ],
       "sortOrder": 21,
-      "id": "P21"
+      "accessoryStyleId": "P21"
     },
     {
       "name": "Cat Head Hook Clasp",
@@ -1154,7 +1154,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778894951370-21.png",
           "isDefault": false,
           "sortOrder": 1,
-          "id": "P-C118"
+          "accessoryColorId": "P-C118"
         },
         {
           "name": "Cat Head Hook-174",
@@ -1162,11 +1162,11 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778894962721-174.png",
           "isDefault": false,
           "sortOrder": 2,
-          "id": "P-C119"
+          "accessoryColorId": "P-C119"
         }
       ],
       "sortOrder": 22,
-      "id": "P22"
+      "accessoryStyleId": "P22"
     },
     {
       "name": "Crescent Moon Hook Clasp",
@@ -1180,11 +1180,11 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778893916453-7.png",
           "isDefault": false,
           "sortOrder": 1,
-          "id": "P-C120"
+          "accessoryColorId": "P-C120"
         }
       ],
       "sortOrder": 23,
-      "id": "P23"
+      "accessoryStyleId": "P23"
     },
     {
       "name": "Shell Hook Clasp",
@@ -1198,7 +1198,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778894089413-22.png",
           "isDefault": false,
           "sortOrder": 1,
-          "id": "P-C121"
+          "accessoryColorId": "P-C121"
         },
         {
           "name": "Shell Hook-175",
@@ -1206,11 +1206,11 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778894101311-175.png",
           "isDefault": false,
           "sortOrder": 2,
-          "id": "P-C122"
+          "accessoryColorId": "P-C122"
         }
       ],
       "sortOrder": 24,
-      "id": "P24"
+      "accessoryStyleId": "P24"
     },
     {
       "name": "Heart Magnetic Bucklel",
@@ -1224,7 +1224,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907425075-156.png",
           "isDefault": false,
           "sortOrder": 1,
-          "id": "P-C123"
+          "accessoryColorId": "P-C123"
         },
         {
           "name": "Heart Magnetic Buckle-157",
@@ -1232,7 +1232,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907421741-157.png",
           "isDefault": false,
           "sortOrder": 2,
-          "id": "P-C124"
+          "accessoryColorId": "P-C124"
         },
         {
           "name": "Heart Magnetic Buckle-158",
@@ -1240,7 +1240,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907417725-158.png",
           "isDefault": false,
           "sortOrder": 3,
-          "id": "P-C125"
+          "accessoryColorId": "P-C125"
         },
         {
           "name": "Heart Magnetic Buckle-159",
@@ -1248,7 +1248,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907414340-159.png",
           "isDefault": false,
           "sortOrder": 4,
-          "id": "P-C126"
+          "accessoryColorId": "P-C126"
         },
         {
           "name": "Heart Magnetic Buckle-160",
@@ -1256,7 +1256,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907409527-160.png",
           "isDefault": false,
           "sortOrder": 5,
-          "id": "P-C127"
+          "accessoryColorId": "P-C127"
         },
         {
           "name": "Heart Magnetic Buckle-161",
@@ -1264,7 +1264,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907405809-161.png",
           "isDefault": false,
           "sortOrder": 6,
-          "id": "P-C128"
+          "accessoryColorId": "P-C128"
         },
         {
           "name": "Heart Magnetic Buckle-162",
@@ -1272,7 +1272,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907401468-162.png",
           "isDefault": false,
           "sortOrder": 7,
-          "id": "P-C129"
+          "accessoryColorId": "P-C129"
         },
         {
           "name": "Heart Magnetic Buckle-163",
@@ -1280,7 +1280,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907398686-163.png",
           "isDefault": false,
           "sortOrder": 8,
-          "id": "P-C130"
+          "accessoryColorId": "P-C130"
         },
         {
           "name": "Heart Magnetic Buckle-164",
@@ -1288,7 +1288,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907395626-164.png",
           "isDefault": false,
           "sortOrder": 9,
-          "id": "P-C131"
+          "accessoryColorId": "P-C131"
         },
         {
           "name": "Heart Magnetic Buckle-165",
@@ -1296,7 +1296,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907391986-165.png",
           "isDefault": false,
           "sortOrder": 10,
-          "id": "P-C132"
+          "accessoryColorId": "P-C132"
         },
         {
           "name": "Heart Magnetic Buckle-166",
@@ -1304,7 +1304,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907388496-166.png",
           "isDefault": false,
           "sortOrder": 11,
-          "id": "P-C133"
+          "accessoryColorId": "P-C133"
         },
         {
           "name": "Heart Magnetic Buckle-167",
@@ -1312,11 +1312,11 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778907385557-167.png",
           "isDefault": false,
           "sortOrder": 12,
-          "id": "P-C134"
+          "accessoryColorId": "P-C134"
         }
       ],
       "sortOrder": 25,
-      "id": "P25"
+      "accessoryStyleId": "P25"
     },
     {
       "name": "Cat Hook Clasp",
@@ -1330,11 +1330,11 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778895059174-8.png",
           "isDefault": false,
           "sortOrder": 1,
-          "id": "P-C135"
+          "accessoryColorId": "P-C135"
         }
       ],
       "sortOrder": 26,
-      "id": "P26"
+      "accessoryStyleId": "P26"
     },
     {
       "name": "Sakura Hook Clasp",
@@ -1348,7 +1348,7 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778895116232-23.png",
           "isDefault": false,
           "sortOrder": 1,
-          "id": "P-C136"
+          "accessoryColorId": "P-C136"
         },
         {
           "name": "Sakura Hook-177",
@@ -1356,11 +1356,11 @@
           "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778895127136-177.png",
           "isDefault": false,
           "sortOrder": 2,
-          "id": "P-C137"
+          "accessoryColorId": "P-C137"
         }
       ],
       "sortOrder": 27,
-      "id": "P27"
+      "accessoryStyleId": "P27"
     }
   ],
   "nextId": 28,

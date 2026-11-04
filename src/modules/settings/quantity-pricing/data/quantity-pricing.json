@@ -1,0 +1,366 @@
+{
+  "schemaVersion": 1,
+  "categoryRules": [
+    {
+      "categoryId": "keychains",
+      "tiers": [
+        {
+          "quantityTierId": "qt-keychains-1",
+          "discountPercent": 0,
+          "maxQty": 5,
+          "minQty": 1
+        },
+        {
+          "quantityTierId": "qt-keychains-2",
+          "discountPercent": 35,
+          "maxQty": 15,
+          "minQty": 6
+        },
+        {
+          "quantityTierId": "qt-keychains-3",
+          "discountPercent": 45,
+          "maxQty": 49,
+          "minQty": 16
+        },
+        {
+          "quantityTierId": "qt-keychains-4",
+          "discountPercent": 55,
+          "maxQty": 99,
+          "minQty": 50
+        },
+        {
+          "quantityTierId": "qt-keychains-5",
+          "discountPercent": 63,
+          "maxQty": 299,
+          "minQty": 100
+        },
+        {
+          "quantityTierId": "qt-keychains-6",
+          "discountPercent": 65,
+          "maxQty": 499,
+          "minQty": 300
+        },
+        {
+          "quantityTierId": "qt-keychains-7",
+          "discountPercent": 67,
+          "maxQty": 999,
+          "minQty": 500
+        },
+        {
+          "quantityTierId": "qt-keychains-8",
+          "discountPercent": 69,
+          "maxQty": 1999,
+          "minQty": 1000
+        },
+        {
+          "quantityTierId": "qt-keychains-9",
+          "discountPercent": 71,
+          "maxQty": 2999,
+          "minQty": 2000
+        },
+        {
+          "quantityTierId": "qt-keychains-10",
+          "discountPercent": 73,
+          "maxQty": 4999,
+          "minQty": 3000
+        },
+        {
+          "quantityTierId": "qt-keychains-11",
+          "discountPercent": 75,
+          "maxQty": 99999,
+          "minQty": 5000
+        }
+      ]
+    },
+    {
+      "categoryId": "standees",
+      "tiers": [
+        {
+          "quantityTierId": "qt-standees-1",
+          "discountPercent": 0,
+          "maxQty": 4,
+          "minQty": 1
+        },
+        {
+          "quantityTierId": "qt-standees-2",
+          "discountPercent": 10,
+          "maxQty": 9,
+          "minQty": 5
+        },
+        {
+          "quantityTierId": "qt-standees-3",
+          "discountPercent": 25,
+          "maxQty": 19,
+          "minQty": 10
+        },
+        {
+          "quantityTierId": "qt-standees-4",
+          "discountPercent": 35,
+          "maxQty": 49,
+          "minQty": 20
+        },
+        {
+          "quantityTierId": "qt-standees-5",
+          "discountPercent": 40,
+          "maxQty": 99,
+          "minQty": 50
+        },
+        {
+          "quantityTierId": "qt-standees-6",
+          "discountPercent": 42,
+          "maxQty": 199,
+          "minQty": 100
+        },
+        {
+          "quantityTierId": "qt-standees-7",
+          "discountPercent": 45,
+          "maxQty": 299,
+          "minQty": 200
+        },
+        {
+          "quantityTierId": "qt-standees-8",
+          "discountPercent": 48,
+          "maxQty": 499,
+          "minQty": 300
+        },
+        {
+          "quantityTierId": "qt-standees-9",
+          "discountPercent": 52,
+          "maxQty": 999,
+          "minQty": 500
+        },
+        {
+          "quantityTierId": "qt-standees-10",
+          "discountPercent": 55,
+          "maxQty": 1999,
+          "minQty": 1000
+        },
+        {
+          "quantityTierId": "qt-standees-11",
+          "discountPercent": 60,
+          "maxQty": 2999,
+          "minQty": 2000
+        },
+        {
+          "quantityTierId": "qt-standees-12",
+          "discountPercent": 62,
+          "maxQty": 4999,
+          "minQty": 3000
+        },
+        {
+          "quantityTierId": "qt-standees-13",
+          "discountPercent": 65,
+          "maxQty": 99999,
+          "minQty": 5000
+        }
+      ]
+    },
+    {
+      "categoryId": "stickers",
+      "tiers": [
+        {
+          "quantityTierId": "qt-stickers-1",
+          "discountPercent": 0,
+          "maxQty": 29,
+          "minQty": 10
+        },
+        {
+          "quantityTierId": "qt-stickers-2",
+          "discountPercent": 20,
+          "maxQty": 49,
+          "minQty": 30
+        },
+        {
+          "quantityTierId": "qt-stickers-3",
+          "discountPercent": 25,
+          "maxQty": 99,
+          "minQty": 50
+        },
+        {
+          "quantityTierId": "qt-stickers-4",
+          "discountPercent": 30,
+          "maxQty": 299,
+          "minQty": 100
+        },
+        {
+          "quantityTierId": "qt-stickers-5",
+          "discountPercent": 35,
+          "maxQty": 499,
+          "minQty": 300
+        },
+        {
+          "quantityTierId": "qt-stickers-6",
+          "discountPercent": 40,
+          "maxQty": 999,
+          "minQty": 500
+        },
+        {
+          "quantityTierId": "qt-stickers-7",
+          "discountPercent": 45,
+          "maxQty": 1999,
+          "minQty": 1000
+        },
+        {
+          "quantityTierId": "qt-stickers-8",
+          "discountPercent": 50,
+          "maxQty": 4999,
+          "minQty": 2000
+        },
+        {
+          "quantityTierId": "qt-stickers-9",
+          "discountPercent": 55,
+          "maxQty": 9999,
+          "minQty": 5000
+        },
+        {
+          "quantityTierId": "qt-stickers-10",
+          "discountPercent": 50,
+          "maxQty": 19999,
+          "minQty": 10000
+        }
+      ]
+    },
+    {
+      "categoryId": "pins",
+      "tiers": [
+        {
+          "quantityTierId": "qt-pins-1",
+          "discountPercent": 0,
+          "maxQty": 5,
+          "minQty": 1
+        },
+        {
+          "quantityTierId": "qt-pins-2",
+          "discountPercent": 35,
+          "maxQty": 15,
+          "minQty": 6
+        },
+        {
+          "quantityTierId": "qt-pins-3",
+          "discountPercent": 45,
+          "maxQty": 49,
+          "minQty": 16
+        },
+        {
+          "quantityTierId": "qt-pins-4",
+          "discountPercent": 55,
+          "maxQty": 99,
+          "minQty": 50
+        },
+        {
+          "quantityTierId": "qt-pins-5",
+          "discountPercent": 63,
+          "maxQty": 299,
+          "minQty": 100
+        },
+        {
+          "quantityTierId": "qt-pins-6",
+          "discountPercent": 65,
+          "maxQty": 499,
+          "minQty": 300
+        },
+        {
+          "quantityTierId": "qt-pins-7",
+          "discountPercent": 67,
+          "maxQty": 999,
+          "minQty": 500
+        },
+        {
+          "quantityTierId": "qt-pins-8",
+          "discountPercent": 69,
+          "maxQty": 1999,
+          "minQty": 1000
+        },
+        {
+          "quantityTierId": "qt-pins-9",
+          "discountPercent": 71,
+          "maxQty": 2999,
+          "minQty": 2000
+        },
+        {
+          "quantityTierId": "qt-pins-10",
+          "discountPercent": 73,
+          "maxQty": 4999,
+          "minQty": 3000
+        },
+        {
+          "quantityTierId": "qt-pins-11",
+          "discountPercent": 75,
+          "maxQty": 99999,
+          "minQty": 5000
+        }
+      ]
+    },
+    {
+      "categoryId": "carabiners",
+      "tiers": [
+        {
+          "quantityTierId": "qt-carabiners-1",
+          "discountPercent": 0,
+          "maxQty": 5,
+          "minQty": 1
+        },
+        {
+          "quantityTierId": "qt-carabiners-2",
+          "discountPercent": 35,
+          "maxQty": 15,
+          "minQty": 6
+        },
+        {
+          "quantityTierId": "qt-carabiners-3",
+          "discountPercent": 45,
+          "maxQty": 49,
+          "minQty": 16
+        },
+        {
+          "quantityTierId": "qt-carabiners-4",
+          "discountPercent": 55,
+          "maxQty": 99,
+          "minQty": 50
+        },
+        {
+          "quantityTierId": "qt-carabiners-5",
+          "discountPercent": 63,
+          "maxQty": 299,
+          "minQty": 100
+        },
+        {
+          "quantityTierId": "qt-carabiners-6",
+          "discountPercent": 65,
+          "maxQty": 499,
+          "minQty": 300
+        },
+        {
+          "quantityTierId": "qt-carabiners-7",
+          "discountPercent": 67,
+          "maxQty": 999,
+          "minQty": 500
+        },
+        {
+          "quantityTierId": "qt-carabiners-8",
+          "discountPercent": 69,
+          "maxQty": 1999,
+          "minQty": 1000
+        },
+        {
+          "quantityTierId": "qt-carabiners-9",
+          "discountPercent": 71,
+          "maxQty": 2999,
+          "minQty": 2000
+        },
+        {
+          "quantityTierId": "qt-carabiners-10",
+          "discountPercent": 73,
+          "maxQty": 4999,
+          "minQty": 3000
+        },
+        {
+          "quantityTierId": "qt-carabiners-11",
+          "discountPercent": 75,
+          "maxQty": 99999,
+          "minQty": 5000
+        }
+      ]
+    }
+  ]
+}

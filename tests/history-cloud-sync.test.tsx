@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import BatchHistoryPanel from '../src/modules/schematic/history/BatchHistoryPanel'
+import { loadHistoryBatch } from '../src/modules/schematic/services/batchHistoryService'
 import { clearCloudBatchSave, enqueueCloudBatchSave, flushCloudSyncQueue } from '../src/services/cloudSyncQueue'
 
 const api = vi.hoisted(() => ({ invoke: vi.fn() }))
@@ -106,5 +107,61 @@ test('keeps the pending edits and history card when deletion itself fails', asyn
   await screen.findByText(/删除失败.*没有删除权限/)
   expect(exists).toBe(true)
   expect(screen.getByRole('button', { name: '删除批次 待同步客户' })).toBeTruthy()
+  expect(localStorage.getItem('printflow-cloud-sync-queue-v1')).toContain('"QT":"25"')
+})
+
+test('opening a healthy history batch is not blocked by another batch with a missing pending SVG source', async () => {
+  const original = api.invoke.getMockImplementation()!
+  const saved = { id: 'healthy-batch', savedAt: '2026-11-04', assets: [{ id: 'healthy-asset', name: '正常图片', svg: '', storagePath: 'printflow:healthy-asset' }] }
+  api.invoke.mockImplementation((command: string, args?: { id: string }) => {
+    if (command === 'load_batch') return Promise.resolve(saved)
+    if (command === 'load_batch_asset_svg') return Promise.resolve(new TextEncoder().encode('<svg/>').buffer)
+    return original(command, args)
+  })
+  enqueueCloudBatchSave({ id: record.id, savedAt: 'now', assets: [{ id: 'missing-asset', name: '尺寸 · __printflow_measure_0', storagePath: 'temp-assets/missing.svg', attributes: { QT: '25' } }] })
+  await waitFor(() => expect(rejectSave).toBeDefined())
+  const loading = loadHistoryBatch(saved.id)
+  const loaded = expect(loading).resolves.toEqual({ ...saved, assets: [{ ...saved.assets[0], svg: '<svg/>' }] })
+  rejectSave?.('图片 尺寸 · __printflow_measure_0 的源文件不可访问')
+  await loaded
+  expect(api.invoke).toHaveBeenCalledWith('load_batch', { id: saved.id })
+  expect(localStorage.getItem('printflow-cloud-sync-queue-v1')).toContain('missing-asset')
+  expect(localStorage.getItem('printflow-cloud-sync-queue-v1')).toContain('"QT":"25"')
+})
+
+test('opening a different history batch does not wait for an unrelated upload still in flight', async () => {
+  const original = api.invoke.getMockImplementation()!
+  const saved = { id: 'healthy-batch', savedAt: '2026-11-04', assets: [] }
+  api.invoke.mockImplementation((command: string, args?: { id: string }) => command === 'load_batch' ? Promise.resolve(saved) : original(command, args))
+  enqueueCloudBatchSave({ id: record.id, savedAt: 'now', assets: [{ id: 'asset', storagePath: 'temp-assets/asset.svg' }] })
+  await waitFor(() => expect(finishSave).toBeDefined())
+  const received = vi.fn()
+  const loading = loadHistoryBatch(saved.id).then(received, received)
+  try {
+    await waitFor(() => expect(received).toHaveBeenCalledWith(saved))
+    expect(localStorage.getItem('printflow-cloud-sync-queue-v1')).toContain(record.id)
+  } finally {
+    finishSave?.()
+    await loading
+  }
+})
+
+test('transfer is not blocked by an unrelated pending upload with a missing SVG source', async () => {
+  await beginOperation('transfer', 'other-batch')
+  await act(async () => { rejectSave?.('图片 其他批次 的源文件不可访问') })
+  await waitFor(() => expect(api.invoke.mock.calls.some(call => call[0] === 'send_shared_batch')).toBe(true))
+  expect(exists).toBe(false)
+  expect(await screen.findByText('暂无记录')).toBeTruthy()
+  expect(localStorage.getItem('printflow-cloud-sync-queue-v1')).toContain('other-batch')
+  expect(localStorage.getItem('printflow-cloud-sync-queue-v1')).toContain('"QT":"25"')
+})
+
+test('opening the same batch preserves failed pending changes instead of loading stale cloud data', async () => {
+  enqueueCloudBatchSave({ id: record.id, savedAt: 'now', assets: [{ id: 'asset', storagePath: 'temp-assets/missing.svg', attributes: { QT: '25' } }] })
+  await waitFor(() => expect(rejectSave).toBeDefined())
+  const loading = expect(loadHistoryBatch(record.id)).rejects.toThrow('源文件不可访问')
+  rejectSave?.('图片 当前批次 的源文件不可访问')
+  await loading
+  expect(api.invoke.mock.calls.some(call => call[0] === 'load_batch')).toBe(false)
   expect(localStorage.getItem('printflow-cloud-sync-queue-v1')).toContain('"QT":"25"')
 })

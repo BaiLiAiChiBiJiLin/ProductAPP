@@ -17,6 +17,7 @@ type QueueEntry = {
   revision: string
   attempts: number
   nextAttemptAt: number
+  error?: string
   /** Keep the snapshot for recovery, but never upload it after a delete request. */
   deletionRequested?: boolean
 }
@@ -46,15 +47,15 @@ function writeQueue(entries: QueueEntry[]) {
   catch (error) { console.warn('云端同步队列无法持久化', error) }
 }
 function emit(state: CloudSyncStatus['state'], pending = readQueue().length, error?: string) {
-  lastError = error ?? (state === 'error' ? lastError : '')
-  const status = { state, pending, ...(lastError ? { error: lastError } : {}) }
+  lastError = error ?? readQueue().find(entry => entry.error)?.error ?? ''
+  const status = { state: lastError && state === 'queued' ? 'error' as const : state, pending, ...(lastError ? { error: lastError } : {}) }
   for (const listener of listeners) listener(status)
   window.dispatchEvent(new CustomEvent<CloudSyncStatus>('printflow-cloud-sync', { detail: status }))
 }
 export function onCloudSyncStatus(listener: (status: CloudSyncStatus) => void) {
   listeners.add(listener)
   const entries = readQueue()
-  const error = lastError || (entries.some(entry => entry.deletionRequested) ? '批次删除尚未完成，待同步修改已保留，请重试删除' : '')
+  const error = entries.find(entry => entry.error)?.error || lastError || (entries.some(entry => entry.deletionRequested) ? '批次删除尚未完成，待同步修改已保留，请重试删除' : '')
   listener({ state: error ? 'error' : entries.length ? 'queued' : 'idle', pending: entries.length, ...(error ? { error } : {}) })
   return () => { listeners.delete(listener) }
 }
@@ -98,7 +99,7 @@ async function runQueue(): Promise<void> {
         const acknowledged = current?.revision === entry.revision
         const remaining = acknowledged
           ? readQueue().filter(item => item.key !== entry.key)
-          : readQueue().map(item => item.key === entry.key ? { ...item, attempts: 0, nextAttemptAt: Date.now() } : item)
+          : readQueue().map(item => item.key === entry.key ? { ...item, attempts: 0, nextAttemptAt: Date.now(), error: undefined } : item)
         writeQueue(remaining)
         if (acknowledged && entry.args.preserveTempAssets) {
           const staged = entry.args.assets.filter(asset => asset && typeof asset === 'object' && typeof (asset as { storagePath?: unknown }).storagePath === 'string')
@@ -123,11 +124,12 @@ async function runQueue(): Promise<void> {
         if (current.revision !== entry.revision) continue
         const attempts = current.attempts + 1
         const delay = RETRY_DELAYS[Math.min(attempts - 1, RETRY_DELAYS.length - 1)]
-        const next = readQueue().map(item => item.key === entry.key ? { ...item, attempts, nextAttemptAt: Date.now() + delay } : item)
+        const next = readQueue().map(item => item.key === entry.key ? { ...item, attempts, nextAttemptAt: Date.now() + delay, error: String(error) } : item)
         writeQueue(next)
         emit('error', next.length, String(error))
-        scheduleRetry(Date.now() + delay)
-        return
+        // A failed batch keeps its files and retry state, but must not prevent
+        // other batches from reaching the cloud. The next loop schedules the
+        // earliest remaining retry after all currently ready work is handled.
       } finally {
         inFlight = undefined
         inFlightDone = undefined
@@ -185,7 +187,30 @@ export function pendingCloudAssetPaths(): Set<string> {
     return typeof path === 'string' && path ? [path] : []
   })))
 }
-export async function flushCloudSyncQueue() {
+export async function flushCloudSyncQueue(batchId?: string) {
+  if (batchId !== undefined) {
+    const pending = readQueue().find(entry => entry.args.id === batchId)
+    if (!pending) return
+    if (pending.deletionRequested) throw new Error('批次删除尚未完成，待同步修改已保留，请重试删除')
+    // Explicit actions only depend on their own batch. Subscribe before
+    // starting work so unrelated uploads cannot delay a completed batch.
+    writeQueue(readQueue().map(entry => entry.args.id === batchId ? { ...entry, nextAttemptAt: Date.now(), error: undefined } : entry))
+    return new Promise<void>((resolve, reject) => {
+      const check = (finished = false) => {
+        const current = readQueue().find(entry => entry.args.id === batchId)
+        const error = current?.deletionRequested
+          ? '批次删除尚未完成，待同步修改已保留，请重试删除'
+          : current?.error || (finished && current ? '云端同步尚未完成，请恢复连接后重试' : '')
+        if (current && !error) return
+        listeners.delete(listener)
+        if (error) reject(new Error(error))
+        else resolve()
+      }
+      const listener = () => check()
+      listeners.add(listener)
+      void runQueue().then(() => check(true))
+    })
+  }
   // Explicit save/confirm is a synchronization barrier, including entries that
   // were waiting for a retry. Background failures remain queued and visible.
   if (retryTimer !== undefined) { window.clearTimeout(retryTimer); retryTimer = undefined }

@@ -9,6 +9,8 @@ import { readPools } from '../imposition/impositionPoolStore'
 
 type Props = { open: boolean; onClose: () => void }
 const ProductOptionsSettings = lazy(() => import('./product-options/ProductOptionsSettings'))
+const QuantityPricingSettings = lazy(() => import('./quantity-pricing/QuantityPricingSettings'))
+const ProductPricingSettings = lazy(() => import('./product-pricing/ProductPricingSettings'))
 
 export default function SettingsModal({ open, onClose }: Props) {
   const [settings, setSettings] = useState<StorageSettings>()
@@ -21,6 +23,13 @@ export default function SettingsModal({ open, onClose }: Props) {
   const [section, setSection] = useState('storage')
   const [productVisited, setProductVisited] = useState(false)
   const [productBusy, setProductBusy] = useState(false)
+  const [quantityVisited, setQuantityVisited] = useState(false)
+  const [quantityBusy, setQuantityBusy] = useState(false)
+  const [quantityDirty, setQuantityDirty] = useState(false)
+  const [discardTiersOpen, setDiscardTiersOpen] = useState(false)
+  const [pricingVisited, setPricingVisited] = useState(false)
+  const [pricingBusy, setPricingBusy] = useState(false)
+  const [pricingDirty, setPricingDirty] = useState(false)
   const [saved, setSaved] = useState(false)
   const [migration, setMigration] = useState<{ batches: number; reviews: number; jobs: number; snapshot: string }>()
   const [maintenanceMessage, setMaintenanceMessage] = useState('')
@@ -99,12 +108,17 @@ export default function SettingsModal({ open, onClose }: Props) {
     finally { busy.current = false; setSaving(false) }
   }
 
-  return <><Modal title="设置" open={open} width="96vw" className="app-settings-modal" onCancel={() => { if (!saving && !choosing && !productBusy) { setProductVisited(false); setSection('storage'); onClose() } }}
-    closable={!saving && !choosing && !productBusy} maskClosable={false} keyboard={false} footer={null}>
+  const settingsBusy = saving || choosing || productBusy || quantityBusy || pricingBusy
+  const dirtyPricingLabel = quantityDirty && pricingDirty ? '价格配置' : pricingDirty ? '产品定价' : '价格阶梯'
+  const closeSettings = () => { setProductVisited(false); setQuantityVisited(false); setQuantityDirty(false); setPricingVisited(false); setPricingDirty(false); setDiscardTiersOpen(false); setSection('storage'); onClose() }
+  return <><Modal title="设置" open={open} width="96vw" className="app-settings-modal" onCancel={() => { if (!settingsBusy) { if (quantityDirty || pricingDirty) setDiscardTiersOpen(true); else closeSettings() } }}
+    closable={!settingsBusy} maskClosable={false} keyboard={false} footer={null}>
     <div className="app-settings-shell">
       <nav className="app-settings-nav" aria-label="设置项目">
-        <button type="button" aria-current={section === 'storage' ? 'page' : undefined} disabled={saving || choosing || productBusy} onClick={() => setSection('storage')}>历史记录保存目录</button>
-        <button type="button" aria-current={section === 'products' ? 'page' : undefined} disabled={saving || choosing || productBusy} onClick={() => { setProductVisited(true); setSection('products') }}>产品选项配置</button>
+        <button type="button" aria-current={section === 'storage' ? 'page' : undefined} disabled={settingsBusy} onClick={() => setSection('storage')}>历史记录保存目录</button>
+        <button type="button" aria-current={section === 'products' ? 'page' : undefined} disabled={settingsBusy} onClick={() => { setProductVisited(true); setSection('products') }}>产品选项配置</button>
+        <button type="button" aria-current={section === 'product-pricing' ? 'page' : undefined} disabled={settingsBusy} onClick={() => { setPricingVisited(true); setSection('product-pricing') }}>产品定价</button>
+        <button type="button" aria-current={section === 'quantity-pricing' ? 'page' : undefined} disabled={settingsBusy} onClick={() => { setQuantityVisited(true); setSection('quantity-pricing') }}>价格阶梯</button>
       </nav>
       <div className="app-settings-content">
     <div className="storage-settings" hidden={section !== 'storage'}>
@@ -138,8 +152,11 @@ export default function SettingsModal({ open, onClose }: Props) {
       {saved && <Alert type="success" showIcon message="历史记录保存目录已保存"/>}
     </div>
     {productVisited && <div className="app-settings-page" hidden={section !== 'products'}><Suspense fallback={<Loading text="正在加载产品配置…"/>}><ProductOptionsSettings onBusyChange={setProductBusy}/></Suspense></div>}
+    {quantityVisited && <div className="app-settings-page" hidden={section !== 'quantity-pricing'}><Suspense fallback={<Loading text="正在加载价格阶梯…"/>}><QuantityPricingSettings active={open && section === 'quantity-pricing'} onBusyChange={setQuantityBusy} onDirtyChange={setQuantityDirty}/></Suspense></div>}
+    {pricingVisited && <div className="app-settings-page" hidden={section !== 'product-pricing'}><Suspense fallback={<Loading text="正在加载产品定价…"/>}><ProductPricingSettings active={open && section === 'product-pricing'} onBusyChange={setPricingBusy} onDirtyChange={setPricingDirty}/></Suspense></div>}
       </div>
     </div>
   </Modal><Modal title="删除本机旧数据？" open={deleteConfirmOpen} onCancel={() => { if (!saving) setDeleteConfirmOpen(false) }} onOk={async () => { await maintain('delete_local_data'); setDeleteConfirmOpen(false) }} okText="删除旧数据" cancelText="取消" okButtonProps={{ danger: true }} confirmLoading={saving} maskClosable={!saving} keyboard={!saving}><p>删除后无法从本机恢复。共享数据源中的已迁移记录不受影响。</p></Modal>
+  <Modal title={`放弃未保存的${dirtyPricingLabel}修改？`} open={discardTiersOpen} onCancel={() => setDiscardTiersOpen(false)} onOk={closeSettings} okText="放弃并关闭" cancelText="继续编辑" closable={false} maskClosable={false} keyboard={false}><p>{dirtyPricingLabel}的修改尚未保存，关闭设置后将丢失。</p></Modal>
   </>
 }

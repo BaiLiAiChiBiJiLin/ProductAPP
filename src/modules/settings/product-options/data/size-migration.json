@@ -1,0 +1,537 @@
+{
+  "schemaVersion": 1,
+  "sizeBands": [
+    {
+      "sizeBandId": "sticker-2x2-in",
+      "label": "2 × 2 英寸"
+    },
+    {
+      "sizeBandId": "sticker-3x3-in",
+      "label": "3 × 3 英寸"
+    },
+    {
+      "sizeBandId": "sticker-4x4-in",
+      "label": "4 × 4 英寸"
+    },
+    {
+      "sizeBandId": "sticker-5x5-in",
+      "label": "5 × 5 英寸"
+    },
+    {
+      "sizeBandId": "board-1-in",
+      "label": "1 英寸"
+    },
+    {
+      "sizeBandId": "board-1-5-in",
+      "label": "1.5 英寸"
+    },
+    {
+      "sizeBandId": "board-2-in",
+      "label": "2 英寸"
+    },
+    {
+      "sizeBandId": "board-2-5-in",
+      "label": "2.5 英寸"
+    },
+    {
+      "sizeBandId": "board-3-in",
+      "label": "3 英寸"
+    },
+    {
+      "sizeBandId": "board-3-5-in",
+      "label": "3.5 英寸"
+    },
+    {
+      "sizeBandId": "board-4-in",
+      "label": "4 英寸"
+    },
+    {
+      "sizeBandId": "keychain-1-in",
+      "label": "1 英寸"
+    },
+    {
+      "sizeBandId": "keychain-1-5-in",
+      "label": "1.5 英寸"
+    },
+    {
+      "sizeBandId": "keychain-2-in",
+      "label": "2 英寸"
+    },
+    {
+      "sizeBandId": "keychain-2-5-in",
+      "label": "2.5 英寸"
+    },
+    {
+      "sizeBandId": "keychain-3-in",
+      "label": "3 英寸"
+    },
+    {
+      "sizeBandId": "keychain-3-5-in",
+      "label": "3.5 英寸"
+    },
+    {
+      "sizeBandId": "keychain-4-in",
+      "label": "4 英寸"
+    }
+  ],
+  "products": [
+    {
+      "productId": "P1",
+      "sizeBandIds": [
+        "sticker-2x2-in",
+        "sticker-3x3-in",
+        "sticker-4x4-in",
+        "sticker-5x5-in"
+      ]
+    },
+    {
+      "productId": "P2",
+      "sizeBandIds": [
+        "sticker-2x2-in",
+        "sticker-3x3-in",
+        "sticker-4x4-in",
+        "sticker-5x5-in"
+      ]
+    },
+    {
+      "productId": "P3",
+      "sizeBandIds": [
+        "sticker-2x2-in",
+        "sticker-3x3-in",
+        "sticker-4x4-in",
+        "sticker-5x5-in"
+      ]
+    },
+    {
+      "productId": "P4",
+      "sizeBandIds": [
+        "sticker-2x2-in",
+        "sticker-3x3-in",
+        "sticker-4x4-in",
+        "sticker-5x5-in"
+      ]
+    },
+    {
+      "productId": "P5",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P6",
+      "sizeBandIds": [
+        "sticker-2x2-in",
+        "sticker-3x3-in",
+        "sticker-4x4-in",
+        "sticker-5x5-in"
+      ]
+    },
+    {
+      "productId": "P7",
+      "sizeBandIds": [
+        "sticker-2x2-in",
+        "sticker-3x3-in",
+        "sticker-4x4-in",
+        "sticker-5x5-in"
+      ]
+    },
+    {
+      "productId": "P8",
+      "sizeBandIds": [
+        "sticker-2x2-in",
+        "sticker-3x3-in",
+        "sticker-4x4-in",
+        "sticker-5x5-in"
+      ]
+    },
+    {
+      "productId": "P9",
+      "sizeBandIds": [
+        "sticker-2x2-in",
+        "sticker-3x3-in",
+        "sticker-4x4-in",
+        "sticker-5x5-in"
+      ]
+    },
+    {
+      "productId": "P10",
+      "sizeBandIds": [
+        "sticker-2x2-in",
+        "sticker-3x3-in",
+        "sticker-4x4-in",
+        "sticker-5x5-in"
+      ]
+    },
+    {
+      "productId": "P11",
+      "sizeBandIds": [
+        "sticker-2x2-in",
+        "sticker-3x3-in",
+        "sticker-4x4-in",
+        "sticker-5x5-in"
+      ]
+    },
+    {
+      "productId": "P12",
+      "sizeBandIds": [
+        "sticker-2x2-in",
+        "sticker-3x3-in",
+        "sticker-4x4-in",
+        "sticker-5x5-in"
+      ]
+    },
+    {
+      "productId": "P13",
+      "sizeBandIds": [
+        "sticker-2x2-in",
+        "sticker-3x3-in",
+        "sticker-4x4-in",
+        "sticker-5x5-in"
+      ]
+    },
+    {
+      "productId": "P14",
+      "sizeBandIds": [
+        "sticker-2x2-in",
+        "sticker-3x3-in",
+        "sticker-4x4-in",
+        "sticker-5x5-in"
+      ]
+    },
+    {
+      "productId": "P15",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P16",
+      "sizeBandIds": [
+        "sticker-2x2-in",
+        "sticker-3x3-in",
+        "sticker-4x4-in",
+        "sticker-5x5-in"
+      ]
+    },
+    {
+      "productId": "P17",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P18",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P19",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P20",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P21",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P22",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P23",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P24",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P25",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P26",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P27",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P28",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P29",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P30",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P31",
+      "sizeBandIds": [
+        "keychain-1-in",
+        "keychain-1-5-in",
+        "keychain-2-in",
+        "keychain-2-5-in",
+        "keychain-3-in",
+        "keychain-3-5-in",
+        "keychain-4-in"
+      ]
+    },
+    {
+      "productId": "P32",
+      "sizeBandIds": [
+        "board-1-in",
+        "board-1-5-in",
+        "board-2-in",
+        "board-2-5-in",
+        "board-3-in",
+        "board-3-5-in",
+        "board-4-in"
+      ]
+    },
+    {
+      "productId": "P33",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P34",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P35",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P36",
+      "sizeBandIds": [
+        "keychain-1-in",
+        "keychain-1-5-in",
+        "keychain-2-in",
+        "keychain-2-5-in",
+        "keychain-3-in",
+        "keychain-3-5-in",
+        "keychain-4-in"
+      ]
+    },
+    {
+      "productId": "P37",
+      "sizeBandIds": [
+        "board-1-in",
+        "board-1-5-in",
+        "board-2-in",
+        "board-2-5-in",
+        "board-3-in",
+        "board-3-5-in",
+        "board-4-in"
+      ]
+    },
+    {
+      "productId": "P38",
+      "sizeBandIds": [
+        "board-1-in",
+        "board-1-5-in",
+        "board-2-in",
+        "board-2-5-in",
+        "board-3-in",
+        "board-3-5-in",
+        "board-4-in"
+      ]
+    },
+    {
+      "productId": "P39",
+      "sizeBandIds": [
+        "board-1-in",
+        "board-1-5-in",
+        "board-2-in",
+        "board-2-5-in",
+        "board-3-in",
+        "board-3-5-in",
+        "board-4-in"
+      ]
+    },
+    {
+      "productId": "P40",
+      "sizeBandIds": [
+        "board-1-in",
+        "board-1-5-in",
+        "board-2-in",
+        "board-2-5-in",
+        "board-3-in",
+        "board-3-5-in",
+        "board-4-in"
+      ]
+    },
+    {
+      "productId": "P41",
+      "sizeBandIds": [
+        "board-1-in",
+        "board-1-5-in",
+        "board-2-in",
+        "board-2-5-in",
+        "board-3-in",
+        "board-3-5-in",
+        "board-4-in"
+      ]
+    },
+    {
+      "productId": "P42",
+      "sizeBandIds": [
+        "board-1-in",
+        "board-1-5-in",
+        "board-2-in",
+        "board-2-5-in",
+        "board-3-in",
+        "board-3-5-in",
+        "board-4-in"
+      ]
+    },
+    {
+      "productId": "P43",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P44",
+      "sizeBandIds": [
+        "board-1-in",
+        "board-1-5-in",
+        "board-2-in",
+        "board-2-5-in",
+        "board-3-in",
+        "board-3-5-in",
+        "board-4-in"
+      ]
+    },
+    {
+      "productId": "P45",
+      "sizeBandIds": [
+        "board-1-in",
+        "board-1-5-in",
+        "board-2-in",
+        "board-2-5-in",
+        "board-3-in",
+        "board-3-5-in",
+        "board-4-in"
+      ]
+    },
+    {
+      "productId": "P46",
+      "sizeBandIds": [
+        "board-1-in",
+        "board-1-5-in",
+        "board-2-in",
+        "board-2-5-in",
+        "board-3-in",
+        "board-3-5-in",
+        "board-4-in"
+      ]
+    },
+    {
+      "productId": "P47",
+      "sizeBandIds": [
+        "board-1-in",
+        "board-1-5-in",
+        "board-2-in",
+        "board-2-5-in",
+        "board-3-in",
+        "board-3-5-in",
+        "board-4-in"
+      ]
+    },
+    {
+      "productId": "P48",
+      "sizeBandIds": [
+        "board-1-in",
+        "board-1-5-in",
+        "board-2-in",
+        "board-2-5-in",
+        "board-3-in",
+        "board-3-5-in",
+        "board-4-in"
+      ]
+    },
+    {
+      "productId": "P49",
+      "sizeBandIds": [
+        "board-1-in",
+        "board-1-5-in",
+        "board-2-in",
+        "board-2-5-in",
+        "board-3-in",
+        "board-3-5-in",
+        "board-4-in"
+      ]
+    },
+    {
+      "productId": "P50",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P51",
+      "sizeBandIds": [
+        "board-1-in",
+        "board-1-5-in",
+        "board-2-in",
+        "board-2-5-in",
+        "board-3-in",
+        "board-3-5-in",
+        "board-4-in"
+      ]
+    },
+    {
+      "productId": "P52",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P53",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P54",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P55",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P56",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P57",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P58",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P59",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P60",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P61",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P62",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P63",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P64",
+      "sizeBandIds": []
+    },
+    {
+      "productId": "P65",
+      "sizeBandIds": []
+    }
+  ]
+}

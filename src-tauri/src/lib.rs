@@ -26,6 +26,8 @@ mod production_imposition;
 mod schematic_review;
 mod settings;
 mod product_option_settings;
+mod product_pricing_settings;
+mod quantity_pricing_settings;
 mod shared_transfers;
 mod staged_artwork;
 pub mod svg_measure;
@@ -1646,6 +1648,10 @@ pub fn run() {
             settings::save_storage_settings,
             product_option_settings::load_product_option_settings,
             product_option_settings::save_product_option_settings,
+            product_pricing_settings::load_product_pricing_settings,
+            product_pricing_settings::save_product_pricing_settings,
+            quantity_pricing_settings::load_quantity_pricing_settings,
+            quantity_pricing_settings::save_quantity_pricing_settings,
             staged_artwork::write_export_resource_chunk,
             schematic_review::load_schematic_review_resource,
             schematic_review::save_schematic_review,

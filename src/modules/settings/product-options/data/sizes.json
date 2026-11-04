@@ -1,0 +1,134 @@
+{
+  "name": "Size",
+  "label": "Size",
+  "labelZh": "尺寸",
+  "nextId": 1,
+  "values": [
+    {
+      "sizeBandId": "sticker-2x2-in",
+      "name": "2 × 2 英寸",
+      "labelZh": "2 × 2 英寸",
+      "sortOrder": 1,
+      "isDefault": false
+    },
+    {
+      "sizeBandId": "sticker-3x3-in",
+      "name": "3 × 3 英寸",
+      "labelZh": "3 × 3 英寸",
+      "sortOrder": 2,
+      "isDefault": false
+    },
+    {
+      "sizeBandId": "sticker-4x4-in",
+      "name": "4 × 4 英寸",
+      "labelZh": "4 × 4 英寸",
+      "sortOrder": 3,
+      "isDefault": false
+    },
+    {
+      "sizeBandId": "sticker-5x5-in",
+      "name": "5 × 5 英寸",
+      "labelZh": "5 × 5 英寸",
+      "sortOrder": 4,
+      "isDefault": false
+    },
+    {
+      "sizeBandId": "board-1-in",
+      "name": "1 英寸",
+      "labelZh": "1 英寸",
+      "sortOrder": 5,
+      "isDefault": false
+    },
+    {
+      "sizeBandId": "board-1-5-in",
+      "name": "1.5 英寸",
+      "labelZh": "1.5 英寸",
+      "sortOrder": 6,
+      "isDefault": false
+    },
+    {
+      "sizeBandId": "board-2-in",
+      "name": "2 英寸",
+      "labelZh": "2 英寸",
+      "sortOrder": 7,
+      "isDefault": false
+    },
+    {
+      "sizeBandId": "board-2-5-in",
+      "name": "2.5 英寸",
+      "labelZh": "2.5 英寸",
+      "sortOrder": 8,
+      "isDefault": false
+    },
+    {
+      "sizeBandId": "board-3-in",
+      "name": "3 英寸",
+      "labelZh": "3 英寸",
+      "sortOrder": 9,
+      "isDefault": false
+    },
+    {
+      "sizeBandId": "board-3-5-in",
+      "name": "3.5 英寸",
+      "labelZh": "3.5 英寸",
+      "sortOrder": 10,
+      "isDefault": false
+    },
+    {
+      "sizeBandId": "board-4-in",
+      "name": "4 英寸",
+      "labelZh": "4 英寸",
+      "sortOrder": 11,
+      "isDefault": false
+    },
+    {
+      "sizeBandId": "keychain-1-in",
+      "name": "1 英寸",
+      "labelZh": "1 英寸",
+      "sortOrder": 12,
+      "isDefault": false
+    },
+    {
+      "sizeBandId": "keychain-1-5-in",
+      "name": "1.5 英寸",
+      "labelZh": "1.5 英寸",
+      "sortOrder": 13,
+      "isDefault": false
+    },
+    {
+      "sizeBandId": "keychain-2-in",
+      "name": "2 英寸",
+      "labelZh": "2 英寸",
+      "sortOrder": 14,
+      "isDefault": false
+    },
+    {
+      "sizeBandId": "keychain-2-5-in",
+      "name": "2.5 英寸",
+      "labelZh": "2.5 英寸",
+      "sortOrder": 15,
+      "isDefault": false
+    },
+    {
+      "sizeBandId": "keychain-3-in",
+      "name": "3 英寸",
+      "labelZh": "3 英寸",
+      "sortOrder": 16,
+      "isDefault": false
+    },
+    {
+      "sizeBandId": "keychain-3-5-in",
+      "name": "3.5 英寸",
+      "labelZh": "3.5 英寸",
+      "sortOrder": 17,
+      "isDefault": false
+    },
+    {
+      "sizeBandId": "keychain-4-in",
+      "name": "4 英寸",
+      "labelZh": "4 英寸",
+      "sortOrder": 18,
+      "isDefault": false
+    }
+  ]
+}

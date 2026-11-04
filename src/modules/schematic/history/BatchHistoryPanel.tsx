@@ -89,7 +89,7 @@ export default function BatchHistoryPanel({ active, openingId, progress, onOpen,
     setSyncError(''); notice.destroy()
     try {
       // Transfer only after the recipient's batch includes all confirmed edits.
-      await flushCloudSyncQueue()
+      await flushCloudSyncQueue(transferRecord.id)
       const sent = await sendBatchTransfer(transferRecord.id, userName, recipient)
       setTransferRecord(null)
       void notice.success(sent.shared ? `批次已转移给 ${sent.recipient}，对方刷新历史记录即可查看。` : `已向 ${sent.recipient} 发送批次，对方在历史记录页刷新即可接收。`)
