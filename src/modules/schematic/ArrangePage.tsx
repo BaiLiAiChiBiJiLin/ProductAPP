@@ -16,13 +16,14 @@ import type { RulerChange } from './components/ImageDimensionMarkers'
 import type { EditImageGroupText } from './components/ImageGroupDetails'
 import { CANVAS_DISPLAY_SCALE_STEP, clampCanvasDisplayScale } from './services/canvasDisplayScaleService'
 import './arrange-toolbar.css'
+import './arrange-header.css'
 import ArtworkCanvas from './ArtworkCanvas'
 import ArtworkContextMenu, { type ArtworkMenuTarget } from './components/ArtworkContextMenu'
 import AssetPool from './components/AssetPool'
 import ProductAttributesPanel from './components/ProductAttributesPanel'
 import Loading from '../../components/Loading'
 import PageConfigPanel from './components/PageConfigPanel'
-import { pdfProgressText, type PdfExportProgress } from './services/exportService'
+import { pdfProgressText, type PdfExportProgress, type PdfExportQuality } from './services/exportService'
 import type { ProductAttributePatch } from './services/productOptionRules'
 import type { ArrangementDisplayState } from './services/arrangementDisplayState'
 
@@ -63,7 +64,7 @@ type Props = {
   onSelectGroup: (id: string, ctrlKey: boolean) => void
   onBack: () => void
   onBackToHistory: () => void
-  onExport: (format: 'jpg' | 'png' | 'svg' | 'pdf', displayOverrides: ReadonlyMap<string, DimensionDisplayOverride>) => void
+  onExport: (format: 'jpg' | 'png' | 'svg' | 'pdf', displayOverrides: ReadonlyMap<string, DimensionDisplayOverride>, quality: PdfExportQuality) => void
   exporting?: boolean
   exportProgress?: PdfExportProgress
   metadata?: PageHeader
@@ -80,6 +81,7 @@ export default function ArrangePage({ processingLabel, onChangePage, onReorderPa
   const [artworkMenu, setArtworkMenu] = useState<ArtworkMenuTarget | null>(null)
   useEffect(() => { setArtworkMenu(null) }, [activePage, exporting, replacingArtwork])
   const [exportFormat, setExportFormat] = useState<'jpg' | 'png' | 'svg' | 'pdf'>('pdf')
+  const [pdfQuality, setPdfQuality] = useState<PdfExportQuality>('standard')
   const [canvasMode, setCanvasMode] = useState<CanvasTool>('select')
   const [rulerMode, setRulerMode] = useState<RulerMode>('free')
   const [editorSelection, setEditorSelection] = useState<EditorSelection | null>(null)
@@ -339,7 +341,13 @@ export default function ArrangePage({ processingLabel, onChangePage, onReorderPa
       <button className="new-page" onClick={onAddPage}><Plus size={15}/>新建页面</button>
     </aside>
     <section className="canvas-area" inert={replacingArtwork}>
-      <div className="canvas-head"><div className="canvas-back-actions"><Button type="primary" icon={<ArrowLeft size={16}/>} onClick={onBack} disabled={exporting}>返回图片列表</Button><Button onClick={onBackToHistory} disabled={exporting}>回到历史记录</Button></div><div className="canvas-title-center"><h1>示意图打印预览</h1><span className="muted">页面 {pageNumber} / {pages.length} · {page?.items.filter(item => !item.derivedFrom).length ?? 0} 张图片</span></div><div className="canvas-actions"><select className="export-format" value={exportFormat} disabled={exporting} onChange={event => setExportFormat(event.target.value as typeof exportFormat)}><option value="jpg">JPG</option><option value="png">PNG</option><option value="svg">SVG</option><option value="pdf">PDF</option></select><Button type="primary" icon={exporting ? <Loading size="small" inline /> : <Download size={16}/>} disabled={exporting} onClick={() => onExport(exportFormat, dimensionDisplayOverrides)}>{exporting ? '导出中…' : '导出'}</Button></div></div>
+      <div className="canvas-head"><div className="canvas-back-actions"><Button type="primary" icon={<ArrowLeft size={16}/>} onClick={onBack} disabled={exporting}>返回图片列表</Button><Button onClick={onBackToHistory} disabled={exporting}>回到历史记录</Button></div><div className="canvas-title-center"><h1>示意图打印预览</h1><span className="muted">页面 {pageNumber} / {pages.length} · {page?.items.filter(item => !item.derivedFrom).length ?? 0} 张图片</span></div><div className="canvas-actions"><select className="export-format" aria-label="导出格式" value={exportFormat === 'pdf' ? `pdf:${pdfQuality}` : exportFormat} disabled={exporting} onChange={event => {
+        const value = event.target.value
+        if (value.startsWith('pdf:')) {
+          setExportFormat('pdf')
+          setPdfQuality(value.slice(4) as PdfExportQuality)
+        } else setExportFormat(value as 'jpg' | 'png' | 'svg')
+      }}><optgroup label="PDF"><option value="pdf:standard">PDF · 标准 200 DPI</option><option value="pdf:high">PDF · 高清 300 DPI</option><option value="pdf:original">PDF · 原图质量</option></optgroup><option value="jpg">JPG</option><option value="png">PNG</option><option value="svg">SVG</option></select><Button type="primary" icon={exporting ? <Loading size="small" inline /> : <Download size={16}/>} disabled={exporting} onClick={() => onExport(exportFormat, dimensionDisplayOverrides, pdfQuality)}>{exporting ? '导出中…' : '导出'}</Button></div></div>
       <div className="toolbar">
         <Button type="text" className={canvasMode === 'select' ? 'toolbar-mode-active' : ''} icon={<MousePointer2 size={15}/>} onClick={() => setCanvasMode('select')}>选择</Button>
         <Button type="text" className={canvasMode === 'pan' ? 'toolbar-mode-active' : ''} icon={<Hand size={15}/>} onClick={() => setCanvasMode('pan')}>平移</Button>

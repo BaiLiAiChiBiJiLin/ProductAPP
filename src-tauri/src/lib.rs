@@ -24,8 +24,10 @@ mod local_api;
 mod product_config_cache;
 mod production_imposition;
 mod schematic_review;
+mod schematic_pdf_quality;
 mod settings;
 mod product_option_settings;
+mod product_option_images;
 mod product_pricing_settings;
 mod quantity_pricing_settings;
 mod shared_transfers;
@@ -36,6 +38,7 @@ use base64::Engine;
 use pdf_writer::Finish;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use schematic_pdf_quality::{SchematicPdfQuality, A4_PAGE_SIZE_PT};
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -1458,8 +1461,9 @@ async fn export_pdf(
     app: tauri::AppHandle,
     output: String,
     pages: Vec<String>,
+    quality: Option<SchematicPdfQuality>,
 ) -> Result<(), String> {
-    export_pdf_with_progress(output, pages, Some(app)).await
+    export_pdf_sources(output, pages, Some(app), false, quality.unwrap_or_default()).await
 }
 
 fn pdf_stage_path(id: &str) -> Result<PathBuf, String> {
@@ -1486,6 +1490,7 @@ async fn export_staged_pdf(
     app: tauri::AppHandle,
     output: String,
     ids: Vec<String>,
+    quality: Option<SchematicPdfQuality>,
 ) -> Result<(), String> {
     let paths = ids
         .iter()
@@ -1495,7 +1500,7 @@ async fn export_staged_pdf(
         .iter()
         .map(|path| path.to_string_lossy().into_owned())
         .collect();
-    let result = export_pdf_sources(output, pages, Some(app), true).await;
+    let result = export_pdf_sources(output, pages, Some(app), true, quality.unwrap_or_default()).await;
     if let Err(error) = &result {
         log::error!(target: "printflow::pdf", "PDF 导出失败：{error}");
     }
@@ -1507,15 +1512,8 @@ async fn export_staged_pdf(
 
 #[cfg(test)]
 async fn export_pdf_for_test(output: String, pages: Vec<String>) -> Result<(), String> {
-    export_pdf_with_progress(output, pages, None).await
-}
-
-async fn export_pdf_with_progress(
-    output: String,
-    pages: Vec<String>,
-    progress_app: Option<tauri::AppHandle>,
-) -> Result<(), String> {
-    export_pdf_sources(output, pages, progress_app, false).await
+    // Existing resource regression fixtures assert original pixel identity.
+    export_pdf_sources(output, pages, None, false, SchematicPdfQuality::Original).await
 }
 
 async fn export_pdf_sources(
@@ -1523,11 +1521,12 @@ async fn export_pdf_sources(
     pages: Vec<String>,
     progress_app: Option<tauri::AppHandle>,
     staged: bool,
+    quality: SchematicPdfQuality,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         if pages.is_empty() { return Err("没有可导出的页面".into()); }
         let export_started = Instant::now();
-        log::info!(target: "printflow::pdf", "开始导出 PDF：pages={}, svg_bytes={}", pages.len(), pages.iter().map(String::len).sum::<usize>());
+        log::info!(target: "printflow::pdf", "开始导出 PDF：pages={}, quality={quality:?}, svg_bytes={}", pages.len(), pages.iter().map(String::len).sum::<usize>());
         let client = reqwest::blocking::Client::builder().connect_timeout(std::time::Duration::from_secs(4)).timeout(std::time::Duration::from_secs(20)).build().map_err(|e| e.to_string())?;
         let mut external_image_cache = HashMap::new();
         let mut pdf = pdf_writer::Pdf::new();
@@ -1566,7 +1565,7 @@ async fn export_pdf_sources(
             let parse_ms = phase_start.elapsed().as_millis();
             let phase_start = Instant::now();
             report("convert");
-            let (chunk, svg_ref) = svg2pdf::to_chunk(&tree, svg2pdf::ConversionOptions::default())
+            let (chunk, svg_ref) = svg2pdf::to_chunk(&tree, quality.conversion_options())
                 .map_err(|error| format!("PDF 矢量页面转换失败：{error}"))?;
             log::info!(target: "printflow::pdf", "PDF page={}/{} resources_ms={} flatten_ms={} fonts_ms={} parse_ms={} convert_ms={}", index + 1, pages.len(), resources_ms, flatten_ms, fonts_ms, parse_ms, phase_start.elapsed().as_millis());
             let mut chunk_refs = HashMap::new();
@@ -1580,10 +1579,10 @@ async fn export_pdf_sources(
             let content_ref = pdf_writer::Ref::new(next_ref);
             next_ref += 1;
             let mut content = pdf_writer::Content::new();
-            content.transform([595.2756, 0.0, 0.0, 841.8898, 0.0, 0.0]).x_object(pdf_writer::Name(b"PageSvg"));
+            content.transform([A4_PAGE_SIZE_PT.0, 0.0, 0.0, A4_PAGE_SIZE_PT.1, 0.0, 0.0]).x_object(pdf_writer::Name(b"PageSvg"));
             pdf.stream(content_ref, &content.finish());
             let mut page = pdf.page(page_refs[index]);
-            page.parent(pages_ref).media_box(pdf_writer::Rect::new(0.0, 0.0, 595.2756, 841.8898)).contents(content_ref);
+            page.parent(pages_ref).media_box(pdf_writer::Rect::new(0.0, 0.0, A4_PAGE_SIZE_PT.0, A4_PAGE_SIZE_PT.1)).contents(content_ref);
             let mut resources = page.resources();
             resources.x_objects().pair(pdf_writer::Name(b"PageSvg"), svg_ref);
             resources.finish();
@@ -1648,6 +1647,7 @@ pub fn run() {
             settings::save_storage_settings,
             product_option_settings::load_product_option_settings,
             product_option_settings::save_product_option_settings,
+            product_option_images::upload_product_option_image,
             product_pricing_settings::load_product_pricing_settings,
             product_pricing_settings::save_product_pricing_settings,
             quantity_pricing_settings::load_quantity_pricing_settings,

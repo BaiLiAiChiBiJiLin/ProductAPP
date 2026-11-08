@@ -1,5 +1,6 @@
 import { allProducts, catalogFor, getEntityId, getProductSizes, isEnabled, optionFor, ordered, resolvePreview, type Bundle, type Product } from '../product-options/model'
 import { matchQuantityTier, validateDocument as validateQuantityDocument, type QuantityPricingDocument } from '../quantity-pricing/model'
+import { validateAreaPricing, validateAreaReferences, type AnyAreaPricingDocument } from './areaPricing'
 
 export type PriceSelections = { techniqueId: string | null; holoFilmId: string | null; materialId: string | null }
 export type BasePrice = { basePriceId: string; sizeBandId: string; unitPrice: string }
@@ -12,11 +13,41 @@ export type AccessoryPrice = { accessoryPriceId: string; accessoryStyleId: strin
 export type PriceRange = { rangeId: string; minMm: string; maxMm: string; kind: 'fixed' | 'area'; amount: string; coefficient: string }
 export type DimensionPanel = { panelId: string; label: string; pieceBands: PriceRange[]; baseBands: PriceRange[]; baseAdjustment: string }
 export type DimensionPrice = PriceSelections & { productPriceId: string; baseUnitPrice: string; panels: DimensionPanel[] }
-export type ProductPricing = { productId: string; printPricing: 'included'; pricingMode: 'table' | 'standee' | 'fixed'; fixedUnitPrice: string | null; basePrices: BasePrice[]; attributePrices: AttributePrice[]; legacyBodyPrices: BodyPrice[]; dimensionPrices: DimensionPrice[] }
-export type ProductPricingDocument = { schemaVersion: 4 | 5; currency: 'USD'; accessoryPricing: 'style' | 'color'; accessoryPrices: AccessoryPrice[]; sharedAttributePrices?: SharedAttributePrice[]; products: ProductPricing[] }
+/** Signed range used by the new standee component model.  Attribute rows are
+ * adjustments, so their intercept or area coefficient can legitimately be
+ * negative even though the final panel price must remain non-negative. */
+export type SignedPriceRange = Omit<PriceRange, 'amount' | 'coefficient'> & { amount: string; coefficient: string }
+export type StandeeComponentKind = 'base' | 'technique' | 'holoFilm' | 'material' | 'composite'
+export type StandeePriceComponent = {
+  componentId: string
+  panelTemplateId: string
+  kind: StandeeComponentKind
+  techniqueId: string | null
+  holoFilmId: string | null
+  materialId: string | null
+  pieceBands: SignedPriceRange[]
+  baseBands: SignedPriceRange[]
+  baseAdjustment: string
+}
+export type StandeeCompositionGroup = { groupId: string; panelTemplateId: string; label: string; componentIds: string[] }
+export type StandeeComposition = PriceSelections & { compositionId: string; legacyProductPriceId: string; baseUnitPrice: string; groups: StandeeCompositionGroup[] }
+/** Product-level decomposition of standee prices. Legacy `dimensionPrices`
+ * remains as migration evidence and a safe fallback for incomplete rows. */
+export type StandeePricing = {
+  schemaVersion: 1
+  baseComponents: StandeePriceComponent[]
+  techniqueComponents: StandeePriceComponent[]
+  holoFilmComponents: StandeePriceComponent[]
+  materialComponents: StandeePriceComponent[]
+  compositeComponents: StandeePriceComponent[]
+  compositions: StandeeComposition[]
+}
+export type ProductPricing = { productId: string; printPricing: 'included'; pricingMode: 'table' | 'standee' | 'fixed'; fixedUnitPrice: string | null; basePrices: BasePrice[]; attributePrices: AttributePrice[]; legacyBodyPrices: BodyPrice[]; dimensionPrices: DimensionPrice[]; standeePricing?: StandeePricing }
+export type ProductPricingDocument = { schemaVersion: 4 | 5; currency: 'USD'; accessoryPricing: 'style' | 'color'; accessoryPrices: AccessoryPrice[]; sharedAttributePrices?: SharedAttributePrice[]; products: ProductPricing[]; areaPricing?: AnyAreaPricingDocument }
 export type Dimensions = { widthMm: string; heightMm: string }
 export type PanelInput = { panelId: string; standeeQuantityId?: string | null; parts: Dimensions[]; base: Dimensions }
-export type QuoteInput = { productId: string; sizeBandId: string; techniqueId: string | null; holoFilmId?: string | null; materialId?: string | null; accessoryStyleId: string | null; accessoryColorId: string | null; quantity: number; panelInputs?: PanelInput[]; standeeQuantityId?: string | null }
+export type StandeeSizeInput = { standeeQuantityId?: string | null; parts: Dimensions[]; base: Dimensions }
+export type QuoteInput = { productId: string; sizeBandId: string; techniqueId: string | null; holoFilmId?: string | null; materialId?: string | null; accessoryStyleId: string | null; accessoryColorId: string | null; quantity: number; panelInputs?: PanelInput[]; standee?: StandeeSizeInput; standeeQuantityId?: string | null }
 export type QuoteResult = { bodyUnitPrice: string; techniqueUnitPrice: string; holoFilmUnitPrice: string; materialUnitPrice: string; attributeUnitPrice: string; accessoryUnitPrice: string; unitPrice: string; discountPercent: number; discountedUnitPrice: string; totalPrice: string; quantityTierId: string | null }
 export const cloneDocument = (value: ProductPricingDocument): ProductPricingDocument => structuredClone(value)
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
@@ -69,6 +100,9 @@ function uniqueId(value: unknown, ids: Set<string>, label: string): asserts valu
 function amount(value: unknown, label: string): asserts value is string {
   if (!isUnitPrice(value)) throw new Error(`${label}须为非负十进制金额，整数最多9位、小数最多18位`)
 }
+function signedAmount(value: unknown, label: string): asserts value is string {
+  if (!isAttributePrice(value)) throw new Error(`${label}须为十进制金额，整数最多9位、小数最多18位`)
+}
 function selections(value: Record<string, unknown>): void {
   for (const dimension of dimensions) if (value[dimension.field] !== null && !validId(value[dimension.field])) throw new Error(`${dimension.label}引用无效`)
 }
@@ -86,9 +120,64 @@ function validateRanges(value: unknown, ids: Set<string>): asserts value is Pric
   const sorted = (value as PriceRange[]).slice().sort((a, b) => compare(parse(a.minMm), parse(b.minMm)))
   for (let index = 1; index < sorted.length; index++) if (compare(parse(sorted[index].minMm), parse(sorted[index - 1].maxMm)) <= 0) throw new Error('尺寸区间不能重叠（边界包含在区间内）')
 }
+function validateSignedRanges(value: unknown, ids: Set<string>): asserts value is SignedPriceRange[] {
+  if (!Array.isArray(value)) throw new Error('立牌组成区间必须是数组')
+  for (const range of value) {
+    if (!record(range)) throw new Error('立牌组成区间格式错误')
+    keys(range, ['rangeId', 'minMm', 'maxMm', 'kind', 'amount', 'coefficient'], '立牌组成区间'); uniqueId(range.rangeId, ids, '立牌组成区间')
+    amount(range.minMm, '最小尺寸'); amount(range.maxMm, '最大尺寸')
+    if (compare(parse(range.minMm), zero) <= 0 || compare(parse(range.maxMm), parse(range.minMm)) < 0) throw new Error('立牌组成区间必须大于零，且上限不能小于下限')
+    signedAmount(range.amount, '立牌组成金额'); signedAmount(range.coefficient, '立牌组成面积系数')
+    if (range.kind !== 'fixed' && range.kind !== 'area') throw new Error('立牌组成区间计价方式无效')
+    if (range.kind === 'fixed' && parse(range.coefficient).coefficient !== 0n) throw new Error('固定立牌组成区间的面积系数必须为0')
+  }
+  const sorted = (value as SignedPriceRange[]).slice().sort((a, b) => compare(parse(a.minMm), parse(b.minMm)))
+  for (let index = 1; index < sorted.length; index++) if (compare(parse(sorted[index].minMm), parse(sorted[index - 1].maxMm)) <= 0) throw new Error('立牌组成区间不能重叠（边界包含在区间内）')
+}
+function validateStandeePricing(value: unknown, componentIds: Set<string>, panelIds: Set<string>, rangeIds: Set<string>): asserts value is StandeePricing {
+  if (!record(value)) throw new Error('立牌组成价格格式错误')
+  keys(value, ['schemaVersion', 'baseComponents', 'techniqueComponents', 'holoFilmComponents', 'materialComponents', 'compositeComponents', 'compositions'], '立牌组成价格')
+  if (value.schemaVersion !== 1 || !Array.isArray(value.compositions)) throw new Error('立牌组成价格版本或组合列表无效')
+  const model = value as unknown as StandeePricing
+  const components = [...(model.baseComponents ?? []), ...(model.techniqueComponents ?? []), ...(model.holoFilmComponents ?? []), ...(model.materialComponents ?? []), ...(model.compositeComponents ?? [])]
+  const localIds = new Set<string>()
+  for (const component of components) {
+    if (!record(component)) throw new Error('立牌价格组成格式错误')
+    keys(component, ['componentId', 'panelTemplateId', 'kind', 'techniqueId', 'holoFilmId', 'materialId', 'pieceBands', 'baseBands', 'baseAdjustment'], '立牌价格组成')
+    uniqueId(component.componentId, localIds, '立牌价格组成')
+    if (componentIds.has(component.componentId)) throw new Error('立牌价格组成标识不能与价格行重复')
+    componentIds.add(component.componentId)
+    if (!validId(component.panelTemplateId) || !['base', 'technique', 'holoFilm', 'material', 'composite'].includes(String(component.kind))) throw new Error('立牌价格组成面板或类型无效')
+    if ((component.techniqueId !== null && !validId(component.techniqueId)) || (component.holoFilmId !== null && !validId(component.holoFilmId)) || (component.materialId !== null && !validId(component.materialId))) throw new Error('立牌价格组成属性引用无效')
+    if (component.kind === 'base' && (component.techniqueId !== null || component.holoFilmId !== null || component.materialId !== null)) throw new Error('立牌基础组成不能关联属性')
+    if (component.kind === 'technique' && (component.techniqueId === null || component.holoFilmId !== null || component.materialId !== null)) throw new Error('立牌工艺组成引用无效')
+    if (component.kind === 'holoFilm' && (component.holoFilmId === null || component.techniqueId !== null || component.materialId !== null)) throw new Error('立牌全息膜组成引用无效')
+    if (component.kind === 'material' && (component.materialId === null || component.techniqueId !== null || component.holoFilmId !== null)) throw new Error('立牌材质组成引用无效')
+    signedAmount(component.baseAdjustment, '立牌组成底座调整金额')
+    validateSignedRanges(component.pieceBands, rangeIds); validateSignedRanges(component.baseBands, rangeIds)
+  }
+  const compositionIds = new Set<string>(); const keysSeen = new Set<string>()
+  for (const composition of value.compositions) {
+    if (!record(composition)) throw new Error('立牌价格组合格式错误')
+    keys(composition, ['compositionId', 'legacyProductPriceId', 'techniqueId', 'holoFilmId', 'materialId', 'baseUnitPrice', 'groups'], '立牌价格组合')
+    uniqueId(composition.compositionId, compositionIds, '立牌价格组合'); if (!validId(composition.legacyProductPriceId)) throw new Error('立牌旧配方引用无效')
+    selections(composition); amount(composition.baseUnitPrice, '立牌组合基础价')
+    const key = JSON.stringify(selectionFields.map(field => composition[field])); if (keysSeen.has(key)) throw new Error('立牌组成的工艺、全息膜和材质组合不能重复'); keysSeen.add(key)
+    if (!Array.isArray(composition.groups) || !composition.groups.length) throw new Error('立牌价格组合至少需要一个组成组')
+    for (const group of composition.groups) {
+      if (!record(group)) throw new Error('立牌组成组格式错误')
+      keys(group, ['groupId', 'panelTemplateId', 'label', 'componentIds'], '立牌组成组')
+      if (!validId(group.groupId) || !validId(group.panelTemplateId) || !validId(group.label) || !Array.isArray(group.componentIds) || !group.componentIds.length || group.componentIds.some(id => !validId(id) || !componentIds.has(id))) throw new Error('立牌组成组引用无效')
+    }
+    const baseCount = composition.groups.flatMap(group => group.componentIds).filter(id => components.find(component => component.componentId === id)?.kind === 'base').length
+    if (baseCount !== 1) throw new Error('立牌价格组合必须且只能有一个产品基础组成')
+  }
+  void panelIds
+}
 export function validateDocument(value: unknown): asserts value is ProductPricingDocument {
   if (!record(value)) throw new Error('产品定价格式错误')
-  keys(value, ['schemaVersion', 'currency', 'accessoryPricing', 'accessoryPrices', 'products', ...(value.schemaVersion === 5 ? ['sharedAttributePrices'] : [])], '产品定价')
+  keys(value, ['schemaVersion', 'currency', 'accessoryPricing', 'accessoryPrices', 'products', ...(value.schemaVersion === 5 ? ['sharedAttributePrices'] : []), ...(Object.hasOwn(value, 'areaPricing') ? ['areaPricing'] : [])], '产品定价')
+  if (Object.hasOwn(value, 'areaPricing')) validateAreaPricing(value.areaPricing)
   if (value.schemaVersion !== 4 && value.schemaVersion !== 5 || value.currency !== 'USD' || !Array.isArray(value.products)) throw new Error('产品定价版本、币种或列表无效')
   if (value.accessoryPricing !== 'style' && value.accessoryPricing !== 'color' || !Array.isArray(value.accessoryPrices)) throw new Error('公共配件计价方式无效')
   const productIds = new Set<string>(); const rowIds = new Set<string>(); const panelIds = new Set<string>(); const rangeIds = new Set<string>()
@@ -120,7 +209,8 @@ export function validateDocument(value: unknown): asserts value is ProductPricin
   }
   for (const product of value.products) {
     if (!record(product)) throw new Error('产品价表格式错误')
-    keys(product, ['productId', 'printPricing', 'pricingMode', 'fixedUnitPrice', 'basePrices', 'attributePrices', 'legacyBodyPrices', 'dimensionPrices'], '产品价表'); uniqueId(product.productId, productIds, '产品')
+    const productFields = ['productId', 'printPricing', 'pricingMode', 'fixedUnitPrice', 'basePrices', 'attributePrices', 'legacyBodyPrices', 'dimensionPrices', ...(product.pricingMode === 'standee' && Object.hasOwn(product, 'standeePricing') ? ['standeePricing'] : [])]
+    keys(product, productFields, '产品价表'); uniqueId(product.productId, productIds, '产品')
     if (product.printPricing !== 'included' || !['table', 'standee', 'fixed'].includes(String(product.pricingMode)) || !Array.isArray(product.basePrices) || !Array.isArray(product.attributePrices) || !Array.isArray(product.legacyBodyPrices) || !Array.isArray(product.dimensionPrices)) throw new Error('产品计价方式或列表无效')
     if (product.pricingMode === 'fixed') {
       if (product.fixedUnitPrice !== null) amount(product.fixedUnitPrice, '固定单价')
@@ -171,7 +261,125 @@ export function validateDocument(value: unknown): asserts value is ProductPricin
         validateRanges(panel.pieceBands, rangeIds); validateRanges(panel.baseBands, rangeIds)
       }
     }
+    if (Object.hasOwn(product, 'standeePricing')) {
+      if (product.pricingMode !== 'standee') throw new Error('只有立牌产品可以配置立牌组成价格')
+      validateStandeePricing(product.standeePricing, rowIds, panelIds, rangeIds)
+    }
   }
+}
+type RangeLike = Pick<PriceRange, 'minMm' | 'maxMm' | 'kind' | 'amount' | 'coefficient'>
+function signedRangeDelta(source: RangeLike, base: RangeLike, rangeId: string): SignedPriceRange {
+  const kind = source.kind === 'fixed' && base.kind === 'fixed' ? 'fixed' : 'area'
+  return {
+    rangeId,
+    minMm: source.minMm,
+    maxMm: source.maxMm,
+    kind,
+    amount: subtractPrices(source.amount, base.amount),
+    coefficient: kind === 'fixed' ? '0' : subtractPrices(source.coefficient, base.coefficient),
+  }
+}
+function signedBandDelta(source: RangeLike[], base: RangeLike[], prefix: string): SignedPriceRange[] {
+  if (source.length !== base.length || source.some((range, index) => range.minMm !== base[index].minMm || range.maxMm !== base[index].maxMm)) throw new Error('立牌组成区间边界不一致，需保留旧组合配方')
+  return source.map((range, index) => signedRangeDelta(range, base[index], `${prefix}-${index + 1}`))
+}
+function signedBand(source: PriceRange, rangeId: string): SignedPriceRange {
+  return { ...source, rangeId }
+}
+function componentSignature(component: StandeePriceComponent): string {
+  return JSON.stringify([component.panelTemplateId, component.kind, component.techniqueId, component.holoFilmId, component.materialId, component.pieceBands, component.baseBands, component.baseAdjustment])
+}
+function aggregateBands(panels: DimensionPanel[], field: 'pieceBands' | 'baseBands', prefix: string): SignedPriceRange[] {
+  if (!panels.length) throw new Error('立牌基础组成至少需要一个面板')
+  let result = panels[0][field].map((range, index) => signedBand(range, `${prefix}-${index + 1}`))
+  for (const panel of panels.slice(1)) {
+    if (panel[field].length !== result.length || panel[field].some((range, index) => range.minMm !== result[index].minMm || range.maxMm !== result[index].maxMm)) throw new Error('立牌组成区间边界不一致，需保留旧组合配方')
+    result = result.map((range, index) => {
+      const other = panel[field][index]; const kind = range.kind === 'fixed' && other.kind === 'fixed' ? 'fixed' : 'area'
+      return { ...range, rangeId: `${prefix}-${index + 1}`, kind, amount: addSigned(range.amount, other.amount), coefficient: kind === 'fixed' ? '0' : addSigned(range.coefficient, other.coefficient) }
+    })
+  }
+  return result
+}
+function aggregatePanels(panels: DimensionPanel[], field: 'pieceBands' | 'baseBands'): SignedPriceRange[] {
+  return aggregateBands(panels, field, `standee-aggregate-${field}`)
+}
+function aggregateSignedBands(panels: DimensionPanel[], field: 'pieceBands' | 'baseBands'): SignedPriceRange[] {
+  return aggregatePanels(panels, field)
+}
+function addSigned(left: string, right: string): string {
+  return format(add(parse(left), parse(right)))
+}
+/** Build the additive standee model from the existing dimension recipes. The
+ * migration is deterministic and lossless for the current catalog: all
+ * baseline legacy panels are aggregated into one product-level base component,
+ * while single-attribute recipes are represented as signed adjustments.
+ * Combinations with more than one changed attribute become composite
+ * components so they remain exactly reproducible. */
+export function buildStandeePricingModel(pricing: ProductPricing): StandeePricing | null {
+  if (pricing.pricingMode !== 'standee' || !pricing.dimensionPrices.length) return null
+  const baseline = pricing.dimensionPrices.find(row => row.techniqueId === 'G1' && (row.holoFilmId === 'M12' || row.holoFilmId === 'M1')) ?? pricing.dimensionPrices[0]
+  const productPanelTemplateId = `standee-panel-${pricing.productId}`
+  const baseComponents: StandeePriceComponent[] = [{
+    componentId: `standee-base-${pricing.productId}`,
+    panelTemplateId: productPanelTemplateId,
+    kind: 'base', techniqueId: null, holoFilmId: null, materialId: null,
+    pieceBands: aggregateBands(baseline.panels, 'pieceBands', `standee-base-${pricing.productId}-piece`),
+    baseBands: aggregateBands(baseline.panels, 'baseBands', `standee-base-${pricing.productId}-base`),
+    baseAdjustment: baseline.panels.map(panel => panel.baseAdjustment).reduce(addSigned),
+  }]
+  const techniqueComponents: StandeePriceComponent[] = []; const holoFilmComponents: StandeePriceComponent[] = []; const materialComponents: StandeePriceComponent[] = []; const compositeComponents: StandeePriceComponent[] = []
+  const getOrCreate = (kind: StandeeComponentKind, value: string, sourcePanels: DimensionPanel[]): StandeePriceComponent => {
+    const panelTemplateId = productPanelTemplateId
+    const key = `${kind}:${value}:${panelTemplateId}`
+    const collection = kind === 'technique' ? techniqueComponents : kind === 'holoFilm' ? holoFilmComponents : materialComponents
+    const existing = collection.find(component => component.componentId === key)
+    const component: StandeePriceComponent = {
+      componentId: key, panelTemplateId, kind,
+      techniqueId: kind === 'technique' ? value : null,
+      holoFilmId: kind === 'holoFilm' ? value : null,
+      materialId: kind === 'material' ? value : null,
+      pieceBands: signedBandDelta(aggregatePanels(sourcePanels, 'pieceBands'), aggregateSignedBands(baseline.panels, 'pieceBands'), `${key}-piece`),
+      baseBands: signedBandDelta(aggregatePanels(sourcePanels, 'baseBands'), aggregateSignedBands(baseline.panels, 'baseBands'), `${key}-base`),
+      baseAdjustment: subtractPrices(sourcePanels.map(panel => panel.baseAdjustment).reduce(addSigned), baseComponents[0].baseAdjustment),
+    }
+    if (existing) {
+      if (componentSignature(existing) !== componentSignature(component)) throw new Error(`立牌属性 ${value} 在产品 ${pricing.productId} 的不同组合中价格不一致，请保留旧组合配方`)
+      return existing
+    }
+    collection.push(component); return component
+  }
+  const compositions: StandeeComposition[] = []
+  for (const recipe of pricing.dimensionPrices) {
+    const changed = selectionFields.filter(field => recipe[field] !== baseline[field])
+    let componentIds = [baseComponents[0].componentId]
+    const sourcePanels = recipe.panels
+    const label = sourcePanels.map(panel => panel.label).join(' + ')
+    if (changed.length === 1) {
+      const field = changed[0]; const value = recipe[field]
+      if (!value) throw new Error(`立牌组合 ${recipe.productPriceId} 的属性引用为空`)
+      const component = getOrCreate(field === 'techniqueId' ? 'technique' : field === 'holoFilmId' ? 'holoFilm' : 'material', value, sourcePanels)
+      componentIds = [...componentIds, component.componentId]
+    } else if (changed.length > 1) {
+      const componentId = `standee-composite-${pricing.productId}-${recipe.productPriceId}`
+      const component: StandeePriceComponent = {
+        componentId, panelTemplateId: productPanelTemplateId, kind: 'composite', techniqueId: recipe.techniqueId, holoFilmId: recipe.holoFilmId, materialId: recipe.materialId,
+        pieceBands: signedBandDelta(aggregatePanels(sourcePanels, 'pieceBands'), aggregateSignedBands(baseline.panels, 'pieceBands'), `${componentId}-piece`),
+        baseBands: signedBandDelta(aggregatePanels(sourcePanels, 'baseBands'), aggregateSignedBands(baseline.panels, 'baseBands'), `${componentId}-base`),
+        baseAdjustment: subtractPrices(sourcePanels.map(panel => panel.baseAdjustment).reduce(addSigned), baseComponents[0].baseAdjustment),
+      }
+      if (!compositeComponents.some(item => item.componentId === componentId)) compositeComponents.push(component)
+      componentIds = [...componentIds, componentId]
+    }
+    compositions.push({ compositionId: `standee-composition-${recipe.productPriceId}`, legacyProductPriceId: recipe.productPriceId, techniqueId: recipe.techniqueId, holoFilmId: recipe.holoFilmId, materialId: recipe.materialId, baseUnitPrice: recipe.baseUnitPrice, groups: [{ groupId: `standee-group-${recipe.productPriceId}`, panelTemplateId: productPanelTemplateId, label, componentIds }] })
+  }
+  return { schemaVersion: 1, baseComponents, techniqueComponents, holoFilmComponents, materialComponents, compositeComponents, compositions }
+}
+export function upgradeStandeePricing(document: ProductPricingDocument): ProductPricingDocument {
+  const next = cloneDocument(document)
+  for (const product of next.products) if (product.pricingMode === 'standee' && !product.standeePricing && product.dimensionPrices.length) product.standeePricing = buildStandeePricingModel(product) ?? undefined
+  validateDocument(next)
+  return next
 }
 function selectionIssues(value: PriceSelections, product: Product, bundle: Bundle): string[] {
   const issues: string[] = []
@@ -228,6 +436,10 @@ function enabledSizeIds(bundle: Bundle, product: Product): Set<string> {
   return new Set(option && !option.deleted ? catalogFor(bundle, product, 'Size').values.filter(value => isEnabled(option, value)).map(getEntityId) : [])
 }
 export function getReferenceIssues(document: ProductPricingDocument, bundle: Bundle): string[] {
+  if (document.areaPricing) {
+    try { validateAreaReferences(document.areaPricing, bundle); return [] }
+    catch (failure) { return [String(failure).replace(/^Error: /, '')] }
+  }
   const issues: string[] = []; const products = allProducts(bundle.main)
   for (const row of document.accessoryPrices) if (!validAccessoryReference(row, bundle)) issues.push(`公共配件价格 ${row.accessoryPriceId} 的样式已不存在或颜色不属于该样式`)
   for (const row of document.sharedAttributePrices ?? []) if (!validSharedAttributeReference(row, bundle)) issues.push(`公共属性价格 ${row.sharedAttributePriceId} 的属性或尺寸已不存在`)
@@ -275,6 +487,15 @@ function rangePrice(bands: PriceRange[], size: Dimensions, label: string): Decim
   if (compare(width, zero) <= 0 || compare(height, zero) <= 0) throw new Error(`${label}宽高必须大于零`)
   const longest = compare(width, height) >= 0 ? width : height
   const band = bands.find(band => compare(longest, parse(band.minMm)) >= 0 && compare(longest, parse(band.maxMm)) <= 0)
+  if (!band) throw new Error(`${label}尺寸未配置价格（含区间空档或超出范围）`)
+  return band.kind === 'fixed' ? parse(band.amount) : add(multiply(multiply(width, height), parse(band.coefficient)), parse(band.amount))
+}
+function signedRangePrice(bands: SignedPriceRange[], size: Dimensions, label: string): Decimal {
+  if (!size || !isUnitPrice(size.widthMm) || !isUnitPrice(size.heightMm)) throw new Error(`${label}宽高必须是大于零的十进制毫米尺寸`)
+  const width = parse(size.widthMm); const height = parse(size.heightMm)
+  if (compare(width, zero) <= 0 || compare(height, zero) <= 0) throw new Error(`${label}宽高必须大于零`)
+  const longest = compare(width, height) >= 0 ? width : height
+  const band = bands.find(item => compare(longest, parse(item.minMm)) >= 0 && compare(longest, parse(item.maxMm)) <= 0)
   if (!band) throw new Error(`${label}尺寸未配置价格（含区间空档或超出范围）`)
   return band.kind === 'fixed' ? parse(band.amount) : add(multiply(multiply(width, height), parse(band.coefficient)), parse(band.amount))
 }
@@ -330,17 +551,36 @@ export function quoteProduct(document: ProductPricingDocument, bundle: Bundle, q
     if (!row) throw new Error('该尺寸未配置主体基本价')
     body = parse(row.unitPrice)
   } else {
-    const recipe = pricing.dimensionPrices.find(row => selectionKey(row) === selectionKey(selected))
-    if (!recipe) throw new Error('该工艺、全息膜和材质组合未配置尺寸配方')
-    if (!Array.isArray(input.panelInputs) || input.panelInputs.length !== recipe.panels.length || new Set(input.panelInputs.map(panel => panel.panelId)).size !== recipe.panels.length || input.panelInputs.some(panel => !recipe.panels.some(recipePanel => recipePanel.panelId === panel.panelId))) throw new Error('请完整填写配方中的所有尺寸面板，不能缺少、重复或增加面板')
-    body = parse(recipe.baseUnitPrice)
-    for (const panel of recipe.panels) {
-      const selectedPanel = input.panelInputs.find(item => item.panelId === panel.panelId)!
-      if (!Array.isArray(selectedPanel.parts) || !selectedPanel.parts.length) throw new Error(`${panel.label}至少需要一片部件`)
-      const count = pieceCount(selectedPanel.standeeQuantityId)
-      if (selectedPanel.parts.length !== count) throw new Error(`${panel.label}的片材尺寸数量必须与主体片数一致（${count} 片）`)
-      for (const size of selectedPanel.parts) body = add(body, rangePrice(panel.pieceBands, size, `${panel.label}部件`))
-      body = add(body, rangePrice(panel.baseBands, selectedPanel.base, `${panel.label}底座`)); body = add(body, parse(panel.baseAdjustment))
+    const model = pricing.standeePricing
+    const composition = model?.compositions.find(row => selectionKey(row) === selectionKey(selected))
+    // The new flat model is opt-in through `standee`; existing panelInputs
+    // intentionally stay on the legacy path so edits to the legacy dialog can
+    // be previewed without a stale migrated snapshot.
+    const modelInput = input.standee
+    if (composition && modelInput && model) {
+      if (!Array.isArray(modelInput.parts) || !modelInput.parts.length) throw new Error('立牌主体至少需要一片部件')
+      const count = pieceCount(modelInput.standeeQuantityId)
+      if (modelInput.parts.length !== count) throw new Error(`立牌片材尺寸数量必须与主体片数一致（${count} 片）`)
+      const components = new Map<string, StandeePriceComponent>([...(model.baseComponents ?? []), ...(model.techniqueComponents ?? []), ...(model.holoFilmComponents ?? []), ...(model.materialComponents ?? []), ...(model.compositeComponents ?? [])].map(component => [component.componentId, component]))
+      body = parse(composition.baseUnitPrice)
+      for (const group of composition.groups) for (const componentId of group.componentIds) {
+        const component = components.get(componentId); if (!component) throw new Error('立牌组成引用已失效，请回退到旧配方')
+        for (const size of modelInput.parts) body = add(body, signedRangePrice(component.pieceBands, size, `${group.label}部件`))
+        body = add(body, signedRangePrice(component.baseBands, modelInput.base, `${group.label}底座`)); body = add(body, parse(component.baseAdjustment))
+      }
+    } else {
+      const recipe = pricing.dimensionPrices.find(row => selectionKey(row) === selectionKey(selected))
+      if (!recipe) throw new Error('该工艺、全息膜和材质组合未配置尺寸配方')
+      if (!Array.isArray(input.panelInputs) || input.panelInputs.length !== recipe.panels.length || new Set(input.panelInputs.map(panel => panel.panelId)).size !== recipe.panels.length || input.panelInputs.some(panel => !recipe.panels.some(recipePanel => recipePanel.panelId === panel.panelId))) throw new Error('请完整填写配方中的所有尺寸面板，不能缺少、重复或增加面板')
+      body = parse(recipe.baseUnitPrice)
+      for (const panel of recipe.panels) {
+        const selectedPanel = input.panelInputs.find(item => item.panelId === panel.panelId)!
+        if (!Array.isArray(selectedPanel.parts) || !selectedPanel.parts.length) throw new Error(`${panel.label}至少需要一片部件`)
+        const count = pieceCount(selectedPanel.standeeQuantityId)
+        if (selectedPanel.parts.length !== count) throw new Error(`${panel.label}的片材尺寸数量必须与主体片数一致（${count} 片）`)
+        for (const size of selectedPanel.parts) body = add(body, rangePrice(panel.pieceBands, size, `${panel.label}部件`))
+        body = add(body, rangePrice(panel.baseBands, selectedPanel.base, `${panel.label}底座`)); body = add(body, parse(panel.baseAdjustment))
+      }
     }
     if (body.coefficient < 0n) throw new Error('尺寸配方产生了负主体价格，请检查底座调整')
   }

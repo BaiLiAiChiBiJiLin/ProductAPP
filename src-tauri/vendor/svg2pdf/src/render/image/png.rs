@@ -48,7 +48,12 @@ impl Planes {
     }
 }
 
-pub(super) fn write_png(chunk: &mut Chunk, ctx: &mut Context, data: &[u8]) -> Result<(Ref, Size)> {
+pub(super) fn write_png(
+    chunk: &mut Chunk,
+    ctx: &mut Context,
+    data: &[u8],
+    scale: f32,
+) -> Result<(Ref, Size)> {
     let mut decoder = png::Decoder::new(Cursor::new(data));
     // Expand palette/low-bit grayscale/tRNS, but retain 16-bit precision.
     decoder.set_transformations(Transformations::EXPAND);
@@ -72,6 +77,11 @@ pub(super) fn write_png(chunk: &mut Chunk, ctx: &mut Context, data: &[u8]) -> Re
         (png::ColorType::Rgba, 2) => (true, ColorType::Rgba16),
         _ => return Err(InvalidImage),
     };
+    let target = super::downsample::target_size(width, height, scale);
+    let (output_width, output_height) = target.unwrap_or((width, height));
+    let mut sampler = target.map(|target| {
+        super::downsample::AreaSampler::new(width, height, target, channels, bytes, has_alpha)
+    });
     let mut planes = Planes {
         color: ZlibEncoder::new(Vec::new(), Compression::default()),
         alpha: has_alpha.then(|| ZlibEncoder::new(Vec::new(), Compression::default())),
@@ -81,6 +91,13 @@ pub(super) fn write_png(chunk: &mut Chunk, ctx: &mut Context, data: &[u8]) -> Re
         bytes,
         has_alpha,
         transparent: false,
+    };
+    let mut write_row = |row: &[u8]| -> Result<()> {
+        if let Some(sampler) = &mut sampler {
+            sampler.row(row, |row| planes.row(row))
+        } else {
+            planes.row(row)
+        }
     };
     if interlaced {
         // Spool the seven Adam7 passes, then assemble one final row at a time.
@@ -144,12 +161,12 @@ pub(super) fn write_png(chunk: &mut Chunk, ctx: &mut Context, data: &[u8]) -> Re
                     row[x * stride..(x + 1) * stride].copy_from_slice(pixel);
                 }
             }
-            planes.row(&row)?;
+            write_row(&row)?;
         }
     } else {
         let mut rows = 0;
         while let Some(row) = reader.next_row().map_err(|_| InvalidImage)? {
-            planes.row(row.data())?;
+            write_row(row.data())?;
             rows += 1;
         }
         if rows != height {
@@ -162,14 +179,20 @@ pub(super) fn write_png(chunk: &mut Chunk, ctx: &mut Context, data: &[u8]) -> Re
         .map(|a| a.finish())
         .transpose()
         .map_err(|_| InvalidImage)?;
-    Ok(super::write_raster_image(
+    let (id, _) = super::write_raster_image(
         chunk,
         ctx,
         &color,
         Filter::FlateDecode,
-        width,
-        height,
+        output_width,
+        output_height,
         output_color,
         alpha.as_deref().filter(|_| planes.transparent),
+    );
+    // SVG image placement still uses the authored source dimensions. Only the
+    // PDF image stream's sample dimensions have changed.
+    Ok((
+        id,
+        Size::from_wh(width as f32, height as f32).ok_or(InvalidImage)?,
     ))
 }

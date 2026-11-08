@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 const api = vi.hoisted(() => ({ invoke: vi.fn(), storageMode: vi.fn() }))
 vi.mock('../src/services/backend', () => api)
 
-import { clearCloudBatchSave, deleteBatchWithPendingSync, enqueueCloudBatchSave, flushCloudSyncQueue, onCloudBatchSaveComplete, onCloudSyncStatus, pendingCloudAssetPaths } from '../src/services/cloudSyncQueue'
+import { clearCloudBatchSave, deleteBatchWithPendingSync, enqueueCloudBatchSave, flushCloudSyncQueue, onCloudBatchSaveComplete, onCloudSyncStatus, pendingCloudAssetPaths, startCloudSyncRecovery } from '../src/services/cloudSyncQueue'
 
 beforeEach(() => {
   localStorage.clear()
@@ -235,4 +235,69 @@ test('a batch barrier reports its own failure instead of an unrelated saved erro
     await flushCloudSyncQueue()
     vi.clearAllTimers(); vi.useRealTimers()
   }
+})
+
+test('a version conflict keeps the snapshot but stops futile automatic retries', async () => {
+  vi.useFakeTimers()
+  api.invoke.mockRejectedValue(new Error('记录已被其他用户修改，请重新打开后再保存；本次修改未覆盖云端内容'))
+  const status = vi.fn()
+  const stop = onCloudSyncStatus(status)
+  try {
+    enqueueCloudBatchSave({ id: 'conflict', savedAt: 'now', assets: [{ attributes: { QT: '30' } }] })
+    await expect(flushCloudSyncQueue('conflict')).rejects.toThrow('记录已被其他用户修改')
+    await vi.advanceTimersByTimeAsync(180_000)
+    expect(api.invoke.mock.calls.filter(([command]) => command === 'save_batch')).toHaveLength(1)
+    expect(status).toHaveBeenLastCalledWith(expect.objectContaining({ state: 'blocked', pending: 1 }))
+    expect(localStorage.getItem('printflow-cloud-sync-queue-v1')).toContain('30')
+  } finally { stop(); clearCloudBatchSave('conflict'); vi.clearAllTimers(); vi.useRealTimers() }
+})
+
+test('a temporary connection failure retries automatically and retains its source until success', async () => {
+  vi.useFakeTimers()
+  let offline = true
+  api.invoke.mockImplementation((command: string) => command === 'save_batch' && offline
+    ? Promise.reject(new Error('云数据库连接或请求失败')) : Promise.resolve({ batchId: 'automatic', assets: [] }))
+  try {
+    enqueueCloudBatchSave({ id: 'automatic', savedAt: 'now', assets: [{ storagePath: 'temp-assets/a.svg' }] })
+    await expect(flushCloudSyncQueue('automatic')).rejects.toThrow('连接')
+    expect(pendingCloudAssetPaths()).toContain('temp-assets/a.svg')
+    offline = false
+    await vi.advanceTimersByTimeAsync(2_500)
+    expect(localStorage.getItem('printflow-cloud-sync-queue-v1')).toBe('[]')
+    expect(api.invoke).toHaveBeenCalledWith('discard_temp_assets', expect.anything())
+  } finally { clearCloudBatchSave('automatic'); vi.clearAllTimers(); vi.useRealTimers() }
+})
+
+test('queue storage failure is reported instead of claiming the save was queued', () => {
+  const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('full', 'QuotaExceededError') })
+  try {
+    expect(() => enqueueCloudBatchSave({ id: 'quota', savedAt: 'now', assets: [] })).toThrow('同步队列')
+    expect(api.invoke).not.toHaveBeenCalled()
+  } finally { storage.mockRestore(); clearCloudBatchSave('quota') }
+})
+
+test('reconnect wakes a transient retry immediately without resuming a failed deletion or conflict', async () => {
+  vi.useFakeTimers()
+  let offline = true
+  api.invoke.mockImplementation((command: string) => command === 'save_batch' && offline
+    ? Promise.reject(new Error('offline')) : Promise.resolve({ batchId: 'wake', assets: [] }))
+  let stop = () => {}
+  try {
+    enqueueCloudBatchSave({ id: 'wake', savedAt: 'now', assets: [] })
+    await expect(flushCloudSyncQueue('wake')).rejects.toThrow('offline')
+    const entries = JSON.parse(localStorage.getItem('printflow-cloud-sync-queue-v1')!)
+    entries.push({ ...entries[0], key: 'save_batch:conflict', args: { id: 'conflict', savedAt: 'now', assets: [] }, error: '记录已被其他用户修改' })
+    entries.push({ ...entries[0], key: 'save_batch:deleted', args: { id: 'deleted', savedAt: 'now', assets: [] }, deletionRequested: true })
+    localStorage.setItem('printflow-cloud-sync-queue-v1', JSON.stringify(entries))
+    stop = startCloudSyncRecovery()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(1_000)
+    offline = false
+    const attemptsBefore = api.invoke.mock.calls.length
+    window.dispatchEvent(new Event('online'))
+    window.dispatchEvent(new Event('focus'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(api.invoke.mock.calls.length - attemptsBefore).toBe(1)
+    expect(JSON.parse(localStorage.getItem('printflow-cloud-sync-queue-v1')!).map((entry: { args: { id: string } }) => entry.args.id)).toEqual(['conflict', 'deleted'])
+  } finally { stop(); for (const id of ['wake', 'conflict', 'deleted']) clearCloudBatchSave(id); vi.clearAllTimers(); vi.useRealTimers() }
 })

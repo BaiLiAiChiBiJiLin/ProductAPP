@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { Alert, Button, Input, Modal, Radio } from 'antd'
 import { catalogFor, display, getEntityId, getProductSizes, isEnabled, optionFor, ordered, type Bundle, type Product } from '../product-options/model'
-import { getPricingDimensions, type AttributePrice, type DimensionPrice, type ProductPricing, type ProductPricingDocument, type PriceSelections } from './model'
+import { type AttributePrice, type DimensionPrice, type ProductPricing, type ProductPricingDocument, type StandeePriceComponent } from './model'
 import { priceGroupKey, priceSelections } from './priceGroups'
 import PriceInput, { displayPrice } from './PriceInput'
 import PriceCombinationDialog, { type CombinationDraft } from './PriceCombinationDialog'
 import SizePriceDialog, { type SizePriceValue } from './SizePriceDialog'
 import DimensionPriceDialog from './DimensionPriceDialog'
+import StandeeComponentDialog from './StandeeComponentDialog'
 
 export type ConfirmAction = { title: string; description: string; apply: () => void }
 export const priceChoices = (bundle: Bundle, product: Product, name: string) => {
@@ -15,12 +16,6 @@ export const priceChoices = (bundle: Bundle, product: Product, name: string) => 
 }
 export const optionActive = (product: Product, name: string) => !!optionFor(product, name) && !optionFor(product, name)!.deleted
 type Props = { pricing: ProductPricing; product: Product; bundle: Bundle; saving: boolean; canSaveBase: boolean; saveBase: () => void; edit: (change: (document: ProductPricingDocument) => void) => void; confirm: (action: ConfirmAction) => void }
-const attributes = [
-  { name: 'Technique', field: 'techniqueId', label: '工艺' },
-  { name: 'Holo Film', field: 'holoFilmId', label: '全息膜' },
-  { name: 'Material', field: 'materialId', label: '材质' },
-] as const
-type Attribute = typeof attributes[number]
 type EditingPrices = { valueId: string; valueLabel: string }
 const samePrices = (left: SizePriceValue[], right: SizePriceValue[]) => left.length === right.length && left.every(a => right.some(b => a.sizeBandId === b.sizeBandId && a.unitPrice === b.unitPrice))
 
@@ -29,10 +24,17 @@ export default function BodyPriceEditor({ pricing, product, bundle, saving, canS
   const [editing, setEditing] = useState<EditingPrices>()
   const [combination, setCombination] = useState<{ row: CombinationDraft; mode: 'new' | 'attributes' }>()
   const [dimensionDraft, setDimensionDraft] = useState<DimensionPrice>()
+  const [componentDraft, setComponentDraft] = useState<{ component: StandeePriceComponent; label: string }>()
   const [sizingMode, setSizingMode] = useState<ProductPricing['pricingMode']>()
-  const columns = attributes.filter(attribute => optionActive(product, attribute.name))
   const sizes = pricing.pricingMode === 'fixed' ? [{ sizeBandId: null, label: '所有尺寸' }] : getProductSizes(bundle, product, Object.fromEntries(product.productOptions.map(option => [option.name, '']))).map(size => ({ sizeBandId: getEntityId(size), label: display(size) }))
   const editProduct = (change: (pricing: ProductPricing) => void) => edit(next => change(next.products.find(item => item.productId === product.productId)!))
+  const standeeBaseUnitPrice = (() => {
+    const values = pricing.standeePricing?.compositions.map(composition => composition.baseUnitPrice) ?? []
+    return values.length && values.every(value => value === values[0]) ? values[0] : ''
+  })()
+  const editStandeeBaseUnitPrice = (value: string) => editProduct(next => {
+    for (const composition of next.standeePricing?.compositions ?? []) composition.baseUnitPrice = value
+  })
   const materialPrices = (id: string) => pricing.attributePrices.filter(price => price.materialId === id)
   const editPrices = editing ? materialPrices(editing.valueId) : []
   const editBasePrice = (sizeBandId: string, unitPrice: string) => editProduct(next => {
@@ -52,12 +54,6 @@ export default function BodyPriceEditor({ pricing, product, bundle, saving, canS
     })
     setEditing(undefined)
   }
-  const startCombination = () => {
-    const row: CombinationDraft = { productPriceId: `price-${crypto.randomUUID()}`, techniqueId: null, holoFilmId: null, materialId: null, unitPrice: '' }
-    for (const dimension of getPricingDimensions(bundle, product, row)) if (dimension.required) row[dimension.field] = ordered(dimension.values)[0] ? getEntityId(ordered(dimension.values)[0]) : null
-    for (const dimension of getPricingDimensions(bundle, product, row)) if (!dimension.required || !dimension.values.some(value => getEntityId(value) === row[dimension.field])) row[dimension.field] = null
-    setCombination({ row, mode: 'new' })
-  }
   const applyCombination = (row: CombinationDraft) => {
     const old = pricing.dimensionPrices.find(price => price.productPriceId === row.productPriceId)
     if (old) {
@@ -73,23 +69,49 @@ export default function BodyPriceEditor({ pricing, product, bundle, saving, canS
     })
     setDimensionDraft(undefined)
   }
-  const attributeLabel = (row: PriceSelections, column: Attribute) => row[column.field] === null ? '不适用' : display(priceChoices(bundle, product, column.name).find(value => getEntityId(value) === row[column.field]) ?? { name: `已失效：${row[column.field]}` })
-  const dimensionSummary = (row: DimensionPrice) => row.panels.map(panel => {
-    const ranges = [...panel.pieceBands, ...panel.baseBands]
-    return `${panel.label}：${ranges.length ? `${Math.min(...ranges.map(range => Number(range.minMm)))}–${Math.max(...ranges.map(range => Number(range.maxMm)))} mm` : '未设尺寸'}（片材 ${panel.pieceBands.length} 档 / 底座 ${panel.baseBands.length} 档）`
-  }).join('；')
-  const visibleDimensions = pricing.dimensionPrices.filter(row => [dimensionSummary(row), ...columns.map(column => attributeLabel(row, column))].join(' ').toLowerCase().includes(search.trim().toLowerCase()))
   const sizingButton = <Button disabled={saving} onClick={() => setSizingMode(pricing.pricingMode)}>尺寸计价设置</Button>
+  const applyComponent = (component: StandeePriceComponent) => {
+    editProduct(next => {
+      if (!next.standeePricing) return
+      for (const key of ['baseComponents', 'techniqueComponents', 'holoFilmComponents', 'materialComponents', 'compositeComponents'] as const) {
+        const index = next.standeePricing[key].findIndex(item => item.componentId === component.componentId)
+        if (index >= 0) next.standeePricing[key][index] = structuredClone(component)
+      }
+    })
+    setComponentDraft(undefined)
+  }
 
   return <div className="pp-price-sections">
-    {pricing.pricingMode === 'standee' ? <section className="pp-card pp-body-editor" aria-label="立牌组合价格表">
-      <div className="pp-section-heading"><h4>立牌组合计价</h4><div className="pp-actions">{sizingButton}<Button type="primary" disabled={saving} onClick={startCombination}>新增价格组合</Button></div></div>
-      <div className="pp-row-toolbar"><Input aria-label="筛选价格组合" placeholder="搜索工艺、膜、材质或尺寸" allowClear value={search} onChange={event => setSearch(event.target.value)}/><span>{visibleDimensions.length} 个属性组合</span></div>
-      <div className="pp-price-table-scroll" aria-label="可滚动主体价格表" tabIndex={0}><table className="pp-combination-table"><thead><tr><th scope="col">尺寸与组合价格（USD）</th>{columns.map(column => <th scope="col" key={column.field}>{column.label}</th>)}<th scope="col">操作</th></tr></thead><tbody>
-        {visibleDimensions.map((row, index) => <tr key={row.productPriceId}><td><Button type="link" className="pp-size-link" aria-label={`编辑长宽计价 ${index + 1}`} disabled={saving} onClick={() => setDimensionDraft(row)}>${displayPrice(row.baseUnitPrice)} 固定金额＋尺寸费用</Button><small>{dimensionSummary(row)}</small></td>
-          {columns.map(column => <td key={column.field}><span className="pp-attribute-value">{attributeLabel(row, column)}</span></td>)}<td><div className="pp-row-actions">{!!columns.length && <Button type="text" disabled={saving} aria-label={`编辑长宽属性 ${index + 1}`} onClick={() => setCombination({ row: { ...priceSelections(row), productPriceId: row.productPriceId, unitPrice: row.baseUnitPrice }, mode: 'attributes' })}>编辑属性</Button>}<Button type="text" danger disabled={saving} aria-label={`删除长宽组合 ${index + 1}`} onClick={() => confirm({ title: '删除这组主体价格？', description: '删除后该立牌属性组合将变为未定价。', apply: () => editProduct(next => { next.dimensionPrices = next.dimensionPrices.filter(price => price.productPriceId !== row.productPriceId) }) })}>删除</Button></div></td>
-        </tr>)}
-      </tbody></table>{!visibleDimensions.length && <p className="pp-empty">{search ? '没有匹配的价格组合' : '暂无尺寸计价配方。'}</p>}</div>
+    {pricing.pricingMode === 'standee' ? <section className="pp-card pp-body-editor" aria-label="立牌价格组成">
+      <div className="pp-section-heading"><h4>立牌价格组成</h4><div className="pp-actions">{sizingButton}</div></div>
+      <p className="pp-help">立牌统一使用一个产品级主体片数。主体、工艺、全息膜和材质分别作为价格组成参与计算；旧面板结构只保留作迁移依据。</p>
+      {pricing.standeePricing ? <>
+        <div className="pp-standee-base-price">
+          <label>主体基础金额（USD / 件）<PriceInput label="立牌主体基础金额" value={standeeBaseUnitPrice} disabled={saving} onChange={editStandeeBaseUnitPrice}/></label>
+          <p className="pp-help">当前产品的所有组合映射共用这个主体基础金额，片材区间和底座区间在下方分别维护。</p>
+        </div>
+        <div className="pp-standee-component-sections">
+          {([
+            ['baseComponents', '主体价格组成'],
+            ['techniqueComponents', '工艺价格组成'],
+            ['holoFilmComponents', '全息膜价格组成'],
+            ['materialComponents', '材质价格组成'],
+            ['compositeComponents', '组合补充价格组成'],
+          ] as const).map(([key, label]) => {
+            const components = pricing.standeePricing?.[key] ?? []
+            return <section className="pp-standee-component-section" key={key} aria-label={label}><h5>{label}<span>{components.length} 项</span></h5>
+              {components.length ? <div className="pp-standee-component-list">{components.map(component => <div className="pp-standee-component-row" key={component.componentId}><div><strong>{component.componentId}</strong><small>{component.pieceBands.length} 个片材区间 · {component.baseBands.length} 个底座区间 · 调整 {component.baseAdjustment}</small></div><Button type="link" disabled={saving} aria-label={`编辑${label} ${component.componentId}`} onClick={() => setComponentDraft({ component, label: `${label} · ${component.componentId}` })}>编辑</Button></div>)}</div> : <p className="pp-empty">暂无配置</p>}
+            </section>
+          })}
+        </div>
+        <div className="pp-row-toolbar"><Input aria-label="筛选立牌组合" placeholder="搜索工艺、膜、材质或组成" allowClear value={search} onChange={event => setSearch(event.target.value)}/><span>{pricing.standeePricing.compositions.length} 个组合映射</span></div>
+        <div className="pp-price-table-scroll" aria-label="立牌组合映射表" tabIndex={0}><table className="pp-combination-table"><thead><tr><th>属性组合</th><th>价格组成</th><th>旧配方</th></tr></thead><tbody>
+          {pricing.standeePricing.compositions.filter(row => {
+            const text = [row.techniqueId, row.holoFilmId, row.materialId, row.legacyProductPriceId, ...row.groups.flatMap(group => group.componentIds)].join(' ').toLowerCase()
+            return text.includes(search.trim().toLowerCase())
+          }).map(row => <tr key={row.compositionId}><td>{row.techniqueId ?? '无工艺'} / {row.holoFilmId ?? '无全息膜'} / {row.materialId ?? '无材质'}</td><td>{row.groups.flatMap(group => group.componentIds).join(' + ')}</td><td><small>{row.legacyProductPriceId}</small></td></tr>)}
+        </tbody></table></div>
+      </> : <p className="pp-empty">正在从旧尺寸配方生成价格组成，请重新加载产品定价。</p>}
     </section> : <>
       <section className="pp-card pp-body-editor" aria-label="主体基本价格">
         <div className="pp-section-heading"><h4>主体基本价</h4>{sizingButton}</div>
@@ -121,8 +143,9 @@ export default function BodyPriceEditor({ pricing, product, bundle, saving, canS
     {editing && <SizePriceDialog sizes={sizes} prices={editPrices} title={`材质加价 · ${editing.valueLabel}`} priceLabel="材质加价" description={`仅填写当前产品“${editing.valueLabel}”的材质加价，报价时与主体基本价相加。`} signed onApply={applyPrices} onCancel={() => setEditing(undefined)}/>}
     {combination && <PriceCombinationDialog pricing={pricing} product={product} bundle={bundle} initial={combination.row} mode={combination.mode} onApply={applyCombination} onCancel={() => setCombination(undefined)}/>}
     {dimensionDraft && <DimensionPriceDialog recipe={dimensionDraft} onApply={applyDimensions} onCancel={() => setDimensionDraft(undefined)}/>}
+    {componentDraft && <StandeeComponentDialog component={componentDraft.component} title={componentDraft.label} onApply={applyComponent} onCancel={() => setComponentDraft(undefined)}/>}
     {sizingMode && <Modal title="尺寸计价设置" open okText={sizingMode === pricing.pricingMode ? '完成' : '确认更改并重新填写'} cancelText="取消" maskClosable={false} onCancel={() => setSizingMode(undefined)} onOk={() => {
-      if (sizingMode !== pricing.pricingMode) editProduct(next => { next.pricingMode = sizingMode; next.fixedUnitPrice = null; next.basePrices = []; next.attributePrices = []; next.legacyBodyPrices = []; next.dimensionPrices = [] })
+      if (sizingMode !== pricing.pricingMode) editProduct(next => { next.pricingMode = sizingMode; next.fixedUnitPrice = null; next.basePrices = []; next.attributePrices = []; next.legacyBodyPrices = []; next.dimensionPrices = []; delete next.standeePricing })
       setSizingMode(undefined)
     }}><p className="pp-help">选择产品的尺寸计价方式。固定尺寸产品分别维护基本价和属性加价。</p><Radio.Group aria-label="尺寸如何影响价格" className="pp-sizing-options" value={sizingMode} onChange={event => setSizingMode(event.target.value)}>
       <Radio value="fixed"><strong>尺寸不影响价格</strong><small>填写统一基本价，各属性另设统一加价。</small></Radio>

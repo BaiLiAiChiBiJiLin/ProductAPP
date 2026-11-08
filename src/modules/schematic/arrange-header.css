@@ -1,0 +1,54 @@
+.arrange-page-enter .canvas-area {
+  container: schematic-canvas / inline-size;
+}
+
+.arrange-page-enter .canvas-head {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.arrange-page-enter .canvas-title-center {
+  min-width: 0;
+}
+
+.arrange-page-enter .canvas-title-center h1,
+.arrange-page-enter .canvas-title-center .muted {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arrange-page-enter .canvas-back-actions,
+.arrange-page-enter .canvas-actions {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+/* Respond to the canvas column, which is narrower than the application window. */
+@container schematic-canvas (max-width: 820px) {
+  .arrange-page-enter .canvas-head {
+    gap: 8px;
+    padding-inline: 12px;
+  }
+
+  .arrange-page-enter .canvas-back-actions,
+  .arrange-page-enter .canvas-actions {
+    gap: 4px;
+  }
+
+  .arrange-page-enter .canvas-head .ant-btn {
+    gap: 4px;
+    padding-inline: 8px;
+    font-size: 12px;
+  }
+
+  .arrange-page-enter .canvas-head h1 {
+    font-size: 16px;
+  }
+
+  .arrange-page-enter .export-format {
+    padding-inline: 6px;
+  }
+}

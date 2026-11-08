@@ -37,7 +37,7 @@ import { paginateAssets, autoArrangePages } from './services/paginationService'
 
 
 
-import { exportPage, exportPdf, type PdfExportProgress } from './services/exportService'
+import { exportPage, exportPdf, type PdfExportProgress, type PdfExportQuality } from './services/exportService'
 import type { DimensionDisplayOverride } from './services/imageDimensionService'
 import { emptyArrangementDisplayState, restoreArrangementDisplay, type ArrangementDisplayState } from './services/arrangementDisplayState'
 import { createReviewRecord, exportAndRecord, saveReviewRecord, type ReviewRecordIdentity, type SchematicReviewRecord } from '../schematic-review/reviewRecords'
@@ -795,7 +795,7 @@ export default function SchematicPage({ active = true, initialRecord, onRecordSa
     }
     catch (error) { toast.error(`刷新排列失败：${String(error)}`) }
   }
-  const exportCurrent = async (format: 'jpg' | 'png' | 'svg' | 'pdf', displayOverrides: ReadonlyMap<string, DimensionDisplayOverride>) => {
+  const exportCurrent = async (format: 'jpg' | 'png' | 'svg' | 'pdf', displayOverrides: ReadonlyMap<string, DimensionDisplayOverride>, quality: PdfExportQuality = 'standard') => {
     if (exportLock.current || reflowLock.current) return
     const page = pages.find(item => item.id === activePage)
     if (!page) return
@@ -812,7 +812,7 @@ export default function SchematicPage({ active = true, initialRecord, onRecordSa
       // Reserve one ID even when the file succeeds but persisting its review needs a retry.
       reviewIdentity.current = { id: record.id, sourceRecordId: record.sourceRecordId, paymentStatus: record.paymentStatus }
       const result = await exportAndRecord(record, () => format === 'pdf'
-        ? exportPdf(pages, assets, output, batchMetadata, setExportProgress, displayOverrides, layoutBounds, displayState.accessoryVisuals, displayState.visualScales)
+        ? exportPdf(pages, assets, output, batchMetadata, setExportProgress, displayOverrides, layoutBounds, displayState.accessoryVisuals, displayState.visualScales, quality)
         : exportPage({ ...page, id: pages.findIndex(candidate => candidate.id === page.id) + 1 }, assets, output, format, batchMetadata, pages.length, displayOverrides, layoutBounds, displayState.accessoryVisuals, displayState.visualScales))
       if (result.saved) {
         // The failed-save notice can be created while the export is in flight.

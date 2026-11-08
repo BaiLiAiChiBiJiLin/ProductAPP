@@ -67,8 +67,8 @@ async function setPercentage(percent: number) {
   fireEvent.blur(input)
   await waitFor(() => expect(canvas().visualScales?.get(canvas().page.items[0].id)).toBe(percent / 100))
 }
-async function exportFormat(format: 'pdf' | 'svg' | 'png' | 'jpg') {
-  fireEvent.change(screen.getByRole('option', { name: format.toUpperCase() }).closest('select')!, { target: { value: format } })
+async function exportFormat(format: 'pdf' | 'svg' | 'png' | 'jpg', quality: 'standard' | 'high' | 'original' = 'standard') {
+  fireEvent.change(await screen.findByRole('combobox', { name: '导出格式' }), { target: { value: format === 'pdf' ? `pdf:${quality}` : format } })
   const completed = mocks.recordSaved.mock.calls.length
   fireEvent.click(screen.getByRole('button', { name: '导出', exact: true }))
   await waitFor(() => expect(mocks.recordSaved).toHaveBeenCalledTimes(completed + 1))
@@ -93,11 +93,23 @@ test.each(['pdf', 'svg', 'png', 'jpg'] as const)('%s exports the manually select
   await setPercentage(120)
   expect(canvas().page.items[0]).toMatchObject({ w: 50, h: 100 })
   await exportFormat(format)
+  if (format === 'pdf') expect(mocks.invoke).toHaveBeenCalledWith('export_staged_pdf', expect.objectContaining({ quality: 'standard' }))
   const svg = format === 'pdf' ? stagedPages()[0] : mocks.invoke.mock.calls.find(([command]) => command === 'export_artwork')![1].svg
   expectExportedScale(svg, 1.2, 'main-1')
   expect(savedRecord().pages[0].items[0]).toMatchObject({ w: 50, h: 100 })
   expect(savedRecord().display.visualScales).toEqual([['main-1', 1.2]])
   expect(savedRecord().assets[0]).toMatchObject({ width: 30, height: 60, sourceGroupWidthMm: 30, sourceGroupHeightMm: 60 })
+})
+
+test.each(['standard', 'high', 'original'] as const)('passes %s PDF quality to the backend while retaining original artwork in the review record', async quality => {
+  const record = fixture()
+  const originalSvg = record.assets[0].svg
+  render(<SchematicPage initialRecord={record} onRecordSaved={mocks.recordSaved}/>)
+  await exportFormat('pdf', quality)
+  expect(mocks.invoke).toHaveBeenCalledWith('export_staged_pdf', expect.objectContaining({ quality }))
+  expect(savedRecord().assets[0].svg).toBe(originalSvg)
+  expect(savedRecord().display).not.toHaveProperty('quality')
+  expect(record.assets[0].svg).toBe(originalSvg)
 })
 
 test('a resized block persists its custom dimensions and exports the same image and ruler geometry', async () => {

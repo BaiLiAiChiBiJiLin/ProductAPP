@@ -14,11 +14,12 @@ export async function exportPage(page: Page, assets: Asset[], output: string, fo
   return invoke('export_artwork', { output, format, svg })
 }
 export type PdfExportProgress = { phase: 'artwork' | 'accessories' | 'prepare' | 'transfer' | 'rendering' | 'resources' | 'flatten' | 'fonts' | 'parse' | 'convert' | 'write' | 'page'; completed: number; total: number }
+export type PdfExportQuality = 'standard' | 'high' | 'original'
 export function pdfProgressText(progress: PdfExportProgress) {
   const labels: Record<PdfExportProgress['phase'], string> = { artwork: '正在准备原始图片', accessories: '正在准备配件图片', prepare: '正在生成页面', transfer: '正在传输页面到导出服务', rendering: '正在初始化 PDF', resources: '正在加载配件和备注资源', flatten: '正在展开 SVG 图层', fonts: '正在准备字体', parse: '正在解析 SVG', convert: '正在转换矢量 PDF', write: '正在写入 PDF 文件', page: '已完成页面' }
   return `${labels[progress.phase]}（${progress.completed} / ${progress.total}）`
 }
-export async function exportPdf(pages: Page[], assets: Asset[], output: string, metadata: Partial<BatchMetadata> = {}, onProgress?: (progress: PdfExportProgress) => void, displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>, layoutBounds: LayoutBounds = defaultLayoutBounds, accessoryVisuals?: ReadonlyMap<string, DetailImageVisual>, visualScales?: ReadonlyMap<string, number>) {
+export async function exportPdf(pages: Page[], assets: Asset[], output: string, metadata: Partial<BatchMetadata> = {}, onProgress?: (progress: PdfExportProgress) => void, displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>, layoutBounds: LayoutBounds = defaultLayoutBounds, accessoryVisuals?: ReadonlyMap<string, DetailImageVisual>, visualScales?: ReadonlyMap<string, number>, quality: PdfExportQuality = 'standard') {
   if (!isTauri()) throw new Error('请在 Tauri 桌面窗口中导出')
   await prepareAccessoryFrames(pages, (completed, total) => onProgress?.({ phase: 'accessories', completed, total }))
   const map = new Map(assets.map(asset => [asset.id, asset]))
@@ -43,7 +44,7 @@ export async function exportPdf(pages: Page[], assets: Asset[], output: string, 
       if (svg.length <= 64 * 1024) await invoke('stage_pdf_page', { id, svg })
       else await writeStagedText(id, svg)
     }
-    await invoke('export_staged_pdf', { output, ids })
+    await invoke('export_staged_pdf', { output, ids, quality })
   } finally {
     unlisten()
     await resources.dispose()

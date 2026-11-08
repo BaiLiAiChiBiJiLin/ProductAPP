@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Button, Checkbox, Input, InputNumber, Modal, Pagination, Select, Spin, Switch } from 'antd'
-import { addValue, allProducts, applyMembership, changeOrder, clone, definitions as publicDefinitions, deleteCategory, deleteValue, display, entityReference, getEntityId, getEntityKey, getProduct, isEnabled, locations, makeProduct, optionFor, ordered, productList, resolvePreview, setDefault, setStandeeQuantityDefault, sameEntity, setEnabled, type Bundle, type Catalog, type EntityReference, type Location, valueLabel, type OptionValue } from './model'
+import { Alert, Button, Checkbox, Input, Modal, Pagination, Select, Spin, Switch } from 'antd'
+import { addValue, allProducts, applyMembership, clone, definitions as publicDefinitions, deleteCategory, deleteValue, display, entityReference, getEntityId, getEntityKey, getProduct, isEnabled, locations, makeProduct, moveOptionValue, optionFor, ordered, productList, resolvePreview, setDefault, setStandeeQuantityDefault, sameEntity, setEnabled, type Bundle, type Catalog, type EntityReference, type Location, valueLabel, type OptionValue } from './model'
 import { loadProductOptions, saveProductOptions } from './service'
 import EditableNameSelect from './EditableNameSelect'
 import OptionImageEditor from './OptionImageEditor'
+import SizeAreaInput from './SizeAreaInput'
+import { emptySizeArea, type SizeArea } from './sizeArea'
+import useOptionCardSorting, { type OptionSortGroup } from './useOptionCardSorting'
 import './product-options.css'
 
 type Props = { onBusyChange?: (busy: boolean) => void }
+const contentInputSize = (value: string) => Math.max(1, [...value].reduce((size, char) => size + (char.codePointAt(0)! > 255 ? 2 : 1), 0))
 type Confirmation = { title: string; run: (draft: Bundle) => void }
 const selectionId = (value?: EntityReference) => value ? getEntityId(value) : undefined
 export default function ProductOptionsSettings({ onBusyChange }: Props) {
@@ -15,6 +19,7 @@ export default function ProductOptionsSettings({ onBusyChange }: Props) {
   const [directory, setDirectory] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [imageUploads, setImageUploads] = useState(0)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [dirty, setDirty] = useState(false)
@@ -25,16 +30,18 @@ export default function ProductOptionsSettings({ onBusyChange }: Props) {
   const [page, setPage] = useState(1)
   const [styleId, setStyleId] = useState('')
   const [preview, setPreview] = useState<Record<string, string>>({})
+  const [customPreviewArea, setCustomPreviewArea] = useState<SizeArea>(emptySizeArea)
   const [confirm, setConfirm] = useState<Confirmation>()
   const [membership, setMembership] = useState<{ retained: number[]; included: number[] }>()
   const [memberSearch, setMemberSearch] = useState('')
   const busy = useRef(false)
+  const imageUploadsRef = useRef(0)
   const bundleRef = useRef<Bundle>(undefined)
   const mounted = useRef(true)
 
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   const load = async () => {
-    if (busy.current) return
+    if (busy.current || imageUploadsRef.current) return
     busy.current = true; setLoading(true); setError('')
     try {
       const snapshot = await loadProductOptions()
@@ -46,6 +53,11 @@ export default function ProductOptionsSettings({ onBusyChange }: Props) {
     finally { busy.current = false; if (mounted.current) setLoading(false) }
   }
   useEffect(() => { void load() }, []) // Load once per settings session; section switching keeps drafts mounted.
+  const imageUploadStateChanged = (uploading: boolean) => {
+    imageUploadsRef.current = Math.max(0, imageUploadsRef.current + (uploading ? 1 : -1))
+    if (mounted.current) setImageUploads(imageUploadsRef.current)
+    onBusyChange?.(busy.current || imageUploadsRef.current > 0)
+  }
   const edit = (change: (draft: Bundle) => void) => {
     if (busy.current) return
     if (!bundleRef.current) return
@@ -55,12 +67,26 @@ export default function ProductOptionsSettings({ onBusyChange }: Props) {
     setBundle(draft)
     setDirty(true); setNotice(''); setError(''); setPreview({})
   }
+  const sorting = useOptionCardSorting({
+    disabled: loading || saving || imageUploads > 0 || !!confirm || !!membership,
+    context: `${location?.category}:${location?.product}:${optionIndex}:${styleId}:${valueFilter}:${page}:${version}`,
+    onMove: (group, source, target, position) => {
+      if (busy.current || !bundleRef.current) return false
+      const draft = clone(bundleRef.current)
+      const product = allProducts(draft.main).find(item => item.productId === group.productId)
+      const catalog = group.catalogFile ? draft.catalogs[group.catalogFile] : product && optionFor(product, group.optionName)
+      const values = group.parentId ? catalog?.values?.find(item => getEntityId(item) === group.parentId)?.colors : catalog?.values
+      if (!values || !moveOptionValue(values, source, target, position)) return false
+      bundleRef.current = draft; setBundle(draft); setDirty(true); setNotice(''); setError(''); setPreview({})
+      return true
+    },
+  })
   const save = async () => {
-    if (!bundle || busy.current) return
+    if (!bundle || busy.current || imageUploadsRef.current) return
     busy.current = true; setSaving(true); onBusyChange?.(true); setError(''); setNotice('')
     try {
       const snapshot = await saveProductOptions(bundle, version)
-      if (mounted.current) { setVersion(snapshot.version); setDirectory(snapshot.directory); setDirty(false); setNotice('配置已保存') }
+      if (mounted.current) { bundleRef.current = snapshot.bundle; setBundle(snapshot.bundle); setVersion(snapshot.version); setDirectory(snapshot.directory); setDirty(false); setNotice('配置已保存') }
     } catch (failure) { if (mounted.current) setError(String(failure)) }
     finally { busy.current = false; if (mounted.current) setSaving(false); onBusyChange?.(false) }
   }
@@ -78,8 +104,8 @@ export default function ProductOptionsSettings({ onBusyChange }: Props) {
   const productCategory = location && location.category >= 0 ? main.categories[location.category] : undefined
   const prefix = display(productCategory ?? { titleZh: '未归类' })
   const available = locations(main, filter)
-  const chooseCategory = (next: number) => { setFilter(next); setLocation(locations(main, next)[0]); setPreview({}) }
-  const chooseProduct = (productId: string) => { setLocation(locations(main, -2).find(item => getProduct(main, item)?.productId === productId)); setPreview({}) }
+  const chooseCategory = (next: number) => { if (imageUploadsRef.current) return; setFilter(next); setLocation(locations(main, next)[0]); setPreview({}) }
+  const chooseProduct = (productId: string) => { if (imageUploadsRef.current) return; setLocation(locations(main, -2).find(item => getProduct(main, item)?.productId === productId)); setPreview({}); setCustomPreviewArea(emptySizeArea()) }
   const productKey = product?.productId
   const categoryOptions = [{ value: -2, label: `全部产品（${allProducts(main).length}）` }, ...main.categories.map((item, i) => ({ value: i, label: `${display(item)}（${item.products.length}）` })), { value: -1, label: `未归类产品（${main.uncategorizedProducts.length}）` }]
   const productOptions = available.map(item => ({ value: getProduct(main, item)!.productId, label: display(getProduct(main, item)!) }))
@@ -94,26 +120,34 @@ export default function ProductOptionsSettings({ onBusyChange }: Props) {
     const valueId = getEntityId(value)
     const reference = entityReference(value)
     const enabled = isEnabled(productOption, reference)
+    const sortGroup: OptionSortGroup = { id: JSON.stringify([definition.file || product?.productId, definition.name, parentId ?? '']), values: parentId ? catalog.values.find(item => getEntityId(item) === parentId)?.colors ?? [] : catalog.values, optionName: definition.name, catalogFile: definition.file, productId: product?.productId, parentId }
     const mutate = (change: (target: OptionValue, list: OptionValue[], targetCatalog: typeof catalog) => void) => editCatalog(target => {
       const list = parentId ? target.values.find(item => getEntityId(item) === parentId)!.colors! : target.values
       const item = list.find(item => getEntityId(item) === valueId)!
       change(item, list, target)
     })
-    return <article className={`po-value ${enabled ? '' : 'po-value-disabled'}`} key={valueId} data-value-id={valueId} data-entity-key={getEntityKey(value)}>
+    return <article className={`po-value ${enabled ? '' : 'po-value-disabled'}`} key={valueId} data-value-id={valueId} data-entity-key={getEntityKey(value)} {...sorting.getCardProps(value, sortGroup)}>
       <div className="po-value-heading">
-        <div className="po-value-title"><label>序号 <InputNumber aria-label={`${valueId}序号`} min={1} precision={0} value={value.sortOrder} onChange={rank => { if (rank != null) mutate((_, list) => changeOrder(list, reference, rank)) }}/></label><strong>{display(value)}</strong><span className="po-id">{getEntityKey(value)}: {valueId}</span></div>
-        <div className="po-actions"><label><Switch size="small" checked={enabled} disabled={!product} aria-label={`${valueId}启用`} onChange={checked => toggleValue(reference, checked)}/> 启用</label>
+        <div className="po-value-title"><button type="button" className="po-sort-handle" {...sorting.getHandleProps(value, sortGroup)}>{value.sortOrder}:</button><strong title={value.name}>{value.name || '未命名'}</strong><span className="po-id" title={`${getEntityKey(value)}: ${valueId}`}>{getEntityKey(value)}: {valueId}</span></div>
+        <div className="po-actions po-value-actions"><label><Switch size="small" checked={enabled} disabled={!product} aria-label={`${valueId}启用`} onChange={checked => toggleValue(reference, checked)}/> 启用</label>
           <label><Switch size="small" checked={isStandeeQuantity ? sameEntity(productOption?.defaultValue, reference) : !!value.isDefault} aria-label={`${valueId}默认选中`} onChange={checked => isStandeeQuantity ? editProduct(target => setStandeeQuantityDefault(target, catalog, checked ? reference : undefined)) : mutate((_, __, target) => setDefault(target, checked ? reference : undefined, parentId ? target.values.find(item => getEntityId(item) === parentId) : undefined))}/> 默认选中</label>
           <Button danger size="small" onClick={() => setConfirm({ title: definition.file ? `删除“${display(value)}”？所有产品都会移除此公共${parentId ? '颜色' : '选项值'}。` : `删除“${display(value)}”？`, run: draft => { const target = (definition.file ? draft.catalogs[definition.file] : optionFor(getProduct(draft.main, location!)!, definition.name)) as Catalog; const parent = parentId ? target.values.find(item => getEntityId(item) === parentId) : undefined; const item = (parent ? parent.colors! : target.values).find(item => getEntityId(item) === valueId)!; if (definition.file) deleteValue(draft, target, item, parent); else { target.values.splice(target.values.indexOf(item), 1); setEnabled(target as unknown as NonNullable<typeof productOption>, reference, true); if (target.defaultValue && getEntityId(target.defaultValue) === valueId) delete target.defaultValue } } })}>删除</Button>
         </div>
       </div>
-      <div className={!isSize && !isStandeeQuantity ? 'po-value-content' : ''}>
-        <div className={`po-grid ${!isSize && !isStandeeQuantity ? 'po-value-fields' : 'po-grid-two'}`}>
-        <label>值标识（name）<Input aria-label={`${valueId}值标识`} value={value.name} onChange={event => mutate(target => { target.name = event.target.value })}/></label>
-        <label>中文名称（labelZh）<Input aria-label={`${valueId}中文名称`} value={value.labelZh ?? ''} onChange={event => mutate(target => { target.labelZh = event.target.value })}/></label>
-        {isStandeeQuantity && <label>实际主体片数<Input aria-label={`${valueId}实际主体片数`} value={`${value.pieceCount}片`} readOnly/><small>对应同数量插口；修改名称不改变实际片数。</small></label>}
+      <div className={isSize && !value.isCustom ? 'po-size-value-content' : !isSize && !isStandeeQuantity ? 'po-value-content' : ''}>
+        <div className="po-grid po-value-fields">
+        <label><span title="name">值标识</span><Input aria-label={`${valueId}值标识`} htmlSize={contentInputSize(value.name)} value={value.name} onChange={event => mutate(target => { target.name = event.target.value })}/></label>
+        <label><span title="labelZh">中文名</span><Input aria-label={`${valueId}中文名称`} htmlSize={contentInputSize(value.labelZh ?? '')} value={value.labelZh ?? ''} onChange={event => mutate(target => { target.labelZh = event.target.value })}/></label>
+        {isStandeeQuantity && <label className="po-piece-count"><span>主体片数</span><Input aria-label={`${valueId}实际主体片数`} value={`${value.pieceCount}片`} readOnly title="对应同数量插口；修改名称不改变实际片数。"/></label>}
         </div>
-        {!isSize && !isStandeeQuantity && <OptionImageEditor valueId={valueId} label={display(value)} image={value.image} onChange={image => mutate(target => { target.image = image })}/>}
+        {isSize && (value.isCustom ? <p className="po-custom-size-hint">自定义尺寸，启用后可在选择此项时填写宽、高和单位。</p> : <SizeAreaInput compact label={valueId} value={value.area ?? emptySizeArea()} onChange={area => mutate(target => { target.area = area })}/>)}
+        {!isSize && !isStandeeQuantity && <OptionImageEditor key={`${productKey}:${definition.name}:${parentId ?? ''}:${valueId}`} entityKey={getEntityKey(value)} valueId={valueId} label={display(value)} image={value.image} onUploadStateChange={imageUploadStateChanged} onChange={image => edit(draft => {
+          const owner = allProducts(draft.main).find(item => item.productId === sortGroup.productId)
+          const target = sortGroup.catalogFile ? draft.catalogs[sortGroup.catalogFile] : owner && optionFor(owner, sortGroup.optionName)
+          const values = sortGroup.parentId ? target?.values?.find(item => getEntityId(item) === sortGroup.parentId)?.colors : target?.values
+          const item = values?.find(item => sameEntity(item, reference))
+          if (item) item.image = image
+        })}/>}
       </div>
     </article>
   }
@@ -131,6 +165,7 @@ export default function ProductOptionsSettings({ onBusyChange }: Props) {
     const values = ordered(root.values).filter(value => isEnabled(option, value))
     const chosen = values.find(value => getEntityId(value) === resolved.selections[item.name])
     const fields = [<label key={item.name}>{root.labelZh}<Select aria-label={`预览${root.labelZh}`} placeholder={values.length ? '请选择' : '暂无启用的选项值'} allowClear value={selectionId(chosen)} options={values.map(value => ({ value: getEntityId(value), label: valueLabel(value, root.values) }))} onChange={id => changePreview(item.name, id ?? '')}/></label>]
+    if (item.name === 'Size' && chosen?.isCustom) fields.push(<SizeAreaInput key="custom-size-area" label="预览自定义" value={customPreviewArea} onChange={setCustomPreviewArea}/> )
     if (item.prefix === 'P' && chosen) {
       const colors = ordered(chosen.colors ?? []).filter(color => isEnabled(option, color))
       if (colors.length) fields.push(<label key="colors">配件颜色<Select aria-label="预览配件颜色" placeholder="请选择" allowClear value={selectionId(colors.find(color => getEntityId(color) === resolved.selections[`${item.name}:color`]))} options={colors.map(color => ({ value: getEntityId(color), label: valueLabel(color, chosen.colors ?? []) }))} onChange={id => changePreview(item.name, id ?? '', true)}/></label>)
@@ -138,14 +173,16 @@ export default function ProductOptionsSettings({ onBusyChange }: Props) {
     return fields
   })
 
-  return <div className="product-options-settings" aria-busy={saving}>
+  return <div className="product-options-settings" aria-busy={saving || imageUploads > 0}>
+    <span className="po-sr-only" id={sorting.helpId}>拖动卡片排序；也可聚焦序号后按上、左方向键前移，下、右方向键后移。按 Escape 取消拖动，保存后生效。</span>
+    <span className="po-sr-only" role="status" aria-live="polite">{sorting.announcement}</span>
     <div className="po-toolbar"><div><h3>产品选项配置</h3><span>公共选项统一维护，产品分别控制是否启用。</span></div><div className="po-actions">
-      <Button disabled={saving} onClick={() => { if (dirty) setConfirm({ title: '刷新将放弃未保存修改，是否继续？', run: () => { void load() } }); else void load() }}>刷新</Button>
-      <Button type="primary" loading={saving} disabled={saving || !dirty} onClick={() => void save()}>保存</Button>
+      <Button disabled={saving || imageUploads > 0} onClick={() => { if (dirty) setConfirm({ title: '刷新将放弃未保存修改，是否继续？', run: () => { void load() } }); else void load() }}>刷新</Button>
+      <Button type="primary" loading={saving} disabled={saving || imageUploads > 0 || !dirty} onClick={() => void save()}>保存</Button>
     </div></div>
     {error && <Alert showIcon type="error" message={error}/>}{notice && <Alert showIcon type="success" message={notice}/>}
-    <div className="po-status">{dirty ? '有未保存的修改。点击“保存”应用修改。' : '配置已同步。'}<span title={directory}>{directory}</span></div>
-    <fieldset disabled={saving} className="po-fields">
+    <div className="po-status">{imageUploads > 0 ? '正在上传图片，完成后请保存配置。' : dirty ? '有未保存的修改。点击“保存”应用修改。' : '配置已同步。'}<span title={directory}>{directory}</span></div>
+    <fieldset disabled={saving || imageUploads > 0} className="po-fields">
       <div className="po-product-details" role="region" aria-label="产品类别和子类配置" tabIndex={0}>
       <section className="po-section"><div className="po-section-heading"><h3>步骤一：配置产品大类</h3><div className="po-actions">
         <Button onClick={() => edit(draft => { let n = 1; while (draft.main.categories.some(item => item.title === `Category ${n}`)) n++; draft.main.categories.push({ name: `category-${crypto.randomUUID()}`, title: `Category ${n}`, titleZh: '新产品类别', products: [] }); setFilter(draft.main.categories.length - 1); setLocation(undefined) })}>新增产品类别</Button>
@@ -178,8 +215,8 @@ export default function ProductOptionsSettings({ onBusyChange }: Props) {
           <div className="po-values-toolbar"><span>共 {catalog.values.length} 个值 · 已启用 {catalog.values.filter(value => isEnabled(productOption, value)).length} 个{isStandeeQuantity && ' · 仅支持1至4片'}</span><div className="po-actions"><Select aria-label="选项值筛选" value={valueFilter} options={[{ value: 'all', label: '全部值' }, { value: 'enabled', label: '已启用' }, { value: 'disabled', label: '已关闭' }]} onChange={value => { setValueFilter(value); setPage(1) }}/><Button disabled={isStandeeQuantity && catalog.values.length >= 4} title={isStandeeQuantity && catalog.values.length >= 4 ? '主体片数仅支持1至4片，已包含全部数量' : undefined} onClick={() => editCatalog((target, draft) => { const value = addValue(target); for (const item of allProducts(draft.main)) { const option = optionFor(item, definition.name); if (option) setEnabled(option, value, false) } setStyleId(getEntityId(value)); setValueFilter('all'); setPage(Math.ceil(target.values.length / 30)) })}>新增值</Button></div></div>
           {definition.prefix === 'P' ? <>
             <label className="po-style-select">选择配件样式<Select aria-label="编辑配件样式" value={visible.some(item => getEntityId(item) === selectionId(selectedStyle)) ? selectionId(selectedStyle) : selectionId(visible[0])} options={visible.map(value => ({ value: getEntityId(value), label: `${value.sortOrder} · ${display(value)}` }))} onChange={setStyleId}/></label>
-            {(() => { const style = visible.find(item => getEntityId(item) === selectionId(selectedStyle)) ?? visible[0]; if (!style) return <p className="po-empty">暂无符合条件的配件样式</p>; return <>{valueEditor(style)}<div className="po-section-heading po-colors-heading"><h4>“{display(style)}”的配件颜色（{style.colors?.length ?? 0}）</h4><Button onClick={() => editCatalog((target, draft) => { const value = addValue(target, target.values.find(item => getEntityId(item) === getEntityId(style))); for (const item of allProducts(draft.main)) { const option = optionFor(item, definition.name); if (option) setEnabled(option, value, false) } })}>新增颜色</Button></div>{ordered(style.colors ?? []).map(color => valueEditor(color, getEntityId(style)))}{!style.colors?.length && <p className="po-empty">此配件样式暂无颜色，可直接新增。</p>}</> })()}
-          </> : <>{visible.slice((Math.min(page, Math.max(1, Math.ceil(visible.length / 30))) - 1) * 30, Math.min(page, Math.max(1, Math.ceil(visible.length / 30))) * 30).map(value => valueEditor(value))}{!visible.length && <p className="po-empty">暂无符合条件的选项值</p>}{visible.length > 30 && <Pagination current={Math.min(page, Math.ceil(visible.length / 30))} pageSize={30} total={visible.length} onChange={setPage} showSizeChanger={false}/>}</>}
+            {(() => { const style = visible.find(item => getEntityId(item) === selectionId(selectedStyle)) ?? visible[0]; if (!style) return <p className="po-empty">暂无符合条件的配件样式</p>; return <><div className="po-values-grid">{valueEditor(style)}</div><div className="po-section-heading po-colors-heading"><h4>“{display(style)}”的配件颜色（{style.colors?.length ?? 0}）</h4><Button onClick={() => editCatalog((target, draft) => { const value = addValue(target, target.values.find(item => getEntityId(item) === getEntityId(style))); for (const item of allProducts(draft.main)) { const option = optionFor(item, definition.name); if (option) setEnabled(option, value, false) } })}>新增颜色</Button></div><div className="po-values-grid">{ordered(style.colors ?? []).map(color => valueEditor(color, getEntityId(style)))}</div>{!style.colors?.length && <p className="po-empty">此配件样式暂无颜色，可直接新增。</p>}</> })()}
+          </> : <><div className="po-values-grid">{visible.slice((Math.min(page, Math.max(1, Math.ceil(visible.length / 30))) - 1) * 30, Math.min(page, Math.max(1, Math.ceil(visible.length / 30))) * 30).map(value => valueEditor(value))}</div>{!visible.length && <p className="po-empty">暂无符合条件的选项值</p>}{visible.length > 30 && <Pagination current={Math.min(page, Math.ceil(visible.length / 30))} pageSize={30} total={visible.length} onChange={setPage} showSizeChanger={false}/>}</>}
         </>}</div><aside className="po-preview"><h3>实时预览</h3><div><label>产品类别<Select aria-label="预览产品类别" value={location?.category} options={categoryOptions.filter(item => item.value !== -2)} onChange={chooseCategory}/></label><label>{prefix}产品<Select aria-label="预览产品" placeholder="暂无产品" value={productKey} options={locations(main, location?.category ?? filter).map(item => ({ value: getProduct(main, item)!.productId, label: display(getProduct(main, item)!) }))} onChange={chooseProduct}/></label>{previewFields}{product && !previewFields.length && <p className="po-empty">此产品尚未启用任何选项</p>}</div></aside>
       </div></section>
     </fieldset>

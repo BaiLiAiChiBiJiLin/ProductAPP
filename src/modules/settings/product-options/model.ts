@@ -1,25 +1,30 @@
 import standeeQuantities from './data/standee-quantities.json'
 import sizes from './data/sizes.json'
 import sizeMigration from './data/size-migration.json'
-import tinplateStickerFilms from './data/tinplate-sticker-films.json'
+import foilStamping from './data/foil-stamping.json'
+import stickerHoloFilms from './data/sticker-holo-films.json'
+import tinplateHoloFilms from './data/tinplate-holo-films.json'
 import tinplateMaterials from './data/tinplate-materials.json'
+import { emptySizeArea, migrateSizeAreas, validateSizeArea, type SizeArea } from './sizeArea'
 
 export const definitions = [
   { name: 'Size', title: '尺寸', file: 'sizes.json', prefix: 'S', idKey: 'sizeBandId' },
   { name: 'Print Option', title: '印刷选项', file: 'print-options.json', prefix: 'Y', idKey: 'printOptionId' },
-  { name: 'Technique', title: '工艺', file: 'techniques.json', prefix: 'G', idKey: 'techniqueId' },
-  { name: 'Holo Film', title: '全息膜', file: 'holo-films.json', prefix: 'M', idKey: 'holoFilmId' },
-  { name: 'Tinplate Sticker Film', title: '马口铁/贴纸膜', file: 'tinplate-sticker-films.json', prefix: 'TF', idKey: 'tinplateStickerFilmId' },
-  { name: 'Material', title: '材质', file: 'materials.json', prefix: 'C', idKey: 'materialId' },
+  { name: 'Technique', title: '滴胶工艺', file: 'techniques.json', prefix: 'G', idKey: 'techniqueId' },
+  { name: 'Foil Stamping', title: '烫金工艺', file: 'foil-stamping.json', prefix: 'FS', idKey: 'foilStampingId' },
+  { name: 'Holo Film', title: '亚克力全息膜', file: 'holo-films.json', prefix: 'M', idKey: 'holoFilmId' },
+  { name: 'Sticker Holo Film', title: '贴纸全息膜', file: 'sticker-holo-films.json', prefix: 'SHF', idKey: 'stickerHoloFilmId' },
+  { name: 'Tinplate Holo Film', title: '马口铁全息膜', file: 'tinplate-holo-films.json', prefix: 'THF', idKey: 'tinplateHoloFilmId' },
+  { name: 'Material', title: '贴纸材质', file: 'materials.json', prefix: 'C', idKey: 'materialId' },
   { name: 'Tinplate Material', title: '马口铁材质', file: 'tinplate-materials.json', prefix: 'TM', idKey: 'tinplateMaterialId' },
   { name: 'Accessories Style', title: '配件样式', file: 'accessory-styles.json', prefix: 'P', idKey: 'accessoryStyleId' },
   { name: 'Standee Quantity', title: '主体片数', file: 'standee-quantities.json', prefix: 'SQ', idKey: 'standeeQuantityId' },
 ] as const
 
-export const identityKeys = ['sizeBandId', 'printOptionId', 'techniqueId', 'holoFilmId', 'tinplateStickerFilmId', 'materialId', 'tinplateMaterialId', 'accessoryStyleId', 'accessoryColorId', 'standeeQuantityId', 'customOptionValueId'] as const
+export const identityKeys = ['sizeBandId', 'printOptionId', 'techniqueId', 'foilStampingId', 'holoFilmId', 'stickerHoloFilmId', 'tinplateHoloFilmId', 'materialId', 'tinplateMaterialId', 'accessoryStyleId', 'accessoryColorId', 'standeeQuantityId', 'customOptionValueId'] as const
 export type EntityKey = typeof identityKeys[number]
 export type EntityReference = { [K in EntityKey]: { [P in K]: string } & Partial<Record<Exclude<EntityKey, K>, never>> }[EntityKey]
-export type OptionValue = EntityReference & { name: string; labelZh?: string; image?: string; isDefault?: boolean; sortOrder: number; colors?: OptionValue[]; pieceCount?: number }
+export type OptionValue = EntityReference & { name: string; labelZh?: string; image?: string; isDefault?: boolean; sortOrder: number; colors?: OptionValue[]; pieceCount?: number; area?: SizeArea; isCustom?: boolean }
 export type Catalog = { name: string; label?: string; labelZh: string; defaultValue?: EntityReference; values: OptionValue[]; nextId: number; nextColorId?: number }
 export type ProductOption = { name: string; deleted: boolean; disabledValues?: EntityReference[]; label?: string; labelZh?: string; defaultValue?: EntityReference; values?: OptionValue[]; nextId?: number }
 export type Product = { productId: string; title: string; titleZh: string; productOptions: ProductOption[] }
@@ -43,8 +48,10 @@ function makeReference(key: EntityKey, id: string): EntityReference {
     case 'sizeBandId': return { sizeBandId: id }
     case 'printOptionId': return { printOptionId: id }
     case 'techniqueId': return { techniqueId: id }
+    case 'foilStampingId': return { foilStampingId: id }
     case 'holoFilmId': return { holoFilmId: id }
-    case 'tinplateStickerFilmId': return { tinplateStickerFilmId: id }
+    case 'stickerHoloFilmId': return { stickerHoloFilmId: id }
+    case 'tinplateHoloFilmId': return { tinplateHoloFilmId: id }
     case 'materialId': return { materialId: id }
     case 'tinplateMaterialId': return { tinplateMaterialId: id }
     case 'accessoryStyleId': return { accessoryStyleId: id }
@@ -89,23 +96,44 @@ function newStandeeQuantityOption(enabled: boolean, catalog: Catalog): ProductOp
   if (catalog.values?.some(value => value.standeeQuantityId === 'SQ1')) option.defaultValue = { standeeQuantityId: 'SQ1' }
   return option
 }
-export function makeProduct(main: ProductDocument, categoryName?: string, standeeCatalog: Catalog = standeeQuantities, sizeCatalog: Catalog = sizes): Product { return { productId: `P${main.nextProductId++}`, title: 'New Product', titleZh: '新产品', productOptions: definitions.map(({ name }) => name === 'Standee Quantity' ? newStandeeQuantityOption(categoryName === 'standees', standeeCatalog) : name === 'Size' ? { name, deleted: true, disabledValues: sizeCatalog.values.map(entityReference) } : { name, deleted: true }) } }
+export function makeProduct(main: ProductDocument, categoryName?: string, standeeCatalog: Catalog = standeeQuantities, sizeCatalog?: Catalog): Product {
+  const availableSizes = sizeCatalog ?? migrateSizeAreas({ main: { categories: [], uncategorizedProducts: [], nextProductId: 1 }, catalogs: { 'sizes.json': sizes as Catalog } }).bundle.catalogs['sizes.json']
+  return { productId: `P${main.nextProductId++}`, title: 'New Product', titleZh: '新产品', productOptions: definitions.map(({ name }) => name === 'Standee Quantity' ? newStandeeQuantityOption(categoryName === 'standees', standeeCatalog) : name === 'Size' ? { name, deleted: true, disabledValues: availableSizes.values.map(entityReference) } : { name, deleted: true }) }
+}
 
 /** Add only missing shared catalogs and product switches; existing edits stay authoritative. */
 export function upgradeAdditionalAttributeBundle(bundle: Bundle): Bundle {
   const upgraded = stripDeprecatedOptionRules(bundle)
+  const retiredFile = 'tinplate-sticker-films.json'
+  const retiredCatalog = upgraded.catalogs[retiredFile]
+  if (retiredCatalog && (!Array.isArray(retiredCatalog.values) || retiredCatalog.values.length || retiredCatalog.defaultValue)) throw new Error('旧马口铁/贴纸膜仍有选项值或引用，请先迁移到对应的全息膜属性后再导入')
   const additions = [
-    { file: 'tinplate-sticker-films.json', catalog: tinplateStickerFilms },
+    { file: 'foil-stamping.json', catalog: foilStamping },
+    { file: 'sticker-holo-films.json', catalog: stickerHoloFilms },
+    { file: 'tinplate-holo-films.json', catalog: tinplateHoloFilms },
     { file: 'tinplate-materials.json', catalog: tinplateMaterials },
   ]
   for (const { file, catalog } of additions) if (!Object.hasOwn(upgraded.catalogs, file)) upgraded.catalogs[file] = clone(catalog)
+  const renames = [
+    { file: 'techniques.json', before: '工艺', after: '滴胶工艺' },
+    { file: 'holo-films.json', before: '全息膜', after: '亚克力全息膜' },
+    { file: 'materials.json', before: '材质', after: '贴纸材质' },
+  ]
+  for (const { file, before, after } of renames) if (upgraded.catalogs[file]?.labelZh === before) upgraded.catalogs[file].labelZh = after
   for (const product of allProducts(upgraded.main)) {
     if (!product || !Array.isArray(product.productOptions)) throw new Error('产品数据格式错误')
-    for (const { catalog } of additions) {
+    const retired = optionFor(product, 'Tinplate Sticker Film')
+    if (retired && (retired.defaultValue || retired.disabledValues?.length || retired.values?.length)) throw new Error('旧马口铁/贴纸膜仍有选项值或引用，请先迁移到对应的全息膜属性后再导入')
+    product.productOptions = product.productOptions.filter(option => option.name !== 'Tinplate Sticker Film')
+    for (const { file, catalog } of additions) {
       if (optionFor(product, catalog.name)) continue
-      product.productOptions.push({ name: catalog.name, deleted: true })
+      const option: ProductOption = { name: catalog.name, deleted: true }
+      const values = upgraded.catalogs[file].values
+      if (values.length) option.disabledValues = flattenedValues(upgraded.catalogs[file]).map(entityReference)
+      product.productOptions.push(option)
     }
   }
+  delete upgraded.catalogs[retiredFile]
   return upgraded
 }
 
@@ -133,7 +161,7 @@ export function upgradeProductSizeBundle(bundle: Bundle, source?: ProductSizeSou
     const enabled = catalog.values.some(value => allowed.has(getEntityId(value)))
     product.productOptions.unshift({ name: 'Size', deleted: !enabled, disabledValues: catalog.values.filter(value => !allowed.has(getEntityId(value))).map(entityReference) })
   }
-  return upgraded
+  return migrateSizeAreas(upgraded).bundle
 }
 
 export function getProductSizes(bundle: Bundle, product: Product, _requested: Record<string, string> = {}): OptionValue[] {
@@ -219,6 +247,7 @@ export function addValue(catalog: Catalog, style?: OptionValue) {
   const values = style ? (style.colors ??= []) : catalog.values
   const reference = makeReference(key, `${prefix}${next}`)
   const value: OptionValue = { ...reference, name: `New ${prefix}${next}`, labelZh: style ? '新颜色' : '新选项值', image: '', isDefault: false, sortOrder: Math.max(0, ...values.map(item => item.sortOrder)) + 1 }
+  if (definition?.idKey === 'sizeBandId') value.area = emptySizeArea()
   if (pieceCount !== undefined) { value.pieceCount = pieceCount; value.name = `${pieceCount} ${pieceCount === 1 ? 'piece' : 'pieces'}`; value.labelZh = `${pieceCount}片` }
   if (!style && definition?.idKey === 'accessoryStyleId') value.colors = []
   values.push(value)
@@ -233,6 +262,21 @@ export function changeOrder(values: OptionValue[], reference: EntityReference, r
   const next = rest.findIndex(item => item.sortOrder > rank)
   rest.splice(next < 0 ? rest.length : next, 0, value)
   values.splice(0, values.length, ...rest)
+}
+export function moveOptionValue(values: OptionValue[], source: EntityReference, target: EntityReference, position: 'before' | 'after'): boolean {
+  if (position !== 'before' && position !== 'after') return false
+  const current = ordered(values)
+  const sourceIndex = current.findIndex(value => sameEntity(value, source))
+  const targetIndex = current.findIndex(value => sameEntity(value, target))
+  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return false
+  const next = [...current]
+  const [moving] = next.splice(sourceIndex, 1)
+  const insertion = next.indexOf(current[targetIndex]) + (position === 'after' ? 1 : 0)
+  next.splice(insertion, 0, moving)
+  if (next.every((value, index) => value === current[index])) return false
+  next.forEach((value, index) => { value.sortOrder = index + 1 })
+  values.splice(0, values.length, ...next)
+  return true
 }
 export function deleteValue(bundle: Bundle, catalog: Catalog, value: OptionValue, style?: OptionValue) {
   const values = style ? style.colors! : catalog.values
@@ -318,6 +362,10 @@ export function validateBundle(bundle: Bundle): void {
         if (!Number.isSafeInteger(value.pieceCount) || value.pieceCount! < 1 || value.pieceCount! > 4 || pieceCounts.has(value.pieceCount!)) throw new Error('主体片数必须是1至4的整数，且数量不能重复')
         pieceCounts.add(value.pieceCount!)
       } else if (Object.hasOwn(value, 'pieceCount')) throw new Error('pieceCount只能用于主体片数目录')
+      if (definition.idKey === 'sizeBandId') {
+        if (value.area !== undefined) validateSizeArea(value.area)
+        if (value.isCustom !== undefined && typeof value.isCustom !== 'boolean') throw new Error('自定义尺寸标记格式无效')
+      } else if (Object.hasOwn(value, 'area') || Object.hasOwn(value, 'isCustom')) throw new Error('面积和自定义尺寸标记只能用于尺寸目录')
       ids.add(token)
       if (numberedId) { const number = Number(id.slice(prefix.length)); if (color) colorMax = Math.max(colorMax, number); else max = Math.max(max, number) }
       if (value.colors !== undefined) {

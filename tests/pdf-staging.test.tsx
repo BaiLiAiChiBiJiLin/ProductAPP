@@ -44,6 +44,6 @@ test('PDF uses reordered thumbnail order with consecutive printed page numbers a
     '<svg><text>2:Moved second</text></svg>',
     '<svg><text>3:Moved third</text></svg>',
   ])
-  expect(mocks.invoke).toHaveBeenCalledWith('export_staged_pdf', { output: 'ordered.pdf', ids: staged.map(args => args.id) })
+  expect(mocks.invoke).toHaveBeenCalledWith('export_staged_pdf', { output: 'ordered.pdf', ids: staged.map(args => args.id), quality: 'standard' })
   expect(pages).toEqual(original)
 })

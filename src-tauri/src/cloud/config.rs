@@ -52,13 +52,28 @@ fn select_path(local: PathBuf, development: bool) -> Result<PathBuf, String> {
 }
 
 pub fn path() -> Result<PathBuf, String> {
-    select_path(crate::project_data_dir().join("config.toml"), tauri::is_dev())
+    select_path(
+        crate::project_data_dir().join("config.toml"),
+        tauri::is_dev(),
+    )
 }
 
 pub fn load() -> Result<Option<Environment>, String> {
-    static CONFIG: std::sync::OnceLock<Result<Option<Environment>, String>> =
-        std::sync::OnceLock::new();
-    CONFIG.get_or_init(load_file).clone()
+    static CONFIG: std::sync::OnceLock<Option<Environment>> = std::sync::OnceLock::new();
+    load_cached(&CONFIG, load_file)
+}
+
+fn load_cached(
+    cache: &std::sync::OnceLock<Option<Environment>>,
+    read: impl FnOnce() -> Result<Option<Environment>, String>,
+) -> Result<Option<Environment>, String> {
+    if let Some(value) = cache.get() {
+        return Ok(value.clone());
+    }
+    // A production config may live on SMB. A failed first read must not pin
+    // the process offline after the network has recovered.
+    let value = read()?;
+    Ok(cache.get_or_init(|| value).clone())
 }
 
 fn load_file() -> Result<Option<Environment>, String> {
@@ -66,7 +81,8 @@ fn load_file() -> Result<Option<Environment>, String> {
     if tauri::is_dev() && !path.try_exists().map_err(|_| "无法检查开发存储配置")? {
         return Ok(None);
     }
-    let raw = fs::read_to_string(path).map_err(|_| "无法读取存储配置文件，请检查本机配置或公司共享目录连接；未切换到本地保存")?;
+    let raw = fs::read_to_string(path)
+        .map_err(|_| "无法读取存储配置文件，请检查本机配置或公司共享目录连接；未切换到本地保存")?;
     // Do not include TOML source/parser diagnostics: they can contain a password.
     parse(&raw, tauri::is_dev())
 }
@@ -125,10 +141,24 @@ pub fn mode() -> Result<Mode, String> {
 mod tests {
     use super::*;
     #[test]
+    fn failed_config_read_recovers_without_restarting() {
+        let cache = std::sync::OnceLock::new();
+        assert!(load_cached(&cache, || Err("共享目录暂时不可访问".into())).is_err());
+        assert!(load_cached(&cache, || Ok(None)).unwrap().is_none());
+        assert!(
+            load_cached(&cache, || panic!("successful configuration stays cached"))
+                .unwrap()
+                .is_none()
+        );
+    }
+    #[test]
     fn installed_build_uses_shared_config_unless_local_override_exists() {
         let dir = tempfile::tempdir().unwrap();
         let local = dir.path().join("config.toml");
-        assert_eq!(select_path(local.clone(), false).unwrap(), PathBuf::from(PRODUCTION_CONFIG));
+        assert_eq!(
+            select_path(local.clone(), false).unwrap(),
+            PathBuf::from(PRODUCTION_CONFIG)
+        );
         assert_eq!(select_path(local.clone(), true).unwrap(), local);
         fs::write(&local, "mode='local'").unwrap();
         assert_eq!(select_path(local.clone(), false).unwrap(), local);

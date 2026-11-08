@@ -46,11 +46,25 @@ pub fn connect(env: &Environment) -> Result<PooledConn> {
             .write_timeout(Some(Duration::from_secs(30)))
             .pool_opts(PoolOpts::default().with_constraints(PoolConstraints::new(0, 4).unwrap()));
         let pool = Pool::new(options).map_err(error)?;
-        let mut conn = pool.get_conn().map_err(error)?;
+        let mut conn = pool.try_get_conn(Duration::from_secs(10)).map_err(error)?;
         initialize(&mut conn)?;
         *saved = Some(pool);
     }
-    saved.as_ref().unwrap().get_conn().map_err(error)
+    let pool = saved.as_ref().unwrap().clone();
+    drop(saved);
+    // SMB reads can retain all four connections. Do not hold the registry
+    // mutex or wait forever while a caller's retry queue needs an answer.
+    pool.try_get_conn(Duration::from_secs(10))
+        .map_err(|failure| {
+            if matches!(
+                failure,
+                mysql::Error::DriverError(mysql::DriverError::Timeout)
+            ) {
+                "云数据库连接繁忙，请稍后重试".into()
+            } else {
+                error(failure)
+            }
+        })
 }
 
 pub fn initialize(conn: &mut impl Queryable) -> Result<()> {

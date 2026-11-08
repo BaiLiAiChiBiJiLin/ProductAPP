@@ -11,7 +11,7 @@ use std::{
 };
 
 static LOCK: Mutex<()> = Mutex::new(());
-pub(crate) const FILES: [(&str, &str); 10] = [
+pub(crate) const FILES: [(&str, &str); 12] = [
     (
         "product-options.clean.json",
         include_str!("../../src/modules/settings/product-options/data/product-options.clean.json"),
@@ -45,26 +45,46 @@ pub(crate) const FILES: [(&str, &str); 10] = [
         include_str!("../../src/modules/settings/product-options/data/sizes.json"),
     ),
     (
-        "tinplate-sticker-films.json",
-        include_str!("../../src/modules/settings/product-options/data/tinplate-sticker-films.json"),
-    ),
-    (
         "tinplate-materials.json",
         include_str!("../../src/modules/settings/product-options/data/tinplate-materials.json"),
+    ),
+    (
+        "foil-stamping.json",
+        include_str!("../../src/modules/settings/product-options/data/foil-stamping.json"),
+    ),
+    (
+        "sticker-holo-films.json",
+        include_str!("../../src/modules/settings/product-options/data/sticker-holo-films.json"),
+    ),
+    (
+        "tinplate-holo-films.json",
+        include_str!("../../src/modules/settings/product-options/data/tinplate-holo-films.json"),
     ),
 ];
 const SIZE_MIGRATION: &str =
     include_str!("../../src/modules/settings/product-options/data/size-migration.json");
-const DEFINITIONS: [(&str, &str, &str, &str); 9] = [
+const DEFINITIONS: [(&str, &str, &str, &str); 11] = [
     ("sizes.json", "Size", "sizeBandId", "S"),
     ("print-options.json", "Print Option", "printOptionId", "Y"),
     ("techniques.json", "Technique", "techniqueId", "G"),
+    (
+        "foil-stamping.json",
+        "Foil Stamping",
+        "foilStampingId",
+        "FS",
+    ),
     ("holo-films.json", "Holo Film", "holoFilmId", "M"),
     (
-        "tinplate-sticker-films.json",
-        "Tinplate Sticker Film",
-        "tinplateStickerFilmId",
-        "TF",
+        "sticker-holo-films.json",
+        "Sticker Holo Film",
+        "stickerHoloFilmId",
+        "SHF",
+    ),
+    (
+        "tinplate-holo-films.json",
+        "Tinplate Holo Film",
+        "tinplateHoloFilmId",
+        "THF",
     ),
     ("materials.json", "Material", "materialId", "C"),
     (
@@ -86,7 +106,7 @@ const DEFINITIONS: [(&str, &str, &str, &str); 9] = [
         "SQ",
     ),
 ];
-const OPTION_ID_KEYS: [&str; 11] = [
+const OPTION_ID_KEYS: [&str; 14] = [
     "sizeBandId",
     "printOptionId",
     "techniqueId",
@@ -98,11 +118,18 @@ const OPTION_ID_KEYS: [&str; 11] = [
     "standeeQuantityId",
     "tinplateStickerFilmId",
     "tinplateMaterialId",
+    "foilStampingId",
+    "stickerHoloFilmId",
+    "tinplateHoloFilmId",
 ];
-const ADDITIONAL_ATTRIBUTES: [(&str, &str); 2] = [
-    ("tinplate-sticker-films.json", "Tinplate Sticker Film"),
+const ADDITIONAL_ATTRIBUTES: [(&str, &str); 4] = [
+    ("foil-stamping.json", "Foil Stamping"),
+    ("sticker-holo-films.json", "Sticker Holo Film"),
+    ("tinplate-holo-films.json", "Tinplate Holo Film"),
     ("tinplate-materials.json", "Tinplate Material"),
 ];
+const RETIRED_FILM_FILE: &str = "tinplate-sticker-films.json";
+const RETIRED_FILM_NAME: &str = "Tinplate Sticker Film";
 fn may_be_missing_legacy_catalog(name: &str) -> bool {
     ["standee-quantities.json", "sizes.json"].contains(&name)
         || ADDITIONAL_ATTRIBUTES.iter().any(|(file, _)| *file == name)
@@ -175,6 +202,66 @@ fn id_number(id: &str, prefix: &str) -> Option<u64> {
         .ok()
         .filter(|n| *n > 0 && *n < 9_007_199_254_740_991)
 }
+fn valid_area_dimension(value: &str) -> bool {
+    if value.is_empty() {
+        return true;
+    }
+    let mut parts = value.split('.');
+    let integer = parts.next().unwrap_or("");
+    let fraction = parts.next();
+    !integer.is_empty()
+        && integer.len() <= 9
+        && integer.bytes().all(|character| character.is_ascii_digit())
+        && (integer == "0" || !integer.starts_with('0'))
+        && fraction.is_none_or(|fraction| {
+            !fraction.is_empty()
+                && fraction.len() <= 18
+                && fraction.bytes().all(|character| character.is_ascii_digit())
+        })
+        && parts.next().is_none()
+        && value
+            .bytes()
+            .any(|character| matches!(character, b'1'..=b'9'))
+}
+
+fn validate_size_area(value: &Value, id_key: &str) -> Result<(), String> {
+    if id_key != "sizeBandId" {
+        if value.get("area").is_some() || value.get("isCustom").is_some() {
+            return Err(error("只有尺寸选项可配置面积和自定义尺寸"));
+        }
+        return Ok(());
+    }
+    if value
+        .get("isCustom")
+        .is_some_and(|custom| !custom.is_boolean())
+    {
+        return Err(error("自定义尺寸开关必须是布尔值"));
+    }
+    if let Some(area) = value.get("area") {
+        let fields = area
+            .as_object()
+            .ok_or_else(|| error("尺寸面积必须是对象"))?;
+        if fields.len() != 3
+            || !["width", "height", "unit"]
+                .iter()
+                .all(|key| fields.contains_key(*key))
+            || !matches!(area["unit"].as_str(), Some("in" | "cm" | "mm"))
+        {
+            return Err(error("尺寸面积须包含宽、高和 in、cm、mm 单位"));
+        }
+        for key in ["width", "height"] {
+            if area[key]
+                .as_str()
+                .is_none_or(|dimension| !valid_area_dimension(dimension))
+            {
+                return Err(error(
+                    "尺寸宽高须为空或正十进制数，整数最多 9 位、小数最多 18 位",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
 fn value_ids(
     values: &[Value],
     id_key: &str,
@@ -212,6 +299,7 @@ fn value_ids(
         if value.get("isDefault").is_some_and(|v| !v.is_boolean()) {
             return Err(error("默认开关必须是布尔值"));
         }
+        validate_size_area(value, id_key)?;
         if id_key == "standeeQuantityId" {
             let count = value["pieceCount"]
                 .as_u64()
@@ -353,7 +441,7 @@ fn validate(bundle: &Bundle) -> Result<(), String> {
                 .filter(|option| option["name"] == name)
                 .collect::<Vec<_>>();
             if options.len() < DEFINITIONS.len() || matches.len() != 1 {
-                return Err(error("产品必须包含九类公共选项开关"));
+                return Err(error("产品必须包含所有公共选项开关"));
             }
             let option = matches[0];
             if !option["deleted"].is_boolean()
@@ -429,8 +517,11 @@ pub(crate) fn strip_deprecated_option_rules(main: &mut Value) -> Result<(), Stri
     strip(&mut main["uncategorizedProducts"])
 }
 /// New attributes start disabled; existing switches and product option order are user data.
-pub(crate) fn complete_additional_attribute_options(main: &mut Value) -> Result<bool, String> {
-    fn complete(products: &mut Value) -> Result<bool, String> {
+pub(crate) fn complete_additional_attribute_options(
+    main: &mut Value,
+    catalogs: &Value,
+) -> Result<bool, String> {
+    fn complete(products: &mut Value, catalogs: &Value) -> Result<bool, String> {
         let mut changed = false;
         for product in products
             .as_array_mut()
@@ -439,9 +530,43 @@ pub(crate) fn complete_additional_attribute_options(main: &mut Value) -> Result<
             let options = product["productOptions"]
                 .as_array_mut()
                 .ok_or_else(|| error("productOptions 必须是数组"))?;
-            for (_, name) in ADDITIONAL_ATTRIBUTES {
+            for option in options
+                .iter()
+                .filter(|option| option["name"] == RETIRED_FILM_NAME)
+            {
+                if option
+                    .get("defaultValue")
+                    .is_some_and(|value| !value.is_null())
+                    || ["disabledValues", "values"].iter().any(|key| {
+                        option
+                            .get(*key)
+                            .is_some_and(|value| !value.as_array().is_some_and(Vec::is_empty))
+                    })
+                {
+                    return Err(error(
+                        "旧马口铁/贴纸膜仍有选项值或引用，请先迁移到对应的全息膜属性后再导入",
+                    ));
+                }
+            }
+            let before = options.len();
+            options.retain(|option| option["name"] != RETIRED_FILM_NAME);
+            changed |= before != options.len();
+            for (file, name) in ADDITIONAL_ATTRIBUTES {
                 if !options.iter().any(|option| option["name"] == name) {
-                    options.push(serde_json::json!({"name":name,"deleted":true}));
+                    let key = DEFINITIONS
+                        .iter()
+                        .find(|(defined, _, _, _)| *defined == file)
+                        .unwrap()
+                        .2;
+                    let disabled: Vec<Value> = array(&catalogs[file], "values")?
+                        .iter()
+                        .map(|value| serde_json::json!({key:value[key]}))
+                        .collect();
+                    let mut option = serde_json::json!({"name":name,"deleted":true});
+                    if !disabled.is_empty() {
+                        option["disabledValues"] = Value::Array(disabled);
+                    }
+                    options.push(option);
                     changed = true;
                 }
             }
@@ -453,9 +578,9 @@ pub(crate) fn complete_additional_attribute_options(main: &mut Value) -> Result<
         .as_array_mut()
         .ok_or_else(|| error("categories 必须是数组"))?
     {
-        changed |= complete(&mut category["products"])?;
+        changed |= complete(&mut category["products"], catalogs)?;
     }
-    changed |= complete(&mut main["uncategorizedProducts"])?;
+    changed |= complete(&mut main["uncategorizedProducts"], catalogs)?;
     Ok(changed)
 }
 fn upgrade_additional_attributes(bundle: &mut Bundle) -> Result<(), String> {
@@ -463,14 +588,56 @@ fn upgrade_additional_attributes(bundle: &mut Bundle) -> Result<(), String> {
         .catalogs
         .as_object_mut()
         .ok_or_else(|| error("公共选项目录必须是对象"))?;
+    if let Some(retired) = catalogs.get(RETIRED_FILM_FILE) {
+        validate_retired_film_catalog(retired)?;
+    }
+    catalogs.remove(RETIRED_FILM_FILE);
     for (file, _) in ADDITIONAL_ATTRIBUTES {
         if !catalogs.contains_key(file) {
             let seed = FILES.iter().find(|(name, _)| *name == file).unwrap().1;
             catalogs.insert(file.to_owned(), serde_json::from_str(seed).map_err(error)?);
         }
     }
-    complete_additional_attribute_options(&mut bundle.main)?;
+    for (file, catalog) in catalogs.iter_mut() {
+        upgrade_attribute_catalog_label(file, catalog);
+    }
+    complete_additional_attribute_options(&mut bundle.main, &bundle.catalogs)?;
     Ok(())
+}
+pub(crate) fn upgrade_attribute_catalog_label(file: &str, catalog: &mut Value) {
+    let renamed = match (file, catalog["labelZh"].as_str()) {
+        ("techniques.json", Some("工艺")) => Some("滴胶工艺"),
+        ("holo-films.json", Some("全息膜")) => Some("亚克力全息膜"),
+        ("materials.json", Some("材质")) => Some("贴纸材质"),
+        _ => None,
+    };
+    if let Some(label) = renamed {
+        catalog["labelZh"] = Value::String(label.into());
+    }
+}
+fn validate_retired_film_catalog(catalog: &Value) -> Result<(), String> {
+    if !catalog["values"].as_array().is_some_and(Vec::is_empty)
+        || catalog
+            .get("defaultValue")
+            .is_some_and(|value| !value.is_null())
+    {
+        return Err(error(
+            "旧马口铁/贴纸膜仍有选项值或引用，请先迁移到对应的全息膜属性后再导入",
+        ));
+    }
+    Ok(())
+}
+/// Track retired on-disk data for optimistic concurrency without recreating or erasing it.
+pub(crate) fn retired_film_catalog_bytes(root: &Path) -> Result<Option<Vec<u8>>, String> {
+    match fs::read(root.join(RETIRED_FILM_FILE)) {
+        Ok(bytes) => {
+            let catalog: Value = serde_json::from_slice(&bytes).map_err(error)?;
+            validate_retired_film_catalog(&catalog)?;
+            Ok(Some(bytes))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(error(e)),
+    }
 }
 /// Older product files have five switches. Fill only the newly introduced one;
 /// an existing switch (including an explicit disabled state) is user data.
@@ -756,6 +923,7 @@ pub(crate) fn persist_missing_size_options(options_root: &Path) -> Result<(), St
 
 fn read(root: &Path) -> Result<Snapshot, String> {
     fs::create_dir_all(root).map_err(error)?;
+    let retired_bytes = retired_film_catalog_bytes(root)?;
     let mut catalogs = serde_json::Map::new();
     let mut main = Value::Null;
     let mut originals = Vec::new();
@@ -782,7 +950,8 @@ fn read(root: &Path) -> Result<Snapshot, String> {
             Err(e) => return Err(error(e)),
         };
         originals.push((bytes.clone(), exists));
-        let value: Value = serde_json::from_slice(&bytes).map_err(error)?;
+        let mut value: Value = serde_json::from_slice(&bytes).map_err(error)?;
+        upgrade_attribute_catalog_label(name, &mut value);
         if index == 0 {
             main = value;
         } else {
@@ -790,7 +959,7 @@ fn read(root: &Path) -> Result<Snapshot, String> {
         }
     }
     strip_deprecated_option_rules(&mut main)?;
-    complete_additional_attribute_options(&mut main)?;
+    complete_additional_attribute_options(&mut main, &Value::Object(catalogs.clone()))?;
     let has_default_quantity = catalogs["standee-quantities.json"]["values"]
         .as_array()
         .is_some_and(|values| {
@@ -818,6 +987,11 @@ fn read(root: &Path) -> Result<Snapshot, String> {
     };
     validate(&bundle)?;
     let mut hash = Sha256::new();
+    hash.update(RETIRED_FILM_FILE.as_bytes());
+    hash.update([u8::from(retired_bytes.is_some())]);
+    if let Some(bytes) = retired_bytes {
+        hash.update(bytes);
+    }
     for ((name, _), (bytes, exists)) in FILES.iter().zip(originals) {
         hash.update(name.as_bytes());
         hash.update([u8::from(exists)]);
@@ -963,6 +1137,14 @@ pub async fn save_product_option_settings(
 mod tests {
     use super::*;
     use serde_json::json;
+    fn option_mut<'a>(product: &'a mut Value, name: &str) -> &'a mut Value {
+        product["productOptions"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|option| option["name"] == name)
+            .unwrap()
+    }
     fn eight_file_bundle() -> Bundle {
         let mut main: Value = serde_json::from_str(FILES[0].1).unwrap();
         for category in main["categories"].as_array_mut().unwrap() {
@@ -1056,20 +1238,12 @@ mod tests {
         let root = directory.path();
         let original = read(root).unwrap();
         let mut edited = original.bundle;
-        for (file, name, key, prefix) in [
-            (
-                "tinplate-sticker-films.json",
-                "Tinplate Sticker Film",
-                "tinplateStickerFilmId",
-                "TF",
-            ),
-            (
-                "tinplate-materials.json",
-                "Tinplate Material",
-                "tinplateMaterialId",
-                "TM",
-            ),
-        ] {
+        let added_definitions: Vec<_> = DEFINITIONS
+            .iter()
+            .copied()
+            .filter(|(file, _, _, _)| ADDITIONAL_ATTRIBUTES.iter().any(|(added, _)| added == file))
+            .collect();
+        for &(file, name, key, prefix) in &added_definitions {
             let first = format!("{prefix}1");
             let second = format!("{prefix}2");
             edited.catalogs[file]["values"] = json!([
@@ -1094,22 +1268,9 @@ mod tests {
         let saved = save(root, edited, &original.version).unwrap();
         assert_eq!(saved.bundle.main, expected.main);
         assert_eq!(saved.bundle.catalogs, expected.catalogs);
-        for (file, name, key, id, wrong_key) in [
-            (
-                "tinplate-sticker-films.json",
-                "Tinplate Sticker Film",
-                "tinplateStickerFilmId",
-                "TF1",
-                "holoFilmId",
-            ),
-            (
-                "tinplate-materials.json",
-                "Tinplate Material",
-                "tinplateMaterialId",
-                "TM1",
-                "materialId",
-            ),
-        ] {
+        for (file, name, key, prefix) in added_definitions {
+            let id = format!("{prefix}1");
+            let wrong_key = "holoFilmId";
             for wrong_reference in [
                 json!({"id":id}),
                 json!({wrong_key:id}),
@@ -1158,6 +1319,108 @@ mod tests {
         }
     }
     #[test]
+    fn retired_empty_film_and_default_labels_upgrade_without_changing_entity_values() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        let initial = read(root).unwrap();
+        let mut legacy = initial.bundle;
+        for (file, old_label) in [
+            ("techniques.json", "工艺"),
+            ("holo-films.json", "全息膜"),
+            ("materials.json", "材质"),
+        ] {
+            legacy.catalogs[file]["labelZh"] = json!(old_label);
+        }
+        legacy.catalogs[RETIRED_FILM_FILE] =
+            json!({"name":RETIRED_FILM_NAME,"labelZh":"马口铁/贴纸膜","values":[],"nextId":1});
+        legacy.main["categories"][0]["products"][0]["productOptions"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"name":RETIRED_FILM_NAME,"deleted":true}));
+        let old_material_values = legacy.catalogs["materials.json"]["values"].clone();
+        let retired_bytes = serde_json::to_vec(&legacy.catalogs[RETIRED_FILM_FILE]).unwrap();
+        fs::write(root.join(RETIRED_FILM_FILE), &retired_bytes).unwrap();
+        let changed = read(root).unwrap();
+        assert_ne!(changed.version, initial.version);
+        assert!(save(root, legacy.clone(), &initial.version)
+            .err()
+            .unwrap()
+            .contains("已被其他窗口修改"));
+        let saved = save(root, legacy, &changed.version).unwrap();
+        assert!(saved.bundle.catalogs.get(RETIRED_FILM_FILE).is_none());
+        assert!(
+            saved.bundle.main["categories"][0]["products"][0]["productOptions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|option| option["name"] != RETIRED_FILM_NAME)
+        );
+        assert_eq!(
+            saved.bundle.catalogs["techniques.json"]["labelZh"],
+            "滴胶工艺"
+        );
+        assert_eq!(
+            saved.bundle.catalogs["holo-films.json"]["labelZh"],
+            "亚克力全息膜"
+        );
+        assert_eq!(
+            saved.bundle.catalogs["materials.json"]["labelZh"],
+            "贴纸材质"
+        );
+        assert_eq!(
+            saved.bundle.catalogs["materials.json"]["values"],
+            old_material_values
+        );
+        assert_eq!(
+            fs::read(root.join(RETIRED_FILM_FILE)).unwrap(),
+            retired_bytes
+        );
+    }
+    #[test]
+    fn nonempty_retired_film_data_is_not_erased() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        let initial = read(root).unwrap();
+        let mut legacy = initial.bundle;
+        let retired = json!({"name":RETIRED_FILM_NAME,"labelZh":"马口铁/贴纸膜","values":[{"tinplateStickerFilmId":"TF1","name":"旧膜","sortOrder":1}],"nextId":2});
+        legacy.catalogs[RETIRED_FILM_FILE] = retired.clone();
+        assert!(save(root, legacy, &initial.version)
+            .err()
+            .unwrap()
+            .contains("请先迁移"));
+        let bytes = serde_json::to_vec(&retired).unwrap();
+        fs::write(root.join(RETIRED_FILM_FILE), &bytes).unwrap();
+        assert!(read(root).err().unwrap().contains("请先迁移"));
+        assert_eq!(fs::read(root.join(RETIRED_FILM_FILE)).unwrap(), bytes);
+    }
+    #[test]
+    fn missing_new_switch_disables_all_existing_values_and_custom_labels_survive() {
+        let mut legacy = eight_file_bundle();
+        upgrade_additional_attributes(&mut legacy).unwrap();
+        legacy.catalogs["foil-stamping.json"]["values"] =
+            json!([{"foilStampingId":"FS1","name":"金色","sortOrder":1}]);
+        legacy.catalogs["foil-stamping.json"]["nextId"] = json!(2);
+        legacy.catalogs["techniques.json"]["labelZh"] = json!("客户自己的名称");
+        legacy.main["categories"][0]["products"][0]["productOptions"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|option| option["name"] != "Foil Stamping");
+        upgrade_additional_attributes(&mut legacy).unwrap();
+        let option = legacy.main["categories"][0]["products"][0]["productOptions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|option| option["name"] == "Foil Stamping")
+            .unwrap();
+        assert_eq!(option["deleted"], true);
+        assert_eq!(option["disabledValues"], json!([{"foilStampingId":"FS1"}]));
+        assert_eq!(
+            legacy.catalogs["techniques.json"]["labelZh"],
+            "客户自己的名称"
+        );
+        validate(&legacy).unwrap();
+    }
+    #[test]
     fn explicit_entities_and_references_roundtrip() {
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path();
@@ -1185,8 +1448,10 @@ mod tests {
         let style_ref = json!({"accessoryStyleId": style["accessoryStyleId"]});
         let color_ref = json!({"accessoryColorId": style["colors"][0]["accessoryColorId"]});
         edited.catalogs["techniques.json"]["defaultValue"] = json!({"techniqueId": "G11"});
-        edited.main["categories"][0]["products"][0]["productOptions"][5]["disabledValues"] =
-            json!([style_ref.clone(), color_ref.clone()]);
+        option_mut(
+            &mut edited.main["categories"][0]["products"][0],
+            "Accessories Style",
+        )["disabledValues"] = json!([style_ref.clone(), color_ref.clone()]);
         let saved = save(root, edited.clone(), &original.version).unwrap();
         let reloaded = read(root).unwrap();
         assert_eq!(reloaded.bundle.main, edited.main);
@@ -1209,9 +1474,14 @@ mod tests {
             .unwrap()
             .push(uncategorized);
         expected.catalogs["techniques.json"]["defaultValue"] = json!({"techniqueId": "G11"});
-        expected.main["categories"][0]["products"][0]["productOptions"][2]["deleted"] = json!(true);
-        expected.main["categories"][0]["products"][0]["productOptions"][3]["disabledValues"] =
-            json!([{"holoFilmId": "M2"}]);
+        option_mut(
+            &mut expected.main["categories"][0]["products"][0],
+            "Technique",
+        )["deleted"] = json!(true);
+        option_mut(
+            &mut expected.main["categories"][0]["products"][0],
+            "Holo Film",
+        )["disabledValues"] = json!([{"holoFilmId": "M2"}]);
         let saved = save(root, expected, &original.version).unwrap();
         let expected = saved.bundle;
         for rules in [
@@ -1322,6 +1592,8 @@ mod tests {
     }
     fn legacy_main() -> Value {
         let mut main: Value = serde_json::from_str(FILES[0].1).unwrap();
+        // The six-file format predates both size and standee-count catalogs.
+        remove_seed_size_options(&mut main);
         for category in main["categories"].as_array_mut().unwrap() {
             for product in category["products"].as_array_mut().unwrap() {
                 product["productOptions"]
@@ -1406,6 +1678,40 @@ mod tests {
             .is_none());
     }
     #[test]
+    fn size_area_and_custom_flag_roundtrip_and_validate() {
+        let directory = tempfile::tempdir().unwrap();
+        let loaded = read(directory.path()).unwrap();
+        let mut valid = loaded.bundle.clone();
+        valid.catalogs["sizes.json"]["values"][0]["area"] =
+            json!({"width": "2", "height": "2", "unit": "in"});
+        valid.catalogs["sizes.json"]["values"][0]["isCustom"] = json!(false);
+        validate(&valid).unwrap();
+        let saved = save(directory.path(), valid.clone(), &loaded.version).unwrap();
+        assert_eq!(
+            saved.bundle.catalogs["sizes.json"]["values"][0]["area"],
+            valid.catalogs["sizes.json"]["values"][0]["area"]
+        );
+        for invalid_area in [
+            json!({"width": "0", "height": "2", "unit": "in"}),
+            json!({"width": "-1", "height": "2", "unit": "in"}),
+            json!({"width": "2", "height": "2", "unit": "inch"}),
+            json!({"width": 2, "height": "2", "unit": "in"}),
+            json!({"width": "2", "height": "2", "unit": "in", "unknown": true}),
+        ] {
+            let mut invalid = valid.clone();
+            invalid.catalogs["sizes.json"]["values"][0]["area"] = invalid_area;
+            assert!(validate(&invalid).is_err());
+        }
+        valid.catalogs["sizes.json"]["values"][0]["area"] =
+            json!({"width": "", "height": "", "unit": "mm"});
+        valid.catalogs["sizes.json"]["values"][0]["isCustom"] = json!(true);
+        validate(&valid).unwrap();
+        valid.catalogs["techniques.json"]["values"][0]["area"] =
+            json!({"width": "2", "height": "2", "unit": "in"});
+        assert!(validate(&valid).is_err());
+    }
+
+    #[test]
     fn standee_counts_are_explicit_unique_and_references_are_typed() {
         let directory = tempfile::tempdir().unwrap();
         let original = read(directory.path()).unwrap();
@@ -1429,14 +1735,18 @@ mod tests {
             json!({"id":"SQ1"}),
         ] {
             let mut invalid = original.bundle.clone();
-            invalid.main["categories"][0]["products"][0]["productOptions"][6]["defaultValue"] =
-                default;
+            option_mut(
+                &mut invalid.main["categories"][0]["products"][0],
+                "Standee Quantity",
+            )["defaultValue"] = default;
             assert!(validate(&invalid).is_err());
         }
         let mut valid = original.bundle;
         let product = &mut valid.main["categories"][0]["products"][0];
-        product["productOptions"][6]["defaultValue"] = json!({"standeeQuantityId":"SQ2"});
-        product["productOptions"][6]["disabledValues"] = json!([{"standeeQuantityId":"SQ2"}]);
+        option_mut(product, "Standee Quantity")["defaultValue"] =
+            json!({"standeeQuantityId":"SQ2"});
+        option_mut(product, "Standee Quantity")["disabledValues"] =
+            json!([{"standeeQuantityId":"SQ2"}]);
         validate(&valid).unwrap();
     }
     #[test]

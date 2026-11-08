@@ -2,8 +2,9 @@ import { beforeEach, expect, test, vi } from 'vitest'
 import { allProducts, catalogFor, clone, getEntityId, getProductSizes, isEnabled, optionFor, type Bundle } from '../src/modules/settings/product-options/model'
 import { initialBundle } from '../src/modules/settings/product-options/service'
 import { initialDocument as quantityDocument } from '../src/modules/settings/quantity-pricing/service'
-import { cloneDocument, getReferenceIssues, isAttributePrice, isUnitPrice, pruneInvalidReferences, quoteProduct, upgradeSharedAttributePrices, upgradePricingDocument, upgradeV1, upgradeV2, upgradeV3, validateDocument, validateReferences, type AttributePrice, type DimensionPanel, type PanelInput, type ProductPricingDocument, type QuoteInput } from '../src/modules/settings/product-pricing/model'
+import { cloneDocument, getReferenceIssues, isAttributePrice, isUnitPrice, pruneInvalidReferences, quoteProduct, upgradeSharedAttributePrices, upgradePricingDocument, upgradeV1, upgradeV2, upgradeV3, validateDocument, validateReferences, type AttributePrice, type DimensionPanel, type Dimensions, type PanelInput, type ProductPricingDocument, type QuoteInput } from '../src/modules/settings/product-pricing/model'
 import { initialDocument, loadProductPricing, saveProductPricing, type Snapshot } from '../src/modules/settings/product-pricing/service'
+import { createAreaPricing } from '../src/modules/settings/product-pricing/areaPricing'
 
 const api = vi.hoisted(() => ({ native: true, invoke: vi.fn() }))
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => api.native, invoke: api.invoke }))
@@ -38,8 +39,9 @@ const oldV2 = (sizeBandId = 'keychain-2-in', productId = 'P31') => ({ schemaVers
 
 beforeEach(() => { api.native = true; api.invoke.mockReset() })
 
-test('seed contains only base prices and independent attributes, preserving current switches and known exact quotes', () => {
-  validateReferences(initialDocument, initialBundle)
+test('historical prices remain archived while area pricing references the normalized product catalog', () => {
+  validateDocument(initialDocument)
+  validateReferences({ ...initialDocument, areaPricing: createAreaPricing(initialBundle) }, initialBundle)
   expect(initialDocument.schemaVersion).toBe(5)
   expect(initialDocument.products).toHaveLength(allProducts(initialBundle.main).length)
   expect(initialDocument.products.reduce((n, p) => n + p.basePrices.length, 0)).toBe(168)
@@ -167,6 +169,38 @@ test('standee quantity requires an allowed explicit selection and matching part 
   expect(quote(doc, input(panelInput('panel-1', 'SQ2', 2)), bundle).bodyUnitPrice).toBe('6.96')
 })
 
+test('flat standee components quote one product-level size and preserve legacy one- and two-panel totals', () => {
+  const quoteInput = (productId: string, techniqueId: string, holoFilmId: string, size: Dimensions = fifty): QuoteInput => ({ productId, techniqueId, holoFilmId, materialId: null, sizeBandId: '', accessoryStyleId: null, accessoryColorId: null, quantity: 1, standee: { standeeQuantityId: 'SQ1', parts: [{ ...size }], base: { ...size } } })
+  const p23 = initialDocument.products.find(product => product.productId === 'P23')!
+  expect(p23.standeePricing?.compositions.length).toBe(p23.dimensionPrices.length)
+  const p23Legacy = p23.dimensionPrices.find(recipe => recipe.techniqueId === 'G1' && recipe.holoFilmId === 'M12')!
+  const flat = quoteProduct(initialDocument, initialBundle, quantityDocument, quoteInput('P23', 'G1', 'M12'))
+  const legacy = quoteProduct(initialDocument, initialBundle, quantityDocument, { ...quoteInput('P23', 'G1', 'M12'), standee: undefined, panelInputs: [panelInput(p23Legacy.panels[0].panelId)] })
+  expect(flat.bodyUnitPrice).toBe(legacy.bodyUnitPrice)
+  const p27 = initialDocument.products.find(product => product.productId === 'P27')!
+  const p27Legacy = p27.dimensionPrices.find(recipe => recipe.techniqueId === 'G1' && recipe.holoFilmId === 'M12')!
+  const p27Flat = quoteProduct(initialDocument, initialBundle, quantityDocument, quoteInput('P27', 'G1', 'M12'))
+  const p27Old = quoteProduct(initialDocument, initialBundle, quantityDocument, { ...quoteInput('P27', 'G1', 'M12'), standee: undefined, panelInputs: p27Legacy.panels.map(panel => panelInput(panel.panelId)) })
+  expect(p27Flat.bodyUnitPrice).toBe('8.34')
+  expect(p27Flat.bodyUnitPrice).toBe(p27Old.bodyUnitPrice)
+})
+
+test('every migrated standee composition matches its legacy recipe at fixed and area sizes', () => {
+  let checked = 0
+  for (const pricing of initialDocument.products.filter(product => product.pricingMode === 'standee')) {
+    for (const recipe of pricing.dimensionPrices) {
+      const common = { productId: pricing.productId, techniqueId: recipe.techniqueId, holoFilmId: recipe.holoFilmId, materialId: recipe.materialId, sizeBandId: '', accessoryStyleId: null, accessoryColorId: null, quantity: 1 }
+      for (const size of [fifty, { widthMm: '110', heightMm: '110' }]) {
+        const flat = quoteProduct(initialDocument, initialBundle, quantityDocument, { ...common, standee: { standeeQuantityId: 'SQ1', parts: [{ ...size }], base: { ...size } } })
+        const legacy = quoteProduct(initialDocument, initialBundle, quantityDocument, { ...common, panelInputs: recipe.panels.map(panel => ({ ...panelInput(panel.panelId), parts: [{ ...size }], base: { ...size } })) })
+        expect(flat.bodyUnitPrice, `${pricing.productId}/${recipe.productPriceId}/${size.widthMm}`).toBe(legacy.bodyUnitPrice)
+      }
+      checked++
+    }
+  }
+  expect(checked).toBe(87)
+})
+
 test('standee piece count comes from the catalog value independently of its name and ID digits', () => {
   const bundle = standeeBundle()
   const value = catalogFor(bundle, productIn(bundle), 'Standee Quantity').values.find(value => getEntityId(value) === 'SQ2')!
@@ -276,9 +310,67 @@ test('desktop save preserves drafts and loading accepts stale references for exp
   api.invoke.mockResolvedValueOnce({ ...snapshot(), version: '' }); await expect(loadProductPricing()).rejects.toThrow('存储版本')
 })
 
+test('desktop migration preserves legacy additional prices inside whole plans and saves product plan selections without duplication', async () => {
+  const source = snapshot()
+  const created = createAreaPricing(source.bundle)
+  const template = created.templates[0]
+  template.basePrice = '0.5'
+  template.tierPrices.forEach(row => { row.price = '0' })
+  const legacyArea = {
+    schemaVersion: 3 as const,
+    accessoryPricing: created.accessoryPricing,
+    templates: created.templates,
+    categories: created.categories.map(category => ({ ...category, areaTemplateId: category.categoryId === 'keychains' ? template.areaTemplateId : null })),
+    productOverrides: [],
+    attributes: [{ areaAttributePriceId: 'legacy-G11', optionName: 'Technique', reference: { techniqueId: 'G11' }, charge: {
+      areaTemplateId: template.areaTemplateId, basePrice: '0.250000000000000001', formula: '基本价 + 档位价格 * 面积平方毫米',
+      tierPrices: template.tiers.map(tier => ({ areaTierId: tier.areaTierId, price: '0.000100000000000001' })),
+    } }],
+    accessoryPrices: created.accessoryPrices,
+  }
+  const before = structuredClone(legacyArea)
+  source.document.areaPricing = legacyArea
+  api.invoke.mockResolvedValueOnce(structuredClone(source))
+  const loaded = await loadProductPricing()
+  const area = loaded.document.areaPricing!
+  if (area.schemaVersion !== 7) throw new Error('Expected migrated grouped pricing')
+  const ordinaryPlan = area.additionalPricePlans.find(plan => plan.prices.some(price => price.areaAttributePriceId === 'legacy-G11'))!
+  const ordinary = ordinaryPlan.prices.find(price => price.areaAttributePriceId === 'legacy-G11')!
+  const ordinaryTemplate = area.templates.find(row => row.areaTemplateId === ordinary.areaTemplateId)!
+  expect(ordinary.basePrice).toBe('0.250000000000000001')
+  expect(ordinary.tierPrices.map(row => row.price)).toEqual(template.tiers.map(() => '0.000100000000000001'))
+  expect(ordinaryTemplate.areaTemplateId).toBe(template.areaTemplateId)
+  expect(ordinaryTemplate.basePrice).toBe('0.5')
+  expect(area.categoryAdditionalPlanBindings).toContainEqual({ categoryId: 'keychains', additionalPricePlanId: ordinaryPlan.additionalPricePlanId })
+  expect(source.document.areaPricing).toEqual(before)
+  const special = { ...structuredClone(ordinaryPlan), additionalPricePlanId: 'special-plan', name: '特殊附加价格方案' }
+  special.prices.find(price => price.areaAttributePriceId === 'legacy-G11')!.basePrice = '0.75'
+  area.additionalPricePlans.push(special)
+  area.productAdditionalPlanOverrides.push({ productId: 'P36', additionalPricePlanId: special.additionalPricePlanId })
+  api.invoke.mockResolvedValueOnce({ ...structuredClone(loaded), version: 'v2' })
+  const saved = await saveProductPricing(loaded.document, loaded.version)
+  expect(api.invoke.mock.calls.at(-1)).toEqual(['save_product_pricing_settings', { document: loaded.document, expectedVersion: 'v1' }])
+  api.invoke.mockResolvedValueOnce(structuredClone(saved))
+  const reloaded = await loadProductPricing()
+  expect(reloaded.document.areaPricing).toEqual(area)
+  const reloadedArea = reloaded.document.areaPricing!
+  if (reloadedArea.schemaVersion !== 7) throw new Error('Expected grouped pricing')
+  expect(reloadedArea.additionalPricePlans).toHaveLength(2)
+  expect(reloadedArea.templates).toHaveLength(1)
+  expect(reloadedArea.additionalPricePlans.map(plan => plan.prices.find(price => price.areaAttributePriceId === 'legacy-G11')?.basePrice)).toEqual(['0.250000000000000001', '0.75'])
+  expect(reloadedArea.productAdditionalPlanOverrides).toEqual([{ productId: 'P36', additionalPricePlanId: special.additionalPricePlanId }])
+  for (const key of ['attributes', 'categoryAttributeBindings', 'productAttributeOverrides']) expect(Object.hasOwn(reloadedArea, key)).toBe(false)
+})
+
 test('browser preview isolates mutable data and does not write desktop storage', async () => {
+  const original = cloneDocument(initialDocument)
   api.native = false; const first = await loadProductPricing(); first.document.products.find(p => p.basePrices.length)!.basePrices[0].unitPrice = '999'; first.bundle.main.categories[0].title = 'Changed'
-  const next = await loadProductPricing(); expect(next.document).toEqual(initialDocument); expect(next.bundle).toEqual(initialBundle)
+  first.document.areaPricing!.accessoryPrices![0].unitPrice = '999'
+  const next = await loadProductPricing(); expect(next.document).toEqual({ ...initialDocument, areaPricing: createAreaPricing(initialBundle, initialDocument.accessoryPrices) }); expect(next.bundle).toEqual(initialBundle)
+  expect(initialDocument).toEqual(original)
+  for (const { accessoryStyleId, accessoryColorId, unitPrice } of original.accessoryPrices) {
+    expect(next.document.areaPricing!.accessoryPrices).toContainEqual(expect.objectContaining({ accessoryStyleId, accessoryColorId, unitPrice }))
+  }
   await expect(saveProductPricing(next.document, next.version)).rejects.toThrow('桌面软件'); expect(api.invoke).not.toHaveBeenCalled()
 })
 
@@ -335,9 +427,13 @@ test('desktop v3 loading transfers custom size ownership before upgrading prices
   const current = fixture('7.123456789012345678')
   for (const row of [...current.products[0].basePrices, ...current.products[0].attributePrices]) row.sizeBandId = 'custom-old-size'
   const legacy = { ...structuredClone(current), schemaVersion: 3, sizeBands: [{ sizeBandId: 'custom-old-size', label: '客户自定义尺寸' }], products: current.products.map(product => ({ ...structuredClone(product), sizeBandIds: ['custom-old-size'] })) }
+  const before = structuredClone(legacy)
   api.invoke.mockResolvedValueOnce({ ...snapshot(current, bundle), document: legacy })
   const loaded = await loadProductPricing()
-  expect(loaded.document).toEqual(upgradeSharedAttributePrices(current))
+  expect(loaded.document).toEqual({ ...upgradeSharedAttributePrices(current), areaPricing: createAreaPricing(loaded.bundle, current.accessoryPrices) })
+  expect(legacy).toEqual(before)
+  expect(loaded.document.accessoryPrices).toEqual(current.accessoryPrices)
+  expect(loaded.document.areaPricing!.accessoryPrices).toContainEqual(expect.objectContaining({ accessoryStyleId: 'P1', accessoryColorId: null, unitPrice: '0.3' }))
   expect(loaded.bundle.catalogs['sizes.json'].values).toContainEqual(expect.objectContaining({ sizeBandId: 'custom-old-size', labelZh: '客户自定义尺寸' }))
   expect(optionFor(productIn(loaded.bundle), 'Size')!.deleted).toBe(false)
   expect(getProductSizes(loaded.bundle, productIn(loaded.bundle)).map(getEntityId)).toEqual(['custom-old-size'])
@@ -453,4 +549,44 @@ test('schema-five rejects duplicate shared keys, ambiguous identities, missing f
   expect(() => validateDocument(missing)).toThrow()
   const local = cloneDocument(document); local.products[0].attributePrices = [{ ...attribute('techniqueId', 'G11'), attributePriceId: 'invalid-local-technique' }]
   expect(() => validateDocument(local)).toThrow('公共价格')
+})
+
+test('longest-side templates and their product and attribute bindings survive service save and reload without changing area templates', async () => {
+  const bundle = clone(initialBundle)
+  const area = createAreaPricing(bundle)
+  const ordinary = structuredClone(area.templates[0])
+  const longest = structuredClone(ordinary)
+  longest.areaTemplateId = 'longest-service-template'
+  longest.name = '最长边服务往返'
+  longest.matchBy = 'longest-side'
+  longest.unit = 'mm'
+  longest.boundaryMode = 'upper-inclusive'
+  longest.basePrice = '0.4638'
+  longest.formula = '基本价 + 档位价格 * 最长边毫米'
+  longest.tiers = [{ areaTierId: 'longest-small', maxArea: '50.8' }, { areaTierId: 'longest-large', maxArea: null }]
+  longest.tierPrices = [{ areaTierId: 'longest-small', price: '0.000279155123456789' }, { areaTierId: 'longest-large', price: null }]
+  area.templates.push(longest)
+  area.categories.find(category => category.categoryId === 'standees')!.areaTemplateId = longest.areaTemplateId
+  area.productOverrides.push({ productId: 'P31', areaTemplateId: longest.areaTemplateId })
+  area.additionalPricePlans.push({ additionalPricePlanId: 'longest-plan', name: '最长边附加方案', prices: [{ areaAttributePriceId: 'longest-technique', optionName: 'Technique', reference: { techniqueId: 'G11' }, areaTemplateId: longest.areaTemplateId, basePrice: '0.15', tierPrices: [{ areaTierId: 'longest-small', price: '0.001123456789012345' }, { areaTierId: 'longest-large', price: null }] }] })
+  area.categoryAdditionalPlanBindings.push({ categoryId: 'keychains', additionalPricePlanId: 'longest-plan' })
+  area.productTotalFormulas.push({ productId: 'P31', formula: '(大类主体价 + 属性价 + 配件价 + 0.25) * 折扣系数 * 数量' })
+  let storage = snapshot({ ...cloneDocument(initialDocument), areaPricing: area }, bundle)
+  api.invoke.mockImplementation(async (command, request) => {
+    if (command === 'load_product_pricing_settings') return structuredClone(storage)
+    if (command === 'save_product_pricing_settings') {
+      storage = { ...storage, document: structuredClone(request.document), version: 'v2' }
+      return structuredClone(storage)
+    }
+    throw new Error(`Unexpected command: ${command}`)
+  })
+  const first = await loadProductPricing()
+  expect(first.document.areaPricing).toEqual(area)
+  const saved = await saveProductPricing(first.document, first.version)
+  const reloaded = await loadProductPricing()
+  expect(reloaded.document.areaPricing).toEqual(saved.document.areaPricing)
+  expect(reloaded.document.areaPricing).toEqual(area)
+  expect(reloaded.document.areaPricing!.templates[0]).toEqual(ordinary)
+  expect(reloaded.document.areaPricing!.templates[1]).toEqual(longest)
+  expect(Object.hasOwn(reloaded.document.areaPricing!.templates[0], 'matchBy')).toBe(false)
 })

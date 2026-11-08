@@ -4,6 +4,7 @@ mod batches;
 pub mod config;
 mod local_cleanup;
 mod migration;
+mod request;
 mod resources;
 mod reviews;
 mod schema_upgrade;
@@ -13,6 +14,25 @@ use serde_json::{json, Value};
 use std::{fs, path::PathBuf};
 use store::{error, required, text, Result};
 use tauri::Manager;
+
+fn traced<T>(command: &str, stage: &str, action: impl FnOnce() -> Result<T>) -> Result<T> {
+    let started = std::time::Instant::now();
+    let result = action();
+    // Command names are caller-provided too. Log only the fixed write allowlist;
+    // errors/payloads can contain local paths, business data and credentials.
+    let command = if mutating(command) {
+        command
+    } else {
+        "read_or_setup"
+    };
+    let elapsed = started.elapsed().as_millis();
+    if result.is_err() {
+        log::warn!(target: "printflow::cloud", "command={command} stage={stage} elapsed_ms={elapsed} outcome=failed");
+    } else if elapsed >= 1_000 {
+        log::info!(target: "printflow::cloud", "command={command} stage={stage} elapsed_ms={elapsed} outcome=ok");
+    }
+    result
+}
 
 #[tauri::command]
 pub fn storage_mode() -> Result<config::Mode> {
@@ -150,19 +170,12 @@ pub async fn cloud_operation(
     request_id: Option<String>,
 ) -> Result<Value> {
     tauri::async_runtime::spawn_blocking(move || {
-        let env = config::load()?.ok_or("当前未启用共享模式")?;
-        let mut conn = store::connect(&env)?;
+        let env = traced(&command, "configuration", config::load)?.ok_or("当前未启用共享模式")?;
+        let mut conn = traced(&command, "connection", || store::connect(&env))?;
         if command == "initialize_shared_user" {
             return register(&app, &env, &mut conn, required(&args, "userName")?);
         }
-        let user = current_user(&app, &env, &mut conn)?;
-        let mut args = args;
-        if command == "save_batch" {
-            let mut assets: Vec<crate::assets::Asset> =
-                serde_json::from_value(args["assets"].clone()).map_err(|_| "图片资产格式错误")?;
-            crate::finish_matching::fill(&mut assets, &crate::finish_catalog_path(&app)?)?;
-            args["assets"] = serde_json::to_value(assets).map_err(|_| "图片资产格式错误")?;
-        }
+        let user = traced(&command, "identity", || current_user(&app, &env, &mut conn))?;
         if command == "preview_cloud_migration" {
             return migration::preview(&crate::database(&app)?);
         }
@@ -198,16 +211,35 @@ pub async fn cloud_operation(
                 "",
             );
         }
-        store::exclusive(&mut conn, |conn| {
-            execute_request(
-                conn,
-                &env,
-                &user,
-                &command,
-                &args,
-                expected_version.unwrap_or(0),
-                request_id,
-            )
+        traced(&command, "write", || {
+            store::exclusive(&mut conn, |conn| {
+                execute_request(
+                    conn,
+                    &env,
+                    &user,
+                    &command,
+                    &args,
+                    expected_version.unwrap_or(0),
+                    request_id,
+                    |args| {
+                        traced(&command, "prepare", || {
+                            let mut args = args.clone();
+                            if command == "save_batch" {
+                                let mut assets: Vec<crate::assets::Asset> =
+                                    serde_json::from_value(args["assets"].clone())
+                                        .map_err(|_| "图片资产格式错误")?;
+                                crate::finish_matching::fill(
+                                    &mut assets,
+                                    &crate::finish_catalog_path(&app)?,
+                                )?;
+                                args["assets"] =
+                                    serde_json::to_value(assets).map_err(|_| "图片资产格式错误")?;
+                            }
+                            Ok(args)
+                        })
+                    },
+                )
+            })
         })
     })
     .await
@@ -413,12 +445,13 @@ fn execute_request(
     args: &Value,
     expected: u64,
     request_id: Option<String>,
+    prepare: impl FnOnce(&Value) -> Result<Value>,
 ) -> Result<Value> {
     let request = request_id.ok_or("保存请求缺少唯一标识")?;
     if request.len() != 36 || !request.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
         return Err("保存请求标识无效".into());
     }
-    let digest = resources::hash(format!("{command}:{}:{args}", expected).as_bytes());
+    let digest = request::digest(command, args, expected);
     let mut tx = conn.start_transaction(TxOpts::default()).map_err(error)?;
     // A duplicate request waits for the first transaction and replays its
     // committed result, including after a lost network response.
@@ -434,28 +467,29 @@ fn execute_request(
         )
         .map_err(error)?
         .ok_or("保存请求不可用")?;
-    if owner != user || known != digest {
+    if owner != user {
         return Err("保存请求内容不一致，请重新打开记录".into());
     }
-    if response != "null" {
+    let prepared = request::payload(command, args, expected, &known, response != "null", prepare)?;
+    let Some(args) = prepared else {
         let mut response = store::json_value(response)?;
         tx.commit().map_err(error)?;
         finish_request_cleanup(conn, env, &request, &mut response)?;
         resources::hydrate(conn, env, &mut response, true)?;
         return Ok(response);
-    }
+    };
     // Persist the cleanup candidates with the deletion so a lost response or
     // unavailable share can be retried after the database transaction commits.
     let cleanup_ids: Vec<String> = if command == "delete_batch" {
         tx.exec(
             "SELECT r.hash FROM pf_resource_refs f JOIN pf_resources r ON r.id=f.resource_id JOIN pf_records b ON b.id=f.record_id WHERE b.kind='batch' AND b.record_key=?",
-            (required(args, "id")?,),
+            (required(&args, "id")?,),
         )
         .map_err(error)?
     } else {
         Vec::new()
     };
-    let result = dispatch(&mut tx, env, user, command, args, expected, &request)?;
+    let result = dispatch(&mut tx, env, user, command, &args, expected, &request)?;
     // Wrap null results so a completed deletion is distinct from pending.
     let mut envelope = json!({"result":result});
     if !cleanup_ids.is_empty() {

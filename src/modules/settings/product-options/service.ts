@@ -7,11 +7,14 @@ import materials from './data/materials.json'
 import accessories from './data/accessory-styles.json'
 import standeeQuantities from './data/standee-quantities.json'
 import sizes from './data/sizes.json'
-import tinplateStickerFilms from './data/tinplate-sticker-films.json'
+import foilStamping from './data/foil-stamping.json'
+import stickerHoloFilms from './data/sticker-holo-films.json'
+import tinplateHoloFilms from './data/tinplate-holo-films.json'
 import tinplateMaterials from './data/tinplate-materials.json'
-import { clone, upgradeAdditionalAttributeBundle, upgradeProductSizeBundle, upgradeStandeeQuantityBundle, validateBundle, type Bundle } from './model'
+import { clone, upgradeAdditionalAttributeBundle, upgradeProductSizeBundle, upgradeStandeeQuantityBundle, validateBundle, type Bundle, type Catalog } from './model'
 
-export const initialBundle = upgradeProductSizeBundle(upgradeStandeeQuantityBundle({ main, catalogs: { 'sizes.json': sizes, 'print-options.json': print, 'techniques.json': techniques, 'holo-films.json': films, 'tinplate-sticker-films.json': tinplateStickerFilms, 'materials.json': materials, 'tinplate-materials.json': tinplateMaterials, 'accessory-styles.json': accessories, 'standee-quantities.json': standeeQuantities } }))
+export const initialBundle = upgradeProductSizeBundle(upgradeStandeeQuantityBundle({ main, catalogs: { 'sizes.json': sizes as Catalog, 'print-options.json': print, 'techniques.json': techniques, 'foil-stamping.json': foilStamping, 'holo-films.json': films, 'sticker-holo-films.json': stickerHoloFilms, 'tinplate-holo-films.json': tinplateHoloFilms, 'materials.json': materials, 'tinplate-materials.json': tinplateMaterials, 'accessory-styles.json': accessories, 'standee-quantities.json': standeeQuantities } }))
+validateBundle(initialBundle)
 export type Snapshot = { bundle: Bundle; version: string; directory: string }
 export async function loadProductOptions(): Promise<Snapshot> {
   const snapshot = isTauri() ? await invoke<Snapshot>('load_product_option_settings') : { bundle: clone(initialBundle), version: 'preview', directory: '浏览器预览 · 保存请使用桌面软件' }
@@ -20,8 +23,9 @@ export async function loadProductOptions(): Promise<Snapshot> {
   return snapshot
 }
 export async function saveProductOptions(bundle: Bundle, expectedVersion: string): Promise<Snapshot> {
-  const cleaned = upgradeAdditionalAttributeBundle(bundle)
+  const cleaned = upgradeProductSizeBundle(upgradeAdditionalAttributeBundle(bundle))
   validateBundle(cleaned)
   if (!isTauri()) throw new Error('请在桌面软件中保存配置。浏览器中可导出完整配置副本。')
-  return invoke<Snapshot>('save_product_option_settings', { bundle: cleaned, expectedVersion })
+  const snapshot = await invoke<Snapshot>('save_product_option_settings', { bundle: cleaned, expectedVersion })
+  return { ...snapshot, bundle: snapshot.bundle ?? cleaned }
 }

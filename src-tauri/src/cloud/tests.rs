@@ -26,7 +26,9 @@ fn request(
 ) -> Result<Value> {
     let id = store::uuid(conn)?;
     store::exclusive(conn, |conn| {
-        execute_request(conn, env, user, command, &args, version, Some(id))
+        execute_request(conn, env, user, command, &args, version, Some(id), |args| {
+            Ok(args.clone())
+        })
     })
     .map(|v| v["result"].clone())
 }
@@ -339,6 +341,7 @@ fn two_users_shared_business_roundtrip() {
             &args,
             0,
             Some(retry.clone()),
+            |args| Ok(args.clone()),
         )
     })
     .unwrap();
@@ -351,6 +354,7 @@ fn two_users_shared_business_roundtrip() {
             &args,
             0,
             Some(retry.clone()),
+            |args| Ok(args.clone()),
         )
     })
     .unwrap();
@@ -425,6 +429,7 @@ fn two_users_shared_business_roundtrip() {
             &delete_args,
             1,
             Some(deletion_id.clone()),
+            |args| Ok(args.clone()),
         )
     });
     assert!(
@@ -445,6 +450,7 @@ fn two_users_shared_business_roundtrip() {
                 &delete_args,
                 1,
                 Some(deletion_id.clone()),
+                |args| Ok(args.clone()),
             )
         })
         .unwrap();

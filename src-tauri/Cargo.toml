@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.1.40"
+version = "0.1.41"
 description = "PrintFlow production layout desktop app"
 authors = ["PrintFlow"]
 edition = "2021"
@@ -29,6 +29,7 @@ toml = "0.8"
 tempfile = "3"
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
 sha2 = "0.10"
+aws-lc-rs = { version = "1.18.1", default-features = false, features = ["non-fips", "alloc"] }
 usvg = "0.45"
 resvg = "0.45"
 tiny-skia = "0.11"

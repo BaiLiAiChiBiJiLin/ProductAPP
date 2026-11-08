@@ -30,6 +30,8 @@ pub struct Context {
     /// A QT copy reuses its image XObject across every resource container.
     #[cfg(feature = "image")]
     pub images: ImageMap<(u8, usize), (Arc<Vec<u8>>, Ref, usvg::Size)>,
+    #[cfg(feature = "image")]
+    pub image_scales: ImageMap<(u8, usize), f32>,
 }
 
 impl Context {
@@ -44,6 +46,8 @@ impl Context {
             sgray_ref: None,
             #[cfg(feature = "image")]
             images: ImageMap::new(),
+            #[cfg(feature = "image")]
+            image_scales: crate::render::image::downsample::image_scales(tree, options),
         };
 
         #[cfg(feature = "text")]

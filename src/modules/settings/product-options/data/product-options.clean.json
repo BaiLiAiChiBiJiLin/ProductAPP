@@ -14,46 +14,19 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
-                },
-                {
                   "sizeBandId": "keychain-1-in"
                 },
                 {
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -69,6 +42,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -125,6 +102,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": false,
               "disabledValues": [
@@ -137,6 +122,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -146,14 +135,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P1"
@@ -167,46 +148,19 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
-                },
-                {
                   "sizeBandId": "keychain-1-in"
                 },
                 {
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -222,6 +176,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -278,6 +236,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": false,
               "disabledValues": [
@@ -290,6 +256,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -299,14 +269,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P2"
@@ -320,46 +282,19 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
-                },
-                {
                   "sizeBandId": "keychain-1-in"
                 },
                 {
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -375,6 +310,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -431,6 +370,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": false,
               "disabledValues": [
@@ -443,6 +390,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -452,14 +403,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P3"
@@ -473,46 +416,19 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
-                },
-                {
                   "sizeBandId": "keychain-1-in"
                 },
                 {
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -528,6 +444,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -584,6 +504,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": false,
               "disabledValues": [
@@ -596,6 +524,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -605,14 +537,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P4"
@@ -626,37 +550,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -665,19 +568,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -693,6 +590,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -749,6 +650,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -761,6 +670,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -770,14 +683,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P5"
@@ -791,46 +696,19 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
-                },
-                {
                   "sizeBandId": "keychain-1-in"
                 },
                 {
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -846,6 +724,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -902,6 +784,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": false,
               "disabledValues": [
@@ -914,6 +804,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -923,14 +817,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P6"
@@ -944,46 +830,19 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
-                },
-                {
                   "sizeBandId": "keychain-1-in"
                 },
                 {
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -999,6 +858,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -1055,6 +918,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": false,
               "disabledValues": [
@@ -1067,6 +938,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -1076,14 +951,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P7"
@@ -1097,46 +964,19 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
-                },
-                {
                   "sizeBandId": "keychain-1-in"
                 },
                 {
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -1152,6 +992,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -1208,6 +1052,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": false,
               "disabledValues": [
@@ -1220,6 +1072,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -1229,14 +1085,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P8"
@@ -1250,46 +1098,19 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
-                },
-                {
                   "sizeBandId": "keychain-1-in"
                 },
                 {
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -1305,6 +1126,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -1361,6 +1186,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": false,
               "disabledValues": [
@@ -1373,6 +1206,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -1382,14 +1219,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P9"
@@ -1403,46 +1232,19 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
-                },
-                {
                   "sizeBandId": "keychain-1-in"
                 },
                 {
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -1458,6 +1260,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -1514,6 +1320,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": false,
               "disabledValues": [
@@ -1526,6 +1340,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -1535,14 +1353,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P10"
@@ -1556,46 +1366,19 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
-                },
-                {
                   "sizeBandId": "keychain-1-in"
                 },
                 {
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -1611,6 +1394,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -1667,6 +1454,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": false,
               "disabledValues": [
@@ -1679,6 +1474,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -1688,14 +1487,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P11"
@@ -1709,46 +1500,19 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
-                },
-                {
                   "sizeBandId": "keychain-1-in"
                 },
                 {
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -1764,6 +1528,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -1820,6 +1588,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": false,
               "disabledValues": [
@@ -1832,6 +1608,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -1841,14 +1621,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P12"
@@ -1862,46 +1634,19 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
-                },
-                {
                   "sizeBandId": "keychain-1-in"
                 },
                 {
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -1917,6 +1662,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -1973,6 +1722,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": false,
               "disabledValues": [
@@ -1985,6 +1742,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -1994,14 +1755,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P13"
@@ -2015,46 +1768,19 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
-                },
-                {
                   "sizeBandId": "keychain-1-in"
                 },
                 {
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -2070,6 +1796,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -2126,6 +1856,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": false,
               "disabledValues": [
@@ -2138,6 +1876,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -2147,14 +1889,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P14"
@@ -2168,37 +1902,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -2207,19 +1920,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -2235,6 +1942,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -2291,6 +2002,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -2303,6 +2022,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -2312,14 +2035,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P15"
@@ -2333,46 +2048,19 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
-                },
-                {
                   "sizeBandId": "keychain-1-in"
                 },
                 {
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -2388,6 +2076,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -2444,6 +2136,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": false,
               "disabledValues": [
@@ -2456,6 +2156,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -2465,14 +2169,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P16"
@@ -2493,37 +2189,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -2532,19 +2207,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -2560,6 +2229,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -2616,6 +2289,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -2628,6 +2309,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -2637,14 +2322,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P17"
@@ -2658,37 +2335,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -2697,19 +2353,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -2725,6 +2375,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -2781,6 +2435,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -2793,6 +2455,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -2802,14 +2468,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P18"
@@ -2823,37 +2481,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -2862,19 +2499,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -2890,6 +2521,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -2946,6 +2581,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -2958,6 +2601,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -2967,14 +2614,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P19"
@@ -2988,37 +2627,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -3027,19 +2645,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -3055,6 +2667,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -3111,6 +2727,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -3123,6 +2747,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -3132,14 +2760,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P20"
@@ -3153,37 +2773,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -3192,19 +2791,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -3220,6 +2813,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -3276,6 +2873,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -3288,6 +2893,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -3297,14 +2906,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P21"
@@ -3318,37 +2919,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -3357,19 +2937,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -3385,6 +2959,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -3441,6 +3019,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -3453,6 +3039,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -3462,14 +3052,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P22"
@@ -3490,37 +3072,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -3529,19 +3090,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -3557,6 +3112,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -3586,6 +3145,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -3598,6 +3165,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -3607,14 +3178,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P23"
@@ -3628,37 +3191,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -3667,19 +3209,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -3695,6 +3231,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -3724,6 +3264,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -3736,6 +3284,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -3745,14 +3297,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P24"
@@ -3766,37 +3310,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -3805,19 +3328,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -3833,6 +3350,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -3889,6 +3410,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -3901,6 +3430,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -3910,14 +3443,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P25"
@@ -3931,37 +3456,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -3970,19 +3474,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -3998,6 +3496,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -4033,6 +3535,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -4045,6 +3555,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -4054,14 +3568,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P26"
@@ -4075,37 +3581,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -4114,19 +3599,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -4142,6 +3621,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -4171,6 +3654,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -4183,6 +3674,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -4192,14 +3687,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P27"
@@ -4213,37 +3700,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -4252,19 +3718,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -4280,6 +3740,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -4309,6 +3773,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -4321,6 +3793,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -4330,14 +3806,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P28"
@@ -4351,37 +3819,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -4390,19 +3837,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -4418,6 +3859,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -4447,6 +3892,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -4459,6 +3912,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -4468,14 +3925,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P29"
@@ -4489,37 +3938,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -4528,19 +3956,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -4556,6 +3978,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -4585,6 +4011,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -4597,6 +4031,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -4606,14 +4044,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P30"
@@ -4634,37 +4064,10 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
-                },
-                {
-                  "sizeBandId": "sticker-3x3-in"
-                },
-                {
-                  "sizeBandId": "sticker-4x4-in"
-                },
-                {
                   "sizeBandId": "sticker-5x5-in"
                 },
                 {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -4680,6 +4083,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -4715,6 +4122,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -4727,6 +4142,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": false
             },
@@ -4736,14 +4155,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P31"
@@ -4757,37 +4168,10 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
-                },
-                {
-                  "sizeBandId": "sticker-3x3-in"
-                },
-                {
-                  "sizeBandId": "sticker-4x4-in"
-                },
-                {
                   "sizeBandId": "sticker-5x5-in"
                 },
                 {
-                  "sizeBandId": "keychain-1-in"
-                },
-                {
-                  "sizeBandId": "keychain-1-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -4803,6 +4187,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -4838,6 +4226,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -4850,6 +4246,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": false
             },
@@ -4859,14 +4259,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P32"
@@ -4880,37 +4272,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -4919,19 +4290,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -4947,6 +4312,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -5003,6 +4372,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -5015,6 +4392,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -5024,14 +4405,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P33"
@@ -5045,37 +4418,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -5084,19 +4436,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -5112,6 +4458,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -5168,6 +4518,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -5180,6 +4538,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -5189,14 +4551,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P34"
@@ -5210,37 +4564,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -5249,19 +4582,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -5277,6 +4604,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -5333,6 +4664,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -5345,6 +4684,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -5354,14 +4697,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P35"
@@ -5375,37 +4710,10 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
-                },
-                {
-                  "sizeBandId": "sticker-3x3-in"
-                },
-                {
-                  "sizeBandId": "sticker-4x4-in"
-                },
-                {
                   "sizeBandId": "sticker-5x5-in"
                 },
                 {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -5421,6 +4729,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -5456,6 +4768,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -5468,6 +4788,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": false
             },
@@ -5477,14 +4801,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P36"
@@ -5498,37 +4814,10 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
-                },
-                {
-                  "sizeBandId": "sticker-3x3-in"
-                },
-                {
-                  "sizeBandId": "sticker-4x4-in"
-                },
-                {
                   "sizeBandId": "sticker-5x5-in"
                 },
                 {
-                  "sizeBandId": "keychain-1-in"
-                },
-                {
-                  "sizeBandId": "keychain-1-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -5544,6 +4833,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -5579,6 +4872,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -5591,6 +4892,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": false
             },
@@ -5600,14 +4905,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P37"
@@ -5621,37 +4918,10 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
-                },
-                {
-                  "sizeBandId": "sticker-3x3-in"
-                },
-                {
-                  "sizeBandId": "sticker-4x4-in"
-                },
-                {
                   "sizeBandId": "sticker-5x5-in"
                 },
                 {
-                  "sizeBandId": "keychain-1-in"
-                },
-                {
-                  "sizeBandId": "keychain-1-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -5667,6 +4937,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -5702,6 +4976,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -5714,6 +4996,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": false
             },
@@ -5723,14 +5009,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P38"
@@ -5744,37 +5022,10 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
-                },
-                {
-                  "sizeBandId": "sticker-3x3-in"
-                },
-                {
-                  "sizeBandId": "sticker-4x4-in"
-                },
-                {
                   "sizeBandId": "sticker-5x5-in"
                 },
                 {
-                  "sizeBandId": "keychain-1-in"
-                },
-                {
-                  "sizeBandId": "keychain-1-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -5790,6 +5041,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -5825,6 +5080,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -5837,6 +5100,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": false
             },
@@ -5846,14 +5113,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P39"
@@ -5867,37 +5126,10 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
-                },
-                {
-                  "sizeBandId": "sticker-3x3-in"
-                },
-                {
-                  "sizeBandId": "sticker-4x4-in"
-                },
-                {
                   "sizeBandId": "sticker-5x5-in"
                 },
                 {
-                  "sizeBandId": "keychain-1-in"
-                },
-                {
-                  "sizeBandId": "keychain-1-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -5913,6 +5145,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -5948,6 +5184,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -5960,6 +5204,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": false
             },
@@ -5969,14 +5217,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P40"
@@ -5990,37 +5230,10 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
-                },
-                {
-                  "sizeBandId": "sticker-3x3-in"
-                },
-                {
-                  "sizeBandId": "sticker-4x4-in"
-                },
-                {
                   "sizeBandId": "sticker-5x5-in"
                 },
                 {
-                  "sizeBandId": "keychain-1-in"
-                },
-                {
-                  "sizeBandId": "keychain-1-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -6036,6 +5249,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -6071,6 +5288,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -6083,6 +5308,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": false
             },
@@ -6092,14 +5321,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P41"
@@ -6113,37 +5334,10 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
-                },
-                {
-                  "sizeBandId": "sticker-3x3-in"
-                },
-                {
-                  "sizeBandId": "sticker-4x4-in"
-                },
-                {
                   "sizeBandId": "sticker-5x5-in"
                 },
                 {
-                  "sizeBandId": "keychain-1-in"
-                },
-                {
-                  "sizeBandId": "keychain-1-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -6159,6 +5353,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -6194,6 +5392,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -6206,6 +5412,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": false
             },
@@ -6215,14 +5425,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P42"
@@ -6236,37 +5438,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -6275,19 +5456,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -6303,6 +5478,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -6359,6 +5538,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -6371,6 +5558,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -6380,14 +5571,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P43"
@@ -6401,37 +5584,10 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
-                },
-                {
-                  "sizeBandId": "sticker-3x3-in"
-                },
-                {
-                  "sizeBandId": "sticker-4x4-in"
-                },
-                {
                   "sizeBandId": "sticker-5x5-in"
                 },
                 {
-                  "sizeBandId": "keychain-1-in"
-                },
-                {
-                  "sizeBandId": "keychain-1-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -6447,6 +5603,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -6482,6 +5642,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -6494,6 +5662,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": false
             },
@@ -6503,14 +5675,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P44"
@@ -6531,37 +5695,10 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
-                },
-                {
-                  "sizeBandId": "sticker-3x3-in"
-                },
-                {
-                  "sizeBandId": "sticker-4x4-in"
-                },
-                {
                   "sizeBandId": "sticker-5x5-in"
                 },
                 {
-                  "sizeBandId": "keychain-1-in"
-                },
-                {
-                  "sizeBandId": "keychain-1-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -6577,6 +5714,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -6633,6 +5774,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -6645,6 +5794,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -6654,14 +5807,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P45"
@@ -6682,37 +5827,10 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
-                },
-                {
-                  "sizeBandId": "sticker-3x3-in"
-                },
-                {
-                  "sizeBandId": "sticker-4x4-in"
-                },
-                {
                   "sizeBandId": "sticker-5x5-in"
                 },
                 {
-                  "sizeBandId": "keychain-1-in"
-                },
-                {
-                  "sizeBandId": "keychain-1-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -6728,6 +5846,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -6784,6 +5906,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -6796,6 +5926,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": false
             },
@@ -6805,14 +5939,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P46"
@@ -6826,37 +5952,10 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
-                },
-                {
-                  "sizeBandId": "sticker-3x3-in"
-                },
-                {
-                  "sizeBandId": "sticker-4x4-in"
-                },
-                {
                   "sizeBandId": "sticker-5x5-in"
                 },
                 {
-                  "sizeBandId": "keychain-1-in"
-                },
-                {
-                  "sizeBandId": "keychain-1-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -6872,6 +5971,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -6928,6 +6031,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -6940,6 +6051,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": false
             },
@@ -6949,14 +6064,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P47"
@@ -6970,37 +6077,10 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
-                },
-                {
-                  "sizeBandId": "sticker-3x3-in"
-                },
-                {
-                  "sizeBandId": "sticker-4x4-in"
-                },
-                {
                   "sizeBandId": "sticker-5x5-in"
                 },
                 {
-                  "sizeBandId": "keychain-1-in"
-                },
-                {
-                  "sizeBandId": "keychain-1-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -7016,6 +6096,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -7072,6 +6156,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -7084,6 +6176,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": false
             },
@@ -7093,14 +6189,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P48"
@@ -7114,37 +6202,10 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
-                },
-                {
-                  "sizeBandId": "sticker-3x3-in"
-                },
-                {
-                  "sizeBandId": "sticker-4x4-in"
-                },
-                {
                   "sizeBandId": "sticker-5x5-in"
                 },
                 {
-                  "sizeBandId": "keychain-1-in"
-                },
-                {
-                  "sizeBandId": "keychain-1-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -7160,6 +6221,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -7216,6 +6281,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -7228,6 +6301,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": false
             },
@@ -7237,14 +6314,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P49"
@@ -7258,37 +6327,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -7297,19 +6345,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -7325,6 +6367,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -7381,6 +6427,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -7393,6 +6447,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -7402,14 +6460,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P50"
@@ -7423,37 +6473,10 @@
               "deleted": false,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
-                },
-                {
-                  "sizeBandId": "sticker-3x3-in"
-                },
-                {
-                  "sizeBandId": "sticker-4x4-in"
-                },
-                {
                   "sizeBandId": "sticker-5x5-in"
                 },
                 {
-                  "sizeBandId": "keychain-1-in"
-                },
-                {
-                  "sizeBandId": "keychain-1-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
-                  "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -7469,6 +6492,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -7525,6 +6552,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -7537,6 +6572,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": false
             },
@@ -7546,14 +6585,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P51"
@@ -7574,37 +6605,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -7613,19 +6623,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -7641,6 +6645,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -7697,6 +6705,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -7709,6 +6725,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -7718,14 +6738,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P52"
@@ -7739,37 +6751,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -7778,19 +6769,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -7806,6 +6791,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -7862,6 +6851,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -7874,6 +6871,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -7883,14 +6884,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P53"
@@ -7904,37 +6897,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -7943,19 +6915,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -7971,6 +6937,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -8027,6 +6997,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -8039,6 +7017,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -8048,14 +7030,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P54"
@@ -8069,37 +7043,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -8108,19 +7061,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -8136,6 +7083,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -8192,6 +7143,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -8204,6 +7163,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -8213,14 +7176,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P55"
@@ -8234,37 +7189,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -8273,19 +7207,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -8301,6 +7229,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -8357,6 +7289,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -8369,6 +7309,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -8378,14 +7322,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P56"
@@ -8399,37 +7335,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -8438,19 +7353,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -8466,6 +7375,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -8522,6 +7435,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -8534,6 +7455,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -8543,14 +7468,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P57"
@@ -8571,37 +7488,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -8610,19 +7506,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -8638,6 +7528,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -8694,6 +7588,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -8706,6 +7608,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -8715,14 +7621,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P58"
@@ -8736,37 +7634,16 @@
               "deleted": true,
               "disabledValues": [
                 {
-                  "sizeBandId": "sticker-2x2-in"
+                  "sizeBandId": "keychain-2-in"
                 },
                 {
-                  "sizeBandId": "sticker-3x3-in"
+                  "sizeBandId": "keychain-3-in"
                 },
                 {
-                  "sizeBandId": "sticker-4x4-in"
+                  "sizeBandId": "keychain-4-in"
                 },
                 {
                   "sizeBandId": "sticker-5x5-in"
-                },
-                {
-                  "sizeBandId": "board-1-in"
-                },
-                {
-                  "sizeBandId": "board-1-5-in"
-                },
-                {
-                  "sizeBandId": "board-2-in"
-                },
-                {
-                  "sizeBandId": "board-2-5-in"
-                },
-                {
-                  "sizeBandId": "board-3-in"
-                },
-                {
-                  "sizeBandId": "board-3-5-in"
-                },
-                {
-                  "sizeBandId": "board-4-in"
                 },
                 {
                   "sizeBandId": "keychain-1-in"
@@ -8775,19 +7652,13 @@
                   "sizeBandId": "keychain-1-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-2-in"
-                },
-                {
                   "sizeBandId": "keychain-2-5-in"
-                },
-                {
-                  "sizeBandId": "keychain-3-in"
                 },
                 {
                   "sizeBandId": "keychain-3-5-in"
                 },
                 {
-                  "sizeBandId": "keychain-4-in"
+                  "sizeBandId": "size-custom"
                 }
               ]
             },
@@ -8803,6 +7674,10 @@
                   "techniqueId": "G18"
                 }
               ]
+            },
+            {
+              "name": "Foil Stamping",
+              "deleted": true
             },
             {
               "name": "Holo Film",
@@ -8859,6 +7734,14 @@
               ]
             },
             {
+              "name": "Sticker Holo Film",
+              "deleted": true
+            },
+            {
+              "name": "Tinplate Holo Film",
+              "deleted": true
+            },
+            {
               "name": "Material",
               "deleted": true,
               "disabledValues": [
@@ -8871,6 +7754,10 @@
               ]
             },
             {
+              "name": "Tinplate Material",
+              "deleted": true
+            },
+            {
               "name": "Accessories Style",
               "deleted": true
             },
@@ -8880,14 +7767,6 @@
               "defaultValue": {
                 "standeeQuantityId": "SQ1"
               }
-            },
-            {
-              "name": "Tinplate Sticker Film",
-              "deleted": true
-            },
-            {
-              "name": "Tinplate Material",
-              "deleted": true
             }
           ],
           "productId": "P59"
@@ -8905,37 +7784,16 @@
           "deleted": true,
           "disabledValues": [
             {
-              "sizeBandId": "sticker-2x2-in"
+              "sizeBandId": "keychain-2-in"
             },
             {
-              "sizeBandId": "sticker-3x3-in"
+              "sizeBandId": "keychain-3-in"
             },
             {
-              "sizeBandId": "sticker-4x4-in"
+              "sizeBandId": "keychain-4-in"
             },
             {
               "sizeBandId": "sticker-5x5-in"
-            },
-            {
-              "sizeBandId": "board-1-in"
-            },
-            {
-              "sizeBandId": "board-1-5-in"
-            },
-            {
-              "sizeBandId": "board-2-in"
-            },
-            {
-              "sizeBandId": "board-2-5-in"
-            },
-            {
-              "sizeBandId": "board-3-in"
-            },
-            {
-              "sizeBandId": "board-3-5-in"
-            },
-            {
-              "sizeBandId": "board-4-in"
             },
             {
               "sizeBandId": "keychain-1-in"
@@ -8944,19 +7802,13 @@
               "sizeBandId": "keychain-1-5-in"
             },
             {
-              "sizeBandId": "keychain-2-in"
-            },
-            {
               "sizeBandId": "keychain-2-5-in"
-            },
-            {
-              "sizeBandId": "keychain-3-in"
             },
             {
               "sizeBandId": "keychain-3-5-in"
             },
             {
-              "sizeBandId": "keychain-4-in"
+              "sizeBandId": "size-custom"
             }
           ]
         },
@@ -8972,6 +7824,10 @@
               "techniqueId": "G18"
             }
           ]
+        },
+        {
+          "name": "Foil Stamping",
+          "deleted": true
         },
         {
           "name": "Holo Film",
@@ -9028,6 +7884,14 @@
           ]
         },
         {
+          "name": "Sticker Holo Film",
+          "deleted": true
+        },
+        {
+          "name": "Tinplate Holo Film",
+          "deleted": true
+        },
+        {
           "name": "Material",
           "deleted": true,
           "disabledValues": [
@@ -9040,6 +7904,10 @@
           ]
         },
         {
+          "name": "Tinplate Material",
+          "deleted": true
+        },
+        {
           "name": "Accessories Style",
           "deleted": true
         },
@@ -9049,14 +7917,6 @@
           "defaultValue": {
             "standeeQuantityId": "SQ1"
           }
-        },
-        {
-          "name": "Tinplate Sticker Film",
-          "deleted": true
-        },
-        {
-          "name": "Tinplate Material",
-          "deleted": true
         }
       ],
       "productId": "P60"
@@ -9070,37 +7930,16 @@
           "deleted": true,
           "disabledValues": [
             {
-              "sizeBandId": "sticker-2x2-in"
+              "sizeBandId": "keychain-2-in"
             },
             {
-              "sizeBandId": "sticker-3x3-in"
+              "sizeBandId": "keychain-3-in"
             },
             {
-              "sizeBandId": "sticker-4x4-in"
+              "sizeBandId": "keychain-4-in"
             },
             {
               "sizeBandId": "sticker-5x5-in"
-            },
-            {
-              "sizeBandId": "board-1-in"
-            },
-            {
-              "sizeBandId": "board-1-5-in"
-            },
-            {
-              "sizeBandId": "board-2-in"
-            },
-            {
-              "sizeBandId": "board-2-5-in"
-            },
-            {
-              "sizeBandId": "board-3-in"
-            },
-            {
-              "sizeBandId": "board-3-5-in"
-            },
-            {
-              "sizeBandId": "board-4-in"
             },
             {
               "sizeBandId": "keychain-1-in"
@@ -9109,19 +7948,13 @@
               "sizeBandId": "keychain-1-5-in"
             },
             {
-              "sizeBandId": "keychain-2-in"
-            },
-            {
               "sizeBandId": "keychain-2-5-in"
-            },
-            {
-              "sizeBandId": "keychain-3-in"
             },
             {
               "sizeBandId": "keychain-3-5-in"
             },
             {
-              "sizeBandId": "keychain-4-in"
+              "sizeBandId": "size-custom"
             }
           ]
         },
@@ -9137,6 +7970,10 @@
               "techniqueId": "G18"
             }
           ]
+        },
+        {
+          "name": "Foil Stamping",
+          "deleted": true
         },
         {
           "name": "Holo Film",
@@ -9193,6 +8030,14 @@
           ]
         },
         {
+          "name": "Sticker Holo Film",
+          "deleted": true
+        },
+        {
+          "name": "Tinplate Holo Film",
+          "deleted": true
+        },
+        {
           "name": "Material",
           "deleted": true,
           "disabledValues": [
@@ -9205,6 +8050,10 @@
           ]
         },
         {
+          "name": "Tinplate Material",
+          "deleted": true
+        },
+        {
           "name": "Accessories Style",
           "deleted": true
         },
@@ -9214,14 +8063,6 @@
           "defaultValue": {
             "standeeQuantityId": "SQ1"
           }
-        },
-        {
-          "name": "Tinplate Sticker Film",
-          "deleted": true
-        },
-        {
-          "name": "Tinplate Material",
-          "deleted": true
         }
       ],
       "productId": "P61"
@@ -9235,37 +8076,16 @@
           "deleted": true,
           "disabledValues": [
             {
-              "sizeBandId": "sticker-2x2-in"
+              "sizeBandId": "keychain-2-in"
             },
             {
-              "sizeBandId": "sticker-3x3-in"
+              "sizeBandId": "keychain-3-in"
             },
             {
-              "sizeBandId": "sticker-4x4-in"
+              "sizeBandId": "keychain-4-in"
             },
             {
               "sizeBandId": "sticker-5x5-in"
-            },
-            {
-              "sizeBandId": "board-1-in"
-            },
-            {
-              "sizeBandId": "board-1-5-in"
-            },
-            {
-              "sizeBandId": "board-2-in"
-            },
-            {
-              "sizeBandId": "board-2-5-in"
-            },
-            {
-              "sizeBandId": "board-3-in"
-            },
-            {
-              "sizeBandId": "board-3-5-in"
-            },
-            {
-              "sizeBandId": "board-4-in"
             },
             {
               "sizeBandId": "keychain-1-in"
@@ -9274,19 +8094,13 @@
               "sizeBandId": "keychain-1-5-in"
             },
             {
-              "sizeBandId": "keychain-2-in"
-            },
-            {
               "sizeBandId": "keychain-2-5-in"
-            },
-            {
-              "sizeBandId": "keychain-3-in"
             },
             {
               "sizeBandId": "keychain-3-5-in"
             },
             {
-              "sizeBandId": "keychain-4-in"
+              "sizeBandId": "size-custom"
             }
           ]
         },
@@ -9302,6 +8116,10 @@
               "techniqueId": "G18"
             }
           ]
+        },
+        {
+          "name": "Foil Stamping",
+          "deleted": true
         },
         {
           "name": "Holo Film",
@@ -9358,6 +8176,14 @@
           ]
         },
         {
+          "name": "Sticker Holo Film",
+          "deleted": true
+        },
+        {
+          "name": "Tinplate Holo Film",
+          "deleted": true
+        },
+        {
           "name": "Material",
           "deleted": true,
           "disabledValues": [
@@ -9370,6 +8196,10 @@
           ]
         },
         {
+          "name": "Tinplate Material",
+          "deleted": true
+        },
+        {
           "name": "Accessories Style",
           "deleted": true
         },
@@ -9379,14 +8209,6 @@
           "defaultValue": {
             "standeeQuantityId": "SQ1"
           }
-        },
-        {
-          "name": "Tinplate Sticker Film",
-          "deleted": true
-        },
-        {
-          "name": "Tinplate Material",
-          "deleted": true
         }
       ],
       "productId": "P62"
@@ -9400,37 +8222,16 @@
           "deleted": true,
           "disabledValues": [
             {
-              "sizeBandId": "sticker-2x2-in"
+              "sizeBandId": "keychain-2-in"
             },
             {
-              "sizeBandId": "sticker-3x3-in"
+              "sizeBandId": "keychain-3-in"
             },
             {
-              "sizeBandId": "sticker-4x4-in"
+              "sizeBandId": "keychain-4-in"
             },
             {
               "sizeBandId": "sticker-5x5-in"
-            },
-            {
-              "sizeBandId": "board-1-in"
-            },
-            {
-              "sizeBandId": "board-1-5-in"
-            },
-            {
-              "sizeBandId": "board-2-in"
-            },
-            {
-              "sizeBandId": "board-2-5-in"
-            },
-            {
-              "sizeBandId": "board-3-in"
-            },
-            {
-              "sizeBandId": "board-3-5-in"
-            },
-            {
-              "sizeBandId": "board-4-in"
             },
             {
               "sizeBandId": "keychain-1-in"
@@ -9439,19 +8240,13 @@
               "sizeBandId": "keychain-1-5-in"
             },
             {
-              "sizeBandId": "keychain-2-in"
-            },
-            {
               "sizeBandId": "keychain-2-5-in"
-            },
-            {
-              "sizeBandId": "keychain-3-in"
             },
             {
               "sizeBandId": "keychain-3-5-in"
             },
             {
-              "sizeBandId": "keychain-4-in"
+              "sizeBandId": "size-custom"
             }
           ]
         },
@@ -9467,6 +8262,10 @@
               "techniqueId": "G18"
             }
           ]
+        },
+        {
+          "name": "Foil Stamping",
+          "deleted": true
         },
         {
           "name": "Holo Film",
@@ -9523,6 +8322,14 @@
           ]
         },
         {
+          "name": "Sticker Holo Film",
+          "deleted": true
+        },
+        {
+          "name": "Tinplate Holo Film",
+          "deleted": true
+        },
+        {
           "name": "Material",
           "deleted": true,
           "disabledValues": [
@@ -9535,6 +8342,10 @@
           ]
         },
         {
+          "name": "Tinplate Material",
+          "deleted": true
+        },
+        {
           "name": "Accessories Style",
           "deleted": true
         },
@@ -9544,14 +8355,6 @@
           "defaultValue": {
             "standeeQuantityId": "SQ1"
           }
-        },
-        {
-          "name": "Tinplate Sticker Film",
-          "deleted": true
-        },
-        {
-          "name": "Tinplate Material",
-          "deleted": true
         }
       ],
       "productId": "P63"
@@ -9565,37 +8368,16 @@
           "deleted": true,
           "disabledValues": [
             {
-              "sizeBandId": "sticker-2x2-in"
+              "sizeBandId": "keychain-2-in"
             },
             {
-              "sizeBandId": "sticker-3x3-in"
+              "sizeBandId": "keychain-3-in"
             },
             {
-              "sizeBandId": "sticker-4x4-in"
+              "sizeBandId": "keychain-4-in"
             },
             {
               "sizeBandId": "sticker-5x5-in"
-            },
-            {
-              "sizeBandId": "board-1-in"
-            },
-            {
-              "sizeBandId": "board-1-5-in"
-            },
-            {
-              "sizeBandId": "board-2-in"
-            },
-            {
-              "sizeBandId": "board-2-5-in"
-            },
-            {
-              "sizeBandId": "board-3-in"
-            },
-            {
-              "sizeBandId": "board-3-5-in"
-            },
-            {
-              "sizeBandId": "board-4-in"
             },
             {
               "sizeBandId": "keychain-1-in"
@@ -9604,19 +8386,13 @@
               "sizeBandId": "keychain-1-5-in"
             },
             {
-              "sizeBandId": "keychain-2-in"
-            },
-            {
               "sizeBandId": "keychain-2-5-in"
-            },
-            {
-              "sizeBandId": "keychain-3-in"
             },
             {
               "sizeBandId": "keychain-3-5-in"
             },
             {
-              "sizeBandId": "keychain-4-in"
+              "sizeBandId": "size-custom"
             }
           ]
         },
@@ -9632,6 +8408,10 @@
               "techniqueId": "G18"
             }
           ]
+        },
+        {
+          "name": "Foil Stamping",
+          "deleted": true
         },
         {
           "name": "Holo Film",
@@ -9688,6 +8468,14 @@
           ]
         },
         {
+          "name": "Sticker Holo Film",
+          "deleted": true
+        },
+        {
+          "name": "Tinplate Holo Film",
+          "deleted": true
+        },
+        {
           "name": "Material",
           "deleted": true,
           "disabledValues": [
@@ -9700,6 +8488,10 @@
           ]
         },
         {
+          "name": "Tinplate Material",
+          "deleted": true
+        },
+        {
           "name": "Accessories Style",
           "deleted": true
         },
@@ -9709,14 +8501,6 @@
           "defaultValue": {
             "standeeQuantityId": "SQ1"
           }
-        },
-        {
-          "name": "Tinplate Sticker Film",
-          "deleted": true
-        },
-        {
-          "name": "Tinplate Material",
-          "deleted": true
         }
       ],
       "productId": "P64"
@@ -9730,37 +8514,16 @@
           "deleted": true,
           "disabledValues": [
             {
-              "sizeBandId": "sticker-2x2-in"
+              "sizeBandId": "keychain-2-in"
             },
             {
-              "sizeBandId": "sticker-3x3-in"
+              "sizeBandId": "keychain-3-in"
             },
             {
-              "sizeBandId": "sticker-4x4-in"
+              "sizeBandId": "keychain-4-in"
             },
             {
               "sizeBandId": "sticker-5x5-in"
-            },
-            {
-              "sizeBandId": "board-1-in"
-            },
-            {
-              "sizeBandId": "board-1-5-in"
-            },
-            {
-              "sizeBandId": "board-2-in"
-            },
-            {
-              "sizeBandId": "board-2-5-in"
-            },
-            {
-              "sizeBandId": "board-3-in"
-            },
-            {
-              "sizeBandId": "board-3-5-in"
-            },
-            {
-              "sizeBandId": "board-4-in"
             },
             {
               "sizeBandId": "keychain-1-in"
@@ -9769,19 +8532,13 @@
               "sizeBandId": "keychain-1-5-in"
             },
             {
-              "sizeBandId": "keychain-2-in"
-            },
-            {
               "sizeBandId": "keychain-2-5-in"
-            },
-            {
-              "sizeBandId": "keychain-3-in"
             },
             {
               "sizeBandId": "keychain-3-5-in"
             },
             {
-              "sizeBandId": "keychain-4-in"
+              "sizeBandId": "size-custom"
             }
           ]
         },
@@ -9797,6 +8554,10 @@
               "techniqueId": "G18"
             }
           ]
+        },
+        {
+          "name": "Foil Stamping",
+          "deleted": true
         },
         {
           "name": "Holo Film",
@@ -9853,6 +8614,14 @@
           ]
         },
         {
+          "name": "Sticker Holo Film",
+          "deleted": true
+        },
+        {
+          "name": "Tinplate Holo Film",
+          "deleted": true
+        },
+        {
           "name": "Material",
           "deleted": true,
           "disabledValues": [
@@ -9865,6 +8634,10 @@
           ]
         },
         {
+          "name": "Tinplate Material",
+          "deleted": true
+        },
+        {
           "name": "Accessories Style",
           "deleted": true
         },
@@ -9874,14 +8647,6 @@
           "defaultValue": {
             "standeeQuantityId": "SQ1"
           }
-        },
-        {
-          "name": "Tinplate Sticker Film",
-          "deleted": true
-        },
-        {
-          "name": "Tinplate Material",
-          "deleted": true
         }
       ],
       "productId": "P65"

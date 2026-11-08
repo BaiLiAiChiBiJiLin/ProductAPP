@@ -1,4 +1,5 @@
 import { invoke, storageMode } from './backend'
+import { classifyCloudSyncError } from './cloudSyncErrors'
 
 /** Shared-mode edits are coalesced locally and pushed after the editor is free. */
 export type CloudBatchSaveArgs = {
@@ -18,11 +19,13 @@ type QueueEntry = {
   attempts: number
   nextAttemptAt: number
   error?: string
+  blocked?: boolean
   /** Keep the snapshot for recovery, but never upload it after a delete request. */
   deletionRequested?: boolean
 }
 
-export type CloudSyncStatus = { state: 'idle' | 'queued' | 'syncing' | 'error'; pending: number; error?: string }
+export type CloudSyncStatus = { state: 'idle' | 'queued' | 'syncing' | 'error' | 'blocked'; pending: number; error?: string }
+export type CloudSyncTask = { id: string; name: string; attempts: number; error?: string; action?: string; blocked: boolean; deletionRequested?: boolean; nextAttemptAt?: number }
 export type CloudBatchSaveResult = { batchId?: string; assets?: unknown[]; metadata?: unknown; duplicate?: boolean }
 export type CloudBatchSaveComplete = { id: string; revision: string; submitted: CloudBatchSaveArgs; result: CloudBatchSaveResult }
 const STORAGE_KEY = 'printflow-cloud-sync-queue-v1'
@@ -44,19 +47,35 @@ function readQueue(): QueueEntry[] {
 }
 function writeQueue(entries: QueueEntry[]) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(entries)) }
-  catch (error) { console.warn('云端同步队列无法持久化', error) }
+  catch { throw new Error('本地同步队列写入失败，请保留当前页面并释放磁盘空间后重试') }
+}
+const isBlocked = (entry: QueueEntry) => entry.blocked || !!entry.error && !classifyCloudSyncError(entry.error).retryable
+export function cloudSyncTasks(): CloudSyncTask[] {
+  return readQueue().map(entry => {
+    const failure = entry.error ? classifyCloudSyncError(entry.error) : undefined
+    const metadata = entry.args.metadata as { customerName?: string } | undefined
+    return { id: entry.args.id, name: metadata?.customerName || entry.args.id, attempts: entry.attempts,
+      error: entry.error, action: entry.deletionRequested ? '删除尚未完成，请在历史记录中重试删除。' : failure?.action,
+      blocked: !!entry.deletionRequested || !!isBlocked(entry),
+      deletionRequested: entry.deletionRequested,
+      ...(!entry.deletionRequested && !isBlocked(entry) && entry.error ? { nextAttemptAt: entry.nextAttemptAt } : {}) }
+  })
 }
 function emit(state: CloudSyncStatus['state'], pending = readQueue().length, error?: string) {
-  lastError = error ?? readQueue().find(entry => entry.error)?.error ?? ''
-  const status = { state: lastError && state === 'queued' ? 'error' as const : state, pending, ...(lastError ? { error: lastError } : {}) }
-  for (const listener of listeners) listener(status)
+  const entries = readQueue()
+  lastError = error ?? entries.find(entry => entry.error)?.error ?? ''
+  const blocked = entries.some(entry => isBlocked(entry) || entry.deletionRequested && !deletions.has(entry.args.id))
+  const status = { state: state !== 'syncing' && blocked ? 'blocked' as const : lastError && state === 'queued' ? 'error' as const : state, pending, ...(lastError ? { error: lastError } : {}) }
+  for (const listener of listeners) {
+    try { listener(status) } catch { console.warn('同步状态通知失败') }
+  }
   window.dispatchEvent(new CustomEvent<CloudSyncStatus>('printflow-cloud-sync', { detail: status }))
 }
 export function onCloudSyncStatus(listener: (status: CloudSyncStatus) => void) {
   listeners.add(listener)
   const entries = readQueue()
   const error = entries.find(entry => entry.error)?.error || lastError || (entries.some(entry => entry.deletionRequested) ? '批次删除尚未完成，待同步修改已保留，请重试删除' : '')
-  listener({ state: error ? 'error' : entries.length ? 'queued' : 'idle', pending: entries.length, ...(error ? { error } : {}) })
+  listener({ state: entries.some(entry => isBlocked(entry) || entry.deletionRequested) ? 'blocked' : error ? 'error' : entries.length ? 'queued' : 'idle', pending: entries.length, ...(error ? { error } : {}) })
   return () => { listeners.delete(listener) }
 }
 export function onCloudBatchSaveComplete(listener: (event: CloudBatchSaveComplete) => void) {
@@ -65,14 +84,15 @@ export function onCloudBatchSaveComplete(listener: (event: CloudBatchSaveComplet
 }
 function scheduleRetry(at: number) {
   if (retryTimer !== undefined) window.clearTimeout(retryTimer)
-  retryTimer = window.setTimeout(() => { retryTimer = undefined; void runQueue() }, Math.max(250, at - Date.now()))
+  retryTimer = window.setTimeout(() => { retryTimer = undefined; startQueue() }, Math.max(250, Math.min(60_000, at - Date.now())))
 }
+function startQueue() { void runQueue().catch(error => { emit('blocked', readQueue().length, String(error)) }) }
 async function runQueue(): Promise<void> {
   if (runner) return runner
   runner = (async () => {
     while (true) {
       const entries = readQueue()
-      const available = entries.filter(item => !item.deletionRequested)
+      const available = entries.filter(item => !item.deletionRequested && !isBlocked(item))
       const entry = available.find(item => item.nextAttemptAt <= Date.now())
       if (!entry) {
         const next = available.reduce<number | undefined>((value, item) => value === undefined ? item.nextAttemptAt : Math.min(value, item.nextAttemptAt), undefined)
@@ -124,7 +144,10 @@ async function runQueue(): Promise<void> {
         if (current.revision !== entry.revision) continue
         const attempts = current.attempts + 1
         const delay = RETRY_DELAYS[Math.min(attempts - 1, RETRY_DELAYS.length - 1)]
-        const next = readQueue().map(item => item.key === entry.key ? { ...item, attempts, nextAttemptAt: Date.now() + delay, error: String(error) } : item)
+        // Spread reconnects from multiple workstations without increasing the 60 s cap.
+        const jittered = Math.min(60_000, Math.ceil(delay * (1 + Math.random() * 0.2)))
+        const failure = classifyCloudSyncError(error)
+        const next = readQueue().map(item => item.key === entry.key ? { ...item, attempts, nextAttemptAt: Date.now() + jittered, error: String(error), blocked: !failure.retryable } : item)
         writeQueue(next)
         emit('error', next.length, String(error))
         // A failed batch keeps its files and retry state, but must not prevent
@@ -144,7 +167,7 @@ export function enqueueCloudBatchSave(args: CloudBatchSaveArgs) {
   entries.push({ key: `save_batch:${args.id}`, command: 'save_batch', args: { ...args, preserveTempAssets: true }, revision: crypto.randomUUID(), attempts: 0, nextAttemptAt: Date.now(), ...(deletions.has(args.id) ? { deletionRequested: true } : {}) })
   writeQueue(entries)
   emit('queued', entries.length)
-  void runQueue()
+  startQueue()
 }
 export function clearCloudBatchSave(id: string) {
   const remaining = readQueue().filter(entry => entry.key !== `save_batch:${id}`)
@@ -170,7 +193,7 @@ export function deleteBatchWithPendingSync(id: string): Promise<void> {
       throw error
     } finally {
       deletions.delete(id)
-      const available = readQueue().filter(entry => !entry.deletionRequested)
+      const available = readQueue().filter(entry => !entry.deletionRequested && !isBlocked(entry))
       if (available.length) scheduleRetry(Math.min(...available.map(entry => entry.nextAttemptAt)))
     }
   })()
@@ -194,7 +217,7 @@ export async function flushCloudSyncQueue(batchId?: string) {
     if (pending.deletionRequested) throw new Error('批次删除尚未完成，待同步修改已保留，请重试删除')
     // Explicit actions only depend on their own batch. Subscribe before
     // starting work so unrelated uploads cannot delay a completed batch.
-    writeQueue(readQueue().map(entry => entry.args.id === batchId ? { ...entry, nextAttemptAt: Date.now(), error: undefined } : entry))
+    writeQueue(readQueue().map(entry => entry.args.id === batchId ? { ...entry, nextAttemptAt: Date.now(), error: undefined, blocked: false } : entry))
     return new Promise<void>((resolve, reject) => {
       const check = (finished = false) => {
         const current = readQueue().find(entry => entry.args.id === batchId)
@@ -208,14 +231,38 @@ export async function flushCloudSyncQueue(batchId?: string) {
       }
       const listener = () => check()
       listeners.add(listener)
-      void runQueue().then(() => check(true))
+      void runQueue().then(() => check(true), error => { listeners.delete(listener); reject(error) })
     })
   }
   // Explicit save/confirm is a synchronization barrier, including entries that
   // were waiting for a retry. Background failures remain queued and visible.
   if (retryTimer !== undefined) { window.clearTimeout(retryTimer); retryTimer = undefined }
-  writeQueue(readQueue().map(entry => ({ ...entry, nextAttemptAt: Date.now() })))
+  writeQueue(readQueue().map(entry => ({ ...entry, nextAttemptAt: Date.now(), error: undefined, blocked: false })))
   await runQueue()
   if (readQueue().length) throw new Error(lastError || '云端同步尚未完成，请恢复连接后重试')
+}
+
+/** Recover transient work on launch, reconnect and resume without resetting hard conflicts. */
+export function startCloudSyncRecovery() {
+  let lastWake = -Infinity
+  const wake = () => {
+    if (Date.now() - lastWake < 1_000 || document.visibilityState === 'hidden') return
+    lastWake = Date.now()
+    try {
+      const entries = readQueue()
+      if (!entries.some(entry => !entry.deletionRequested && !isBlocked(entry))) return
+      writeQueue(entries.map(entry => !entry.deletionRequested && !isBlocked(entry) ? { ...entry, nextAttemptAt: Date.now() } : entry))
+      startQueue()
+    } catch (error) { emit('blocked', readQueue().length, String(error)) }
+  }
+  window.addEventListener('online', wake)
+  window.addEventListener('focus', wake)
+  document.addEventListener('visibilitychange', wake)
+  wake()
+  return () => {
+    window.removeEventListener('online', wake)
+    window.removeEventListener('focus', wake)
+    document.removeEventListener('visibilitychange', wake)
+  }
 }
 

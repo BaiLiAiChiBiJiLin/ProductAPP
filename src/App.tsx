@@ -19,7 +19,7 @@ import SettingsModal from './modules/settings/SettingsModal'
 import { installButtonKeyboardGuard } from './buttonKeyboard'
 import { storageMode } from './services/backend'
 import { needsCloudRegistration, confirmCloudRegistration } from './services/cloudRegistration'
-import { flushCloudSyncQueue, onCloudSyncStatus, type CloudSyncStatus } from './services/cloudSyncQueue'
+import { startCloudSyncRecovery, onCloudSyncStatus, type CloudSyncStatus } from './services/cloudSyncQueue'
 import CloudSyncStatusTag from './components/CloudSyncStatusTag'
 const modules = [orderModule, imageEditModule, schematicModule, schematicReviewModule, impositionModule, progressModule]
 // React StrictMode mounts effects twice in development. Keep the startup
@@ -99,7 +99,7 @@ export default function App() {
   useEffect(() => {
     if (!isTauri() || !identityReady) return
     // Queue status already presents failures and schedules retries on startup.
-    void flushCloudSyncQueue().catch(() => {})
+    return startCloudSyncRecovery()
   }, [identityReady])
   const saveAccountName = async () => {
     if (signingIn) return

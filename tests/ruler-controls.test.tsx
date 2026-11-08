@@ -13,11 +13,11 @@ import { emptyArrangementDisplayState } from '../src/modules/schematic/services/
 afterEach(cleanup)
 const asset={id:'a',name:'a',productId:'a',width:100,height:200,svg:'<svg/>',previewUrl:'',thumbnailUrl:''}
 const noop=()=>{}
-function Harness({ onExport = noop }: { onExport?: React.ComponentProps<typeof ArrangePage>['onExport'] }){
+function Harness({ onExport = noop, exporting = false }: { onExport?: React.ComponentProps<typeof ArrangePage>['onExport']; exporting?: boolean }){
  const [displayState,setDisplayState]=useState(emptyArrangementDisplayState)
  const [pages,setPages]=useState(()=>{ const [page] = paginateAssets([asset]); page.annotations = [{ id: 'manual-ruler', kind: 'ruler', x: 10, y: 20, x2: 100, y2: 20, color: '#2f6fa3', measuredMm: 40 }]; return [page] }); const [selected,setSelected]=useState<string|null>(pages[0].items[0].id)
  const update=(next:Item)=>setPages([{...pages[0],items:[next]}])
- return <><button onClick={()=>setSelected(null)}>取消图片选择</button><output>{JSON.stringify(pages[0].items[0])}</output><pre aria-label="页面状态">{JSON.stringify(pages[0])}</pre><ArrangePage displayState={displayState} onDisplayStateChange={setDisplayState} context={null} assets={[asset]} pages={pages} activePage={1} selectedItem={selected} selectedGroupIds={[]} onChangePage={next => setPages(current => current.map(page => page.id === next.id ? next : page))} onSelectPage={noop} onSelectItem={setSelected} onChangeItem={update} onDropAsset={noop} onDeleteGroups={noop} onConfirmAssetAttributes={async()=>{}} onAddPage={noop} onRefresh={noop} onCombine={noop} onSelectGroup={noop} onBack={noop} onBackToHistory={noop} onExport={onExport} onMetadataChange={noop} layoutBounds={defaultLayoutBounds} onBoundsChange={noop} onAddHeaderBlock={noop} onChangeHeaderBlock={noop} onRemoveHeaderBlock={noop}/></>
+ return <><button onClick={()=>setSelected(null)}>取消图片选择</button><output>{JSON.stringify(pages[0].items[0])}</output><pre aria-label="页面状态">{JSON.stringify(pages[0])}</pre><ArrangePage displayState={displayState} onDisplayStateChange={setDisplayState} context={null} assets={[asset]} pages={pages} activePage={1} selectedItem={selected} selectedGroupIds={[]} onChangePage={next => setPages(current => current.map(page => page.id === next.id ? next : page))} onSelectPage={noop} onSelectItem={setSelected} onChangeItem={update} onDropAsset={noop} onDeleteGroups={noop} onConfirmAssetAttributes={async()=>{}} onAddPage={noop} onRefresh={noop} onCombine={noop} onSelectGroup={noop} onBack={noop} onBackToHistory={noop} onExport={onExport} exporting={exporting} onMetadataChange={noop} layoutBounds={defaultLayoutBounds} onBoundsChange={noop} onAddHeaderBlock={noop} onChangeHeaderBlock={noop} onRemoveHeaderBlock={noop}/></>
 }
 it('selected image unit and independent dimension controls update the item; deselection disables editing',()=>{
  render(<Harness/>);
@@ -58,7 +58,7 @@ it('exports saved zero-decimal settings even after the image is deselected', () 
  fireEvent.blur(screen.getByLabelText('小数位数'))
  fireEvent.click(screen.getByText('取消图片选择'))
  fireEvent.click(screen.getByRole('button', { name: '导出' }))
- expect(onExport).toHaveBeenCalledWith('pdf', new Map([[itemId, { decimalPlaces: 0, precision: 'default' }]]))
+ expect(onExport).toHaveBeenCalledWith('pdf', new Map([[itemId, { decimalPlaces: 0, precision: 'default' }]]), 'standard')
  expect(screen.getByRole('status').textContent).toBe(original)
 })
 
@@ -71,4 +71,28 @@ it('preserves decimal text while editing a custom ruler label', () => {
  fireEvent.click(screen.getByRole('button', { name: /确\s*认/ }))
  const state = JSON.parse(screen.getByLabelText('页面状态').textContent!)
  expect(state.annotations).toEqual([expect.objectContaining({ id: 'manual-ruler', measuredMm: 12.3, label: '12.30' })])
+})
+
+it('combines export formats and PDF quality in one selector and exports the selected quality', () => {
+ const onExport = vi.fn()
+ render(<Harness onExport={onExport}/>)
+ const format = screen.getByRole('combobox', { name: '导出格式' }) as HTMLSelectElement
+ expect(format.value).toBe('pdf:standard')
+ expect([...format.options].map(option => option.value)).toEqual(['pdf:standard', 'pdf:high', 'pdf:original', 'jpg', 'png', 'svg'])
+ expect([...format.querySelectorAll('optgroup[label="PDF"] option')].map(option => option.textContent)).toEqual(['PDF · 标准 200 DPI', 'PDF · 高清 300 DPI', 'PDF · 原图质量'])
+ expect(screen.queryByRole('combobox', { name: 'PDF 导出质量' })).toBeNull()
+ for (const quality of ['standard', 'original', 'high']) {
+  fireEvent.change(format, { target: { value: `pdf:${quality}` } })
+  fireEvent.click(screen.getByRole('button', { name: '导出' }))
+  expect(onExport).toHaveBeenLastCalledWith('pdf', expect.any(Map), quality)
+ }
+ fireEvent.change(format, { target: { value: 'svg' } })
+ fireEvent.click(screen.getByRole('button', { name: '导出' }))
+ expect(onExport).toHaveBeenLastCalledWith('svg', expect.any(Map), 'high')
+})
+
+it('locks the combined export selector while exporting', () => {
+ render(<Harness exporting/>)
+ expect((screen.getByRole('combobox', { name: '导出格式' }) as HTMLSelectElement).disabled).toBe(true)
+ expect((screen.getByRole('button', { name: '导出中…' }) as HTMLButtonElement).disabled).toBe(true)
 })

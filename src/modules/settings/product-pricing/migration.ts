@@ -1,7 +1,7 @@
 import bases from './data/migration-bases.json'
 import { allProducts, catalogFor, getEntityId, isEnabled, optionFor, type Bundle } from '../product-options/model'
 import { initialBundle as defaultOptionBundle } from '../product-options/service'
-import { cloneDocument, isUnitPrice, subtractPrices, validateDocument, type BodyPrice, type ProductPricingDocument, type SharedAttributePrice } from './model'
+import { cloneDocument, isUnitPrice, subtractPrices, upgradeStandeePricing, validateDocument, type BodyPrice, type ProductPricingDocument, type SharedAttributePrice } from './model'
 
 const fields = ['techniqueId', 'holoFilmId', 'materialId'] as const
 const dimensions = [{ field: 'techniqueId', option: 'Technique' }, { field: 'holoFilmId', option: 'Holo Film' }, { field: 'materialId', option: 'Material' }] as const
@@ -187,5 +187,5 @@ export function upgradeSharedAttributePrices(document: ProductPricingDocument): 
 }
 
 export function upgradePricingDocument(value: unknown, defaults: ProductPricingDocument, bundle?: Bundle): ProductPricingDocument {
-  return upgradeSharedAttributePrices(upgradeV1(value, defaults, bundle))
+  return upgradeStandeePricing(upgradeSharedAttributePrices(upgradeV1(value, defaults, bundle)))
 }

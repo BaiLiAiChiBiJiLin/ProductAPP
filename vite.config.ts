@@ -10,6 +10,10 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 5173,
     strictPort: true,
+    fs: {
+      // Runtime OSS credentials are local backend data, never a browser asset.
+      deny: ['.env', '.env.*', '*.{crt,pem,key,p12,pfx,cer,der}', '.npmrc', '.yarnrc.yml', '**/.git/**', '**/oss.local.json'],
+    },
     watch: {
       // Windows native notifications can miss editor/agent file replacements,
       // leaving a new component connected to an old cached service module.

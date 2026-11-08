@@ -1,10 +1,11 @@
 import { afterEach, beforeAll, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render as renderView, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, createEvent, fireEvent, render as renderView, screen, waitFor, within } from '@testing-library/react'
 import { ConfigProvider } from 'antd'
 import type { ReactNode } from 'react'
 import ProductOptionsSettings from '../src/modules/settings/product-options/ProductOptionsSettings'
 import { initialBundle, loadProductOptions, saveProductOptions } from '../src/modules/settings/product-options/service'
-import { addValue, allProducts, applyMembership, changeOrder, clone, definitions, deleteCategory, deleteValue, entityReference, getEntityId, getEntityKey, getProduct, getProductSizes, getStandeePieceCount, isEnabled, locations, makeProduct, optionFor, ordered, parseImport, resolvePreview, stripDeprecatedOptionRules, setDefault, setStandeeQuantityDefault, setEnabled, upgradeAdditionalAttributeBundle, upgradeProductSizeBundle, upgradeStandeeQuantityBundle, validateBundle } from '../src/modules/settings/product-options/model'
+import { areaToMm2, convertSizeArea, migrateSizeAreas } from '../src/modules/settings/product-options/sizeArea'
+import { addValue, allProducts, applyMembership, changeOrder, clone, definitions, deleteCategory, deleteValue, display, entityReference, getEntityId, getEntityKey, getProduct, getProductSizes, getStandeePieceCount, isEnabled, locations, makeProduct, moveOptionValue, optionFor, ordered, parseImport, resolvePreview, stripDeprecatedOptionRules, setDefault, setStandeeQuantityDefault, setEnabled, upgradeAdditionalAttributeBundle, upgradeProductSizeBundle, upgradeStandeeQuantityBundle, validateBundle } from '../src/modules/settings/product-options/model'
 
 const api = vi.hoisted(() => ({ invoke: vi.fn() }))
 const render = (ui: ReactNode) => renderView(<ConfigProvider theme={{ token: { motion: false } }}>{ui}</ConfigProvider>)
@@ -54,8 +55,10 @@ test('new values expose their entity field instead of a generic id', () => {
     { file: 'sizes.json', key: 'sizeBandId' },
     { file: 'print-options.json', key: 'printOptionId' },
     { file: 'techniques.json', key: 'techniqueId' },
+    { file: 'foil-stamping.json', key: 'foilStampingId' },
     { file: 'holo-films.json', key: 'holoFilmId' },
-    { file: 'tinplate-sticker-films.json', key: 'tinplateStickerFilmId' },
+    { file: 'sticker-holo-films.json', key: 'stickerHoloFilmId' },
+    { file: 'tinplate-holo-films.json', key: 'tinplateHoloFilmId' },
     { file: 'materials.json', key: 'materialId' },
     { file: 'tinplate-materials.json', key: 'tinplateMaterialId' },
     { file: 'accessory-styles.json', key: 'accessoryStyleId' },
@@ -74,32 +77,34 @@ test('new values expose their entity field instead of a generic id', () => {
 test('additional shared attributes start empty and closed and new products keep explicit independent identities', () => {
   const data = clone(initialBundle)
   const names = definitions.map(definition => definition.name)
-  expect(names[names.indexOf('Holo Film') + 1]).toBe('Tinplate Sticker Film')
+  expect(names).toEqual(['Size', 'Print Option', 'Technique', 'Foil Stamping', 'Holo Film', 'Sticker Holo Film', 'Tinplate Holo Film', 'Material', 'Tinplate Material', 'Accessories Style', 'Standee Quantity'])
+  expect(names[names.indexOf('Sticker Holo Film') + 1]).toBe('Tinplate Holo Film')
   expect(names[names.indexOf('Material') + 1]).toBe('Tinplate Material')
-  for (const [file, name] of [['tinplate-sticker-films.json', 'Tinplate Sticker Film'], ['tinplate-materials.json', 'Tinplate Material']]) {
+  for (const [file, name] of [['foil-stamping.json', 'Foil Stamping'], ['sticker-holo-films.json', 'Sticker Holo Film'], ['tinplate-holo-films.json', 'Tinplate Holo Film'], ['tinplate-materials.json', 'Tinplate Material']]) {
     expect(data.catalogs[file]).toMatchObject({ name, values: [], nextId: 1 })
     for (const product of allProducts(data.main)) expect(optionFor(product, name)).toEqual({ name, deleted: true })
     expect(optionFor(makeProduct(data.main), name)).toEqual({ name, deleted: true })
   }
-  const film = addValue(data.catalogs['tinplate-sticker-films.json'])
+  const film = addValue(data.catalogs['tinplate-holo-films.json'])
   const material = addValue(data.catalogs['tinplate-materials.json'])
-  expect(entityReference(film)).toEqual({ tinplateStickerFilmId: 'TF1' })
+  expect(entityReference(film)).toEqual({ tinplateHoloFilmId: 'THF1' })
   expect(entityReference(material)).toEqual({ tinplateMaterialId: 'TM1' })
   const product = allProducts(data.main)[0]
-  optionFor(product, 'Tinplate Sticker Film')!.deleted = false
+  optionFor(product, 'Tinplate Holo Film')!.deleted = false
   optionFor(product, 'Tinplate Material')!.deleted = false
-  const selected = resolvePreview(data, product, { 'Tinplate Sticker Film': 'TF1', 'Tinplate Material': 'TM1' })
-  expect(selected.selectedValues['Tinplate Sticker Film']).toEqual({ tinplateStickerFilmId: 'TF1' })
+  const selected = resolvePreview(data, product, { 'Tinplate Holo Film': 'THF1', 'Tinplate Material': 'TM1' })
+  expect(selected.selectedValues['Tinplate Holo Film']).toEqual({ tinplateHoloFilmId: 'THF1' })
   expect(selected.selectedValues['Tinplate Material']).toEqual({ tinplateMaterialId: 'TM1' })
   validateBundle(data)
-  setEnabled(optionFor(product, 'Tinplate Sticker Film')!, { tinplateMaterialId: 'TM1' }, false)
+  setEnabled(optionFor(product, 'Tinplate Holo Film')!, { tinplateMaterialId: 'TM1' }, false)
   expect(() => validateBundle(data)).toThrow('禁用实体引用')
 })
 
 test('older bundles gain only missing additional catalogs and closed switches on load import and save', async () => {
   const legacy = clone(initialBundle)
-  const newNames = ['Tinplate Sticker Film', 'Tinplate Material']
-  delete legacy.catalogs['tinplate-sticker-films.json']; delete legacy.catalogs['tinplate-materials.json']
+  const newDefinitions = definitions.filter(definition => ['Foil Stamping', 'Sticker Holo Film', 'Tinplate Holo Film', 'Tinplate Material'].includes(definition.name))
+  const newNames: string[] = newDefinitions.map(definition => definition.name)
+  for (const definition of newDefinitions) delete legacy.catalogs[definition.file]
   for (const product of allProducts(legacy.main)) product.productOptions = product.productOptions.filter(option => !newNames.includes(option.name))
   const original = clone(legacy)
   Object.assign(allProducts(legacy.main)[0], { optionRules: 'retired malformed rules' })
@@ -110,8 +115,8 @@ test('older bundles gain only missing additional catalogs and closed switches on
   expect(upgradeAdditionalAttributeBundle(expected)).toEqual(expected)
   expect(allProducts(expected.main).map(product => product.productId)).toEqual(allProducts(original.main).map(product => product.productId))
   for (const [index, product] of allProducts(expected.main).entries()) {
-    expect(product.productOptions.slice(0, -2)).toEqual(allProducts(original.main)[index].productOptions)
-    expect(product.productOptions.slice(-2)).toEqual(newNames.map(name => ({ name, deleted: true })))
+    expect(product.productOptions.slice(0, -newNames.length)).toEqual(allProducts(original.main)[index].productOptions)
+    expect(product.productOptions.slice(-newNames.length)).toEqual(newNames.map(name => ({ name, deleted: true })))
     expect(product).not.toHaveProperty('optionRules')
   }
   for (const [file, catalog] of Object.entries(original.catalogs)) expect(expected.catalogs[file]).toEqual(catalog)
@@ -126,28 +131,71 @@ test('older bundles gain only missing additional catalogs and closed switches on
 
 test('additional attribute upgrade preserves edited values defaults switches and exclusions while filling missing switches', () => {
   const data = clone(initialBundle)
-  const filmCatalog = data.catalogs['tinplate-sticker-films.json']; const materialCatalog = data.catalogs['tinplate-materials.json']
+  const filmCatalog = data.catalogs['tinplate-holo-films.json']; const materialCatalog = data.catalogs['tinplate-materials.json']
   const film = addValue(filmCatalog); const material = addValue(materialCatalog)
   film.labelZh = '已有膜'; material.labelZh = '已有材质'
   filmCatalog.labelZh = '客户的膜属性'; filmCatalog.nextId = 10
   setDefault(filmCatalog, entityReference(film)); setDefault(materialCatalog, entityReference(material))
   const [first, second] = allProducts(data.main)
-  optionFor(first, 'Tinplate Sticker Film')!.deleted = false
-  setEnabled(optionFor(first, 'Tinplate Sticker Film')!, entityReference(film), false)
+  optionFor(first, 'Tinplate Holo Film')!.deleted = false
+  setEnabled(optionFor(first, 'Tinplate Holo Film')!, entityReference(film), false)
   optionFor(second, 'Tinplate Material')!.deleted = false
   first.productOptions = first.productOptions.filter(option => option.name !== 'Tinplate Material')
   const before = clone(data)
   const upgraded = upgradeAdditionalAttributeBundle(data)
   const expected = clone(data)
-  allProducts(expected.main)[0].productOptions.push({ name: 'Tinplate Material', deleted: true })
+  allProducts(expected.main)[0].productOptions.push({ name: 'Tinplate Material', deleted: true, disabledValues: [{ tinplateMaterialId: 'TM1' }] })
   expect(upgraded).toEqual(expected); expect(data).toEqual(before)
   expect(parseImport(JSON.stringify(data), initialBundle)).toEqual(expected)
   expect(parseImport(JSON.stringify(data.main), data)).toEqual(expected)
-  expect(entityReference(addValue(upgraded.catalogs['tinplate-sticker-films.json']))).toEqual({ tinplateStickerFilmId: 'TF10' })
+  expect(entityReference(addValue(upgraded.catalogs['tinplate-holo-films.json']))).toEqual({ tinplateHoloFilmId: 'THF10' })
   validateBundle(upgraded)
   const malformed = clone(data)
-  Object.assign(malformed.catalogs['tinplate-sticker-films.json'].values[0], { holoFilmId: 'M1' })
+  Object.assign(malformed.catalogs['tinplate-holo-films.json'].values[0], { holoFilmId: 'M1' })
   expect(() => parseImport(JSON.stringify(malformed), initialBundle)).toThrow('一个所属实体 ID')
+})
+
+test('attribute taxonomy retires empty legacy films and renames labels without changing existing entity values', async () => {
+  const legacy = clone(initialBundle)
+  const labels = [
+    ['techniques.json', '工艺', '滴胶工艺'],
+    ['holo-films.json', '全息膜', '亚克力全息膜'],
+    ['materials.json', '材质', '贴纸材质'],
+  ]
+  for (const [file, label] of labels) legacy.catalogs[file].labelZh = label
+  legacy.catalogs['tinplate-sticker-films.json'] = { name: 'Tinplate Sticker Film', labelZh: '马口铁/贴纸膜', values: [], nextId: 1 }
+  for (const product of allProducts(legacy.main)) product.productOptions.push({ name: 'Tinplate Sticker Film', deleted: true })
+  const before = clone(legacy)
+  const upgraded = upgradeAdditionalAttributeBundle(legacy)
+  validateBundle(upgraded)
+  expect(upgraded.catalogs).not.toHaveProperty('tinplate-sticker-films.json')
+  for (const product of allProducts(upgraded.main)) expect(optionFor(product, 'Tinplate Sticker Film')).toBeUndefined()
+  for (const [file, , label] of labels) {
+    expect(upgraded.catalogs[file].labelZh).toBe(label)
+    expect(upgraded.catalogs[file].values).toEqual(before.catalogs[file].values)
+    expect(upgraded.catalogs[file].defaultValue).toEqual(before.catalogs[file].defaultValue)
+  }
+  for (const [index, product] of allProducts(upgraded.main).entries()) expect(product.productOptions).toEqual(allProducts(before.main)[index].productOptions.filter(option => option.name !== 'Tinplate Sticker Film'))
+  expect(upgradeAdditionalAttributeBundle(upgraded)).toEqual(upgraded)
+  expect(parseImport(JSON.stringify(legacy), initialBundle)).toEqual(upgraded)
+  await saveProductOptions(legacy, 'legacy-taxonomy')
+  expect(api.invoke).toHaveBeenLastCalledWith('save_product_option_settings', { bundle: upgraded, expectedVersion: 'legacy-taxonomy' })
+  expect(legacy).toEqual(before)
+
+  legacy.catalogs['materials.json'].labelZh = '客户的贴纸材料'
+  expect(upgradeAdditionalAttributeBundle(legacy).catalogs['materials.json'].labelZh).toBe('客户的贴纸材料')
+})
+
+test('nonempty retired film data cannot be silently discarded during migration', () => {
+  const legacy = clone(initialBundle)
+  Object.assign(legacy.catalogs, { 'tinplate-sticker-films.json': { name: 'Tinplate Sticker Film', labelZh: '马口铁/贴纸膜', values: [{ tinplateStickerFilmId: 'TF1', name: 'Existing film', sortOrder: 1 }], nextId: 2 } })
+  const before = clone(legacy)
+  expect(() => upgradeAdditionalAttributeBundle(legacy)).toThrow('请先迁移到对应的全息膜属性')
+  expect(() => parseImport(JSON.stringify(legacy), initialBundle)).toThrow('请先迁移到对应的全息膜属性')
+  expect(legacy).toEqual(before)
+  legacy.catalogs['tinplate-sticker-films.json'].values = []
+  Object.assign(allProducts(legacy.main)[0], { productOptions: [...allProducts(legacy.main)[0].productOptions, { name: 'Tinplate Sticker Film', deleted: true, disabledValues: [{ tinplateStickerFilmId: 'TF1' }] }] })
+  expect(() => upgradeAdditionalAttributeBundle(legacy)).toThrow('请先迁移到对应的全息膜属性')
 })
 
 test('size migration keeps price IDs and product membership while preserving configured sizes', async () => {
@@ -158,11 +206,11 @@ test('size migration keeps price IDs and product membership while preserving con
   const upgraded = upgradeProductSizeBundle(legacy, source)
   validateBundle(upgraded)
   expect(definitions[0].name).toBe('Size')
-  expect(upgraded.catalogs['sizes.json'].values.map(entityReference)).toEqual([...initialBundle.catalogs['sizes.json'].values.map(entityReference), { sizeBandId: 'S7' }])
+  expect(upgraded.catalogs['sizes.json'].values.map(entityReference)).toEqual([...initialBundle.catalogs['sizes.json'].values.filter(value => !value.isCustom).map(entityReference), { sizeBandId: 'S7' }, { sizeBandId: 'size-custom' }])
   expect(upgraded.catalogs['sizes.json'].nextId).toBe(8)
   const [first, second] = allProducts(upgraded.main)
-  expect(optionFor(first, 'Size')).toEqual({ name: 'Size', deleted: false, disabledValues: upgraded.catalogs['sizes.json'].values.filter(value => value.sizeBandId !== 'board-1-in').map(entityReference) })
-  expect(getProductSizes(upgraded, first).map(getEntityId)).toEqual(['board-1-in'])
+  expect(optionFor(first, 'Size')).toEqual({ name: 'Size', deleted: false, disabledValues: upgraded.catalogs['sizes.json'].values.filter(value => value.sizeBandId !== 'keychain-1-in').map(entityReference) })
+  expect(getProductSizes(upgraded, first).map(getEntityId)).toEqual(['keychain-1-in'])
   expect(getProductSizes(upgraded, second)).toEqual(getProductSizes(initialBundle, allProducts(initialBundle.main)[1]))
   optionFor(first, 'Size')!.deleted = true
   upgraded.catalogs['sizes.json'].values[0].labelZh = '自定义尺寸名'
@@ -363,14 +411,14 @@ test('product options expose no rule editor and preview allows technique and fil
   Object.assign(product, { optionRules: [{ when: { option: 'Technique', value: { techniqueId: 'G1' } }, hide: [{ option: 'Holo Film', values: [{ holoFilmId: 'M7' }] }] }] })
   api.invoke.mockImplementation(async command => command === 'load_product_option_settings' ? { bundle: clone(data), version: 'v1', directory: 'test' } : { version: 'v2', directory: 'test' })
   render(<ProductOptionsSettings/>); await screen.findByLabelText('产品中文名')
-  fireEvent.click(screen.getByRole('button', { name: /^工艺已/ }))
+  fireEvent.click(screen.getByRole('button', { name: /^滴胶工艺已/ }))
   expect(screen.queryByText('联动选项')).toBeNull()
   expect(screen.queryByRole('combobox', { name: /添加联动|隐藏全息膜/ })).toBeNull()
-  await select('预览全息膜', '双面彩虹镭射')
-  await select('预览工艺', '无附加工艺')
+  await select('预览亚克力全息膜', '双面彩虹镭射')
+  await select('预览滴胶工艺', '无附加工艺')
   const previewPanel = document.querySelector('.po-preview') as HTMLElement
   expect(previewPanel.textContent).toContain('双面彩虹镭射')
-  await select('预览工艺', '正面滴胶')
+  await select('预览滴胶工艺', '正面滴胶')
   expect(previewPanel.textContent).toContain('双面彩虹镭射')
   fireEvent.change(screen.getByLabelText('产品中文名'), { target: { value: '无联动测试产品' } })
   fireEvent.click(screen.getByRole('button', { name: /保\s*存$/ }))
@@ -410,6 +458,59 @@ test('ordering allows duplicate ranks, inserts after current peers, preserves ga
   expect(ordered(root.values).slice(0, 3).map(value => getEntityId(value))).toEqual(['G1', 'G12', 'G11'])
   changeOrder(root.values, { techniqueId: 'G11' }, 40)
   expect(parseImport(JSON.stringify(data), data).catalogs['techniques.json'].values.at(-1)?.sortOrder).toBe(40)
+})
+
+test('moving option cards follows the displayed order despite unsorted storage and duplicate ranks', () => {
+  const values = clone(initialBundle.catalogs['sizes.json'].values.slice(0, 4))
+  values.forEach((value, index) => { value.sortOrder = [40, 2, 2, 9][index] })
+  const before = clone(values)
+  expect(ordered(values).map(getEntityId)).toEqual(['keychain-3-in', 'keychain-4-in', 'sticker-5x5-in', 'keychain-2-in'])
+  expect(moveOptionValue(values, { sizeBandId: 'keychain-2-in' }, { sizeBandId: 'keychain-4-in' }, 'before')).toBe(true)
+  expect(values.map(getEntityId)).toEqual(['keychain-3-in', 'keychain-2-in', 'keychain-4-in', 'sticker-5x5-in'])
+  expect(values.map(value => value.sortOrder)).toEqual([1, 2, 3, 4])
+  for (const original of before) {
+    const value = values.find(value => getEntityId(value) === getEntityId(original))!
+    expect({ ...value, sortOrder: original.sortOrder }).toEqual(original)
+  }
+  expect(moveOptionValue(values, { sizeBandId: 'keychain-2-in' }, { sizeBandId: 'sticker-5x5-in' }, 'after')).toBe(true)
+  expect(values.map(getEntityId)).toEqual(['keychain-3-in', 'keychain-4-in', 'sticker-5x5-in', 'keychain-2-in'])
+  expect(values.map(value => value.sortOrder)).toEqual([1, 2, 3, 4])
+})
+
+test('invalid or unchanged card moves preserve stored ranks and reject foreign entity references', () => {
+  const values = clone(initialBundle.catalogs['sizes.json'].values.slice(0, 3))
+  values.forEach((value, index) => { value.sortOrder = [2, 2, 40][index] })
+  const before = clone(values)
+  const first = entityReference(values[0]); const second = entityReference(values[1])
+  expect(moveOptionValue([], first, second, 'before')).toBe(false)
+  expect(moveOptionValue(values, first, first, 'after')).toBe(false)
+  expect(moveOptionValue(values, first, second, 'before')).toBe(false)
+  expect(moveOptionValue(values, second, first, 'after')).toBe(false)
+  expect(moveOptionValue(values, { sizeBandId: 'missing' }, second, 'before')).toBe(false)
+  expect(moveOptionValue(values, first, { sizeBandId: 'missing' }, 'after')).toBe(false)
+  expect(moveOptionValue(values, { techniqueId: getEntityId(values[0]) }, second, 'before')).toBe(false)
+  expect(moveOptionValue(values, first, { materialId: getEntityId(values[1]) }, 'after')).toBe(false)
+  expect(values).toEqual(before)
+})
+
+test('moving accessory colors only changes their own order and retains defaults and product exclusions', () => {
+  const data = clone(initialBundle)
+  const catalog = data.catalogs['accessory-styles.json']
+  const style = catalog.values.find(value => value.accessoryStyleId === 'P8')!
+  const option = optionFor(allProducts(data.main)[0], 'Accessories Style')!
+  setDefault(catalog, { accessoryColorId: 'P-C3' }, style)
+  setEnabled(option, { accessoryColorId: 'P-C2' }, false)
+  const before = clone(data)
+  expect(moveOptionValue(style.colors!, { accessoryColorId: 'P-C1' }, { accessoryColorId: 'P-C3' }, 'after')).toBe(true)
+  expect(style.colors!.slice(0, 3).map(getEntityId)).toEqual(['P-C2', 'P-C3', 'P-C1'])
+  expect(style.colors!.map(value => value.sortOrder)).toEqual(Array.from({ length: style.colors!.length }, (_, index) => index + 1))
+  expect(style.colors!.find(value => value.accessoryColorId === 'P-C3')!.isDefault).toBe(true)
+  expect(data.main).toEqual(before.main)
+  expect(catalog.values.filter(value => value.accessoryStyleId !== 'P8')).toEqual(before.catalogs['accessory-styles.json'].values.filter(value => value.accessoryStyleId !== 'P8'))
+  const reordered = clone(style.colors)
+  expect(moveOptionValue(style.colors!, { accessoryColorId: 'P-C27' }, { accessoryColorId: 'P-C1' }, 'after')).toBe(false)
+  expect(style.colors).toEqual(reordered)
+  validateBundle(data)
 })
 test('add/delete/defaults use monotonic short IDs and remove deleted disabled IDs from every product', () => {
   const data = clone(initialBundle); const root = data.catalogs['accessory-styles.json']
@@ -457,6 +558,8 @@ test('native UI edits product and public data; save stays in settings and sends 
   expect(row.getAttribute('data-entity-key')).toBe('printOptionId')
   expect(row.textContent).toContain('printOptionId: Y1')
   fireEvent.click(within(row as HTMLElement).getByRole('switch', { name: 'Y1启用' }))
+  fireEvent.change(screen.getByLabelText('Y1值标识'), { target: { value: 'Updated Print Option' } })
+  expect(within(row as HTMLElement).getByText('Updated Print Option', { selector: 'strong' })).toBeTruthy()
   fireEvent.change(screen.getByLabelText('Y1中文名称'), { target: { value: '双面同图测试' } })
   fireEvent.click(screen.getByRole('button', { name: /保\s*存$/ }))
   await screen.findByText('配置已保存')
@@ -467,6 +570,7 @@ test('native UI edits product and public data; save stays in settings and sends 
   expect(request.bundle.main.categories[0].products[0]).not.toHaveProperty('id')
   expect(optionFor(request.bundle.main.categories[0].products[0], 'Print Option')!.disabledValues).toContainEqual({ printOptionId: 'Y1' })
   expect(request.bundle.catalogs['print-options.json'].values[0].labelZh).toBe('双面同图测试')
+  expect(request.bundle.catalogs['print-options.json'].values[0].name).toBe('Updated Print Option')
   expect(request.bundle.catalogs['print-options.json'].values[0].printOptionId).toBe('Y1')
   expect(request.bundle.catalogs['print-options.json'].values[0]).not.toHaveProperty('id')
   expect(Object.keys(request.bundle.catalogs)).toHaveLength(definitions.length)
@@ -479,10 +583,10 @@ test('additional attribute editors add typed values and save independent product
   const attributes = screen.getByRole('navigation', { name: '产品属性' })
   const buttons = within(attributes).getAllByRole('button')
   const labels = buttons.map(button => button.textContent!)
-  expect(labels.findIndex(label => label.startsWith('马口铁/贴纸膜'))).toBe(labels.findIndex(label => label.startsWith('全息膜')) + 1)
-  expect(labels.findIndex(label => label.startsWith('马口铁材质'))).toBe(labels.findIndex(label => label.startsWith('材质')) + 1)
+  expect(labels.findIndex(label => label.startsWith('马口铁全息膜'))).toBe(labels.findIndex(label => label.startsWith('贴纸全息膜')) + 1)
+  expect(labels.findIndex(label => label.startsWith('马口铁材质'))).toBe(labels.findIndex(label => label.startsWith('贴纸材质')) + 1)
   for (const { label, id, key } of [
-    { label: '马口铁/贴纸膜', id: 'TF1', key: 'tinplateStickerFilmId' },
+    { label: '马口铁全息膜', id: 'THF1', key: 'tinplateHoloFilmId' },
     { label: '马口铁材质', id: 'TM1', key: 'tinplateMaterialId' },
   ]) {
     fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${label}已`) }))
@@ -500,9 +604,9 @@ test('additional attribute editors add typed values and save independent product
   await screen.findByText('配置已保存')
   const saved = api.invoke.mock.calls.at(-1)![1].bundle as typeof initialBundle
   const [first, second] = allProducts(saved.main)
-  expect(saved.catalogs['tinplate-sticker-films.json'].values[0]).toMatchObject({ tinplateStickerFilmId: 'TF1', labelZh: '测试马口铁/贴纸膜' })
+  expect(saved.catalogs['tinplate-holo-films.json'].values[0]).toMatchObject({ tinplateHoloFilmId: 'THF1', labelZh: '测试马口铁全息膜' })
   expect(saved.catalogs['tinplate-materials.json'].values[0]).toMatchObject({ tinplateMaterialId: 'TM1', labelZh: '测试马口铁材质' })
-  for (const name of ['Tinplate Sticker Film', 'Tinplate Material']) {
+  for (const name of ['Tinplate Holo Film', 'Tinplate Material']) {
     expect(optionFor(first, name)!.deleted).toBe(false)
     expect(optionFor(second, name)!.deleted).toBe(true)
   }
@@ -534,6 +638,31 @@ test('sizes appear first and new shared size values are closed until enabled for
   expect(others.every(product => !isEnabled(optionFor(product, 'Size'), size))).toBe(true)
   validateBundle(saved)
 })
+
+test('size area fields convert populated dimensions and keep blank dimensions blank', async () => {
+  render(<ProductOptionsSettings/> )
+  await screen.findByLabelText('产品中文名')
+  const toggle = screen.getByRole('switch', { name: '启用尺寸' })
+  if (toggle.getAttribute('aria-checked') !== 'true') fireEvent.click(toggle)
+  expect((screen.getByLabelText('keychain-2-in面积宽') as HTMLInputElement).value).toBe('2')
+  await select('keychain-2-in面积单位', 'mm')
+  expect((screen.getByLabelText('keychain-2-in面积宽') as HTMLInputElement).value).toBe('50.8')
+  expect((screen.getByLabelText('keychain-2-in面积高') as HTMLInputElement).value).toBe('50.8')
+  const addedId = `S${initialBundle.catalogs['sizes.json'].nextId}`
+  fireEvent.click(screen.getByRole('button', { name: '新增值' }))
+  await select(`${addedId}面积单位`, 'cm')
+  expect((screen.getByLabelText(`${addedId}面积宽`) as HTMLInputElement).value).toBe('')
+  expect((screen.getByLabelText(`${addedId}面积高`) as HTMLInputElement).value).toBe('')
+  expect(screen.getByRole('switch', { name: 'size-custom启用' }).getAttribute('aria-checked')).toBe('false')
+  fireEvent.click(screen.getByRole('switch', { name: 'size-custom启用' }))
+  await select('预览尺寸', '自定义')
+  expect(screen.getByRole('group', { name: '预览自定义面积' })).toBeTruthy()
+  fireEvent.change(screen.getByLabelText('预览自定义面积宽'), { target: { value: '2' } })
+  fireEvent.change(screen.getByLabelText('预览自定义面积高'), { target: { value: '3' } })
+  await select('预览自定义面积单位', 'cm')
+  expect((screen.getByLabelText('预览自定义面积宽') as HTMLInputElement).value).toBe('5.08')
+  expect((screen.getByLabelText('预览自定义面积高') as HTMLInputElement).value).toBe('7.62')
+})
 test('failed save retains draft and offers retry; reloading dirty data requires explicit confirmation', async () => {
   render(<ProductOptionsSettings/> )
   fireEvent.change(await screen.findByLabelText('产品中文名'), { target: { value: '保留草稿' } })
@@ -562,27 +691,158 @@ async function select(label: string, text: string) {
     const popup = document.querySelector('.ant-select-dropdown:not(.ant-select-dropdown-hidden)') as HTMLElement
     expect(popup).toBeTruthy(); return popup
   })
-  fireEvent.click(within(popup).getByText(text, { exact: true }))
+  fireEvent.click(within(popup).getByText(text, { exact: true, selector: '.ant-select-item-option-content' }))
 }
+function optionCard(id: string) { return document.querySelector(`[data-value-id="${id}"]`) as HTMLElement }
+function displayedOptionIds() { return [...document.querySelectorAll('.po-value[data-value-id]')].map(element => element.getAttribute('data-value-id')) }
+function setCardBounds(id: string, x: number, y: number) { vi.spyOn(optionCard(id), 'getBoundingClientRect').mockReturnValue(new DOMRect(x, y, 280, 160)) }
+function dragEvent(type: 'dragStart' | 'dragOver' | 'drop' | 'dragEnd', element: HTMLElement, x = 0, y = 0) {
+  const event = createEvent[type](element)
+  Object.defineProperties(event, { clientX: { value: x }, clientY: { value: y } })
+  fireEvent(element, event)
+  return event
+}
+
+test('size card drag and keyboard sorting save order without changing dimensions defaults or product switches', async () => {
+  const data = clone(initialBundle)
+  setDefault(data.catalogs['sizes.json'], { sizeBandId: 'keychain-2-in' })
+  setEnabled(optionFor(allProducts(data.main)[0], 'Size')!, { sizeBandId: 'keychain-4-in' }, false)
+  api.invoke.mockImplementation(async command => command === 'load_product_option_settings' ? { bundle: clone(data), version: 'drag-v1', directory: 'test' } : { version: 'drag-v2', directory: 'test' })
+  render(<ProductOptionsSettings/> )
+  await screen.findByLabelText('产品中文名')
+  expect(screen.queryByRole('spinbutton', { name: /序号/ })).toBeNull()
+  setCardBounds('keychain-2-in', 0, 0)
+  setCardBounds('keychain-3-in', 0, 180)
+  dragEvent('dragStart', optionCard('keychain-3-in'))
+  dragEvent('dragOver', optionCard('keychain-2-in'), 100, 10)
+  dragEvent('drop', optionCard('keychain-2-in'), 100, 10)
+  dragEvent('dragEnd', optionCard('keychain-3-in'))
+  expect(displayedOptionIds().slice(0, 3)).toEqual(['keychain-3-in', 'keychain-2-in', 'keychain-4-in'])
+  expect(screen.getByRole('button', { name: 'keychain-3-in排序' }).textContent).toBe('1:')
+  fireEvent.keyDown(screen.getByRole('button', { name: 'keychain-4-in排序' }), { key: 'ArrowUp' })
+  expect(displayedOptionIds().slice(0, 3)).toEqual(['keychain-3-in', 'keychain-4-in', 'keychain-2-in'])
+  fireEvent.click(screen.getByRole('button', { name: /保\s*存$/ }))
+  await screen.findByText('配置已保存')
+  const saved = api.invoke.mock.calls.at(-1)![1].bundle as typeof initialBundle
+  const sizes = saved.catalogs['sizes.json']
+  expect(sizes.values.slice(0, 3).map(getEntityId)).toEqual(['keychain-3-in', 'keychain-4-in', 'keychain-2-in'])
+  expect(sizes.values.map(value => value.sortOrder)).toEqual(Array.from({ length: sizes.values.length }, (_, index) => index + 1))
+  expect(sizes.defaultValue).toEqual(data.catalogs['sizes.json'].defaultValue)
+  for (const original of data.catalogs['sizes.json'].values) {
+    const value = sizes.values.find(value => getEntityId(value) === getEntityId(original))!
+    expect({ ...value, sortOrder: original.sortOrder }).toEqual(original)
+  }
+  const savedMain = clone(saved.main); const expectedMain = clone(data.main)
+  for (const main of [savedMain, expectedMain]) for (const product of allProducts(main)) for (const option of product.productOptions) {
+    option.disabledValues?.sort((left, right) => `${getEntityKey(left)}:${getEntityId(left)}`.localeCompare(`${getEntityKey(right)}:${getEntityId(right)}`))
+  }
+  expect(savedMain).toEqual(expectedMain)
+  expect(parseImport(JSON.stringify(saved), saved)).toEqual(saved)
+  validateBundle(saved)
+})
+
+test('external drops form controls and cancelled drags do not reorder cards while a same-row drop uses its horizontal position', async () => {
+  render(<ProductOptionsSettings/> )
+  await screen.findByLabelText('产品中文名')
+  const first = optionCard('keychain-2-in'); const second = optionCard('keychain-3-in')
+  setCardBounds('keychain-2-in', 0, 0); setCardBounds('keychain-3-in', 300, 0)
+  const initialOrder = displayedOptionIds()
+  const expectUnchanged = () => {
+    expect(displayedOptionIds()).toEqual(initialOrder)
+    expect(screen.getByRole('button', { name: /保\s*存$/ }).hasAttribute('disabled')).toBe(true)
+  }
+  dragEvent('dragOver', second, 560, 20)
+  dragEvent('drop', second, 560, 20)
+  expectUnchanged()
+  for (const control of [screen.getByLabelText('keychain-2-in中文名称'), screen.getByRole('switch', { name: 'keychain-2-in启用' }), within(first).getByRole('button', { name: /^删\s*除$/ })]) {
+    dragEvent('dragStart', control)
+    dragEvent('dragOver', second, 560, 20)
+    dragEvent('drop', second, 560, 20)
+    dragEvent('dragEnd', control)
+    expectUnchanged()
+  }
+  dragEvent('dragStart', first.querySelector('strong')!)
+  fireEvent.keyDown(first, { key: 'Escape' })
+  dragEvent('drop', second, 560, 20)
+  expectUnchanged()
+  dragEvent('dragStart', first)
+  dragEvent('dragOver', second, 560, 20)
+  dragEvent('dragEnd', first)
+  dragEvent('drop', second, 560, 20)
+  expectUnchanged()
+  dragEvent('dragStart', first.querySelector('strong')!)
+  dragEvent('dragOver', second, 560, 20)
+  dragEvent('drop', second, 560, 20)
+  dragEvent('dragEnd', first)
+  expect(displayedOptionIds().slice(0, 2)).toEqual(['keychain-3-in', 'keychain-2-in'])
+  expect(screen.getByRole('button', { name: /保\s*存$/ }).hasAttribute('disabled')).toBe(false)
+})
+
+test('accessory dragging rejects style-to-color and stale parent-group drops but saves moves within one color group', async () => {
+  const data = clone(initialBundle)
+  optionFor(allProducts(data.main)[0], 'Accessories Style')!.deleted = false
+  api.invoke.mockImplementation(async command => command === 'load_product_option_settings' ? { bundle: clone(data), version: 'colors-v1', directory: 'test' } : { version: 'colors-v2', directory: 'test' })
+  render(<ProductOptionsSettings/> )
+  await screen.findByLabelText('产品中文名')
+  fireEvent.click(screen.getByRole('button', { name: /^配件样式已/ }))
+  const styles = data.catalogs['accessory-styles.json'].values
+  const firstStyle = styles.find(value => value.accessoryStyleId === 'P8')!
+  const secondStyle = styles.find(value => value.accessoryStyleId === 'P9')!
+  await select('编辑配件样式', `${firstStyle.sortOrder} · ${display(firstStyle)}`)
+  const firstOrder = displayedOptionIds()
+  dragEvent('dragStart', optionCard('P8'))
+  dragEvent('dragOver', optionCard('P-C2'), 100, 150)
+  dragEvent('drop', optionCard('P-C2'), 100, 150)
+  dragEvent('dragEnd', optionCard('P8'))
+  expect(displayedOptionIds()).toEqual(firstOrder)
+  expect(screen.getByRole('button', { name: /保\s*存$/ }).hasAttribute('disabled')).toBe(true)
+  dragEvent('dragStart', optionCard('P-C1'))
+  await select('编辑配件样式', `${secondStyle.sortOrder} · ${display(secondStyle)}`)
+  const secondOrder = displayedOptionIds()
+  setCardBounds('P-C27', 0, 0); setCardBounds('P-C28', 0, 180)
+  dragEvent('drop', optionCard('P-C28'), 100, 330)
+  expect(displayedOptionIds()).toEqual(secondOrder)
+  expect(screen.getByRole('button', { name: /保\s*存$/ }).hasAttribute('disabled')).toBe(true)
+  dragEvent('dragStart', optionCard('P-C27'))
+  dragEvent('dragOver', optionCard('P-C28'), 100, 330)
+  dragEvent('drop', optionCard('P-C28'), 100, 330)
+  dragEvent('dragEnd', optionCard('P-C27'))
+  fireEvent.click(screen.getByRole('button', { name: /保\s*存$/ }))
+  await screen.findByText('配置已保存')
+  const saved = api.invoke.mock.calls.at(-1)![1].bundle as typeof initialBundle
+  expect(saved.catalogs['accessory-styles.json'].values.find(value => value.accessoryStyleId === 'P8')).toEqual(firstStyle)
+  const savedStyle = saved.catalogs['accessory-styles.json'].values.find(value => value.accessoryStyleId === 'P9')!
+  expect(savedStyle.colors!.slice(0, 3).map(getEntityId)).toEqual(['P-C28', 'P-C27', 'P-C29'])
+  expect(savedStyle.colors!.map(value => value.sortOrder)).toEqual(Array.from({ length: savedStyle.colors!.length }, (_, index) => index + 1))
+  expect(saved.main).toEqual(data.main)
+  validateBundle(saved)
+}, 20000)
+
 test('native controls add and edit nested colors, set defaults, reorder, disable and delete values', async () => {
   render(<ProductOptionsSettings/> )
   await screen.findByLabelText('产品中文名')
   fireEvent.click(screen.getByRole('button', { name: /^配件样式已/ }))
   fireEvent.click(screen.getByRole('switch', { name: '启用配件样式' }))
+  const existingStyle = initialBundle.catalogs['accessory-styles.json'].values.find(value => value.accessoryStyleId === 'P8')!
+  await select('编辑配件样式', `${existingStyle.sortOrder} · ${display(existingStyle)}`)
   fireEvent.click(screen.getByRole('button', { name: '新增颜色' }))
   fireEvent.change(screen.getByLabelText('P-C138中文名称'), { target: { value: '测试蓝色' } })
   const addedColor = document.querySelector('[data-value-id="P-C138"]') as HTMLElement
   expect(within(addedColor).getByRole('switch', { name: 'P-C138启用' }).getAttribute('aria-checked')).toBe('false')
   fireEvent.click(within(addedColor).getByRole('switch', { name: 'P-C138启用' }))
   fireEvent.click(screen.getByRole('switch', { name: 'P-C138默认选中' }))
-  fireEvent.change(screen.getByLabelText('P-C138序号'), { target: { value: '2' } })
-  fireEvent.blur(screen.getByLabelText('P-C138序号'))
+  setCardBounds('P-C138', 0, 1000); setCardBounds('P-C2', 0, 180)
+  dragEvent('dragStart', optionCard('P-C138'))
+  dragEvent('dragOver', optionCard('P-C2'), 100, 190)
+  dragEvent('drop', optionCard('P-C2'), 100, 190)
+  dragEvent('dragEnd', optionCard('P-C138'))
   fireEvent.click(screen.getByRole('switch', { name: 'P-C138启用' }))
   fireEvent.click(screen.getByRole('button', { name: /保\s*存$/ }))
   await screen.findByText('配置已保存')
   const data = api.invoke.mock.calls.at(-1)![1].bundle
-  const style = data.catalogs['accessory-styles.json'].values[0]
-  expect(style.colors.at(-1)).toMatchObject({ accessoryColorId: 'P-C138', labelZh: '测试蓝色', sortOrder: 2, isDefault: true })
+  const style = data.catalogs['accessory-styles.json'].values.find((value: { accessoryStyleId: string }) => value.accessoryStyleId === 'P8')!
+  expect(style.colors.slice(0, 3).map(getEntityId)).toEqual(['P-C1', 'P-C138', 'P-C2'])
+  expect(style.colors[1]).toMatchObject({ accessoryColorId: 'P-C138', labelZh: '测试蓝色', sortOrder: 2, isDefault: true })
   expect(optionFor(data.main.categories[0].products[0], 'Accessories Style')!.disabledValues).toContainEqual({ accessoryColorId: 'P-C138' })
   const row = document.querySelector('[data-value-id="P-C138"]') as HTMLElement
   fireEvent.click(within(row).getByRole('button', { name: /^删\s*除$/ }))
@@ -858,3 +1118,46 @@ test('creating a product from the standee category enables the new attribute imm
   const added = api.invoke.mock.calls.at(-1)![1].bundle.main.categories.find((c: { name: string }) => c.name === 'standees').products.at(-1)
   expect(added.productOptions.filter((o: { deleted: boolean }) => !o.deleted)).toEqual([{ name: 'Standee Quantity', deleted: false, defaultValue: { standeeQuantityId: 'SQ1' } }])
 }, 15000)
+
+test('size unit changes preserve physical dimensions and leave empty fields empty', () => {
+  expect(convertSizeArea({ width: '', height: '', unit: 'in' }, 'mm')).toEqual({ width: '', height: '', unit: 'mm' })
+  expect(convertSizeArea({ width: '2', height: '3', unit: 'in' }, 'mm')).toEqual({ width: '50.8', height: '76.2', unit: 'mm' })
+  expect(convertSizeArea({ width: '50.8', height: '', unit: 'mm' }, 'cm')).toEqual({ width: '5.08', height: '', unit: 'cm' })
+  expect(convertSizeArea({ width: '5.08', height: '7.62', unit: 'cm' }, 'in')).toEqual({ width: '2', height: '3', unit: 'in' })
+  expect(areaToMm2({ width: '2', height: '3', unit: 'in' })).toBe('3870.96')
+  expect(areaToMm2({ width: '5.08', height: '7.62', unit: 'cm' })).toBe('3870.96')
+  expect(() => areaToMm2({ width: '', height: '3', unit: 'in' })).toThrow('完整填写')
+})
+
+test('equivalent sizes merge and preserve enabled membership and shared defaults', () => {
+  const before = clone(initialBundle)
+  const catalog = before.catalogs['sizes.json']
+  const canonical = catalog.values.find(value => value.sizeBandId === 'keychain-2-in')!
+  catalog.values.push({ sizeBandId: 'sticker-2x2-in', name: '2 × 2 英寸', labelZh: '2 × 2 英寸', isDefault: true, sortOrder: 50 })
+  catalog.defaultValue = { sizeBandId: 'sticker-2x2-in' }
+  const product = allProducts(before.main)[0]
+  const option = optionFor(product, 'Size')!
+  option.deleted = false
+  option.disabledValues = catalog.values.filter(value => value.sizeBandId !== 'sticker-2x2-in').map(entityReference)
+  const migrated = migrateSizeAreas(before)
+  expect(migrated.aliases['sticker-2x2-in']).toBe('keychain-2-in')
+  expect(migrated.bundle.catalogs['sizes.json'].values.filter(value => value.sizeBandId === 'sticker-2x2-in')).toEqual([])
+  expect(migrated.bundle.catalogs['sizes.json'].defaultValue).toEqual({ sizeBandId: 'keychain-2-in' })
+  expect(getProductSizes(migrated.bundle, allProducts(migrated.bundle.main)[0]).map(value => value.sizeBandId)).toEqual(['keychain-2-in'])
+  expect(canonical.area).toEqual({ width: '2', height: '2', unit: 'in' })
+  expect(migrateSizeAreas(migrated.bundle).bundle).toEqual(migrated.bundle)
+  validateBundle(migrated.bundle)
+})
+
+test('the custom size starts disabled everywhere and a later product choice remains authoritative', () => {
+  const source = clone(initialBundle)
+  const custom = source.catalogs['sizes.json'].values.find(value => value.isCustom)!
+  expect(custom).toMatchObject({ sizeBandId: 'size-custom', area: { width: '', height: '', unit: 'in' } })
+  for (const product of allProducts(source.main)) expect(isEnabled(optionFor(product, 'Size'), custom)).toBe(false)
+  const selectedProduct = allProducts(source.main)[0]
+  const option = optionFor(selectedProduct, 'Size')!
+  option.disabledValues = option.disabledValues!.filter(value => value.sizeBandId !== custom.sizeBandId)
+  const migrated = migrateSizeAreas(source).bundle
+  expect(isEnabled(optionFor(allProducts(migrated.main)[0], 'Size'), custom)).toBe(true)
+  expect(isEnabled(optionFor(allProducts(migrated.main)[1], 'Size'), custom)).toBe(false)
+})
