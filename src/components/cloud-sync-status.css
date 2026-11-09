@@ -1,0 +1,12 @@
+.cloud-sync-details{width:min(440px,calc(100vw - 64px));max-height:min(520px,65vh);overflow-y:auto;overflow-wrap:anywhere;line-height:1.6}
+.cloud-sync-details>p{margin:0 0 12px}
+.cloud-sync-task{border-top:1px solid;padding-block:12px}
+.cloud-sync-task-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.cloud-sync-task-heading strong{min-width:0}
+.cloud-sync-task-heading .ant-tag{flex-shrink:0;margin-inline-end:0}
+.cloud-sync-task-facts{display:grid;grid-template-columns:64px minmax(0,1fr);gap:4px 12px;margin:8px 0}
+.cloud-sync-task-facts dt,.cloud-sync-task-facts dd{margin:0;min-width:0}
+.cloud-sync-task-id{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;user-select:text}
+.cloud-sync-task p{margin:8px 0}
+.cloud-sync-task-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px 12px;margin-top:8px}
+.cloud-sync-task-actions>span{margin-inline-end:auto}

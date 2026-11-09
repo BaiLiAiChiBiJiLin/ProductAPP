@@ -21,6 +21,7 @@ pub use imposition_pdf_runtime::run_pdf_worker_if_requested;
 mod imposition_import;
 mod imposition_layout_presets;
 mod local_api;
+mod local_sync_state;
 mod product_config_cache;
 mod production_imposition;
 mod schematic_review;
@@ -1612,6 +1613,7 @@ pub fn run() {
         .join("logs");
     let _ = fs::create_dir_all(&log_dir);
     tauri::Builder::default()
+        .manage(local_sync_state::SyncWrites::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -1645,6 +1647,13 @@ pub fn run() {
             shared_transfers::refresh_shared_transfers,
             settings::load_storage_settings,
             settings::save_storage_settings,
+            local_sync_state::load_local_sync_state,
+            local_sync_state::save_local_sync_state,
+            local_sync_state::delete_local_sync_state,
+            local_sync_state::begin_local_sync_write,
+            local_sync_state::append_local_sync_write,
+            local_sync_state::commit_local_sync_write,
+            local_sync_state::abort_local_sync_write,
             product_option_settings::load_product_option_settings,
             product_option_settings::save_product_option_settings,
             product_option_images::upload_product_option_image,

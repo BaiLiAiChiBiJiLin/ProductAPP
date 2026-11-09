@@ -1,5 +1,6 @@
 import { invoke, storageMode } from './backend'
 import { classifyCloudSyncError } from './cloudSyncErrors'
+import { LocalSyncState } from './localSyncState'
 
 /** Shared-mode edits are coalesced locally and pushed after the editor is free. */
 export type CloudBatchSaveArgs = {
@@ -25,10 +26,19 @@ type QueueEntry = {
 }
 
 export type CloudSyncStatus = { state: 'idle' | 'queued' | 'syncing' | 'error' | 'blocked'; pending: number; error?: string }
-export type CloudSyncTask = { id: string; name: string; attempts: number; error?: string; action?: string; blocked: boolean; deletionRequested?: boolean; nextAttemptAt?: number }
+export type CloudSyncTask = { id: string; name: string; customerName?: string; operation: 'save_batch' | 'delete_batch'; assetCount: number; state: Exclude<CloudSyncStatus['state'], 'idle'>; attempts: number; error?: string; action?: string; blocked: boolean; deletionRequested?: boolean; nextAttemptAt?: number }
 export type CloudBatchSaveResult = { batchId?: string; assets?: unknown[]; metadata?: unknown; duplicate?: boolean }
 export type CloudBatchSaveComplete = { id: string; revision: string; submitted: CloudBatchSaveArgs; result: CloudBatchSaveResult }
 const STORAGE_KEY = 'printflow-cloud-sync-queue-v1'
+const queueStore = new LocalSyncState<QueueEntry[]>('cloud-sync-queue', 'batches', STORAGE_KEY, () => [],
+  (value): value is QueueEntry[] => Array.isArray(value) && value.every(entry => entry && typeof entry === 'object'
+    && typeof entry.key === 'string' && entry.command === 'save_batch' && typeof entry.revision === 'string'
+    && typeof entry.attempts === 'number' && Number.isFinite(entry.attempts) && entry.attempts >= 0
+    && typeof entry.nextAttemptAt === 'number' && Number.isFinite(entry.nextAttemptAt)
+    && (entry.error === undefined || typeof entry.error === 'string')
+    && (entry.blocked === undefined || typeof entry.blocked === 'boolean')
+    && (entry.deletionRequested === undefined || typeof entry.deletionRequested === 'boolean')
+    && entry.args && typeof entry.args.id === 'string' && Array.isArray(entry.args.assets)))
 const RETRY_DELAYS = [2_000, 5_000, 15_000, 30_000, 60_000]
 const listeners = new Set<(status: CloudSyncStatus) => void>()
 const saveListeners = new Set<(event: CloudBatchSaveComplete) => void>()
@@ -38,31 +48,68 @@ let inFlightDone: Promise<void> | undefined
 const deletions = new Map<string, Promise<void>>()
 let retryTimer: number | undefined
 let lastError = ''
+let initialization: Promise<void> | undefined
+const persistenceFailures = new Map<string, QueueEntry>()
+const retainedAssetPaths = new Map<string, number>()
+const requestedRevisions = new Map<string, string>()
+const deferredCleanup = new Map<string, unknown>()
+const pendingEnqueues = new Map<string, QueueEntry>()
 
-function readQueue(): QueueEntry[] {
-  try {
-    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]') as unknown
-    return Array.isArray(value) ? value.filter(item => item && typeof item === 'object' && typeof (item as QueueEntry).key === 'string') as QueueEntry[] : []
-  } catch { return [] }
+const isLatestRequested = (entry: QueueEntry) => !requestedRevisions.has(entry.args.id) || requestedRevisions.get(entry.args.id) === entry.revision
+
+function readQueue() {
+  try { return queueStore.snapshot() }
+  catch { return [] } // ready()/update() surface invalid recovery data without deleting it.
 }
-function writeQueue(entries: QueueEntry[]) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(entries)) }
-  catch { throw new Error('本地同步队列写入失败，请保留当前页面并释放磁盘空间后重试') }
+function visibleQueue() {
+  const entries = new Map(readQueue().map(entry => [entry.args.id, entry]))
+  for (const [id, entry] of persistenceFailures) entries.set(id, entry)
+  return [...entries.values()]
+}
+function readyQueue() {
+  initialization ??= queueStore.ready().then(async () => {
+    // Previous versions stored large request logs in the WebView quota. Once
+    // the queue has migrated, those failures can be retried from local files.
+    const recoverable = (entry: QueueEntry) => !entry.deletionRequested && !!entry.error && classifyCloudSyncError(entry.error).kind === 'local-storage'
+    if (readQueue().some(recoverable)) await queueStore.update(entries => entries.map(entry => recoverable(entry)
+      ? { ...entry, error: undefined, blocked: false, nextAttemptAt: Date.now() } : entry))
+  }).catch(error => { initialization = undefined; throw error })
+  return initialization
+}
+class QueuePersistenceError extends Error {
+  constructor(error: unknown) { super(`本地同步队列写入失败，请保留当前页面后重试：${error instanceof Error ? error.message : String(error)}`) }
+}
+async function updateQueue(change: (entries: QueueEntry[]) => QueueEntry[], failedEntry?: QueueEntry | (() => QueueEntry | undefined), replaceFailure = false) {
+  try { return await queueStore.update(change) }
+  catch (error) {
+    const failure = new QueuePersistenceError(error)
+    const entry = typeof failedEntry === 'function' ? failedEntry() : failedEntry
+    if (entry && (replaceFailure || !persistenceFailures.has(entry.args.id))) {
+      persistenceFailures.set(entry.args.id, { ...entry, blocked: true, error: String(failure) })
+    }
+    emit('blocked', visibleQueue().length, String(failure))
+    throw failure
+  }
 }
 const isBlocked = (entry: QueueEntry) => entry.blocked || !!entry.error && !classifyCloudSyncError(entry.error).retryable
 export function cloudSyncTasks(): CloudSyncTask[] {
-  return readQueue().map(entry => {
+  return visibleQueue().map(entry => {
     const failure = entry.error ? classifyCloudSyncError(entry.error) : undefined
-    const metadata = entry.args.metadata as { customerName?: string } | undefined
-    return { id: entry.args.id, name: metadata?.customerName || entry.args.id, attempts: entry.attempts,
+    const metadata = entry.args.metadata as { customerName?: unknown } | undefined
+    const customerName = typeof metadata?.customerName === 'string' ? metadata.customerName.trim() : undefined
+    const blocked = !!entry.deletionRequested || !!isBlocked(entry)
+    const state = blocked ? 'blocked' : inFlight?.revision === entry.revision ? 'syncing' : entry.error ? 'error' : 'queued'
+    return { id: entry.args.id, name: customerName || entry.args.id, customerName, operation: entry.deletionRequested ? 'delete_batch' : 'save_batch',
+      assetCount: entry.args.assets.length, state, attempts: entry.attempts,
       error: entry.error, action: entry.deletionRequested ? '删除尚未完成，请在历史记录中重试删除。' : failure?.action,
-      blocked: !!entry.deletionRequested || !!isBlocked(entry),
+      blocked,
       deletionRequested: entry.deletionRequested,
       ...(!entry.deletionRequested && !isBlocked(entry) && entry.error ? { nextAttemptAt: entry.nextAttemptAt } : {}) }
   })
 }
-function emit(state: CloudSyncStatus['state'], pending = readQueue().length, error?: string) {
-  const entries = readQueue()
+function emit(state: CloudSyncStatus['state'], _pending = visibleQueue().length, error?: string) {
+  const entries = visibleQueue()
+  const pending = entries.length
   lastError = error ?? entries.find(entry => entry.error)?.error ?? ''
   const blocked = entries.some(entry => isBlocked(entry) || entry.deletionRequested && !deletions.has(entry.args.id))
   const status = { state: state !== 'syncing' && blocked ? 'blocked' as const : lastError && state === 'queued' ? 'error' as const : state, pending, ...(lastError ? { error: lastError } : {}) }
@@ -73,9 +120,11 @@ function emit(state: CloudSyncStatus['state'], pending = readQueue().length, err
 }
 export function onCloudSyncStatus(listener: (status: CloudSyncStatus) => void) {
   listeners.add(listener)
-  const entries = readQueue()
+  const entries = visibleQueue()
   const error = entries.find(entry => entry.error)?.error || lastError || (entries.some(entry => entry.deletionRequested) ? '批次删除尚未完成，待同步修改已保留，请重试删除' : '')
   listener({ state: entries.some(entry => isBlocked(entry) || entry.deletionRequested) ? 'blocked' : error ? 'error' : entries.length ? 'queued' : 'idle', pending: entries.length, ...(error ? { error } : {}) })
+  void readyQueue().then(() => { if (listeners.has(listener)) emit(inFlight ? 'syncing' : visibleQueue().length ? 'queued' : 'idle') })
+    .catch(error => { if (listeners.has(listener)) emit('blocked', visibleQueue().length, String(error)) })
   return () => { listeners.delete(listener) }
 }
 export function onCloudBatchSaveComplete(listener: (event: CloudBatchSaveComplete) => void) {
@@ -90,9 +139,11 @@ function startQueue() { void runQueue().catch(error => { emit('blocked', readQue
 async function runQueue(): Promise<void> {
   if (runner) return runner
   runner = (async () => {
+    await readyQueue()
+    await queueStore.flush()
     while (true) {
       const entries = readQueue()
-      const available = entries.filter(item => !item.deletionRequested && !isBlocked(item))
+      const available = entries.filter(item => isLatestRequested(item) && !item.deletionRequested && !deletions.has(item.args.id) && !persistenceFailures.has(item.args.id) && !isBlocked(item))
       const entry = available.find(item => item.nextAttemptAt <= Date.now())
       if (!entry) {
         const next = available.reduce<number | undefined>((value, item) => value === undefined ? item.nextAttemptAt : Math.min(value, item.nextAttemptAt), undefined)
@@ -107,23 +158,31 @@ async function runQueue(): Promise<void> {
       inFlightDone = new Promise(resolve => { finishFlight = resolve })
       try {
         if (!(await storageMode()).shared) { scheduleRetry(Date.now() + 10_000); emit('queued', entries.length); return }
-        if (readQueue().find(item => item.key === entry.key)?.deletionRequested) continue
+        const latest = readQueue().find(item => item.key === entry.key)
+        if (!latest || !isLatestRequested(entry) || latest.revision !== entry.revision || latest.deletionRequested || deletions.has(entry.args.id) || persistenceFailures.has(entry.args.id)) continue
         emit('syncing', entries.length)
         const result = await invoke<CloudBatchSaveResult>('save_batch', entry.args as Record<string, unknown>)
         // A newer edit may have replaced this entry while the network call
         // was in flight. Only remove the exact revision that was uploaded.
-        const current = readQueue().find(item => item.key === entry.key)
-        // Deletion waits for this native call, then removes the batch. Retain
-        // its files/snapshot if deletion fails or the application closes.
-        if (current?.deletionRequested) continue
-        const acknowledged = current?.revision === entry.revision
-        const remaining = acknowledged
-          ? readQueue().filter(item => item.key !== entry.key)
-          : readQueue().map(item => item.key === entry.key ? { ...item, attempts: 0, nextAttemptAt: Date.now(), error: undefined } : item)
-        writeQueue(remaining)
+        let acknowledged = false
+        let deleting = false
+        const remaining = await updateQueue(current => {
+          const latest = current.find(item => item.key === entry.key)
+          // Deletion waits for this native call. Retain the snapshot even if
+          // the delete intent is still waiting for its own disk commit.
+          deleting = !!latest?.deletionRequested || deletions.has(entry.args.id)
+          if (deleting) return current
+          acknowledged = latest?.revision === entry.revision && isLatestRequested(entry) && !persistenceFailures.has(entry.args.id)
+          return acknowledged ? current.filter(item => item.key !== entry.key)
+            : current.map(item => item.key === entry.key ? { ...item, attempts: 0, nextAttemptAt: Date.now(), error: undefined } : item)
+        }, () => readQueue().find(item => item.key === entry.key))
+        if (deleting) continue
+        acknowledged = acknowledged && isLatestRequested(entry)
         if (acknowledged && entry.args.preserveTempAssets) {
-          const staged = entry.args.assets.filter(asset => asset && typeof asset === 'object' && typeof (asset as { storagePath?: unknown }).storagePath === 'string')
-          if (staged.length) void invoke('discard_temp_assets', { assets: staged }).catch(error => console.warn('共享批次同步后的临时图片清理失败', error))
+          for (const asset of entry.args.assets) {
+            const path = asset && typeof asset === 'object' ? (asset as { storagePath?: unknown }).storagePath : undefined
+            if (typeof path === 'string') deferredCleanup.set(path, asset)
+          }
         }
         lastError = ''
         // Obsolete replies may advance the backend version, but must not
@@ -137,8 +196,9 @@ async function runQueue(): Promise<void> {
         }
         emit(remaining.length ? 'queued' : 'idle', remaining.length)
       } catch (error) {
+        if (error instanceof QueuePersistenceError) throw error
         const current = readQueue().find(item => item.key === entry.key)
-        if (!current || current.deletionRequested) continue
+        if (!current || !isLatestRequested(entry) || current.deletionRequested || deletions.has(entry.args.id) || persistenceFailures.has(entry.args.id)) continue
         // Failure belongs to the attempted revision, not a newer edit waiting
         // behind it. Send the newer snapshot without inheriting the old backoff.
         if (current.revision !== entry.revision) continue
@@ -147,8 +207,13 @@ async function runQueue(): Promise<void> {
         // Spread reconnects from multiple workstations without increasing the 60 s cap.
         const jittered = Math.min(60_000, Math.ceil(delay * (1 + Math.random() * 0.2)))
         const failure = classifyCloudSyncError(error)
-        const next = readQueue().map(item => item.key === entry.key ? { ...item, attempts, nextAttemptAt: Date.now() + jittered, error: String(error), blocked: !failure.retryable } : item)
-        writeQueue(next)
+        let failureSaved = false
+        const next = await updateQueue(entries => entries.map(item => {
+          if (item.key !== entry.key || !isLatestRequested(entry) || item.revision !== entry.revision || item.deletionRequested || deletions.has(item.args.id)) return item
+          failureSaved = true
+          return { ...item, attempts, nextAttemptAt: Date.now() + jittered, error: String(error), blocked: !failure.retryable }
+        }), () => readQueue().find(item => item.key === entry.key))
+        if (!failureSaved) continue
         emit('error', next.length, String(error))
         // A failed batch keeps its files and retry state, but must not prevent
         // other batches from reaching the cloud. The next loop schedules the
@@ -157,39 +222,66 @@ async function runQueue(): Promise<void> {
         inFlight = undefined
         inFlightDone = undefined
         finishFlight()
+        cleanDeferredAssets()
       }
     }
   })().finally(() => { runner = undefined })
   return runner
 }
-export function enqueueCloudBatchSave(args: CloudBatchSaveArgs) {
-  const entries = readQueue().filter(entry => entry.key !== `save_batch:${args.id}`)
-  entries.push({ key: `save_batch:${args.id}`, command: 'save_batch', args: { ...args, preserveTempAssets: true }, revision: crypto.randomUUID(), attempts: 0, nextAttemptAt: Date.now(), ...(deletions.has(args.id) ? { deletionRequested: true } : {}) })
-  writeQueue(entries)
+export async function enqueueCloudBatchSave(args: CloudBatchSaveArgs) {
+  const detached = JSON.parse(JSON.stringify({ ...args, preserveTempAssets: true })) as CloudBatchSaveArgs
+  const entry: QueueEntry = { key: `save_batch:${args.id}`, command: 'save_batch', args: detached, revision: crypto.randomUUID(), attempts: 0, nextAttemptAt: Date.now() }
+  requestedRevisions.set(args.id, entry.revision)
+  pendingEnqueues.set(entry.revision, entry)
+  try { await readyQueue() }
+  catch (error) {
+    const failure = new QueuePersistenceError(error)
+    persistenceFailures.set(args.id, { ...entry, error: String(failure), blocked: true })
+    pendingEnqueues.delete(entry.revision)
+    emit('blocked', visibleQueue().length, String(failure))
+    throw failure
+  }
+  const previousFailure = persistenceFailures.get(args.id)
+  let entries: QueueEntry[]
+  try {
+    entries = await updateQueue(current => [...current.filter(item => item.key !== entry.key),
+      { ...entry, ...(deletions.has(args.id) || current.find(item => item.key === entry.key)?.deletionRequested ? { deletionRequested: true } : {}) }], entry, true)
+  } finally { pendingEnqueues.delete(entry.revision) }
+  if (persistenceFailures.get(args.id) === previousFailure) persistenceFailures.delete(args.id)
   emit('queued', entries.length)
   startQueue()
 }
-export function clearCloudBatchSave(id: string) {
-  const remaining = readQueue().filter(entry => entry.key !== `save_batch:${id}`)
-  writeQueue(remaining)
+export async function clearCloudBatchSave(id: string) {
+  const failed = persistenceFailures.get(id)
+  await readyQueue()
+  const remaining = await updateQueue(current => current.filter(entry => entry.key !== `save_batch:${id}`), () => visibleQueue().find(entry => entry.args.id === id))
+  if (persistenceFailures.get(id) === failed) persistenceFailures.delete(id)
   if (!remaining.length && retryTimer !== undefined) { window.clearTimeout(retryTimer); retryTimer = undefined }
   emit(remaining.length ? 'queued' : 'idle', remaining.length)
+  cleanDeferredAssets()
 }
 /** Cancel saves only for the deleted batch; a failed upload must not block deletion. */
 export function deleteBatchWithPendingSync(id: string): Promise<void> {
   const existing = deletions.get(id)
   if (existing) return existing
-  // Persist the intent before waiting: even a restart must not upload this
-  // snapshot after a delete that may already have committed on the server.
-  writeQueue(readQueue().map(entry => entry.args.id === id ? { ...entry, deletionRequested: true } : entry))
-  const activeSave = inFlight?.args.id === id ? inFlightDone : undefined
   const operation = (async () => {
-    await activeSave
     try {
+      await readyQueue()
+      // Persist the intent before any native delete. The in-memory deletion
+      // map also pauses this batch while the intent is being committed.
+      await updateQueue(current => {
+        const failed = persistenceFailures.get(id)
+        const entries = failed && !current.some(entry => entry.args.id === id) ? [...current, failed] : current
+        return entries.map(entry => entry.args.id === id ? { ...entry, deletionRequested: true } : entry)
+      }, () => visibleQueue().find(entry => entry.args.id === id))
+      persistenceFailures.delete(id)
+      await (inFlight?.args.id === id ? inFlightDone : undefined)
       await invoke('delete_batch', { id })
-      clearCloudBatchSave(id)
+      await clearCloudBatchSave(id)
     } catch (error) {
-      emit('error', readQueue().length, `批次删除未完成，待同步修改已保留，请重试删除：${String(error)}`)
+      const message = `批次删除未完成，待同步修改已保留，请重试删除：${String(error)}`
+      if (!(error instanceof QueuePersistenceError)) await updateQueue(current => current.map(entry => entry.args.id === id ? { ...entry, error: message } : entry), () => visibleQueue().find(entry => entry.args.id === id))
+      emit('error', readQueue().length, message)
       throw error
     } finally {
       deletions.delete(id)
@@ -202,25 +294,61 @@ export function deleteBatchWithPendingSync(id: string): Promise<void> {
 }
 /** Local cleanup must retain files referenced by queued or already running saves. */
 export function pendingCloudAssetPaths(): Set<string> {
-  const entries = readQueue()
+  const entries = [...visibleQueue(), ...pendingEnqueues.values()]
   if (inFlight) entries.push(inFlight)
-  return new Set(entries.flatMap(entry => entry.args.assets.flatMap(asset => {
+  return new Set([...retainedAssetPaths.keys(), ...entries.flatMap(entry => entry.args.assets.flatMap(asset => {
     if (!asset || typeof asset !== 'object') return []
     const path = (asset as { storagePath?: unknown }).storagePath
     return typeof path === 'string' && path ? [path] : []
-  })))
+  }))])
+}
+function cleanDeferredAssets() {
+  if (!deferredCleanup.size) return
+  const protectedPaths = pendingCloudAssetPaths()
+  const ready = [...deferredCleanup].filter(([path]) => !protectedPaths.has(path))
+  if (!ready.length) return
+  for (const [path] of ready) deferredCleanup.delete(path)
+  void invoke('discard_temp_assets', { assets: ready.map(([, asset]) => asset) }).catch(error => {
+    for (const [path, asset] of ready) if (!deferredCleanup.has(path)) deferredCleanup.set(path, asset)
+    console.warn('共享批次同步后的临时图片清理失败', error)
+  })
+}
+/** Keep queued originals alive while an editor hydrates or copies them. */
+export function retainCloudAssetPaths(paths: Iterable<string>): () => void {
+  const retained = new Set(paths)
+  for (const path of retained) retainedAssetPaths.set(path, (retainedAssetPaths.get(path) ?? 0) + 1)
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    for (const path of retained) {
+      const count = (retainedAssetPaths.get(path) ?? 1) - 1
+      if (count > 0) retainedAssetPaths.set(path, count)
+      else retainedAssetPaths.delete(path)
+    }
+    cleanDeferredAssets()
+  }
 }
 export async function flushCloudSyncQueue(batchId?: string) {
+  await readyQueue()
   if (batchId !== undefined) {
-    const pending = readQueue().find(entry => entry.args.id === batchId)
+    const pending = visibleQueue().find(entry => entry.args.id === batchId)
     if (!pending) return
     if (pending.deletionRequested) throw new Error('批次删除尚未完成，待同步修改已保留，请重试删除')
     // Explicit actions only depend on their own batch. Subscribe before
     // starting work so unrelated uploads cannot delay a completed batch.
-    writeQueue(readQueue().map(entry => entry.args.id === batchId ? { ...entry, nextAttemptAt: Date.now(), error: undefined, blocked: false } : entry))
+    const failed = persistenceFailures.get(batchId)
+    await updateQueue(current => {
+      const latest = current.find(entry => entry.args.id === batchId)
+      if (latest?.deletionRequested || deletions.has(batchId)) return current
+      const entries = failed ? [...current.filter(entry => entry.args.id !== batchId), failed] : current
+      return entries.map(entry => entry.args.id === batchId ? { ...entry, nextAttemptAt: Date.now(), error: undefined, blocked: false } : entry)
+    }, pending)
+    if (persistenceFailures.get(batchId) === failed) persistenceFailures.delete(batchId)
     return new Promise<void>((resolve, reject) => {
       const check = (finished = false) => {
-        const current = readQueue().find(entry => entry.args.id === batchId)
+        const current = visibleQueue().find(entry => entry.args.id === batchId)
+        if (!current && [...pendingEnqueues.values()].some(entry => entry.args.id === batchId)) return
         const error = current?.deletionRequested
           ? '批次删除尚未完成，待同步修改已保留，请重试删除'
           : current?.error || (finished && current ? '云端同步尚未完成，请恢复连接后重试' : '')
@@ -237,29 +365,40 @@ export async function flushCloudSyncQueue(batchId?: string) {
   // Explicit save/confirm is a synchronization barrier, including entries that
   // were waiting for a retry. Background failures remain queued and visible.
   if (retryTimer !== undefined) { window.clearTimeout(retryTimer); retryTimer = undefined }
-  writeQueue(readQueue().map(entry => ({ ...entry, nextAttemptAt: Date.now(), error: undefined, blocked: false })))
+  const failed = new Map(persistenceFailures)
+  await updateQueue(current => {
+    const entries = new Map(current.map(entry => [entry.args.id, entry]))
+    for (const [id, entry] of failed) if (!entries.get(id)?.deletionRequested && !deletions.has(id)) entries.set(id, entry)
+    return [...entries.values()].map(entry => entry.deletionRequested ? entry : { ...entry, nextAttemptAt: Date.now(), error: undefined, blocked: false })
+  })
+  for (const [id, entry] of failed) if (persistenceFailures.get(id) === entry) persistenceFailures.delete(id)
   await runQueue()
-  if (readQueue().length) throw new Error(lastError || '云端同步尚未完成，请恢复连接后重试')
+  if (visibleQueue().length) throw new Error(lastError || '云端同步尚未完成，请恢复连接后重试')
 }
 
 /** Recover transient work on launch, reconnect and resume without resetting hard conflicts. */
 export function startCloudSyncRecovery() {
   let lastWake = -Infinity
+  let stopped = false
   const wake = () => {
     if (Date.now() - lastWake < 1_000 || document.visibilityState === 'hidden') return
     lastWake = Date.now()
-    try {
+    void (async () => {
+      await readyQueue()
+      if (stopped) return
       const entries = readQueue()
-      if (!entries.some(entry => !entry.deletionRequested && !isBlocked(entry))) return
-      writeQueue(entries.map(entry => !entry.deletionRequested && !isBlocked(entry) ? { ...entry, nextAttemptAt: Date.now() } : entry))
+      if (!entries.some(entry => !entry.deletionRequested && !isBlocked(entry) && !persistenceFailures.has(entry.args.id))) return
+      await updateQueue(current => current.map(entry => !entry.deletionRequested && !isBlocked(entry) && !persistenceFailures.has(entry.args.id) ? { ...entry, nextAttemptAt: Date.now() } : entry))
+      if (stopped) return
       startQueue()
-    } catch (error) { emit('blocked', readQueue().length, String(error)) }
+    })().catch(error => { emit('blocked', readQueue().length, String(error)) })
   }
   window.addEventListener('online', wake)
   window.addEventListener('focus', wake)
   document.addEventListener('visibilitychange', wake)
   wake()
   return () => {
+    stopped = true
     window.removeEventListener('online', wake)
     window.removeEventListener('focus', wake)
     document.removeEventListener('visibilitychange', wake)

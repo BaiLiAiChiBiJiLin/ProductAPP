@@ -1,4 +1,5 @@
 vi.mock('../src/services/backend', async () => { const core = await import('@tauri-apps/api/core'); return { invoke: core.invoke, storageMode: async () => ({ shared: false }) } })
+vi.mock('../src/services/localSyncState', async () => (await import('./helpers/localSyncStateMock')).browserLocalSyncStateMock())
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { DragDropEvent } from '@tauri-apps/api/webview'

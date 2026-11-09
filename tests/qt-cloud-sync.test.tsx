@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import type { Asset, Page } from '../src/model'
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), importAssets: vi.fn(), storageMode: vi.fn() }))
+vi.mock('../src/services/localSyncState', async () => (await import('./helpers/localSyncStateMock')).browserLocalSyncStateMock())
 vi.mock('../src/services/backend', () => ({ invoke: mocks.invoke, storageMode: mocks.storageMode }))
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true, invoke: mocks.invoke }))
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }))

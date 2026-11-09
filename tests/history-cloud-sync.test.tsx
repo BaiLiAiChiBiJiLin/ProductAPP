@@ -6,6 +6,7 @@ import { clearCloudBatchSave, enqueueCloudBatchSave, flushCloudSyncQueue } from 
 
 const api = vi.hoisted(() => ({ invoke: vi.fn() }))
 vi.mock('../src/services/backend', () => ({ invoke: api.invoke, storageMode: async () => ({ shared: true }) }))
+vi.mock('../src/services/localSyncState', async () => (await import('./helpers/localSyncStateMock')).browserLocalSyncStateMock())
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true }))
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }))
 vi.mock('../src/modules/schematic/history/BatchHistoryPreview', () => ({ default: () => null }))
@@ -38,15 +39,15 @@ beforeEach(() => {
 
 afterEach(async () => {
   cleanup()
-  clearCloudBatchSave(record.id)
-  clearCloudBatchSave('other-batch')
+  await clearCloudBatchSave(record.id)
+  await clearCloudBatchSave('other-batch')
   finishSave?.()
   await flushCloudSyncQueue().catch(() => {})
   localStorage.clear()
 })
 
 async function beginOperation(operation: 'delete' | 'transfer', queuedId = record.id) {
-  enqueueCloudBatchSave({ id: queuedId, savedAt: 'now', assets: [{ id: 'asset', attributes: { QT: '25' } }] })
+  await enqueueCloudBatchSave({ id: queuedId, savedAt: 'now', assets: [{ id: 'asset', attributes: { QT: '25' } }] })
   await waitFor(() => expect(finishSave).toBeDefined())
   render(<BatchHistoryPanel active openingId={null} progress={{ completed: 0, total: 0 }} onOpen={vi.fn()} userName="发送用户"/>)
   const open = await screen.findByRole('button', { name: '打开批次 待同步客户' })
@@ -118,7 +119,7 @@ test('opening a healthy history batch is not blocked by another batch with a mis
     if (command === 'load_batch_asset_svg') return Promise.resolve(new TextEncoder().encode('<svg/>').buffer)
     return original(command, args)
   })
-  enqueueCloudBatchSave({ id: record.id, savedAt: 'now', assets: [{ id: 'missing-asset', name: '尺寸 · __printflow_measure_0', storagePath: 'temp-assets/missing.svg', attributes: { QT: '25' } }] })
+  await enqueueCloudBatchSave({ id: record.id, savedAt: 'now', assets: [{ id: 'missing-asset', name: '尺寸 · __printflow_measure_0', storagePath: 'temp-assets/missing.svg', attributes: { QT: '25' } }] })
   await waitFor(() => expect(rejectSave).toBeDefined())
   const loading = loadHistoryBatch(saved.id)
   const loaded = expect(loading).resolves.toEqual({ ...saved, assets: [{ ...saved.assets[0], svg: '<svg/>' }] })
@@ -133,7 +134,7 @@ test('opening a different history batch does not wait for an unrelated upload st
   const original = api.invoke.getMockImplementation()!
   const saved = { id: 'healthy-batch', savedAt: '2026-11-04', assets: [] }
   api.invoke.mockImplementation((command: string, args?: { id: string }) => command === 'load_batch' ? Promise.resolve(saved) : original(command, args))
-  enqueueCloudBatchSave({ id: record.id, savedAt: 'now', assets: [{ id: 'asset', storagePath: 'temp-assets/asset.svg' }] })
+  await enqueueCloudBatchSave({ id: record.id, savedAt: 'now', assets: [{ id: 'asset', storagePath: 'temp-assets/asset.svg' }] })
   await waitFor(() => expect(finishSave).toBeDefined())
   const received = vi.fn()
   const loading = loadHistoryBatch(saved.id).then(received, received)
@@ -157,7 +158,7 @@ test('transfer is not blocked by an unrelated pending upload with a missing SVG 
 })
 
 test('opening the same batch preserves failed pending changes instead of loading stale cloud data', async () => {
-  enqueueCloudBatchSave({ id: record.id, savedAt: 'now', assets: [{ id: 'asset', storagePath: 'temp-assets/missing.svg', attributes: { QT: '25' } }] })
+  await enqueueCloudBatchSave({ id: record.id, savedAt: 'now', assets: [{ id: 'asset', storagePath: 'temp-assets/missing.svg', attributes: { QT: '25' } }] })
   await waitFor(() => expect(rejectSave).toBeDefined())
   const loading = expect(loadHistoryBatch(record.id)).rejects.toThrow('源文件不可访问')
   rejectSave?.('图片 当前批次 的源文件不可访问')

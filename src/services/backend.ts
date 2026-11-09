@@ -30,13 +30,14 @@ const sessions = new Map<string, CloudSession>()
 let userRequest: Promise<unknown> | undefined
 let registeredName = ''
 
-function session(mode: StorageMode, name: string): CloudSession {
+async function session(mode: StorageMode, name: string): Promise<CloudSession> {
   const scope = JSON.stringify([mode.environment ?? '', mode.configPath ?? '', mode.storageRoot ?? '', name])
   let state = sessions.get(scope)
   if (!state) {
     state = { journal: new CloudWriteJournal(scope), listedVersions: new Map(), tails: new Map(), flights: new Map() }
     sessions.set(scope, state)
   }
+  await state.journal.ready()
   return state
 }
 function rememberListed(state: CloudSession, key: string, version: number) {
@@ -80,7 +81,7 @@ async function sendWrite(state: CloudSession, key: string, pending: PendingCloud
     const rejectedData = failure.kind === 'data' && /图片资产格式错误|批次没有图片|图片 ID 缺失或重复|缺少或无效字段|历史批次不存在|历史批次已删除/.test(failure.message)
     const rejectedVersion = failure.kind === 'conflict' && failure.message.startsWith('记录已被其他用户修改')
     if (failure.kind === 'source' || rejectedVersion || rejectedData) {
-      state.journal.finish(key, pending.requestId)
+      await state.journal.finish(key, pending.requestId)
     }
     throw error
   }
@@ -91,7 +92,7 @@ async function sendWrite(state: CloudSession, key: string, pending: PendingCloud
   const removed = ['delete_batch', 'delete_schematic_review', 'send_shared_batch'].includes(pending.command)
   // The acknowledgement and new base revision are persisted together. If this
   // fails, the original pending request remains available for another replay.
-  state.journal.finish(key, pending.requestId, result?.version, removed)
+  await state.journal.finish(key, pending.requestId, result?.version, removed)
   if (removed) state.listedVersions.delete(key)
   else if (typeof result?.version === 'number') rememberListed(state, key, result.version)
   return response.result
@@ -118,7 +119,7 @@ function write(state: CloudSession, key: string, command: string, args: Args): P
         if (state.journal.pending(key) || pending.fingerprint === content) throw error
       }
     }
-    const request = state.journal.begin(key, {
+    const request = await state.journal.begin(key, {
       command, fingerprint: content, requestId: crypto.randomUUID(),
       expectedVersion: expectedVersion(state, command, key), args: snapshot,
     }, ['save_batch', 'delete_batch', 'delete_asset', 'send_shared_batch'].includes(command))
@@ -156,7 +157,7 @@ export async function invoke<T>(command: string, args: Args = {}): Promise<T> {
   if (command === 'load_batch_asset_svg' || command === 'load_schematic_review_resource') {
     return nativeInvoke<T>('cloud_resource', { command, args })
   }
-  const state = session(mode, name)
+  const state = await session(mode, name)
   const key = recordKey(command, args)
   if (writes.has(command)) {
     const result = await write(state, key, command, args)
@@ -183,6 +184,11 @@ export async function invoke<T>(command: string, args: Args = {}): Promise<T> {
       if (state.journal.version(itemKey) === undefined) revisions.push([itemKey, item.version])
     }
   }
-  state.journal.remember(revisions)
+  await state.journal.remember(revisions)
+  // A newer write acknowledgement can commit while this read waits for local
+  // persistence. Check again before publishing its snapshot to the editor.
+  if (typeof versioned?.version === 'number' && versioned.version < (state.journal.version(key) ?? 0)) {
+    throw new Error('读取的云端记录已过期，请重新打开或刷新后重试')
+  }
   return result
 }

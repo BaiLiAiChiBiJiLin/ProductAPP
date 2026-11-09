@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 const api = vi.hoisted(() => ({ invoke: vi.fn() }))
+vi.mock('../src/services/localSyncState', async () => (await import('./helpers/localSyncStateMock')).browserLocalSyncStateMock())
 vi.mock('@tauri-apps/api/core', () => ({ invoke: api.invoke, isTauri: () => true }))
 beforeEach(() => { vi.resetModules(); api.invoke.mockReset(); localStorage.clear(); localStorage.setItem('printflow-account-name', 'Alice') })
 afterEach(() => vi.restoreAllMocks())
+
+
 function shared(handler: (command: string, args: Record<string, unknown>) => unknown, mode = { shared: true }) {
   api.invoke.mockImplementation(async (command, args) => {
     if (command === 'storage_mode') return mode
@@ -244,7 +247,7 @@ test('a journal write failure prevents sending an unrecoverable save', async () 
     return original.call(this, key, value)
   })
   const { invoke } = await import('../src/services/backend')
-  await expect(invoke('save_batch', { id: 'quota', assets: [] })).rejects.toThrow('无法保存本地云端同步日志')
+  await expect(invoke('save_batch', { id: 'quota', assets: [] })).rejects.toThrow('本地同步存储写入失败')
   expect(api.invoke.mock.calls.filter(([, args]) => args?.command === 'save_batch')).toHaveLength(0)
 })
 
@@ -257,7 +260,7 @@ test('an acknowledgement storage failure leaves the exact request recoverable af
   })
   shared(() => { failAcknowledgement = true; return { result: { version: 1 } } })
   const firstSession = await import('../src/services/backend')
-  await expect(firstSession.invoke('save_batch', { id: 'ack', savedAt: 'first', assets: [] })).rejects.toThrow('无法保存本地云端同步日志')
+  await expect(firstSession.invoke('save_batch', { id: 'ack', savedAt: 'first', assets: [] })).rejects.toThrow('本地同步存储写入失败')
   const first = api.invoke.mock.calls.at(-1)?.[1]
   storage.mockRestore()
   vi.resetModules()
@@ -275,7 +278,7 @@ test('an incompatible journal is preserved and blocks writes', async () => {
   localStorage.setItem(journalKey, incompatible)
   vi.resetModules()
   const restartedSession = await import('../src/services/backend')
-  await expect(restartedSession.invoke('save_batch', { id: 'invalid', assets: [] })).rejects.toThrow('本地云端同步日志格式无效')
+  await expect(restartedSession.invoke('save_batch', { id: 'invalid', assets: [] })).rejects.toThrow('本地同步记录格式无效')
   expect(localStorage.getItem(journalKey)).toBe(incompatible)
   expect(api.invoke.mock.calls.filter(([, args]) => args?.command === 'save_batch')).toHaveLength(1)
 })

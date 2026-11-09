@@ -53,7 +53,7 @@ import { reconcileCloudBatchAssets, reconcileCloudBatchMetadata } from './servic
 import Loading from '../../components/Loading'
 import { classifyAssetsByProductAndPrint } from './services/classificationService'
 import { combineImageGroupsAcrossPages } from './services/groupCombinationService'
-import { clearCloudBatchSave, enqueueCloudBatchSave, flushCloudSyncQueue, onCloudBatchSaveComplete } from '../../services/cloudSyncQueue'
+import { clearCloudBatchSave, enqueueCloudBatchSave, flushCloudSyncQueue, onCloudBatchSaveComplete, retainCloudAssetPaths } from '../../services/cloudSyncQueue'
 import { itemForCanvasDisplay } from './services/canvasDisplayScaleService'
 
 import { type ProductAttributePatch } from './services/productOptionRules'
@@ -263,10 +263,13 @@ export default function SchematicPage({ active = true, initialRecord, onRecordSa
     const initialSavingAssets = repairLegacyProductGroups(confirmedAssets ?? editBaseAssets, productConfigs)
     if (!initialSavingAssets.length) return
     if (!isTauri()) { if (confirmedAssets) throw new Error('请在桌面软件中确认并保存'); return }
-    const recordId = currentBatchId ?? crypto.randomUUID()
-    if (options.background && currentBatchId) {
-      const mode = await storageMode().catch(() => ({ shared: false }))
-      if (currentBatchIdRef.current !== recordId) throw new Error('当前批次已切换，请在打开的批次中重新修改')
+    const initialBatchId = currentBatchIdRef.current
+    const recordId = initialBatchId ?? crypto.randomUUID()
+    saveLock.current = true
+    setSavingBatch(true)
+    try {
+      const mode = await storageMode()
+      if (currentBatchIdRef.current !== initialBatchId) throw new Error('当前批次已切换，请在打开的批次中重新修改')
       if (mode.shared) {
         // A previous upload may finish during the mode lookup. Retain its
         // permanent paths instead of enqueuing temporary files already cleaned up.
@@ -276,24 +279,16 @@ export default function SchematicPage({ active = true, initialRecord, onRecordSa
         setAssets(nextAssets)
         currentBatchIdRef.current = recordId; setCurrentBatchId(recordId)
         if (screen === 'arrange') setPages(current => autoArrangePages(current, activePage, assetsForArrangement(current, arrangementSort, nextAssets), layoutBounds, productConfigs, [], displayState.visualScales))
-        enqueueCloudBatchSave({ ...next, assets: nextAssets.map(assetForPersistence) })
-        return { ...next, duplicate: false, batchId: recordId }
+        await enqueueCloudBatchSave({ ...next, assets: nextAssets.map(assetForPersistence) })
+        if (!options.background) toast.success({ key: 'batch-save', content: '批次已保存到本机，正在后台同步' })
+        return
       }
-    }
-    saveLock.current = true
-    setSavingBatch(true)
-    try { await flushCloudSyncQueue(recordId) } catch (error) {
-      saveLock.current = false; setSavingBatch(false)
-      if (confirmedAssets) throw error
-      toast.error(`同步等待失败：${String(error)}`)
-      return
-    }
-    const savingAssets = repairLegacyProductGroups(confirmedAssets ?? assetsRef.current, productConfigs)
-    if (!savingAssets.length) { saveLock.current = false; setSavingBatch(false); return }
-    const record = { id: recordId, savedAt: new Date().toISOString(), assets: savingAssets, metadata: batchMetadata }
-    try {
+      await flushCloudSyncQueue(recordId)
+      const savingAssets = repairLegacyProductGroups(confirmedAssets ?? assetsRef.current, productConfigs)
+      if (!savingAssets.length) return
+      const record = { id: recordId, savedAt: new Date().toISOString(), assets: savingAssets, metadata: batchMetadataRef.current }
       const result = await invoke<SaveBatchResult>('save_batch', { ...record, assets: savingAssets.map(assetForPersistence) })
-      clearCloudBatchSave(record.id)
+      await clearCloudBatchSave(record.id)
       currentBatchIdRef.current = result.batchId; setCurrentBatchId(result.batchId)
       const persisted = mergePersistedAssetMetadata(savingAssets, result.assets)
       setAssets(persisted)
@@ -371,7 +366,7 @@ export default function SchematicPage({ active = true, initialRecord, onRecordSa
         // loading. Delete from the latest snapshot, never requeue cleaned files.
         const remainingAssets = assetsRef.current.filter(asset => !deletedIds.has(asset.id))
         if (shared && batchId && remainingAssets.length) {
-          enqueueCloudBatchSave({ id: batchId, savedAt: new Date().toISOString(), assets: remainingAssets.map(assetForPersistence), metadata: batchMetadataRef.current })
+          await enqueueCloudBatchSave({ id: batchId, savedAt: new Date().toISOString(), assets: remainingAssets.map(assetForPersistence), metadata: batchMetadataRef.current })
           cloudQueued = true
         } else if (shared && batchId) {
           await deleteHistoryBatch(batchId)
@@ -508,7 +503,7 @@ export default function SchematicPage({ active = true, initialRecord, onRecordSa
         if ((await storageMode()).shared) {
           const all = [...(wasOpen ? assets : []), ...imported]
           try {
-            enqueueCloudBatchSave({ id: importBatchId, savedAt: new Date().toISOString(), assets: all.map(assetForPersistence), metadata })
+            await enqueueCloudBatchSave({ id: importBatchId, savedAt: new Date().toISOString(), assets: all.map(assetForPersistence), metadata })
             toast.success('图片已解析，正在后台保存到共享文件存储')
           } catch (error) { toast.error(`图片已解析，但共享保存任务未加入队列：${String(error)}`) }
         } else toast.success(wasOpen ? schematicCopy.adding : schematicCopy.creating)
@@ -553,33 +548,58 @@ export default function SchematicPage({ active = true, initialRecord, onRecordSa
     if (!chosen.length) return
     if (!isTauri()) return
     setConfirmingReview(true)
+    const localArtworkPaths = new Map(assetsRef.current.flatMap(asset => asset.storagePath ? [[asset.id, asset.storagePath] as const] : []))
+    const releaseArtwork = retainCloudAssetPaths(localArtworkPaths.values())
     try {
-      const recordId = currentBatchId ?? crypto.randomUUID()
-      await flushCloudSyncQueue(recordId)
-      const latestAssets = assetsRef.current
-      const record = { id: recordId, savedAt: new Date().toISOString(), assets: latestAssets, metadata: batchMetadata }
-      const result = await invoke<SaveBatchResult>('save_batch', { ...record, assets: latestAssets.map(assetForPersistence) })
-      clearCloudBatchSave(record.id)
-      const persisted = mergePersistedAssetMetadata(latestAssets, result.assets)
+      const initialBatchId = currentBatchIdRef.current
+      const recordId = initialBatchId ?? crypto.randomUUID()
+      const { shared } = await storageMode()
+      if (currentBatchIdRef.current !== initialBatchId) throw new Error('当前批次已切换，请在打开的批次中重新生成')
+      let batchId = recordId
+      let persisted: Asset[]
+      let savedMetadata = batchMetadataRef.current
+      let duplicate = false
+      if (shared) {
+        currentBatchIdRef.current = recordId; setCurrentBatchId(recordId)
+        const latestAssets = assetsRef.current
+        await enqueueCloudBatchSave({ id: recordId, savedAt: new Date().toISOString(), assets: latestAssets.map(assetForPersistence), metadata: batchMetadataRef.current })
+        persisted = assetsRef.current
+      } else {
+        await flushCloudSyncQueue(recordId)
+        const latestAssets = assetsRef.current
+        const record = { id: recordId, savedAt: new Date().toISOString(), assets: latestAssets, metadata: batchMetadataRef.current }
+        const result = await invoke<SaveBatchResult>('save_batch', { ...record, assets: latestAssets.map(assetForPersistence) })
+        await clearCloudBatchSave(record.id)
+        persisted = mergePersistedAssetMetadata(latestAssets, result.assets)
+        batchId = result.batchId
+        savedMetadata = result.metadata ?? savedMetadata
+        duplicate = result.duplicate
+      }
       const persistedById = new Map(persisted.map(asset => [asset.id, asset]))
       const chosenPersisted: Asset[] = []
       // Large imports arrive as metadata-only assets. Hydrate only the images
-      // that are actually entering arrangement, one at a time, after the
-      // batch has been safely persisted.
+      // entering arrangement, after the local save/queue is durable. A cloud
+      // acknowledgement may enrich their paths while hydration is in progress.
       for (const asset of chosen) {
-        const saved = persistedById.get(asset.id) ?? asset
-        const svg = saved.svg || await loadAssetSvg(saved, result.batchId)
+        const saved = (shared ? assetsRef.current.find(current => current.id === asset.id) : undefined) ?? persistedById.get(asset.id) ?? asset
+        const localPath = localArtworkPaths.get(asset.id)
+        const svg = saved.svg || await loadAssetSvg(localPath ? { ...saved, storagePath: localPath } : saved, batchId)
         chosenPersisted.push({ ...saved, svg })
       }
-      const chosenById = new Map(chosenPersisted.map(asset => [asset.id, asset]))
-      const arrangementAssets = persisted.map(asset => chosenById.get(asset.id) ?? asset)
       const configs = productConfigs.length ? productConfigs : await loadProductConfigs().catch(() => [])
-      setProductConfigs(configs); currentBatchIdRef.current = result.batchId; setCurrentBatchId(result.batchId); setAssets(arrangementAssets); setDefaultArrangementIds(chosenPersisted.map(asset => asset.id)); setArrangementSort('default'); setClassifiedAssets(null); setReviewSelectedIds(new Set()); setBatchMetadata(result.metadata ?? batchMetadata)
-      const nextPages = paginateAssets(chosenPersisted, 1000, layoutBounds, configs)
+      const chosenById = new Map(chosenPersisted.map(asset => [asset.id, asset]))
+      const arrangementAssets = (shared ? assetsRef.current : persisted).map(asset => {
+        const hydrated = chosenById.get(asset.id)
+        return hydrated ? { ...asset, svg: hydrated.svg } : asset
+      })
+      const arrangementById = new Map(arrangementAssets.map(asset => [asset.id, asset]))
+      const chosenArrangement = chosenPersisted.map(asset => arrangementById.get(asset.id) ?? asset)
+      setProductConfigs(configs); currentBatchIdRef.current = batchId; setCurrentBatchId(batchId); assetsRef.current = arrangementAssets; setAssets(arrangementAssets); setDefaultArrangementIds(chosenArrangement.map(asset => asset.id)); setArrangementSort('default'); setClassifiedAssets(null); setReviewSelectedIds(new Set()); setBatchMetadata(shared ? batchMetadataRef.current : savedMetadata)
+      const nextPages = paginateAssets(chosenArrangement, 1000, layoutBounds, configs)
       setPages(nextPages); setDisplayState(emptyArrangementDisplayState()); setSelectedItem(null); setSelectedGroupIds([]); setActivePage(1); setReviewOpen(false); setScreen('arrange')
-      toast.success(result.duplicate ? `已确认 ${chosenPersisted.length} 张图片进入生产（历史批次已存在，未重复保存）` : `已确认 ${chosenPersisted.length} 张图片进入生产`)
+      toast.success(shared ? `已生成 ${chosenArrangement.length} 张图片的示意图，批次已保存到本机并后台同步` : duplicate ? `已确认 ${chosenArrangement.length} 张图片进入生产（历史批次已存在，未重复保存）` : `已确认 ${chosenArrangement.length} 张图片进入生产`)
     } catch (e) { toast.error(`保存图片失败：${String(e)}`) }
-    finally { setConfirmingReview(false) }
+    finally { releaseArtwork(); setConfirmingReview(false) }
   }
   const updatePageItem = useCallback((next: Item) => setPages(current => current.map(page => {
     if (page.id !== activePage) return page

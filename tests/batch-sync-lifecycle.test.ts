@@ -21,10 +21,10 @@ beforeEach(() => {
     return Promise.resolve()
   })
 })
-afterEach(async () => { clearCloudBatchSave('batch'); finishSave?.(); await flushCloudSyncQueue(); localStorage.clear() })
+afterEach(async () => { await clearCloudBatchSave('batch'); finishSave?.(); await flushCloudSyncQueue(); localStorage.clear() })
 
 async function startSave() {
-  enqueueCloudBatchSave({ id: 'batch', savedAt: 'now', assets: [asset] })
+  await enqueueCloudBatchSave({ id: 'batch', savedAt: 'now', assets: [asset] })
   await vi.waitFor(() => expect(finishSave).toBeTypeOf('function'))
 }
 

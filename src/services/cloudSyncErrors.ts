@@ -9,13 +9,13 @@ export type CloudSyncFailure = {
  * Only definite business failures stop automatic retries; ambiguous I/O stays retryable.
  */
 export function classifyCloudSyncError(error: unknown): CloudSyncFailure {
-  const message = error instanceof Error ? error.message : String(error)
+  const message = (error instanceof Error ? error.message : String(error)).replace(/^(?:Error:\s*)+/, '')
   const failure = (kind: CloudSyncFailure['kind'], retryable: boolean, action: string): CloudSyncFailure => ({ kind, retryable, message, action })
   const databaseCode = Number(message.match(/云数据库操作失败（代码\s+(\d+)）/)?.[1])
   if ([1044, 1045, 1142, 1143].includes(databaseCode)) return failure('permission', false, '请检查数据库账号和访问权限，处理后重试。')
   if ([1049, 1054, 1146].includes(databaseCode)) return failure('configuration', false, '请检查数据库结构与软件版本，处理后重试。')
-  if (/同步队列.*(写入|保存|读取)|同步请求.*(写入|保存|读取)|本地同步.*(写入|保存|读取)|本地云端同步日志|QuotaExceeded/i.test(message)) {
-    return failure('local-storage', false, '本地同步记录未能保存，请保留当前页面，释放磁盘空间后重试。')
+  if (/同步队列.*(写入|保存|读取)|同步请求.*(写入|保存|读取)|本地同步|本地云端同步日志|QuotaExceeded/i.test(message)) {
+    return failure('local-storage', false, '本地同步记录尚未安全保存，请保留当前页面。根据具体错误检查数据目录写入权限、磁盘空间或数据库状态，处理后重试。')
   }
   if (/记录已被其他用户修改|读取的云端记录已过期|请求编号已用于不同内容|保存请求内容不一致/.test(message)) {
     return failure('conflict', false, '云端版本有变化，本地待同步修改仍保留。请核对云端内容后处理，自动重试不会覆盖其他人的修改。')
