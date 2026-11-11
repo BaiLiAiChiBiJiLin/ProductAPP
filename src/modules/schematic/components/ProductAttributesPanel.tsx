@@ -5,6 +5,7 @@ import { getNoteImages, noteImagesPatch } from '../services/assetNotesService'
 import type { Asset } from '../../../model'
 import Loading from '../../../components/Loading'
 import useProductConfigs from '../hooks/useProductConfigs'
+import usePublicProductConfigs from '../hooks/usePublicProductConfigs'
 import ProductOptionField from './ProductOptionField'
 import CustomProductForm from './CustomProductForm'
 import { availableOptionValues, applyAttributeValues, applyAttributeImages, dependentOptionNames, type ProductAttributePatch } from '../services/productOptionRules'
@@ -19,8 +20,11 @@ import { orderAssetsByProductGroup } from '../services/productGroupOrdering'
 import { useAttributePanelOverflow } from '../hooks/useAttributePanelOverflow'
 
 type Props = { assets: Asset[]; selectedAssetIds: Set<string>; onConfirmAttributes: (patch: ProductAttributePatch) => Promise<void>; disabled?: boolean; selectionHint?: string; allowGrouping?: boolean; showSelectionSummary?: boolean }
+type ProductSource = 'local' | 'public'
 export default function ProductAttributesPanel({ assets, selectedAssetIds, onConfirmAttributes, disabled = false, selectionHint, allowGrouping = true, showSelectionSummary = true }: Props) {
-  const { products, loading, error: configError, refreshing, refresh } = useProductConfigs()
+  const { products: localProducts, loading, error: configError, refreshing, refresh } = useProductConfigs()
+  const { products: publicProducts, loading: publicLoading, error: publicConfigError, refreshing: publicRefreshing, refresh: refreshPublic } = usePublicProductConfigs()
+  const products = useMemo(() => [...localProducts, ...publicProducts], [localProducts, publicProducts])
   const grouping = useProductGroup()
   const session = allowGrouping ? grouping?.session : undefined
   const selected = useMemo(() => {
@@ -37,6 +41,7 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
   const lockedOptions = lockGroup ? sharedOptionNames(lockGroup.editors[lockGroup.leaderId], products) : new Set<string>()
   const [notice, noticeContext] = message.useMessage()
   const [localMode, setMode] = useState<'existing' | 'custom'>('existing')
+  const [productSource, setProductSource] = useState<ProductSource>('local')
   const [localDraft, setDraft] = useState(emptyAttributeDraft)
   const [localCustom, setCustom] = useState(emptyCustomProduct)
   const editor = session?.editors[session.activeId] ?? { mode: localMode, draft: localDraft, custom: localCustom }
@@ -54,11 +59,12 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
     setError('')
     const cached = selected.length === 1 ? grouping?.readDraft(selected[0].id) : undefined
     const next = cached?.draft ?? readSelectionDraft(selected)
-    if (cached) { setMode(cached.mode); setDraft(cached.draft); setCustom(cached.custom) }
+    if (cached) { setMode(cached.mode); setProductSource(cached.draft.productId.startsWith('public:') ? 'public' : 'local'); setDraft(cached.draft); setCustom(cached.custom) }
     else if (!session) {
       setDraft(next)
       const isCustom = next.productId.startsWith('custom:')
       setMode(isCustom ? 'custom' : 'existing')
+      setProductSource(next.productId.startsWith('public:') ? 'public' : 'local')
       if (isCustom) setCustom({ id: Number(next.productId.slice(7)), name: selected[0]?.productName ?? '', size: next.attributes.Size ?? '', printOption: next.attributes['Print Option'] ?? '', finish: next.attributes.Finish ?? '', accessoryColor: next.attributes['Accessories Color'] ?? '', accessoryColorImage: next.images['Accessories Color'] ?? '', qt: next.attributes.QT?.trim() ? Number(next.attributes.QT) : null, attributes: { ...next.attributes }, attributeImages: { ...next.images }, finishMatchDisabled: Boolean(next.finishMatchDisabled) })
       else setCustom(emptyCustomProduct())
     }
@@ -68,6 +74,8 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
   }, [session?.id])
   const changeEditor = (next: GroupEditor, mayStart = false) => {
     setMode(next.mode); setDraft(next.draft); setCustom(next.custom)
+    if (next.mode === 'existing' && next.draft.productId.startsWith('public:')) setProductSource('public')
+    else if (next.mode === 'existing' && next.draft.productId) setProductSource('local')
     if (session) grouping!.updateEditor(next, session.activeId)
     else {
       if (selected.length === 1) grouping?.rememberDraft(selected[0].id, next)
@@ -83,6 +91,9 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
     changeEditor({ ...editor, mode: 'custom', custom: next }, shouldStartGuide)
   }
   const product = products.find(item => item.id === draft.productId)
+  const productTab = mode === 'custom' ? 'custom' : draft.productId ? draft.productId.startsWith('public:') ? 'public' : 'local' : productSource
+  const tabProducts = productTab === 'public' ? publicProducts : localProducts
+  const selectProduct = (id: string) => { setProductSource(id.startsWith('public:') ? 'public' : 'local'); changeEditor({ ...editor, mode: 'existing', draft: { ...draft, productId: id, attributes: {}, images: {}, finishMatchDisabled: false } }, true) }
   const groupGuideTrigger = !session && !savedGroup && selected.length > 0 ? groupingTrigger(editor, products) : null
   const indexes = orderAssetsByProductGroup(assets).flatMap((asset, i) => selectedAssetIds.has(asset.id) ? [i + 1] : [])
   const contiguous = indexes.every((value, i) => i === 0 || value === indexes[i - 1] + 1)
@@ -120,14 +131,26 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
     {allowGrouping && !savedGroup && !session && selected.length > 0 && <div className="product-group-edit-entry"><span>{groupGuideTrigger ? `当前${groupGuideTrigger.label}支持多图分组引导。` : '组合时先选完图片再选产品'}</span><Button disabled={disabled || confirming || grouping?.saving} onClick={() => grouping?.start(editor, selected.map(asset => asset.id), !groupGuideTrigger, selected.some(asset => asset.attributesConfirmed))}>图片组合</Button></div>}
     {session?.editingSavedGroup && session.trigger.kind !== 'free' && <p className="upload-panel-hint">更换产品会应用到整组并清空旧产品选项，QT 和备注保留。</p>}
     <fieldset className="attribute-edit-fields" disabled={disabled || confirming || grouping?.saving} inert={disabled || confirming || grouping?.saving}>
-      <Tabs activeKey={mode} className="product-attribute-mode-tabs" onChange={key => { const nextMode = key as 'existing' | 'custom'; const nextEditor = { ...editor, mode: nextMode }; changeEditor(nextEditor, nextMode === 'custom' && Boolean(groupingTrigger(nextEditor, products))) }} items={[{ key: 'existing', label: '已有产品', disabled: productLocked }, { key: 'custom', label: '自定义', disabled: productLocked }]}/>
-      <div hidden={mode !== 'existing'}>
-        {loading && <Loading size="small" text="正在加载产品选项…"/>}
-        {(configError || (!loading && !products.length)) && <Alert type="warning" showIcon
-          message={products.length ? '产品配置更新失败，当前使用本地缓存' : '产品配置不可用'}
+      <Tabs activeKey={productTab} className="product-attribute-mode-tabs" onChange={key => {
+        if (key === 'custom') {
+          const nextEditor = { ...editor, mode: 'custom' as const }
+          changeEditor(nextEditor, Boolean(groupingTrigger(nextEditor, products)))
+          return
+        }
+        setProductSource(key as ProductSource)
+        const nextEditor = { ...editor, mode: 'existing' as const, draft: productTab === key ? draft : { ...draft, productId: '', attributes: {}, images: {}, finishMatchDisabled: false } }
+        changeEditor(nextEditor, false)
+      }} items={[{ key: 'local', label: '已有产品', disabled: productLocked }, { key: 'public', label: '公共产品', disabled: productLocked }, { key: 'custom', label: '自定义', disabled: productLocked }]}/>
+      <div hidden={productTab !== 'local' && productTab !== 'public'}>
+        {(productTab === 'public' ? publicLoading : loading) && <Loading size="small" text="正在加载产品选项…"/>}
+        {productTab === 'local' && (configError || (!loading && !localProducts.length)) && <Alert type="warning" showIcon
+          message={localProducts.length ? '产品配置更新失败，当前使用本地缓存' : '产品配置不可用'}
           description={<><div>{configError || '本地没有可用的产品配置，请刷新从接口重新获取。'}</div><Button style={{ marginTop: 8 }} disabled={refreshing || loading} icon={refreshing ? <Loading size="small" inline/> : undefined} onClick={() => void refresh()}>{refreshing ? '正在刷新…' : '刷新产品配置'}</Button></>}/>} 
+        {productTab === 'public' && (publicConfigError || (!publicLoading && !publicProducts.length)) && <Alert type="warning" showIcon
+          message={publicProducts.length ? '公共产品更新失败，当前使用本地缓存' : '公共产品配置不可用'}
+          description={<><div>{publicConfigError || '公共产品缓存尚未准备好，请稍后重试。'}</div><Button style={{ marginTop: 8 }} disabled={publicRefreshing || publicLoading} icon={publicRefreshing ? <Loading size="small" inline/> : undefined} onClick={() => void refreshPublic()}>{publicRefreshing ? '正在刷新…' : '刷新公共产品'}</Button></>}/>}
         <div className="product-config-form">
-          <label className="product-config-field"><span>产品</span><Select aria-label="产品" showSearch optionFilterProp="label" disabled={!selected.length || loading || productLocked} placeholder="请选择产品" value={product?.id} options={products.map(item => ({ value: item.id, label: item.title }))} onChange={id => changeEditor({ ...editor, draft: { ...draft, productId: id, attributes: {}, images: {}, finishMatchDisabled: false } }, true)}/></label>
+          <label className="product-config-field"><span>{productTab === 'public' ? '公共产品' : '产品'}</span><Select aria-label={productTab === 'public' ? '公共产品' : '产品'} showSearch optionFilterProp="label" disabled={!selected.length || (productTab === 'public' ? publicLoading : loading) || productLocked} placeholder="请选择产品" value={tabProducts.some(item => item.id === product?.id) ? product?.id : undefined} options={tabProducts.map(item => ({ value: item.id, label: item.title }))} onChange={selectProduct}/></label>
           {product?.options.map(option => { const values = availableOptionValues(option, draft.attributes); const value = draft.attributes[option.name] ?? (option.name.trim().toLowerCase() === 'finish' ? draft.attributes['工艺'] : undefined); const image = draft.images[option.name] ?? (option.name.trim().toLowerCase() === 'finish' ? draft.images['工艺'] : undefined); return values.length ? <ProductOptionField key={`${product.id}:${option.name}`} option={option} values={values} value={value} imageOverride={image} disabled={!selected.length || (quantityLocked && lockedOptions.has(option.name))} onChange={(nextValue, nextImage) => changeOption(option.name, nextValue, nextImage)}/> : null })}
           <label className="product-config-field"><span>QT（数量）</span><InputNumber aria-label="QT（数量）" disabled={!selected.length} min={0} max={2147483647} precision={0} value={draft.attributes.QT ? Number(draft.attributes.QT) : undefined} onChange={value => changeOption('QT', value == null ? '' : String(value))}/></label>
         </div>

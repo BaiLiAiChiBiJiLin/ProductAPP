@@ -34,7 +34,7 @@ export function groupingTrigger(editor: GroupEditor, products: ProductConfig[]):
   const title = editor.mode === 'custom' ? editor.custom.name : product?.title ?? ''
   if (/摇摇乐|shaker/i.test(title)) return { kind: 'shaker', label: '摇摇乐' }
   if (/照片夹|photocard\s*holders?|photo\s*card\s*holders?|photo\s*holders?/i.test(title)) return { kind: 'photo-holder', label: '照片夹' }
-  if (editor.mode !== 'existing' || !product || !/standees/i.test(`${product.id} ${title}`)) return null
+  if (editor.mode !== 'existing' || !product || !/(?:standees|立牌)/i.test(`${product.id} ${title}`)) return null
   const quantity = selectedQuantity(editor, products)
   if (quantity && quantity.count > 1) return { kind: 'standees', label: quantity.option.label, count: quantity.count, quantityName: quantity.option.name }
   return null

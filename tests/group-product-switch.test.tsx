@@ -11,6 +11,9 @@ import type { CustomProduct } from '../src/modules/schematic/services/customProd
 vi.mock('../src/modules/schematic/hooks/useProductConfigs', () => ({
   default: () => ({ products, loading: false, error: '', refreshing: false, refresh: vi.fn() }),
 }))
+vi.mock('../src/modules/schematic/hooks/usePublicProductConfigs', () => ({
+  default: () => ({ products: publicProducts, loading: false, error: '', refreshing: false, refresh: vi.fn() }),
+}))
 vi.mock('../src/modules/schematic/services/customProductService', async importOriginal => ({
   ...await importOriginal<typeof import('../src/modules/schematic/services/customProductService')>(),
   listCustomProducts: async () => [{ id: 7, name: 'Custom Shaker' }, { id: 9, name: 'Custom Shaker Deluxe' }],
@@ -27,6 +30,7 @@ const products = normalizeProductConfigs([
     { name: 'Size', labelZh: '尺寸', values: ['small', 'large'] },
   ] },
 ])
+const publicProducts = [{ id: 'public:P23', title: '公共立牌', options: [{ name: 'Size', label: '尺寸', values: [{ name: 'small', label: '小号', hidden: false, deleted: false, parentValues: [] }] }] }]
 
 beforeEach(() => {
   vi.stubGlobal('matchMedia', vi.fn(query => ({ matches: false, media: query, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() })))
@@ -250,4 +254,15 @@ test('switching an ungrouped custom product clears the previous product options 
   await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1))
   expect(confirm.mock.calls[0][0]).toMatchObject({ productId: 'custom:9', attributes: { QT: '1' }, attributeImages: {}, note: first.note })
   expect((confirm.mock.calls[0][0] as { attributes: object }).attributes).toEqual({ QT: '1' })
+})
+
+test('public product tab stays active before a public product is selected', async () => {
+  const asset = { ...savedAssets()[0], productGroupId: '', productGroupLeaderId: '', productGroupColor: undefined, productId: '', productName: '', attributesConfirmed: false, attributes: {}, attributeImages: {} }
+  mount([asset], [asset.id])
+  await ready()
+  fireEvent.click(screen.getByRole('tab', { name: '公共产品' }))
+  expect(screen.getByRole('tab', { name: '公共产品' }).getAttribute('aria-selected')).toBe('true')
+  expect(input('公共产品')).toBeTruthy()
+  await choose('公共产品', '公共立牌')
+  expect(screen.getByRole('tab', { name: '公共产品' }).getAttribute('aria-selected')).toBe('true')
 })

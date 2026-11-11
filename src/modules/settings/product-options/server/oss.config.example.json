@@ -1,9 +1,0 @@
-{
-  "OSS_ACCESS_KEY_ID": "REPLACE_ON_SERVER_ONLY",
-  "OSS_ACCESS_KEY_SECRET": "REPLACE_ON_SERVER_ONLY",
-  "OSS_BUCKET": "fakestar-oss",
-  "OSS_REGION": "oss-us-west-1",
-  "OSS_ENDPOINT": "fakestar-oss.oss-us-west-1.aliyuncs.com",
-  "OSS_OBJECT_PREFIX": "",
-  "OSS_ENDPOINT_IS_CNAME": false
-}

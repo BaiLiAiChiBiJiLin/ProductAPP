@@ -58,6 +58,7 @@ import { itemForCanvasDisplay } from './services/canvasDisplayScaleService'
 
 import { type ProductAttributePatch } from './services/productOptionRules'
 import { loadProductConfigs, PRODUCT_CONFIGS_UPDATED_EVENT, type ProductConfig } from './services/productConfigService'
+import { loadPublicProductConfigs, PUBLIC_PRODUCT_OPTIONS_UPDATED_EVENT } from './services/publicProductOptionService'
 import { loadFinishNames } from './services/finishService'
 import { setFinishLookup } from './services/assetDetailsService'
 
@@ -245,10 +246,19 @@ export default function SchematicPage({ active = true, initialRecord, onRecordSa
   }), [])
   useEffect(() => {
     let cancelled = false
-    const read = () => { void loadProductConfigs().then(configs => { if (!cancelled) setProductConfigs(configs) }).catch(() => {}) }
+    const read = () => {
+      void Promise.all([loadProductConfigs(), loadPublicProductConfigs()]).then(([local, publicProducts]) => {
+        if (!cancelled) setProductConfigs([...local, ...publicProducts])
+      }).catch(() => {
+        // Keep the local catalog available when the optional public catalog is
+        // unavailable or has not been refreshed on the first launch yet.
+        void loadProductConfigs().then(configs => { if (!cancelled) setProductConfigs(configs) }).catch(() => {})
+      })
+    }
     read()
     window.addEventListener(PRODUCT_CONFIGS_UPDATED_EVENT, read)
-    return () => { cancelled = true; window.removeEventListener(PRODUCT_CONFIGS_UPDATED_EVENT, read) }
+    window.addEventListener(PUBLIC_PRODUCT_OPTIONS_UPDATED_EVENT, read)
+    return () => { cancelled = true; window.removeEventListener(PRODUCT_CONFIGS_UPDATED_EVENT, read); window.removeEventListener(PUBLIC_PRODUCT_OPTIONS_UPDATED_EVENT, read) }
   }, [])
   useEffect(() => {
     let cancelled = false

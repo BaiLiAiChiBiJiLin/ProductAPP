@@ -24,13 +24,10 @@ mod local_api;
 mod local_sync_state;
 mod product_config_cache;
 mod production_imposition;
+mod public_product_options;
 mod schematic_review;
 mod schematic_pdf_quality;
 mod settings;
-mod product_option_settings;
-mod product_option_images;
-mod product_pricing_settings;
-mod quantity_pricing_settings;
 mod shared_transfers;
 mod staged_artwork;
 pub mod svg_measure;
@@ -1633,6 +1630,18 @@ pub fn run() {
             let port = local_api::start(app.handle().clone(), &status_path)
                 .map_err(|e| format!("本地 API 启动失败：{e}"))?;
             log::info!(target: "printflow::local-api", "本地 SVG API 已监听 127.0.0.1:{port}");
+            // Refresh the public product catalog once per application launch.
+            // The WebView reads the previous atomic cache immediately and is
+            // notified when this background refresh finishes.
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = public_product_options::refresh_public_product_options_inner().await {
+                    log::warn!(target: "printflow::public-product-options", "公共产品选项刷新失败，继续使用本地缓存：{error}");
+                } else {
+                    use tauri::Emitter;
+                    let _ = app_handle.emit(public_product_options::UPDATED_EVENT, ());
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1654,13 +1663,6 @@ pub fn run() {
             local_sync_state::append_local_sync_write,
             local_sync_state::commit_local_sync_write,
             local_sync_state::abort_local_sync_write,
-            product_option_settings::load_product_option_settings,
-            product_option_settings::save_product_option_settings,
-            product_option_images::upload_product_option_image,
-            product_pricing_settings::load_product_pricing_settings,
-            product_pricing_settings::save_product_pricing_settings,
-            quantity_pricing_settings::load_quantity_pricing_settings,
-            quantity_pricing_settings::save_quantity_pricing_settings,
             staged_artwork::write_export_resource_chunk,
             schematic_review::load_schematic_review_resource,
             schematic_review::save_schematic_review,
@@ -1709,6 +1711,8 @@ pub fn run() {
             fetch_remote_image,
             load_finish_names,
             refresh_product_configs,
+            public_product_options::refresh_public_product_options,
+            public_product_options::load_public_product_options,
             custom_products::load_custom_product_config,
             custom_products::add_custom_product_name,
             custom_products::list_custom_products,
