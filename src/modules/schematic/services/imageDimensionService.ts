@@ -114,7 +114,7 @@ function sizeMillimetres(raw: string, originalLongest: number) {
   const values = [...raw.matchAll(/\d+(?:\.\d+)?/g)].map(match => Number(match[0])).filter(Number.isFinite)
   if (!values.length) return originalLongest
   const longest = Math.max(...values)
-  const unit = raw.match(/mm|cm|inch(?:es)?|in\b|英寸|毫米|厘米|["']/i)?.[0]?.toLowerCase()
+  const unit = raw.match(/mm|cm|inch(?:es)?|in\b|英寸|毫米|厘米|["'“”″]/i)?.[0]?.toLowerCase()
   const multiplier = !unit || unit === 'mm' || unit === '毫米'
     ? 1
     : unit === 'cm' || unit === '厘米'

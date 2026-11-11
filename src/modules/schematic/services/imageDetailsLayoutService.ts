@@ -2,6 +2,7 @@ import { DETAIL_ACCESSORY_SIZE_RATIO, DETAIL_AREA_RATIO, DETAIL_LABEL_FONT_SIZE,
 import type { ImageGroup } from '../layoutTypes.ts'
 import { accessoryTopGap } from './accessoryFrameService.ts'
 import { DEFAULT_NOTE_COLOR, DEFAULT_NOTE_FONT_SIZE, getNoteImages } from './assetNotesService.ts'
+import { finishLabel } from './finishLabelService.ts'
 
 /** Stack complete title/image blocks vertically in the available note column. */
 function noteImageBoxes(images: NoteImage[], x: number, y: number, width: number, height: number) {
@@ -126,7 +127,7 @@ export function imageDetailsLayout(group: ImageGroup, visualScale = 1) {
   const bodyY = y + fieldHeight
   // Finish/process is painted along the bottom edge of the group. Reserve a
   // line for it so wrapped notes always remain above that label.
-  const hasFinish = Boolean(group.details?.finish?.trim()) || Boolean(group.detailGroups?.some(panel => panel.details.finish?.trim()))
+  const hasFinish = Boolean(finishLabel(group).text)
   const finishReserve = hasFinish ? 18 : 0
   const bodyHeight = Math.max(0, contentHeight - 8 - fieldHeight - finishReserve)
   const accessoryExtra = details?.accessoryImage ? (details.accessoryCode ? 17 : 4) + accessoryTopGap(details.accessoryImage) : 0

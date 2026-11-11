@@ -50,6 +50,43 @@ fn excluded(name: &str) -> bool {
 mod tests {
     use super::*;
     #[test]
+    fn public_and_existing_product_processes_match_the_same_saved_finish() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/public-product-parity.json"
+        ))
+        .unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("finish.json");
+        let records: Vec<_> = fixture["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|sample| serde_json::json!({ "name": sample["finish"] }))
+            .collect();
+        fs::write(&path, serde_json::to_vec(&records).unwrap()).unwrap();
+        for sample in fixture["cases"].as_array().unwrap() {
+            let mut assets: Vec<Asset> = ["public", "local"]
+                .iter()
+                .map(|source| {
+                    serde_json::from_value(serde_json::json!({
+                        "id": source, "name": sample["name"], "productId": source,
+                        "width": 80, "height": 100, "svg": "",
+                        "attributes": sample["selections"][source],
+                    }))
+                    .unwrap()
+                })
+                .collect();
+            fill(&mut assets, &path).unwrap();
+            for asset in &assets {
+                assert_eq!(
+                    asset.attributes["Finish"],
+                    sample["finish"].as_str().unwrap()
+                );
+                assert_eq!(asset.attributes["Accessories Color"], "U style-24");
+            }
+        }
+    }
+    #[test]
     fn catalog_matches_and_persists_without_overwriting_explicit_finish() {
         let path = std::env::temp_dir().join(format!("finish-test-{}.json", std::process::id()));
         fs::write(&path, r#"[{"name":"Epoxy","labelZh":"滴胶"}]"#).unwrap();

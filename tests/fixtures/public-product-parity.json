@@ -1,0 +1,670 @@
+{
+  "source": "Selected records from the public and existing product caches, 2026-11-11. Endpoint names, units, images and visibility flags are preserved.",
+  "cases": [
+    {
+      "name": "Clear Acrylic Keychains",
+      "finish": "Front Side Epoxy",
+      "public": {
+        "productId": "P31",
+        "title": "Clear Acrylic Keychains",
+        "titleZh": "透明亚克力钥匙扣",
+        "options": [
+          {
+            "name": "Size",
+            "label": "Size",
+            "labelZh": "尺寸",
+            "values": [
+              {
+                "entityKey": "sizeBandId",
+                "valueId": "keychain-1-in",
+                "name": "1”",
+                "labelZh": "1 英寸",
+                "image": ""
+              },
+              {
+                "entityKey": "sizeBandId",
+                "valueId": "keychain-1-5-in",
+                "name": "1.5 ”",
+                "labelZh": "1.5 英寸",
+                "image": ""
+              },
+              {
+                "entityKey": "sizeBandId",
+                "valueId": "S1",
+                "name": "2”",
+                "labelZh": "2英寸",
+                "image": ""
+              },
+              {
+                "entityKey": "sizeBandId",
+                "valueId": "keychain-2-5-in",
+                "name": "2.5”",
+                "labelZh": "2.5 英寸",
+                "image": ""
+              },
+              {
+                "entityKey": "sizeBandId",
+                "valueId": "keychain-3-5-in",
+                "name": "3”",
+                "labelZh": "3 英寸",
+                "image": ""
+              },
+              {
+                "entityKey": "sizeBandId",
+                "valueId": "S2",
+                "name": "3.5”",
+                "labelZh": "3.5 英寸",
+                "image": ""
+              },
+              {
+                "entityKey": "sizeBandId",
+                "valueId": "S3",
+                "name": "4”",
+                "labelZh": "4 英寸",
+                "image": ""
+              }
+            ]
+          },
+          {
+            "name": "Print Option",
+            "label": "Print",
+            "labelZh": "印刷选项",
+            "values": [
+              {
+                "entityKey": "printOptionId",
+                "valueId": "Y1",
+                "name": "Double Sided Same Design",
+                "labelZh": "双面同图",
+                "image": ""
+              },
+              {
+                "entityKey": "printOptionId",
+                "valueId": "Y2",
+                "name": "Double Sided Different Design",
+                "labelZh": "双面不同图",
+                "image": ""
+              }
+            ]
+          },
+          {
+            "name": "Technique",
+            "label": "Technique",
+            "labelZh": "滴胶工艺",
+            "values": [
+              {
+                "entityKey": "techniqueId",
+                "valueId": "G11",
+                "name": "Front side epoxy",
+                "labelZh": "正面滴胶",
+                "image": ""
+              }
+            ]
+          },
+          {
+            "name": "Accessories Style",
+            "label": "Accessories Style",
+            "labelZh": "配件样式",
+            "values": [
+              {
+                "entityKey": "accessoryStyleId",
+                "valueId": "P8",
+                "name": "U style",
+                "labelZh": "U形扣",
+                "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778229780347-_10.jpg",
+                "colors": [
+                  {
+                    "entityKey": "accessoryColorId",
+                    "valueId": "P-C1",
+                    "name": "U style-24",
+                    "labelZh": "U形扣-24",
+                    "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827283218-24.png"
+                  },
+                  {
+                    "entityKey": "accessoryColorId",
+                    "valueId": "P-C2",
+                    "name": "U style-25",
+                    "labelZh": "U形扣-25",
+                    "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827377179-25.png"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "local": {
+        "productId": "8192856457285",
+        "title": "Clear Acrylic Keychains",
+        "productOptions": [
+          {
+            "name": "Size",
+            "label": "Size",
+            "hidden": false,
+            "labelZh": "尺寸",
+            "isHidden": false,
+            "linkedParent": "",
+            "showInEditor": true,
+            "editorVisible": true,
+            "values": [
+              {
+                "name": "1\"",
+                "image": "",
+                "hidden": false,
+                "labelZh": "1英寸",
+                "isHidden": false,
+                "parentValues": [],
+                "showInEditor": true,
+                "editorVisible": true
+              },
+              {
+                "name": "1.5\"",
+                "hidden": false,
+                "labelZh": "1.5英寸",
+                "isHidden": false,
+                "parentValues": [],
+                "showInEditor": true,
+                "editorVisible": true
+              },
+              {
+                "name": "2\"",
+                "hidden": false,
+                "labelZh": "2英寸",
+                "isHidden": false,
+                "parentValues": [],
+                "showInEditor": true,
+                "editorVisible": true
+              },
+              {
+                "name": "2.5\"",
+                "hidden": false,
+                "labelZh": "2.5英寸",
+                "isHidden": false,
+                "parentValues": [],
+                "showInEditor": true,
+                "editorVisible": true
+              },
+              {
+                "name": "3\"",
+                "hidden": false,
+                "labelZh": "3英寸",
+                "isHidden": false,
+                "parentValues": [],
+                "showInEditor": true,
+                "editorVisible": true
+              },
+              {
+                "name": "3.5\"",
+                "hidden": false,
+                "labelZh": "3.5英寸",
+                "isHidden": false,
+                "parentValues": [],
+                "showInEditor": true,
+                "editorVisible": true
+              },
+              {
+                "name": "4\"",
+                "hidden": false,
+                "labelZh": "4英寸",
+                "isHidden": false,
+                "parentValues": [],
+                "showInEditor": true,
+                "editorVisible": true
+              }
+            ]
+          },
+          {
+            "name": "Print Option",
+            "label": "Print",
+            "hidden": false,
+            "labelZh": "印刷选项",
+            "isHidden": false,
+            "linkedParent": "",
+            "showInEditor": true,
+            "editorVisible": true,
+            "values": [
+              {
+                "name": "Double Sided Same Design",
+                "image": "",
+                "hidden": false,
+                "labelZh": "双面同图",
+                "isHidden": false,
+                "parentValues": [],
+                "showInEditor": true,
+                "editorVisible": true
+              },
+              {
+                "name": "Double Sided Different Design",
+                "hidden": false,
+                "labelZh": "双面不同图",
+                "isHidden": false,
+                "parentValues": [],
+                "showInEditor": true,
+                "editorVisible": true
+              }
+            ]
+          },
+          {
+            "name": "Epoxy Style",
+            "label": "Epoxy Style",
+            "hidden": false,
+            "labelZh": "滴胶样式",
+            "isHidden": false,
+            "linkedParent": "",
+            "showInEditor": true,
+            "editorVisible": true,
+            "values": [
+              {
+                "name": "Front Side Epoxy",
+                "image": "",
+                "hidden": false,
+                "labelZh": "正面滴胶",
+                "isHidden": false,
+                "parentValues": [],
+                "showInEditor": true,
+                "editorVisible": true
+              }
+            ]
+          },
+          {
+            "name": "Accessories Style",
+            "label": "Accessories Style",
+            "hidden": false,
+            "labelZh": "配件样式",
+            "isHidden": false,
+            "linkedParent": "",
+            "showInEditor": true,
+            "editorVisible": true,
+            "values": [
+              {
+                "name": "U style",
+                "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778229780347-_10.jpg",
+                "hidden": false,
+                "labelZh": "U形扣",
+                "isHidden": false,
+                "parentValues": [],
+                "showInEditor": true,
+                "editorVisible": true
+              }
+            ]
+          },
+          {
+            "name": "Accessories Color",
+            "label": "Accessories Color",
+            "hidden": false,
+            "labelZh": "配件颜色",
+            "isHidden": false,
+            "linkedParent": "Accessories Style",
+            "showInEditor": true,
+            "editorVisible": true,
+            "values": [
+              {
+                "name": "U style-24",
+                "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827283218-24.png",
+                "hidden": false,
+                "labelZh": "U形扣-24",
+                "isHidden": false,
+                "parentValues": [
+                  "U style"
+                ],
+                "showInEditor": true,
+                "editorVisible": true
+              },
+              {
+                "name": "U style-25",
+                "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827377179-25.png",
+                "hidden": false,
+                "labelZh": "U形扣-25",
+                "isHidden": false,
+                "parentValues": [
+                  "U style"
+                ],
+                "showInEditor": true,
+                "editorVisible": true
+              }
+            ]
+          }
+        ]
+      },
+      "selections": {
+        "public": {
+          "Size": "2.5”",
+          "Technique": "Front side epoxy",
+          "Print Option": "Double Sided Same Design",
+          "Accessories Style": "U style",
+          "Accessories Color": "U style-24",
+          "QT": "12"
+        },
+        "local": {
+          "Size": "2.5\"",
+          "Epoxy Style": "Front Side Epoxy",
+          "Print Option": "Double Sided Same Design",
+          "Accessories Style": "U style",
+          "Accessories Color": "U style-24",
+          "QT": "12"
+        }
+      }
+    },
+    {
+      "name": "Holographic Acrylic Keychains",
+      "finish": "Single-Sided Star Holo",
+      "public": {
+        "productId": "P40",
+        "title": "Holographic Acrylic Keychains",
+        "titleZh": "全息亚克力钥匙扣",
+        "options": [
+          {
+            "name": "Size",
+            "label": "Size",
+            "labelZh": "尺寸",
+            "values": [
+              {
+                "entityKey": "sizeBandId",
+                "valueId": "keychain-1-in",
+                "name": "1”",
+                "labelZh": "1 英寸",
+                "image": ""
+              },
+              {
+                "entityKey": "sizeBandId",
+                "valueId": "keychain-1-5-in",
+                "name": "1.5 ”",
+                "labelZh": "1.5 英寸",
+                "image": ""
+              },
+              {
+                "entityKey": "sizeBandId",
+                "valueId": "keychain-2-5-in",
+                "name": "2.5”",
+                "labelZh": "2.5 英寸",
+                "image": ""
+              },
+              {
+                "entityKey": "sizeBandId",
+                "valueId": "keychain-3-5-in",
+                "name": "3”",
+                "labelZh": "3 英寸",
+                "image": ""
+              }
+            ]
+          },
+          {
+            "name": "Print Option",
+            "label": "Print",
+            "labelZh": "印刷选项",
+            "values": [
+              {
+                "entityKey": "printOptionId",
+                "valueId": "Y1",
+                "name": "Double Sided Same Design",
+                "labelZh": "双面同图",
+                "image": ""
+              },
+              {
+                "entityKey": "printOptionId",
+                "valueId": "Y2",
+                "name": "Double Sided Different Design",
+                "labelZh": "双面不同图",
+                "image": ""
+              }
+            ]
+          },
+          {
+            "name": "Holo Film",
+            "label": " Holo Film",
+            "labelZh": "亚克力全息膜",
+            "values": [
+              {
+                "entityKey": "holoFilmId",
+                "valueId": "M15",
+                "name": "Single-Sided Star Holo",
+                "labelZh": "单面星星镭射",
+                "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778672940632-_.png"
+              }
+            ]
+          },
+          {
+            "name": "Accessories Style",
+            "label": "Accessories Style",
+            "labelZh": "配件样式",
+            "values": [
+              {
+                "entityKey": "accessoryStyleId",
+                "valueId": "P8",
+                "name": "U style",
+                "labelZh": "U形扣",
+                "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778229780347-_10.jpg",
+                "colors": [
+                  {
+                    "entityKey": "accessoryColorId",
+                    "valueId": "P-C1",
+                    "name": "U style-24",
+                    "labelZh": "U形扣-24",
+                    "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827283218-24.png"
+                  },
+                  {
+                    "entityKey": "accessoryColorId",
+                    "valueId": "P-C2",
+                    "name": "U style-25",
+                    "labelZh": "U形扣-25",
+                    "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827377179-25.png"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "local": {
+        "productId": "8090561151045",
+        "title": "Holographic Acrylic Keychains",
+        "productOptions": [
+          {
+            "name": "Size",
+            "label": "Size",
+            "hidden": false,
+            "labelZh": "尺寸",
+            "isHidden": false,
+            "linkedParent": "",
+            "showInEditor": true,
+            "editorVisible": true,
+            "values": [
+              {
+                "name": "1\"",
+                "image": "",
+                "hidden": false,
+                "labelZh": "1英寸",
+                "isHidden": false,
+                "parentValues": [],
+                "showInEditor": true,
+                "editorVisible": true
+              },
+              {
+                "name": "1.5\"",
+                "hidden": false,
+                "labelZh": "1.5英寸",
+                "isHidden": false,
+                "parentValues": [],
+                "showInEditor": true,
+                "editorVisible": true
+              },
+              {
+                "name": "2\"",
+                "hidden": false,
+                "labelZh": "2英寸",
+                "isHidden": false,
+                "parentValues": [],
+                "showInEditor": true,
+                "editorVisible": true
+              },
+              {
+                "name": "2.5\"",
+                "hidden": false,
+                "labelZh": "2.5英寸",
+                "isHidden": false,
+                "parentValues": [],
+                "showInEditor": true,
+                "editorVisible": true
+              },
+              {
+                "name": "3\"",
+                "hidden": false,
+                "labelZh": "3英寸",
+                "isHidden": false,
+                "parentValues": [],
+                "showInEditor": true,
+                "editorVisible": true
+              },
+              {
+                "name": "3.5\"",
+                "hidden": false,
+                "labelZh": "3.5英寸",
+                "isHidden": false,
+                "parentValues": [],
+                "showInEditor": true,
+                "editorVisible": true
+              },
+              {
+                "name": "4\"",
+                "hidden": false,
+                "labelZh": "4英寸",
+                "isHidden": false,
+                "parentValues": [],
+                "showInEditor": true,
+                "editorVisible": true
+              }
+            ]
+          },
+          {
+            "name": "Print Option",
+            "label": "Print",
+            "hidden": false,
+            "labelZh": "印刷选项",
+            "isHidden": false,
+            "linkedParent": "",
+            "showInEditor": true,
+            "editorVisible": true,
+            "values": [
+              {
+                "name": "Double Sided Same Design",
+                "image": "",
+                "hidden": false,
+                "labelZh": "双面同图",
+                "isHidden": false,
+                "parentValues": [],
+                "showInEditor": true,
+                "editorVisible": true
+              },
+              {
+                "name": "Double Sided Different Design",
+                "hidden": false,
+                "labelZh": "双面不同图",
+                "isHidden": false,
+                "parentValues": [],
+                "showInEditor": true,
+                "editorVisible": true
+              }
+            ]
+          },
+          {
+            "name": "Holographic Type",
+            "label": "Holographic Type",
+            "hidden": false,
+            "labelZh": "镭射类型",
+            "isHidden": false,
+            "linkedParent": "",
+            "showInEditor": true,
+            "editorVisible": true,
+            "values": [
+              {
+                "name": "Single-Sided Star Holo",
+                "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778672940632-_.png",
+                "hidden": false,
+                "labelZh": "单面星星镭射",
+                "isHidden": false,
+                "parentValues": [],
+                "showInEditor": true,
+                "editorVisible": true
+              }
+            ]
+          },
+          {
+            "name": "Accessories Style",
+            "label": "Accessories Style",
+            "hidden": false,
+            "labelZh": "配件样式",
+            "isHidden": false,
+            "linkedParent": "",
+            "showInEditor": true,
+            "editorVisible": true,
+            "values": [
+              {
+                "name": "U style",
+                "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778229780347-_10.jpg",
+                "hidden": false,
+                "labelZh": "U形扣",
+                "isHidden": false,
+                "parentValues": [],
+                "showInEditor": true,
+                "editorVisible": true
+              }
+            ]
+          },
+          {
+            "name": "Accessories Color",
+            "label": "Accessories Color",
+            "hidden": false,
+            "labelZh": "配件颜色",
+            "isHidden": false,
+            "linkedParent": "Accessories Style",
+            "showInEditor": true,
+            "editorVisible": true,
+            "values": [
+              {
+                "name": "U style-24",
+                "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827283218-24.png",
+                "hidden": false,
+                "labelZh": "U形扣-24",
+                "isHidden": false,
+                "parentValues": [
+                  "U style"
+                ],
+                "showInEditor": true,
+                "editorVisible": true
+              },
+              {
+                "name": "U style-25",
+                "image": "https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827377179-25.png",
+                "hidden": false,
+                "labelZh": "U形扣-25",
+                "isHidden": false,
+                "parentValues": [
+                  "U style"
+                ],
+                "showInEditor": true,
+                "editorVisible": true
+              }
+            ]
+          }
+        ]
+      },
+      "selections": {
+        "public": {
+          "Size": "2.5”",
+          "Holo Film": "Single-Sided Star Holo",
+          "Print Option": "Double Sided Same Design",
+          "Accessories Style": "U style",
+          "Accessories Color": "U style-24",
+          "QT": "12"
+        },
+        "local": {
+          "Size": "2.5\"",
+          "Holographic Type": "Single-Sided Star Holo",
+          "Print Option": "Double Sided Same Design",
+          "Accessories Style": "U style",
+          "Accessories Color": "U style-24",
+          "QT": "12"
+        }
+      }
+    }
+  ]
+}

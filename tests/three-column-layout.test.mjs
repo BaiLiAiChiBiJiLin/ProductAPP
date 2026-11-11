@@ -136,10 +136,10 @@ test('standee finish excludes numeric flags while preserving the real process fr
  assert.ok(!svg.includes('>1 / Front Side Epoxy</text>'))
 })
 
-test('group finish summary does not render numeric quantity values', () => {
+test('group finish summary hides numeric quantities and the no-additional-technique default', () => {
  const assets = [asset('finish-a', 'Acrylic Standees', { '工艺': '1' }, 'g'), asset('finish-b', 'Acrylic Standees', { '工艺': 'No Additional Technique' }, 'g')]
  const [page] = paginateAssets(assets)
- assert.equal(page.imageGroups[0].details.finish, 'No Additional Technique')
+ assert.equal(page.imageGroups[0].details.finish, '')
 })
 
 test('Finish overlays a single line without changing group height or pagination', () => {

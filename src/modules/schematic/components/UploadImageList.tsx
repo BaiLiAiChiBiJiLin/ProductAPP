@@ -12,6 +12,7 @@ import AssetDetailsModal from './AssetDetailsModal'
 import { ImageUp, Info, Trash2 } from 'lucide-react'
 import { getNoteImages } from '../services/assetNotesService'
 import { loadAssetSvg } from '../services/assetSvgService'
+import { isHiddenAttributeValue } from '../services/attributeDisplayService'
 
 export default function UploadImageList({ assets, allAssets, selectedIds, onSelectionChange, products, disabled, onDelete, onReplace, batchId }: {
   assets: Asset[]; allAssets: Asset[]; selectedIds: Set<string>; onSelectionChange: (ids: Set<string>) => void; products: ProductConfig[]; disabled: boolean; onDelete: (asset: Asset) => Promise<void>; onReplace?: (asset: Asset) => Promise<void>; batchId?: string
@@ -73,7 +74,7 @@ export default function UploadImageList({ assets, allAssets, selectedIds, onSele
         <span className="card-physical-size">真实尺寸：{Number.isFinite(asset.sourceGroupWidthMm) && Number.isFinite(asset.sourceGroupHeightMm) && asset.sourceGroupWidthMm! > 0 && asset.sourceGroupHeightMm! > 0
           ? `${asset.sourceGroupWidthMm!.toFixed(3)} × ${asset.sourceGroupHeightMm!.toFixed(3)} mm`
           : '未记录'}</span>
-        {Object.entries(asset.attributes ?? {}).filter(([key, value]) => value && (asset.productId?.startsWith('custom:') || key !== 'Finish')).map(([key, value]) => <span key={key}>{products.find(product => product.id === asset.productId)?.options.find(option => option.name === key)?.label || key}：{value}</span>)}
+        {Object.entries(asset.attributes ?? {}).filter(([key, value]) => value && !isHiddenAttributeValue(value) && (asset.productId?.startsWith('custom:') || key !== 'Finish')).map(([key, value]) => <span key={key}>{products.find(product => product.id === asset.productId)?.options.find(option => option.name === key)?.label || key}：{value}</span>)}
         {asset.note && <span className="card-note">备注：{asset.note}</span>}
         {getNoteImages(asset).map((image, index) => <div className="card-note-attachment" key={index}><button type="button" className="card-note-preview" aria-label={`预览备注 ${asset.name} ${index + 1}`} onClick={event => { event.stopPropagation(); setPreview({ name: `${asset.name} · ${image.name || '备注'}`, src: image.src }) }}><img src={image.src} alt={image.name || `备注图片 ${index + 1}`} loading="lazy"/></button>{image.name && <span>{image.name}</span>}</div>)}
       </div>

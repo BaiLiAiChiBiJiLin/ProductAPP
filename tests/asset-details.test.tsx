@@ -128,3 +128,29 @@ test('details keep legacy single note images and respect an explicitly cleared i
   rerender(<AssetDetailsModal asset={{ ...asset, noteImage: 'old-note.png', noteImages: [] }} products={[]} onClose={vi.fn()}/>)
   expect(screen.queryByRole('region', { name: '资产备注' })).toBeNull()
 })
+
+test('cards and details hide the no-additional-technique value and its image without changing saved attributes', async () => {
+  const selected: Asset = { ...asset,
+    attributes: { Technique: '  no \tAdDiTiOnAl\n technique  ', Finish: 'No Additional Technique', Material: 'Vinyl', QT: '0', Other: 'No Additional Technique Plus' },
+    attributeImages: { Technique: 'no-technique.png', Finish: 'no-finish.png', Material: 'vinyl.png' },
+  }
+  const original = JSON.stringify(selected)
+  render(<UploadImageList assets={[selected]} allAssets={[selected]} selectedIds={new Set()} onSelectionChange={vi.fn()} products={[]} disabled={false} onDelete={vi.fn()}/> )
+  expect(screen.queryByText(/^Technique：/)).toBeNull()
+  expect(screen.queryByText(/^Finish：/)).toBeNull()
+  expect(screen.getByText('Material：Vinyl')).toBeTruthy()
+  expect(screen.getByText('QT：0')).toBeTruthy()
+  expect(screen.getByText('Other：No Additional Technique Plus')).toBeTruthy()
+
+  fireEvent.contextMenu(screen.getByRole('button', { name: `预览 ${selected.name}` }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: '详情' }))
+  const attributes = within(await screen.findByRole('region', { name: '已保存产品属性' }))
+  expect(attributes.queryByText('Technique', { exact: true })).toBeNull()
+  expect(attributes.queryByText('Finish', { exact: true })).toBeNull()
+  expect(attributes.getByText('Vinyl')).toBeTruthy()
+  expect(attributes.getByText('0')).toBeTruthy()
+  expect(attributes.getByText('No Additional Technique Plus')).toBeTruthy()
+  expect(attributes.getAllByRole('img')).toHaveLength(1)
+  expect(attributes.getByRole('img', { name: 'Material' }).getAttribute('src')).toBe('vinyl.png')
+  expect(JSON.stringify(selected)).toBe(original)
+})

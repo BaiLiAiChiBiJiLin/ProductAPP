@@ -5,9 +5,13 @@ import type { ProductConfig } from './productConfigService.ts'
 import type { FinishLookup } from './finishService.ts'
 import { finishNameFromLookup } from './finishService.ts'
 import { DEFAULT_NOTE_COLOR, DEFAULT_NOTE_FONT_SIZE, getNoteImages } from './assetNotesService.ts'
+import { isHiddenAttributeValue } from './attributeDisplayService.ts'
 
 const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase().replace(/[\s_-]+/g, '')
-export const cleanFinishLabel = (value: string) => value.replace(/^\s*\d+\s*\/\s*/, '').trim()
+export const cleanFinishLabel = (value: string) => {
+  const label = value.replace(/^\s*\d+\s*\/\s*/, '').trim()
+  return isHiddenAttributeValue(label) ? '' : label
+}
 const attr = (asset: Asset, keys: string[]) => {
   const values = asset.attributes ?? {}
   const wanted = keys.map(normalize)
@@ -29,9 +33,9 @@ function finishName(asset: Asset, configs: ProductConfig[]) {
   // choosing a field so they cannot hide a real Finish on the same asset.
   const value = ['工艺', 'Finish', '表面'].map(key => attr(asset, [key]))
     .find(candidate => candidate && !/^[+-]?\d+(?:\.\d+)?$/.test(candidate))
-  if (!value) return ''
+  if (!value || !cleanFinishLabel(value)) return ''
   const cached = finishNameFromLookup(value, finishLookup)
-  if (cached) return cached
+  if (cached) return cleanFinishLabel(cached)
   // Product configuration is a useful fallback while an older desktop build
   // has no local finish cache yet. It still returns the canonical option name.
   const product = configs.find(config => config.id === asset.productId)

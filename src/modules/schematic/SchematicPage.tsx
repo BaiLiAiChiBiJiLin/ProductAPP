@@ -247,12 +247,9 @@ export default function SchematicPage({ active = true, initialRecord, onRecordSa
   useEffect(() => {
     let cancelled = false
     const read = () => {
-      void Promise.all([loadProductConfigs(), loadPublicProductConfigs()]).then(([local, publicProducts]) => {
+      // Each catalog remains usable when the other source is unavailable.
+      void Promise.all([loadProductConfigs().catch(() => []), loadPublicProductConfigs().catch(() => [])]).then(([local, publicProducts]) => {
         if (!cancelled) setProductConfigs([...local, ...publicProducts])
-      }).catch(() => {
-        // Keep the local catalog available when the optional public catalog is
-        // unavailable or has not been refreshed on the first launch yet.
-        void loadProductConfigs().then(configs => { if (!cancelled) setProductConfigs(configs) }).catch(() => {})
       })
     }
     read()
@@ -596,7 +593,9 @@ export default function SchematicPage({ active = true, initialRecord, onRecordSa
         const svg = saved.svg || await loadAssetSvg(localPath ? { ...saved, storagePath: localPath } : saved, batchId)
         chosenPersisted.push({ ...saved, svg })
       }
-      const configs = productConfigs.length ? productConfigs : await loadProductConfigs().catch(() => [])
+      const configs = productConfigs.length ? productConfigs : (await Promise.all([
+        loadProductConfigs().catch(() => []), loadPublicProductConfigs().catch(() => []),
+      ])).flat()
       const chosenById = new Map(chosenPersisted.map(asset => [asset.id, asset]))
       const arrangementAssets = (shared ? assetsRef.current : persisted).map(asset => {
         const hydrated = chosenById.get(asset.id)

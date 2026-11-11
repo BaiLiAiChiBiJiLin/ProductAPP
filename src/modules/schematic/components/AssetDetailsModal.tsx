@@ -3,6 +3,7 @@ import type { Asset } from '../../../model'
 import type { ProductConfig } from '../services/productConfigService'
 import './asset-details.css'
 import { getNoteImages } from '../services/assetNotesService'
+import { isHiddenAttributeValue } from '../services/attributeDisplayService'
 
 type Props = { asset: Asset | null; products: ProductConfig[]; onClose: () => void }
 type LayerRole = 'front' | 'window' | 'back'
@@ -27,8 +28,8 @@ export default function AssetDetailsModal({ asset, products, onClose }: Props) {
   const physicalSize = width && height && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0
     ? `${width.toFixed(3)} × ${height.toFixed(3)} mm` : '未记录'
   const attributeLabel = (key: string) => product?.options.find(option => option.name === key)?.label || key
-  const attributes = Object.entries(asset.attributes ?? {})
-  const attributeImages = Object.entries(asset.attributeImages ?? {}).filter(([, url]) => url)
+  const attributes = Object.entries(asset.attributes ?? {}).filter(([, value]) => !isHiddenAttributeValue(value))
+  const attributeImages = Object.entries(asset.attributeImages ?? {}).filter(([key, url]) => url && !isHiddenAttributeValue(asset.attributes?.[key]))
   const noteImages = getNoteImages(asset)
   const sourceImages = asset.sourceImages ?? []
   const roleKeys = [asset.sourceLayerRole, ...sourceImages.map((image, index) => inferredSourceImageRole(image.layerRole, index, sourceImages.length))]

@@ -30,13 +30,37 @@ function normalizeOption(raw: unknown): ProductOption | null {
   return { name, label: asNonEmptyString(value.labelZh, asNonEmptyString(value.label, name)), image: asString(value.image) || undefined, defaultValue: asString(value.defaultValue) || undefined, linkedParent: asString(value.linkedParent) || undefined, values }
 }
 
+/** The public API nests colors inside each accessory style. Adapt them to the
+ * existing dependent option so selecting, clearing and saving share one path. */
+function accessoryColors(raw: unknown, option: ProductOption): ProductOption | null {
+  if (option.name !== 'Accessories Style') return null
+  const record = asRecord(raw)
+  const styles = record && Array.isArray(record.values) ? record.values : []
+  const values = styles.flatMap<ProductOptionValue>(rawStyle => {
+    const style = normalizeValue(rawStyle)
+    const source = asRecord(rawStyle)
+    if (!style || !source || !Array.isArray(source.colors)) return []
+    return source.colors.flatMap(rawColor => {
+      const color = normalizeValue(rawColor)
+      return color ? [{ ...color, parentValues: [style.name] }] : []
+    })
+  })
+  return values.length ? { name: 'Accessories Color', label: '配件颜色', linkedParent: option.name, values } : null
+}
+
 function normalizeProduct(raw: unknown, index: number): ProductConfig | null {
   const value = asRecord(raw)
   if (!value || asBoolean(value.hidden) || asBoolean(value.deleted) || asBoolean(value.isHidden) || asBoolean(value.isDeleted)) return null
   const rawId = asNonEmptyString(value.productId, asNonEmptyString(value.id, `product-${index + 1}`))
   if (!rawId) return null
-  const options = (Array.isArray(value.options) ? value.options : Array.isArray(value.productOptions) ? value.productOptions : [])
-    .map(normalizeOption).filter((item): item is ProductOption => Boolean(item)).filter(item => item.values.length > 0)
+  const rawOptions = Array.isArray(value.options) ? value.options : Array.isArray(value.productOptions) ? value.productOptions : []
+  const normalized = rawOptions.map(rawOption => ({ raw: rawOption, option: normalizeOption(rawOption) }))
+  const hasColorOption = normalized.some(({ option }) => option?.name === 'Accessories Color' && option.values.length > 0)
+  const options = normalized.flatMap<ProductOption>(({ raw, option }) => {
+    if (!option?.values.length) return []
+    const colors = !hasColorOption ? accessoryColors(raw, option) : null
+    return colors ? [option, colors] : [option]
+  })
   return { id: rawId.startsWith('public:') ? rawId : `public:${rawId}`, title: asNonEmptyString(value.titleZh, asNonEmptyString(value.title, asNonEmptyString(value.name, `产品 ${index + 1}`))), options }
 }
 
@@ -73,6 +97,7 @@ export function loadPublicProductConfigs(force = false): Promise<ProductConfig[]
     report('')
     return products
   }).catch(error => { request = undefined; report(error); throw error })
+  if (force && typeof window !== 'undefined') window.dispatchEvent(new Event(PUBLIC_PRODUCT_OPTIONS_UPDATED_EVENT))
   return request
 }
 
