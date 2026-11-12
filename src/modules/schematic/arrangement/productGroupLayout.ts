@@ -39,7 +39,8 @@ export function productGroupFootprint(items: Item[], maxHeight: number, group?: 
     const detailPanelWidth = Math.max(1, detailWidth / detailColumns - 8)
     const detailHeight = Math.max(0, ...panels.map(({ details }) => {
       const lines = [details.heading ?? '', `Size: ${details.size}`, quantityLabel(details.qt), 'Accessory:', ...(details.fields ?? []).map(field => field.text)]
-        .reduce((total, text) => total + wrapNote(text, detailPanelWidth, 10).length, 0)
+        .reduce((total, text, index) => total + (index >= 4 && details.fields?.[index - 4]?.key.startsWith('attribute-')
+          ? 1 : wrapNote(text, detailPanelWidth, 10).length), 0)
       const noteLines = details.note ? wrapNote(details.note, detailPanelWidth, 8).length : 0
       return 8 + lines * 11 + noteLines * 10 + (details.accessoryImage ? 48 : 0) + (getNoteImages(details).length ? 32 : 0)
     }))

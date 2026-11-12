@@ -27,6 +27,24 @@ test('only sticker product names prefix the material to the finish', () => {
   assert.equal(detailsForAsset(stickerAsset('Stickers', {})).finish, '')
 })
 
+test('process, film and material attributes render as separate detail rows', () => {
+  const asset = stickerAsset('Keychains', {
+    Technique: 'Front side epoxy',
+    'Holo Film': 'Star holographic',
+    Material: 'Acrylic',
+    Finish: 'Glossy',
+  })
+  const details = detailsForAsset(asset)
+  assert.deepEqual(details.fields?.map(field => field.text), [
+    '工艺: Front Side Epoxy',
+    '膜: Star Holographic',
+    '材质: Acrylic',
+  ])
+  const layout = imageDetailsLayout({ x: 0, y: 0, width: 120, height: 120, details })
+  assert.deepEqual(layout.fields.filter(field => field.key.startsWith('attribute-')).map(field => field.text), details.fields.map(field => field.text))
+  assert.equal(finishLabel({ x: 0, y: 0, width: 120, height: 120, details }).text, 'Glossy')
+})
+
 test('sticker material and finish stay combined through arrangement, edits and SVG export', () => {
   const asset = stickerAsset('Stickers', { Material: 'Vinyl', Finish: 'Glossy' })
   const [page] = paginateAssets([asset])

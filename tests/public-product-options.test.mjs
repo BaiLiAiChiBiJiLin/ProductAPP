@@ -114,3 +114,35 @@ test('an explicit accessory color option takes precedence without adding a dupli
     { name: 'Silver', label: '银色', image: 'explicit-silver.png', hidden: false, deleted: false, parentValues: ['U style'] },
   ])
 })
+
+test('public option visibility flags and localized accessory style labels are supported', () => {
+  const product = productWithOptions([
+    { name: 'Accessory Style', labelZh: '配件样式', values: [
+      { name: 'Visible', labelZh: '可见', colors: [{ name: 'Gold', labelZh: '金色', image: 'gold.png' }] },
+      { name: 'Editor hidden', showInEditor: false, colors: [{ name: 'Hidden color' }] },
+    ] },
+    { name: 'Material', values: [
+      { name: 'Shown', editorVisible: true },
+      { name: 'Suppressed', editorVisible: false },
+    ] },
+  ])
+  assert.deepEqual(product.options.map(option => option.name), ['Accessory Style', 'Accessories Color', 'Material'])
+  assert.deepEqual(product.options[0].values.map(value => value.name), ['Visible'])
+  assert.deepEqual(product.options[1].values.map(value => value.name), ['Gold'])
+  assert.deepEqual(product.options[2].values.map(value => value.name), ['Shown'])
+})
+
+test('object defaults from the public API resolve to the human-readable option value', () => {
+  const product = productWithOptions([
+    { name: 'Size', defaultValue: { sizeBandId: 'size-large' }, values: [
+      { valueId: 'size-small', name: '1”', labelZh: '1 英寸' },
+      { valueId: 'size-large', name: '2”', labelZh: '2 英寸' },
+    ] },
+    { name: 'Technique', defaultValue: null, values: [
+      { name: 'No Additional Technique', isDefault: true },
+      { name: 'Epoxy' },
+    ] },
+  ])
+  assert.equal(product.options[0].defaultValue, '2”')
+  assert.equal(product.options[1].defaultValue, 'No Additional Technique')
+})

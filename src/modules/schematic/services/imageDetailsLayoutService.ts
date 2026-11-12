@@ -100,7 +100,11 @@ export function imageDetailsLayout(group: ImageGroup, visualScale = 1) {
   // Product groups may contain longer product names/individual option lists.
   // Wrap those fields instead of truncating them in Canvas or overflowing SVG.
   if (details) {
-    const wrapped = fields.flatMap(field => field.key.startsWith('size') || field.key === 'qt'
+    // Production attributes are deliberately one row each. Their font is
+    // reduced to fit the panel below instead of wrapping a single selection
+    // across multiple lines, which makes process/film/material values easy to
+    // scan and keeps the row-to-attribute mapping stable for editing.
+    const wrapped = fields.flatMap(field => field.key.startsWith('size') || field.key === 'qt' || field.key.startsWith('attribute-')
       ? [field]
       : wrapNote(field.text, width, DETAIL_LABEL_FONT_SIZE).map((text, index) => ({ key: `${field.key}-${index}`, text })))
     fields.splice(0, fields.length, ...wrapped)

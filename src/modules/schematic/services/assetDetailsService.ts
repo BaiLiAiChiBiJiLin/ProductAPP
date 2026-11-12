@@ -61,6 +61,37 @@ function accessoryCode(asset: Asset) {
   return value.match(/(\d+)\s*$/)?.[1] || ''
 }
 
+/**
+ * Public products keep process-related selections under their catalog names
+ * (Technique, Holo Film, Material, etc.), while older products use the
+ * canonical Finish/工艺 field rendered at the bottom of the details panel.
+ * Keep the latter in the existing footer and expose the other production
+ * attributes as one editable row each.
+ */
+function productionAttributeFields(asset: Asset, productName: string | undefined) {
+  const sticker = /stickers?|贴纸/i.test(productName ?? '')
+  const fields: Array<{ key: string; text: string }> = []
+  for (const [key, raw] of Object.entries(asset.attributes ?? {})) {
+    const value = String(raw ?? '').trim()
+    const normalizedKey = normalize(key)
+    if (!value || ['size', 'qt', 'quantity', '数量'].includes(normalizedKey)) continue
+    // Finish/工艺/表面 is normalized to the red footer below. A sticker's
+    // material is already included in that footer as “材质 工艺”.
+    if (['finish', '工艺', '表面'].includes(normalizedKey)) continue
+    if (sticker && ['material', '材质'].includes(normalizedKey)) continue
+    if (!/(technique|epoxy|holo|film|material|surface|工艺|膜|材质)/i.test(key)) continue
+    if (isHiddenAttributeValue(value)) continue
+    const kind = /(holo|film|膜)/i.test(key) ? 'film'
+      : /(material|材质)/i.test(key) ? 'material' : 'technique'
+    // Public and local catalogs use different option names and occasionally
+    // differ only in English capitalization. Use the shared Chinese labels
+    // and a stable display case so equivalent products produce the same page.
+    const displayValue = value.replace(/\b[a-z][a-z']*/gi, word => /^[A-Z0-9]+$/.test(word) ? word : word.length === 1 ? word.toUpperCase() : `${word[0].toUpperCase()}${word.slice(1).toLowerCase()}`)
+    fields.push({ key: `attribute-${kind}-${fields.length}`, text: `${kind === 'film' ? '膜' : kind === 'material' ? '材质' : '工艺'}: ${displayValue}` })
+  }
+  return fields
+}
+
 export function detailsForAsset(asset: Asset, configs: ProductConfig[] = []): ImageDetails {
   const finish = finishName(asset, configs)
   const material = /stickers?|贴纸/i.test(asset.productName ?? '')
@@ -69,6 +100,7 @@ export function detailsForAsset(asset: Asset, configs: ProductConfig[] = []): Im
     size: dimensionForItem(asset, {}).label,
     qt: attr(asset, ['QT', '数量', 'Quantity']),
     finish: [material, finish].filter(Boolean).join(' '),
+    fields: productionAttributeFields(asset, asset.productName),
     accessoryImage: accessoryImage(asset),
   }
   const code = accessoryCode(asset)

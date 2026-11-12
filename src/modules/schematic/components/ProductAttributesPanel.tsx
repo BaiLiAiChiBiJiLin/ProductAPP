@@ -3,6 +3,7 @@ import { Alert, Button, InputNumber, Select, Tabs, Tooltip, message } from 'antd
 import AssetNotesEditor from './AssetNotesEditor'
 import { getNoteImages, noteImagesPatch } from '../services/assetNotesService'
 import type { Asset } from '../../../model'
+import type { ProductConfig } from '../services/productConfigService'
 import Loading from '../../../components/Loading'
 import useProductConfigs from '../hooks/useProductConfigs'
 import usePublicProductConfigs from '../hooks/usePublicProductConfigs'
@@ -21,6 +22,24 @@ import { useAttributePanelOverflow } from '../hooks/useAttributePanelOverflow'
 
 type Props = { assets: Asset[]; selectedAssetIds: Set<string>; onConfirmAttributes: (patch: ProductAttributePatch) => Promise<void>; disabled?: boolean; selectionHint?: string; allowGrouping?: boolean; showSelectionSummary?: boolean }
 type ProductSource = 'local' | 'public'
+
+function defaultCatalogSelection(product: NonNullable<ProductConfig>) {
+  const attributes: Record<string, string> = {}
+  const images: Record<string, string> = {}
+  // Defaults may be dependent options, so resolve them in catalog order and
+  // only keep a child when its parent default has already been selected.
+  for (const option of product.options) {
+    const parentName = option.linkedParent
+    const selected = option.defaultValue ? option.values.find(value => value.name === option.defaultValue) : undefined
+    if (!selected || (parentName && attributes[parentName] !== undefined && !selected.parentValues.some(parent => parent.trim().toLowerCase() === attributes[parentName]!.trim().toLowerCase()))) continue
+    if (parentName && attributes[parentName] === undefined) continue
+    attributes[option.name] = selected.name
+    const image = selected.image || option.image
+    if (image) images[option.name] = image
+  }
+  return { attributes, images }
+}
+
 export default function ProductAttributesPanel({ assets, selectedAssetIds, onConfirmAttributes, disabled = false, selectionHint, allowGrouping = true, showSelectionSummary = true }: Props) {
   const { products: localProducts, loading, error: configError, refreshing, refresh } = useProductConfigs()
   const { products: publicProducts, loading: publicLoading, error: publicConfigError, refreshing: publicRefreshing, refresh: refreshPublic } = usePublicProductConfigs()
@@ -93,7 +112,12 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
   const product = products.find(item => item.id === draft.productId)
   const productTab = mode === 'custom' ? 'custom' : draft.productId ? draft.productId.startsWith('public:') ? 'public' : 'local' : productSource
   const tabProducts = productTab === 'public' ? publicProducts : localProducts
-  const selectProduct = (id: string) => { setProductSource(id.startsWith('public:') ? 'public' : 'local'); changeEditor({ ...editor, mode: 'existing', draft: { ...draft, productId: id, attributes: {}, images: {}, finishMatchDisabled: false } }, true) }
+  const selectProduct = (id: string) => {
+    setProductSource(id.startsWith('public:') ? 'public' : 'local')
+    const selectedProduct = products.find(item => item.id === id)
+    const defaults = selectedProduct ? defaultCatalogSelection(selectedProduct) : { attributes: {}, images: {} }
+    changeEditor({ ...editor, mode: 'existing', draft: { ...draft, productId: id, attributes: defaults.attributes, images: defaults.images, finishMatchDisabled: false } }, true)
+  }
   const groupGuideTrigger = !session && !savedGroup && selected.length > 0 ? groupingTrigger(editor, products) : null
   const indexes = orderAssetsByProductGroup(assets).flatMap((asset, i) => selectedAssetIds.has(asset.id) ? [i + 1] : [])
   const contiguous = indexes.every((value, i) => i === 0 || value === indexes[i - 1] + 1)
