@@ -2,6 +2,7 @@ import type { Item } from '../../../model.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
 import { accessoryFrame } from '../services/accessoryFrameService.ts'
 import { imageDetailsLayout } from '../services/imageDetailsLayoutService.ts'
+import { finishLabel } from '../services/finishLabelService.ts'
 import { detailPanelsForGroup } from './productGroupDetails.ts'
 
 /** Center the occupied role layout as one unit after its final image sizes are known. */
@@ -22,7 +23,8 @@ export function centerHolderContents(group: ImageGroup, items: Item[]) {
   const top = Math.min(...ranges.map(range => range.top)), bottom = Math.max(...ranges.map(range => range.bottom))
   // The finish remains a footer; center the role artwork and properties above it.
   const availableTop = group.y + 4
-  const availableBottom = group.y + group.height - 4 - (group.details?.finish ? 18 : 0)
+  const footer = finishLabel(group)
+  const availableBottom = group.y + group.height - 4 - (footer.height ? footer.height + 8 : 0)
   if (bottom - top > availableBottom - availableTop + 1e-7) return
   const offset = (availableTop + availableBottom - top - bottom) / 2
   if (Math.abs(offset) < 1e-7) return

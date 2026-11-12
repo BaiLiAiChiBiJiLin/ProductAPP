@@ -100,11 +100,7 @@ export function imageDetailsLayout(group: ImageGroup, visualScale = 1) {
   // Product groups may contain longer product names/individual option lists.
   // Wrap those fields instead of truncating them in Canvas or overflowing SVG.
   if (details) {
-    // Production attributes are deliberately one row each. Their font is
-    // reduced to fit the panel below instead of wrapping a single selection
-    // across multiple lines, which makes process/film/material values easy to
-    // scan and keeps the row-to-attribute mapping stable for editing.
-    const wrapped = fields.flatMap(field => field.key.startsWith('size') || field.key === 'qt' || field.key.startsWith('attribute-')
+    const wrapped = fields.flatMap(field => field.key.startsWith('size') || field.key === 'qt'
       ? [field]
       : wrapNote(field.text, width, DETAIL_LABEL_FONT_SIZE).map((text, index) => ({ key: `${field.key}-${index}`, text })))
     fields.splice(0, fields.length, ...wrapped)
@@ -129,10 +125,10 @@ export function imageDetailsLayout(group: ImageGroup, visualScale = 1) {
     return result
   })
   const bodyY = y + fieldHeight
-  // Finish/process is painted along the bottom edge of the group. Reserve a
-  // line for it so wrapped notes always remain above that label.
-  const hasFinish = Boolean(finishLabel(group).text)
-  const finishReserve = hasFinish ? 18 : 0
+  // Finish/process is painted along the bottom edge of the group. Reserve
+  // the complete multiline footer so notes and accessory images stay above it.
+  const finish = finishLabel(group)
+  const finishReserve = finish.height ? finish.height + 8 : 0
   const bodyHeight = Math.max(0, contentHeight - 8 - fieldHeight - finishReserve)
   const accessoryExtra = details?.accessoryImage ? (details.accessoryCode ? 17 : 4) + accessoryTopGap(details.accessoryImage) : 0
   const desiredAccessorySize = details?.accessoryImage ? Math.min(Math.max(1, width - 4), (group.height - Math.max(0, detailsOffsetY)) * DETAIL_ACCESSORY_SIZE_RATIO * displayScale) : 0

@@ -2,6 +2,7 @@ import { artworkBounds, GROUP_GAP, HEADER_BLOCK_HEIGHT, HOLDER_DETAIL_AREA_RATIO
 import type { ImageGroup } from '../layoutTypes.ts'
 import { headerFor } from '../arrangement/pageSections.ts'
 import { imageGroupsForPage } from './groupBackgroundService.ts'
+import { finishLabelValueReserve } from './finishLabelService.ts'
 
 const EPS = 1e-6
 type HeaderGeometry = { sourcePageId: number; sourceId?: string; x: number; width: number; columns: HeaderColumn[]; detailWidth?: number; metadataKey?: string }
@@ -37,7 +38,7 @@ function detailHeight(group: ImageGroup) {
     const fields = (details.sizes?.length || (details.size ? 1 : 0)) + 1 + (details.heading ? 1 : 0) + (details.fields?.length ?? 0)
     const notes = details.note ? Math.min(80, 16 + Math.ceil(details.note.length / 14) * 9) : 0
     const media = details.accessoryImage || details.noteImage || details.noteImages?.length ? 56 : 0
-    return sum + Math.max(76, 12 + fields * 13 + notes + media + (details.finish ? 18 : 0))
+    return sum + Math.max(76, 12 + fields * 13 + notes + media + finishLabelValueReserve(details.finish))
   }, 0)
 }
 

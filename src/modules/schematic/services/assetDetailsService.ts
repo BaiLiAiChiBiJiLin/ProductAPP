@@ -61,16 +61,12 @@ function accessoryCode(asset: Asset) {
   return value.match(/(\d+)\s*$/)?.[1] || ''
 }
 
-/**
- * Public products keep process-related selections under their catalog names
- * (Technique, Holo Film, Material, etc.), while older products use the
- * canonical Finish/工艺 field rendered at the bottom of the details panel.
- * Keep the latter in the existing footer and expose the other production
- * attributes as one editable row each.
- */
-function productionAttributeFields(asset: Asset, productName: string | undefined) {
+/** Public products use separate names for the values rendered by the existing
+ * red lower-right process label. Normalize those names into the same value
+ * stream as the legacy Finish/工艺 fields. */
+function productionAttributeValues(asset: Asset, productName: string | undefined) {
   const sticker = /stickers?|贴纸/i.test(productName ?? '')
-  const fields: Array<{ key: string; text: string }> = []
+  const values: string[] = []
   for (const [key, raw] of Object.entries(asset.attributes ?? {})) {
     const value = String(raw ?? '').trim()
     const normalizedKey = normalize(key)
@@ -81,26 +77,31 @@ function productionAttributeFields(asset: Asset, productName: string | undefined
     if (sticker && ['material', '材质'].includes(normalizedKey)) continue
     if (!/(technique|epoxy|holo|film|material|surface|工艺|膜|材质)/i.test(key)) continue
     if (isHiddenAttributeValue(value)) continue
-    const kind = /(holo|film|膜)/i.test(key) ? 'film'
-      : /(material|材质)/i.test(key) ? 'material' : 'technique'
-    // Public and local catalogs use different option names and occasionally
-    // differ only in English capitalization. Use the shared Chinese labels
-    // and a stable display case so equivalent products produce the same page.
     const displayValue = value.replace(/\b[a-z][a-z']*/gi, word => /^[A-Z0-9]+$/.test(word) ? word : word.length === 1 ? word.toUpperCase() : `${word[0].toUpperCase()}${word.slice(1).toLowerCase()}`)
-    fields.push({ key: `attribute-${kind}-${fields.length}`, text: `${kind === 'film' ? '膜' : kind === 'material' ? '材质' : '工艺'}: ${displayValue}` })
+    values.push(displayValue)
   }
-  return fields
+  return values
 }
 
 export function detailsForAsset(asset: Asset, configs: ProductConfig[] = []): ImageDetails {
   const finish = finishName(asset, configs)
   const material = /stickers?|贴纸/i.test(asset.productName ?? '')
     ? attr(asset, ['Material', '材质']) : ''
+  const productionValues = productionAttributeValues(asset, asset.productName)
+  const finishValues = [material, ...productionValues, finish]
+    .flatMap(value => value.split('/').map(part => part.trim()).filter(Boolean))
+    .filter(value => !isHiddenAttributeValue(value))
+  const uniqueFinishValues = [...new Map(finishValues.map(value => [normalize(value), value])).values()]
+  // Keep the long-standing sticker footer (material + process on one line)
+  // when it has only those two legacy values. New public product values are
+  // kept on separate lines so the red footer stays readable and bottom-aligned.
+  const finishText = material && productionValues.length === 0
+    ? uniqueFinishValues.join(' ')
+    : uniqueFinishValues.join('\n')
   const details: ImageDetails = {
     size: dimensionForItem(asset, {}).label,
     qt: attr(asset, ['QT', '数量', 'Quantity']),
-    finish: [material, finish].filter(Boolean).join(' '),
-    fields: productionAttributeFields(asset, asset.productName),
+    finish: finishText,
     accessoryImage: accessoryImage(asset),
   }
   const code = accessoryCode(asset)

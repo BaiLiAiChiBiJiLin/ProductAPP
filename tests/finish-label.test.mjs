@@ -13,21 +13,21 @@ const stickerAsset = (productName, attributes) => ({
   previewUrl: '', thumbnailUrl: '', attributes,
 })
 
-test('only sticker product names prefix the material to the finish', () => {
+test('sticker material keeps the legacy footer spacing and other materials remain visible', () => {
   for (const productName of ['Custom Stickers', '透明贴纸', 'clear stickers']) {
     const asset = stickerAsset(productName, { Material: ' Vinyl ', 工艺: '1 / Glossy' })
     const original = structuredClone(asset)
     assert.equal(detailsForAsset(asset).finish, 'Vinyl Glossy')
     assert.deepEqual(asset, original)
   }
-  assert.equal(detailsForAsset(stickerAsset('Keychains', { Material: 'Acrylic', Finish: 'Epoxy' })).finish, 'Epoxy')
+  assert.equal(detailsForAsset(stickerAsset('Keychains', { Material: 'Acrylic', Finish: 'Epoxy' })).finish, 'Acrylic\nEpoxy')
   assert.equal(detailsForAsset(stickerAsset('贴纸', { 材质: '透明', 工艺: '哑光' })).finish, '透明 哑光')
   assert.equal(detailsForAsset(stickerAsset('Stickers', { Material: 'Vinyl' })).finish, 'Vinyl')
   assert.equal(detailsForAsset(stickerAsset('Stickers', { Material: ' ', Finish: 'Glossy' })).finish, 'Glossy')
   assert.equal(detailsForAsset(stickerAsset('Stickers', {})).finish, '')
 })
 
-test('process, film and material attributes render as separate detail rows', () => {
+test('process, film and material attributes share the red lower-right label', () => {
   const asset = stickerAsset('Keychains', {
     Technique: 'Front side epoxy',
     'Holo Film': 'Star holographic',
@@ -35,14 +35,15 @@ test('process, film and material attributes render as separate detail rows', () 
     Finish: 'Glossy',
   })
   const details = detailsForAsset(asset)
-  assert.deepEqual(details.fields?.map(field => field.text), [
-    '工艺: Front Side Epoxy',
-    '膜: Star Holographic',
-    '材质: Acrylic',
-  ])
+  assert.equal(details.finish, 'Front Side Epoxy\nStar Holographic\nAcrylic\nGlossy')
   const layout = imageDetailsLayout({ x: 0, y: 0, width: 120, height: 120, details })
-  assert.deepEqual(layout.fields.filter(field => field.key.startsWith('attribute-')).map(field => field.text), details.fields.map(field => field.text))
-  assert.equal(finishLabel({ x: 0, y: 0, width: 120, height: 120, details }).text, 'Glossy')
+  assert.equal(layout.fields.some(field => field.key.startsWith('attribute-')), false)
+  const label = finishLabel({ x: 0, y: 0, width: 120, height: 120, details })
+  assert.deepEqual(label.lines, ['Front Side Epoxy', 'Star Holographic', 'Acrylic', 'Glossy'])
+  assert.equal(label.text, details.finish)
+  const [page] = paginateAssets([asset])
+  const svg = pageSvg(page, new Map([[asset.id, asset]]))
+  for (const value of label.lines) assert.match(svg, new RegExp(`>${value}</text>`))
 })
 
 test('sticker material and finish stay combined through arrangement, edits and SVG export', () => {
@@ -59,11 +60,11 @@ test('sticker material and finish stay combined through arrangement, edits and S
 test('long Finish stays one line anchored inside the bottom of the unchanged group', () => {
   const group = { x: 10, y: 20, width: 60, height: 80, details: { finish: 'A very long finish\nwith another process' } }
   const label = finishLabel(group)
-  assert.equal(label.text, 'A very long finish with another process')
-  assert.equal(label.y, 86)
+  assert.equal(label.text, 'A very long finish\nwith another process')
+  assert.equal(label.y, 75)
   assert.equal(label.x + label.width, 66)
   assert.equal(group.height, 80)
-  assert.equal(label.height, undefined)
+  assert.equal(label.height, 21)
 })
 
 test('no additional technique is hidden without removing saved attributes or real sticker material', () => {

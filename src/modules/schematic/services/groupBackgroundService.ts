@@ -58,7 +58,7 @@ export function groupBackgroundsSvg(page: Page, accessoryVisuals?: ReadonlyMap<s
   return `<g data-image-group-backgrounds="true" fill="${GROUP_BACKGROUND}">${imageGroupsForPage(page).map(group => {
     const multipleDetails = Boolean(group.detailGroups?.length)
     const label = finishLabel(group)
-    const footer = label.text ? `<text x="${label.x + label.width}" y="${label.y + 10}" text-anchor="end" font-family="Arial, Microsoft YaHei, sans-serif" font-size="10" fill="#ff4d4f">${escape(label.text)}</text>` : ''
+    const footer = label.lines.map((line, index) => `<text x="${label.x + label.width}" y="${label.y + index * label.lineHeight + 10}" text-anchor="end" font-family="Arial, Microsoft YaHei, sans-serif" font-size="10" fill="#ff4d4f">${escape(line)}</text>`).join('')
     const panels = detailPanelsForGroup(group).map(panel => {
     const group = panel
     const details = group.details

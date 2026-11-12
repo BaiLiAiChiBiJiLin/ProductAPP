@@ -7,6 +7,7 @@ import { fillFreeRegions } from './freeRegionPacking.ts'
 import { applyPhysicalImageScale } from './physicalImageSizing.ts'
 import { imageDetailsLayout } from '../services/imageDetailsLayoutService.ts'
 import { accessoryFrame } from '../services/accessoryFrameService.ts'
+import { finishLabelValueReserve } from '../services/finishLabelService.ts'
 import { centerHolderContents } from './holderContentAlignment.ts'
 import type { ProductConfig } from '../services/productConfigService.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
@@ -365,7 +366,7 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       height = Math.min(available, Math.max(nextY, textHeight + mediaHeight + noteHeight))
     }
     const groupDetails = detailsForAsset(leader, configs)
-    groupDetails.finish = [...new Set(unit.assets.map(asset => cleanFinishLabel(detailsForAsset(asset, configs).finish)).filter(value => value && !/^\d+(?:\.\d+)?$/.test(value)))].join(' / ')
+    groupDetails.finish = [...new Set(unit.assets.map(asset => cleanFinishLabel(detailsForAsset(asset, configs).finish)).filter(value => value && !/^\d+(?:\.\d+)?$/.test(value)))].join('\n')
     if (unit.kind === 'holder') {
       height = compactHolderHeight({ id: 'measure', itemIds: [], x: 0, y: 0, width: groupWidth, height,
         detailsX: imageWidth, detailWidth, details: groupDetails, detailsHeight: holderDetailsHeight }, cells)
@@ -403,7 +404,7 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       const physical = physicalSourceSize(cell.asset)
       const w = physical.width * PAPER_WIDTH / 210, h = physical.height * PAPER_WIDTH / 210
       const left = w >= h ? 4 : 13
-      const bottom = (groupDetails.finish && cell.y + cell.height >= height - 0.1 ? 16 : 5) + (cell.note ? 13 : 0)
+      const bottom = (groupDetails.finish && cell.y + cell.height >= height - 0.1 ? Math.max(16, finishLabelValueReserve(groupDetails.finish)) : 5) + (cell.note ? 13 : 0)
       return Math.max(w, h) * Math.min(emptyExampleMerged || holderPortraitRoles ? Infinity : 1, Math.max(1, cell.width - left - 5) / w, Math.max(1, cell.height - 23 - bottom) / h)
     }))
     // The first four holder/shaker images establish the group's visual scale.
@@ -432,7 +433,8 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       // Front and derived Back share the most restrictive bottom clearance.
       const pairedAtBottom = cells.some(other => other.asset.id === cell.asset.id && other.y + other.height >= height - 0.1)
       const notePadding = cell.note ? 13 : 0
-      const bottomPadding = cell.base ? (groupDetails.finish ? 16 : 5) : groupDetails.finish && pairedAtBottom ? 16 : verticallyCenterSingleImage ? top : 5 + notePadding
+      const finishPadding = groupDetails.finish ? Math.max(16, finishLabelValueReserve(groupDetails.finish)) : 5
+      const bottomPadding = cell.base ? finishPadding : groupDetails.finish && pairedAtBottom ? finishPadding : verticallyCenterSingleImage ? top : 5 + notePadding
       const sourceLongest = Math.max(originalW, originalH)
       const holderExtraCap = unit.kind === 'holder' && roleCells.length && !roleCells.includes(cell)
         && sourceLongest <= roleSourceLongest + 1e-7 && roleVisualLongest > 0
