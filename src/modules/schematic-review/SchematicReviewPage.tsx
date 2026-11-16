@@ -77,7 +77,7 @@ export default function SchematicReviewPage({ active, revision, working = false,
     const release = () => { operationLock.current = false; setDeletingId(null) }
     modal.confirm({
       title: '删除这条审核记录？',
-      content: <div className="schematic-review-delete-description"><strong>{record.output.split(/[\\/]/).pop()}</strong><p>删除后无法恢复此审核记录。已导出的文件和原始批次会保留。</p></div>,
+      content: <div className="schematic-review-delete-description"><strong>{record.output.split(/[\\/]/).pop()}</strong><p>删除后无法恢复此审核记录。原始批次会保留。</p></div>,
       okText: '删除', cancelText: '取消', okButtonProps: { danger: true },
       onCancel: release,
       afterClose: release,
@@ -113,22 +113,22 @@ export default function SchematicReviewPage({ active, revision, working = false,
   const actionsDisabled = working || loading || Boolean(editingId || deletingId || updatingId)
   return <ConfigProvider locale={zhCN}>
     {modalContext}
-    <ModulePage className="schematic-review-page" style={paymentColors} title="示意图审核" description="每次成功导出后保存一条记录。点击编辑可恢复当时的排列和调整。"
+    <ModulePage className="schematic-review-page" style={paymentColors} title="示意图审核" description="在示意图排列页点击保存记录当前排列和调整。点击编辑可恢复当时的排列和调整。"
       actions={<Button icon={<RefreshCw size={15}/>} loading={loading} onClick={() => setRefresh(value => value + 1)}>刷新</Button>}
       notice={error && <Alert type="error" showIcon message={error}/>}
       toolbar={<>
-        <Input aria-label="搜索审核记录" placeholder="搜索客户或导出文件名" allowClear value={query} onChange={event => { setQuery(event.target.value); setPagination(current => ({ ...current, page: 1 })) }}/>
+        <Input aria-label="搜索审核记录" placeholder="搜索客户或保存来源" allowClear value={query} onChange={event => { setQuery(event.target.value); setPagination(current => ({ ...current, page: 1 })) }}/>
         <div className="schematic-review-date-filter"><label htmlFor="review-saved-date">保存时间</label><DatePicker id="review-saved-date" placeholder="选择保存日期" format="YYYY-MM-DD" value={savedDate} allowClear onChange={value => { setSavedDate(value); setPagination(current => ({ ...current, page: 1 })) }}/></div>
       </>}
       footer={<><span>共 {result.total} 条记录</span><Pagination current={result.page} pageSize={result.pageSize} total={result.total} showSizeChanger pageSizeOptions={[20, 50, 100]} showQuickJumper disabled={loading} onChange={(page, pageSize) => setPagination({ page: pageSize === pagination.pageSize ? page : 1, pageSize })}/></>}>
       <div className="module-page-table schematic-review-table">
-        <Table<SchematicReviewSummary> rowKey="id" rowClassName={record => record.impositionJobId ? record.paymentStatus === 'paid' ? 'review-payment-paid' : 'review-imposition-unpaid' : 'review-payment-unpaid'} dataSource={result.records} loading={loading} pagination={false} scroll={{ x: 1080 }} locale={{ emptyText: search || savedDate ? '没有匹配的记录' : '暂无审核记录，成功导出示意图后会自动保存到这里' }} columns={[
+        <Table<SchematicReviewSummary> rowKey="id" rowClassName={record => record.impositionJobId ? record.paymentStatus === 'paid' ? 'review-payment-paid' : 'review-imposition-unpaid' : 'review-payment-unpaid'} dataSource={result.records} loading={loading} pagination={false} scroll={{ x: 1080 }} locale={{ emptyText: search || savedDate ? '没有匹配的记录' : '暂无审核记录，请在示意图排列页点击保存' }} columns={[
           { title: '客户', dataIndex: 'customerName', render: value => value || '未填写客户', width: 180 },
-          { title: '导出文件', dataIndex: 'output', render: (value: string) => <span title={value}>{value.split(/[\\/]/).pop()}</span> },
+          { title: '保存来源', dataIndex: 'output', render: (value: string) => <span title={value}>{value.split(/[\\/]/).pop()}</span> },
           { title: '保存时间', dataIndex: 'savedAt', render: (value: string) => new Date(value).toLocaleString(), width: 200 },
           { title: '页数', dataIndex: 'pageCount', width: 70 },
           { title: '图片数', dataIndex: 'imageCount', width: 80 },
-          { title: '格式', dataIndex: 'format', render: (value: string) => value.toUpperCase(), width: 75 },
+          { title: '格式', dataIndex: 'format', render: (value: string) => value === 'layout' ? '布局' : value.toUpperCase(), width: 75 },
           { title: '状态', dataIndex: 'paymentStatus', width: 130, render: (value: PaymentStatus, record) => <Tag color={record.returned ? 'error' : record.impositionJobId ? value === 'paid' ? 'success' : 'orange' : 'error'}>{record.returned ? '被退回' : <>{value === 'paid' ? '付款' : '未付款'}{record.impositionJobId ? ' · 待拼版' : ''}</>}</Tag> },
           { title: '操作', key: 'actions', width: 205, fixed: 'right', render: (_, record) => <div className="schematic-review-actions">{record.impositionJobId ? <Button type="link" disabled={actionsDisabled} onClick={onImposition}>查看拼版</Button> : <>
             <Button type="link" aria-label="编辑" loading={editingId === record.id} disabled={actionsDisabled} onClick={() => void edit(record.id)}>编辑</Button>

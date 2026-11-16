@@ -4,6 +4,10 @@ import { resolveRemoteImage } from './remoteImageService.ts'
 const sizes = new Map<string, { width: number; height: number }>()
 type Crop = { x: number; y: number; width: number; height: number }
 const crops = new Map<string, Crop>()
+const MAX_ACCESSORY_FRAME_ENTRIES = 256
+function trimFrameCache(cache: Map<string, unknown>) {
+  while (cache.size > MAX_ACCESSORY_FRAME_ENTRIES) cache.delete(cache.keys().next().value!)
+}
 export function visibleAccessoryBounds(data: Uint8ClampedArray, width: number, height: number): Crop {
   let left = width, top = height, right = -1, bottom = -1
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
@@ -25,10 +29,11 @@ export function rememberAccessoryImage(src: string, image: HTMLImageElement) {
     const crop = visibleAccessoryBounds(context.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height)
     const sx = image.naturalWidth / canvas.width, sy = image.naturalHeight / canvas.height
     crops.set(src, { x: crop.x * sx, y: crop.y * sy, width: crop.width * sx, height: crop.height * sy })
+    trimFrameCache(crops)
   } catch { /* Cross-origin unreadable images retain their original frame. */ }
 }
 export function rememberAccessorySize(src: string, width: number, height: number) {
-  if (width > 0 && height > 0) sizes.set(src, { width, height })
+  if (width > 0 && height > 0) { sizes.set(src, { width, height }); trimFrameCache(sizes) }
 }
 
 export function accessoryTopGap(src: string) {

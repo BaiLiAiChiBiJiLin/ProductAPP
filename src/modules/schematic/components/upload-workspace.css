@@ -29,7 +29,7 @@
 .upload-image-row-grid > .upload-image-card { align-content:start; }
 @media(min-width:1200px) { .upload-image-row-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 @media(min-width:1600px) { .upload-image-row-grid { grid-template-columns:repeat(4,minmax(0,1fr)); } }
-.upload-image-card { display:grid; grid-template-columns:clamp(76px,34%,112px) minmax(0,1fr); gap:10px; align-items:start; border:1px solid #dbe4f0; border-radius:9px; padding:10px; min-width:0; background:#fff; cursor:pointer; box-shadow:0 2px 6px #0f172a08; }
+.upload-image-card { display:grid; grid-template-columns:clamp(76px,34%,112px) minmax(0,1fr); gap:10px; align-items:start; border:1px solid #dbe4f0; border-radius:9px; padding:10px; min-width:0; background:#fff; cursor:pointer; box-shadow:0 2px 6px #0f172a08; content-visibility:auto; contain-intrinsic-size:190px 150px; }
 .upload-image-card.is-selected { border-color:#1677ff; box-shadow:0 0 0 2px #1677ff18; }
 .upload-image-card-head { grid-column:1 / -1; display:flex; justify-content:space-between; align-items:center; gap:4px; }
 .upload-image-card-head label { display:flex; align-items:center; gap:6px; color:#64748b; font-size:11px; cursor:pointer; }

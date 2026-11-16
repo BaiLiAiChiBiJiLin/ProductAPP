@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Dropdown, Modal, Popconfirm, Tag } from 'antd'
 import type { Asset } from '../../../model'
 import { svgObjectUrl } from '../../../model'
@@ -29,6 +29,9 @@ export default function UploadImageList({ assets, allAssets, selectedIds, onSele
   const [preview, setPreview] = useState<{ name: string; src: string } | null>(null)
   const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null)
   const [detailsId, setDetailsId] = useState<string | null>(null)
+  useEffect(() => () => {
+    if (preview?.src.startsWith('blob:')) URL.revokeObjectURL(preview.src)
+  }, [preview])
   const openAssetPreview = async (asset: Asset) => {
     if (previewLoadingId === asset.id) return
     try {

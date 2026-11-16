@@ -21,7 +21,18 @@ import type { RulerChange } from './components/ImageDimensionMarkers'
 import type { DimensionDisplayOverride, DimensionDisplayPrecision } from './services/imageDimensionService'
 import { itemForCanvasDisplay } from './services/canvasDisplayScaleService'
 
-const svgImageCache = new Map<string, HTMLImageElement>()
+type CachedSvgImage = { image: HTMLImageElement; url: string }
+const svgImageCache = new Map<string, CachedSvgImage>()
+function releaseSvgUrl(url: string) {
+  if (url.startsWith('blob:')) URL.revokeObjectURL(url)
+}
+function pruneSvgImageCache(activeSources: ReadonlySet<string>) {
+  for (const [source, cached] of svgImageCache) {
+    if (activeSources.has(source)) continue
+    svgImageCache.delete(source)
+    releaseSvgUrl(cached.url)
+  }
+}
 function displayDate(value?: string) {
   if (!value) return '-'
   const match = value.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
@@ -69,16 +80,21 @@ const Artwork = memo(function Artwork({ item, asset, visualScale = 1, selected, 
   useEffect(() => {
     const sourceSvg = item.backSvg ?? asset.svg
     const cached = svgImageCache.get(sourceSvg)
-    if (cached) { setImage(cached); setFailed(false); return }
+    if (cached) {
+      svgImageCache.delete(sourceSvg)
+      svgImageCache.set(sourceSvg, cached)
+      setImage(cached.image); setFailed(false); return
+    }
     const img = new window.Image()
     let cancelled = false
+    const url = svgObjectUrl(sourceSvg)
     img.decoding = 'async'
-    img.onload = () => { svgImageCache.set(sourceSvg, img); if (!cancelled) { setImage(img); setFailed(false) } }
-    img.onerror = () => { if (!cancelled) setFailed(true) }
+    img.onload = () => { if (cancelled) { releaseSvgUrl(url); return }; svgImageCache.set(sourceSvg, { image: img, url }); if (svgImageCache.size > 64) { const oldest = svgImageCache.keys().next().value; if (oldest && oldest !== sourceSvg) { const evicted = svgImageCache.get(oldest); svgImageCache.delete(oldest); if (evicted) releaseSvgUrl(evicted.url) } }; setImage(img); setFailed(false) }
+    img.onerror = () => { releaseSvgUrl(url); if (!cancelled) setFailed(true) }
     // Keep SVG as the source artwork; preview fields are compatibility URLs
     // and must not replace the editable/vector asset on the canvas.
-    img.src = svgObjectUrl(sourceSvg)
-    return () => { cancelled = true; img.onload = null; img.onerror = null }
+    img.src = url
+    return () => { cancelled = true; img.onload = null; img.onerror = null; if (!svgImageCache.has(sourceSvg)) releaseSvgUrl(url) }
   }, [asset.svg, item.backSvg])
   const displayItem = itemForCanvasDisplay(item, visualScale)
   useEffect(() => {
@@ -112,6 +128,9 @@ function ArtworkImages({ page, assets, selected, selectedIds = [], onSelect, onC
   | 'onArtworkContextMenu' | 'editorSelection' | 'onSelectEditor'> & { interactive: boolean; bounds: LayoutBounds }) {
   const [dragPreview, setDragPreview] = useState<{ page: Page; item: Item }>()
   const previewChange = useCallback((item?: Item) => setDragPreview(item ? { page, item } : undefined), [page])
+  useEffect(() => {
+    pruneSvgImageCache(new Set(page.items.map(item => item.backSvg ?? assets.get(item.assetId)?.svg).filter((source): source is string => Boolean(source))))
+  }, [page, assets])
   // A new saved page invalidates any in-flight preview (including page switches).
   const markerPage = useMemo(() => dragPreview?.page === page
     ? { ...page, items: page.items.map(item => item.id === dragPreview.item.id ? dragPreview.item : item) }

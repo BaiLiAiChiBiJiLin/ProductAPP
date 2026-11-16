@@ -25,6 +25,7 @@ vi.mock('../src/modules/schematic/ArrangePage', () => ({ default: (props: Compon
   mocks.arrange(props)
   return <div>{props.context}<span>恢复的排列页</span><button onClick={() => props.onExport('pdf', props.displayState.dimensionDisplayOverrides)}>导出测试 PDF</button>
     <button onClick={() => props.onExport('png', props.displayState.dimensionDisplayOverrides)}>导出测试 PNG</button>
+    <button onClick={() => props.onSave?.()}>保存测试布局</button>
     <button onClick={() => props.onChangeItem({ ...props.pages[0].items[0], x: 123 })}>移动主图</button>
     <button onClick={() => props.onDisplayStateChange(previous => ({ ...previous, visualScales: new Map([[props.pages[0].items[0].id, 2]]) }))}>放大主图</button>
   </div>
@@ -409,6 +410,21 @@ it('saves and restores editor annotations, deleted captions, colors, horizontal 
   expect(latestArrange().pages[1].items[0].captionHidden).toBe(true)
   expect(latestArrange().pages[1].imageGroups![0].imageCells![0].label).toBeUndefined()
   expect(mocks.autoArrange).not.toHaveBeenCalled()
+})
+
+it('save button records the current arrangement without exporting a file', async () => {
+  const record = fixture()
+  const saved = vi.fn()
+  render(<SchematicPage initialRecord={record} onRecordSaved={saved}/> )
+  await screen.findByText('恢复的排列页')
+  fireEvent.click(screen.getByRole('button', { name: '移动主图' }))
+  fireEvent.click(screen.getByRole('button', { name: '保存测试布局' }))
+  await waitFor(() => expect(saved).toHaveBeenCalledOnce())
+  expect(mocks.exportPdf).not.toHaveBeenCalled()
+  const persisted = mocks.invoke.mock.calls.find(([command]) => command === 'save_schematic_review')![1].record as SchematicReviewRecord
+  expect(persisted.id).toBe(record.id)
+  expect(persisted.pages[0].items[0].x).toBe(123)
+  expect(persisted.output).toBe(record.output)
 })
 
 it('moving or switching either artwork preserves custom Size text and the other side', async () => {

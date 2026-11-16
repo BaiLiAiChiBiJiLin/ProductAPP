@@ -17,19 +17,25 @@ export default function LazySvgImage({ svg, storagePath, assetId, batchId, alt, 
     const element = ref.current
     if (!element) return
     let cancelled = false
+    let objectUrl: string | undefined
+    const setSvgSource = (value: string) => {
+      objectUrl = svgObjectUrl(value)
+      if (cancelled) { if (objectUrl.startsWith('blob:')) URL.revokeObjectURL(objectUrl); return }
+      setSrc(objectUrl)
+    }
     const load = () => {
       if (svg) {
-        setSrc(svgObjectUrl(svg))
+        setSvgSource(svg)
         return
       }
       if (!storagePath && !(assetId && batchId)) return
       void loadAssetSvg({ svg, storagePath, id: assetId ?? '' }, batchId)
-        .then(value => { if (!cancelled) setSrc(svgObjectUrl(value)) })
+        .then(value => setSvgSource(value))
         .catch(() => {})
     }
     if (typeof IntersectionObserver === 'undefined') {
       load()
-      return () => { cancelled = true }
+      return () => { cancelled = true; if (objectUrl?.startsWith('blob:')) URL.revokeObjectURL(objectUrl); setSrc(undefined) }
     }
     const observer = new IntersectionObserver(entries => {
       if (entries.some(entry => entry.isIntersecting)) {
@@ -38,7 +44,7 @@ export default function LazySvgImage({ svg, storagePath, assetId, batchId, alt, 
       }
     }, { rootMargin: '240px' })
     observer.observe(element)
-    return () => { cancelled = true; observer.disconnect() }
+    return () => { cancelled = true; observer.disconnect(); if (objectUrl?.startsWith('blob:')) URL.revokeObjectURL(objectUrl); setSrc(undefined) }
   }, [assetId, batchId, storagePath, svg])
 
   return <img ref={ref} src={src} alt={alt} loading="lazy" decoding="async" {...props} />

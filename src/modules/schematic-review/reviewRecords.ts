@@ -5,6 +5,8 @@ import type { BatchMetadata } from '../schematic/types'
 import { saveArrangementDisplay, type ArrangementDisplayState, type SavedArrangementDisplay } from '../schematic/services/arrangementDisplayState'
 
 export type ExportFormat = 'pdf' | 'svg' | 'png' | 'jpg'
+/** A review can be saved before a file is exported. */
+export type ReviewFormat = ExportFormat | 'layout'
 export type PaymentStatus = 'unpaid' | 'paid'
 export type ReviewWorkspace = {
   sourceBatchId?: string
@@ -22,7 +24,7 @@ export type SchematicReviewRecord = ReviewWorkspace & {
   id: string
   savedAt: string
   output: string
-  format: ExportFormat
+  format: ReviewFormat
   paymentStatus: PaymentStatus
   sourceRecordId?: string
   display: SavedArrangementDisplay
@@ -39,8 +41,8 @@ export type ReviewRestoreRequest = { token: string; record: SchematicReviewRecor
 export type ReviewListQuery = { page: number; pageSize: number; search?: string; dateFrom?: string; dateTo?: string }
 export type ReviewListResult = { records: SchematicReviewSummary[]; total: number; page: number; pageSize: number }
 
-/** Freeze the exported layout while retaining the current review's identity. */
-export function createReviewRecord(workspace: ReviewWorkspace, display: ArrangementDisplayState, format: ExportFormat, output: string, previous?: ReviewRecordIdentity): SchematicReviewRecord {
+/** Freeze the current layout while retaining the current review's identity. */
+export function createReviewRecord(workspace: ReviewWorkspace, display: ArrangementDisplayState, format: ReviewFormat, output: string, previous?: ReviewRecordIdentity): SchematicReviewRecord {
   return copyWorkspaceValue({
     ...workspace, schemaVersion: 1, id: previous?.id ?? crypto.randomUUID(), savedAt: new Date().toISOString(),
     format, output, sourceRecordId: previous?.sourceRecordId, paymentStatus: previous?.paymentStatus ?? 'unpaid', display: saveArrangementDisplay(display),

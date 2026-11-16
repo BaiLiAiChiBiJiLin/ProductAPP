@@ -40,7 +40,7 @@ import { paginateAssets, autoArrangePages } from './services/paginationService'
 import { exportPage, exportPdf, type PdfExportProgress, type PdfExportQuality } from './services/exportService'
 import type { DimensionDisplayOverride } from './services/imageDimensionService'
 import { emptyArrangementDisplayState, restoreArrangementDisplay, type ArrangementDisplayState } from './services/arrangementDisplayState'
-import { createReviewRecord, exportAndRecord, saveReviewRecord, type ReviewRecordIdentity, type SchematicReviewRecord } from '../schematic-review/reviewRecords'
+import { createReviewRecord, exportAndRecord, saveReviewRecord, type ReviewFormat, type ReviewRecordIdentity, type SchematicReviewRecord } from '../schematic-review/reviewRecords'
 import { schematicCopy } from './copy'
 import ArrangePage from './ArrangePage'
 import BatchHistoryPanel from './history/BatchHistoryPanel'
@@ -117,11 +117,14 @@ export default function SchematicPage({ active = true, initialRecord, onRecordSa
   const [reflowing, setReflowing] = useState(false)
   const reflowLock = useRef(false)
   const reviewIdentity = useRef<ReviewRecordIdentity | undefined>(initialRecord ? { id: initialRecord.id, sourceRecordId: initialRecord.sourceRecordId, paymentStatus: initialRecord.paymentStatus } : undefined)
+  const reviewOutput = useRef(initialRecord?.output ?? '')
+  const reviewFormat = useRef<ReviewFormat>(initialRecord?.format ?? 'layout')
+  const reviewSaveLock = useRef(false)
   const reviewSaveNotice = useRef<(() => void) | null>(null)
   const closeReviewSaveNotice = () => { const notice = reviewSaveNotice.current; reviewSaveNotice.current = null; notice?.() }
   const exportGeneration = useRef(0)
   const exportLock = useRef(false)
-  const resetArrangementDisplay = () => { setDisplayState(emptyArrangementDisplayState()); setSourceRecordId(undefined); reviewIdentity.current = undefined; exportGeneration.current++; closeReviewSaveNotice(); toast.destroy('review-save'); setLayoutBounds(loadLayoutBounds()) }
+  const resetArrangementDisplay = () => { setDisplayState(emptyArrangementDisplayState()); setSourceRecordId(undefined); reviewIdentity.current = undefined; reviewOutput.current = ''; reviewFormat.current = 'layout'; exportGeneration.current++; closeReviewSaveNotice(); toast.destroy('review-save'); setLayoutBounds(loadLayoutBounds()) }
   const [category, setCategory] = useState(UNASSIGNED_PRODUCT_CATEGORY)
   const [scrollToAssetId, setScrollToAssetId] = useState<string | null>(null)
   const [arrangementPoolFocusId, setArrangementPoolFocusId] = useState<string | null>(null)
@@ -143,6 +146,7 @@ export default function SchematicPage({ active = true, initialRecord, onRecordSa
   const [layoutBounds, setLayoutBounds] = useState<LayoutBounds>(() => initialRecord?.layoutBounds ?? loadLayoutBounds())
   const [historyTransition, setHistoryTransition] = useState<'' | 'forward' | 'back'>('')
   const [savingBatch, setSavingBatch] = useState(false)
+  const [savingReview, setSavingReview] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportProgress, setExportProgress] = useState<PdfExportProgress>({ phase: 'rendering', completed: 0, total: 1 })
   const [productConfigs, setProductConfigs] = useState<ProductConfig[]>([])
@@ -263,7 +267,7 @@ export default function SchematicPage({ active = true, initialRecord, onRecordSa
     return () => { cancelled = true }
   }, [])
   useEffect(() => { if (batchOpen && !sourceRecordId) setAssets(current => repairLegacyProductGroups(current, productConfigs)) }, [batchOpen, productConfigs, sourceRecordId])
-  useEffect(() => { onWorkingChange?.(reflowing || busy || exporting || savingBatch || transferring || confirmingReview || classifying || Boolean(loadingBatchId)) }, [reflowing, busy, exporting, savingBatch, transferring, confirmingReview, classifying, loadingBatchId, onWorkingChange])
+  useEffect(() => { onWorkingChange?.(reflowing || busy || exporting || savingBatch || savingReview || transferring || confirmingReview || classifying || Boolean(loadingBatchId)) }, [reflowing, busy, exporting, savingBatch, savingReview, transferring, confirmingReview, classifying, loadingBatchId, onWorkingChange])
   const saveBatch = async (confirmedAssets?: Asset[], options: { background?: boolean } = {}) => {
     if (saveLock.current) throw new Error('批次正在保存，请稍候')
     const editBaseAssets = assetsRef.current
@@ -824,8 +828,25 @@ export default function SchematicPage({ active = true, initialRecord, onRecordSa
     }
     catch (error) { toast.error(`刷新排列失败：${String(error)}`) }
   }
+  const saveArrangementReview = async () => {
+    if (reviewSaveLock.current || exportLock.current || reflowLock.current || !pages.length || !assets.length) return
+    if (!isTauri()) { toast.error('请在桌面软件中保存示意图审核记录'); return }
+    reviewSaveLock.current = true
+    setSavingReview(true)
+    try {
+      const output = reviewOutput.current || `示意图布局-${batchMetadataRef.current.customerName?.trim() || '未命名'}`
+      const record = createReviewRecord({ assets, pages, activePage, metadata: batchMetadataRef.current, layoutBounds, arrangementSort, defaultArrangementIds, sourceBatchId: currentBatchIdRef.current ?? undefined }, displayState, reviewOutput.current ? reviewFormat.current : 'layout', output, reviewIdentity.current)
+      reviewIdentity.current = { id: record.id, sourceRecordId: record.sourceRecordId, paymentStatus: record.paymentStatus }
+      reviewOutput.current = record.output
+      reviewFormat.current = record.format
+      await saveReviewRecord(record)
+      onRecordSaved?.()
+      toast.success('示意图排列已保存到示意图审核')
+    } catch (error) { toast.error(`示意图保存失败：${String(error)}`) }
+    finally { reviewSaveLock.current = false; setSavingReview(false) }
+  }
   const exportCurrent = async (format: 'jpg' | 'png' | 'svg' | 'pdf', displayOverrides: ReadonlyMap<string, DimensionDisplayOverride>, quality: PdfExportQuality = 'standard') => {
-    if (exportLock.current || reflowLock.current) return
+    if (exportLock.current || reviewSaveLock.current || reflowLock.current) return
     const page = pages.find(item => item.id === activePage)
     if (!page) return
     exportLock.current = true
@@ -837,26 +858,22 @@ export default function SchematicPage({ active = true, initialRecord, onRecordSa
       const generation = ++exportGeneration.current
       closeReviewSaveNotice()
       toast.destroy('review-save')
-      const record = createReviewRecord({ assets, pages, activePage, metadata: batchMetadata, layoutBounds, arrangementSort, defaultArrangementIds, sourceBatchId: currentBatchId ?? undefined }, displayState, format, output, reviewIdentity.current)
-      // Reserve one ID even when the file succeeds but persisting its review needs a retry.
+      const record = createReviewRecord({ assets, pages, activePage, metadata: batchMetadataRef.current, layoutBounds, arrangementSort, defaultArrangementIds, sourceBatchId: currentBatchIdRef.current ?? undefined }, displayState, format, output, reviewIdentity.current)
       reviewIdentity.current = { id: record.id, sourceRecordId: record.sourceRecordId, paymentStatus: record.paymentStatus }
       const result = await exportAndRecord(record, () => format === 'pdf'
-        ? exportPdf(pages, assets, output, batchMetadata, setExportProgress, displayOverrides, layoutBounds, displayState.accessoryVisuals, displayState.visualScales, quality)
-        : exportPage({ ...page, id: pages.findIndex(candidate => candidate.id === page.id) + 1 }, assets, output, format, batchMetadata, pages.length, displayOverrides, layoutBounds, displayState.accessoryVisuals, displayState.visualScales))
+        ? exportPdf(pages, assets, output, batchMetadataRef.current, setExportProgress, displayOverrides, layoutBounds, displayState.accessoryVisuals, displayState.visualScales, quality)
+        : exportPage({ ...page, id: pages.findIndex(candidate => candidate.id === page.id) + 1 }, assets, output, format, batchMetadataRef.current, pages.length, displayOverrides, layoutBounds, displayState.accessoryVisuals, displayState.visualScales))
+      reviewOutput.current = output
+      reviewFormat.current = format
       if (result.saved) {
-        // The failed-save notice can be created while the export is in flight.
-        // Clear it after the persistence result is known so a successful retry
-        // or subsequent export cannot leave a stale action in the UI.
-        closeReviewSaveNotice()
-        toast.destroy('review-save')
         onRecordSaved?.()
-        toast.success({ key: 'review-save', content: '导出完成，已保存到示意图审核' })
+        toast.success('导出完成，已保存到示意图审核')
       } else {
         const retry = async () => {
           if (exportLock.current || generation !== exportGeneration.current) return
           exportLock.current = true
           setExporting(true)
-          try { await saveReviewRecord(record); onRecordSaved?.(); closeReviewSaveNotice(); toast.success({ key: 'review-save', content: '审核记录已保存' }) }
+          try { await saveReviewRecord(record); onRecordSaved?.(); closeReviewSaveNotice(); toast.success('审核记录已保存') }
           catch (error) { toast.error(`审核记录保存失败：${String(error)}`) }
           finally { exportLock.current = false; setExporting(false) }
         }
@@ -865,7 +882,7 @@ export default function SchematicPage({ active = true, initialRecord, onRecordSa
     } catch (error) { toast.error(String(error)) }
     finally { exportLock.current = false; setExporting(false) }
   }
-  if (screen === 'arrange') return <ProductGroupingContext.Provider value={grouping}>{externalImportDialog}<ArrangePage onChangePage={next => setPages(current => current.map(page => page.id === next.id ? next : page))} onReorderPages={reorderPages} onBackgroundChange={(scope, color, ids) => setPages(current => recolorBackground(current, activePage, ids, scope, color))} onHorizontalGroup={itemId => void horizontalGroup(itemId)} onShowBack={showArtworkBack} onResizeGroup={(groupId, rect) => void resizeGroup(groupId, rect)} processingLabel={reflowing ? '正在调整块布局及后续页面…' : undefined} displayState={displayState} onDisplayStateChange={setDisplayState} context={context} assets={assets} pages={pages} activePage={activePage} selectedItem={selectedItem} selectedGroupIds={selectedGroupIds} onSelectPage={id => { setActivePage(id); setSelectedItem(null) }} onSelectItem={id => { setSelectedItem(id); setSelectedGroupIds([]) }} onSelectGroup={selectGroup} onChangeRulers={(ids, patch) => setPages(current => current.map(page => page.id === activePage ? updateSelectedRulers(page, ids, patch, new Map(assets.map(asset => [asset.id, asset]))) : page))} onChangeRuler={changeRuler} onEditText={editCanvasText} onChangeItem={updatePageItem} onReplaceArtwork={replaceCanvasImage} replacingArtwork={busy || reflowing} onDropAsset={addAssetToPage} onUpload={() => void upload()} uploadDropActive={dropActive} poolFocusAssetId={arrangementPoolFocusId} onDeleteGroups={deleteCanvasGroups} onDeleteItems={deleteCanvasItems} onConfirmAssetAttributes={confirmArrangeAttributes} onAddPage={addPage} onRefresh={refreshArrangement} onCombine={combineSelectedGroups} onBack={() => { setSelectedGroupIds([]); setUploadFromArrange(true); setScreen('upload') }} onBackToHistory={discardBatch} onExport={exportCurrent} exporting={exporting} exportProgress={exportProgress} metadata={batchMetadata} onMetadataChange={value => setBatchMetadata(current => ({ ...current, ...value }))} layoutBounds={layoutBounds} onBoundsChange={changeLayoutBounds} onAddHeaderBlock={addHeaderBlock} onChangeHeaderBlock={changeHeaderBlock} onRemoveHeaderBlock={removeHeaderBlock}/></ProductGroupingContext.Provider>
+  if (screen === 'arrange') return <ProductGroupingContext.Provider value={grouping}>{externalImportDialog}<ArrangePage onChangePage={next => setPages(current => current.map(page => page.id === next.id ? next : page))} onReorderPages={reorderPages} onBackgroundChange={(scope, color, ids) => setPages(current => recolorBackground(current, activePage, ids, scope, color))} onHorizontalGroup={itemId => void horizontalGroup(itemId)} onShowBack={showArtworkBack} onResizeGroup={(groupId, rect) => void resizeGroup(groupId, rect)} processingLabel={reflowing ? '正在调整块布局及后续页面…' : undefined} displayState={displayState} onDisplayStateChange={setDisplayState} context={context} assets={assets} pages={pages} activePage={activePage} selectedItem={selectedItem} selectedGroupIds={selectedGroupIds} onSelectPage={id => { setActivePage(id); setSelectedItem(null) }} onSelectItem={id => { setSelectedItem(id); setSelectedGroupIds([]) }} onSelectGroup={selectGroup} onChangeRulers={(ids, patch) => setPages(current => current.map(page => page.id === activePage ? updateSelectedRulers(page, ids, patch, new Map(assets.map(asset => [asset.id, asset]))) : page))} onChangeRuler={changeRuler} onEditText={editCanvasText} onChangeItem={updatePageItem} onReplaceArtwork={replaceCanvasImage} replacingArtwork={busy || reflowing} onDropAsset={addAssetToPage} onUpload={() => void upload()} uploadDropActive={dropActive} poolFocusAssetId={arrangementPoolFocusId} onDeleteGroups={deleteCanvasGroups} onDeleteItems={deleteCanvasItems} onConfirmAssetAttributes={confirmArrangeAttributes} onAddPage={addPage} onRefresh={refreshArrangement} onCombine={combineSelectedGroups} onBack={() => { setSelectedGroupIds([]); setUploadFromArrange(true); setScreen('upload') }} onBackToHistory={discardBatch} onSave={saveArrangementReview} onExport={exportCurrent} exporting={exporting} savingReview={savingReview} exportProgress={exportProgress} metadata={batchMetadata} onMetadataChange={value => setBatchMetadata(current => ({ ...current, ...value }))} layoutBounds={layoutBounds} onBoundsChange={changeLayoutBounds} onAddHeaderBlock={addHeaderBlock} onChangeHeaderBlock={changeHeaderBlock} onRemoveHeaderBlock={removeHeaderBlock}/></ProductGroupingContext.Provider>
   return <ProductGroupingContext.Provider value={grouping}>{externalImportDialog}<main className={`product-upload-page ${showProductCategories ? 'has-product-categories' : ''} ${uploadFromArrange ? 'upload-page-enter-left' : ''} history-transition-${historyTransition}`}>{context}{showProductCategories && <ProductCategoryNav assets={assets} products={productConfigs} value={category} onChange={changeCategory} disabled={busy || savingBatch || guideActive}/>}<section className="uploaded-assets-panel" inert={savingBatch || transferring}><div className="upload-page-title">{batchOpen && <Button className="batch-back-button" type="text" icon={<ArrowLeft size={18}/>} aria-label="返回批次列表" title="返回批次列表并清除未保存内容" onClick={discardBatch} disabled={busy || savingBatch || confirmingReview || classifying || guideActive}/>}<div><h1>{batchOpen ? '当前批次图片' : schematicCopy.recent}</h1>{batchOpen ? <Tag color="blue">共 {assets.length} 张</Tag> : <p>默认不加载历史记录，请直接上传图片。</p>}</div>{batchOpen && <div className="batch-summary"><Button type="default" size="small" onClick={() => selectAssets(allAssetsSelected ? new Set() : new Set(visibleAssets.map(asset => asset.id)))} disabled={!assets.length || busy || savingBatch || confirmingReview || classifying || guideActive}>{allAssetsSelected ? '取消全选' : '全选'}</Button><Popconfirm title={`删除选中的 ${selectedAssetIds.size} 张图片？`} description="删除后将从当前批次中移除，无法在列表中恢复。" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => void deleteSelectedAssets()}><Button type="default" danger size="small" icon={<Trash2 size={14}/>} aria-label="删除选中图片" disabled={!selectedAssetIds.size || busy || savingBatch || transferring || confirmingReview || classifying || guideActive || grouping.saving}>删除</Button></Popconfirm><Button type="default" size="small" onClick={() => guideActive ? grouping.cancelGuide() : setSelectedAssetIds(new Set())} title={guideActive ? "退出引导并放弃未保存的修改，保留已保存内容" : undefined} disabled={!selectedAssetIds.size || busy || savingBatch || confirmingReview || classifying || grouping.saving}>取消选择</Button><Button type="primary" size="small" loading={savingBatch} onClick={() => void (guideActive ? grouping.persist(false) : saveBatch())} disabled={!assets.length || busy || savingBatch || confirmingReview || classifying || grouping.saving}>保存批次</Button></div>}</div>{batchOpen && <UploadImageList assets={visibleAssets} allAssets={assets} products={productConfigs} selectedIds={selectedAssetIds} onSelectionChange={selectAssets} disabled={busy || savingBatch || transferring} onDelete={deleteAssetFromBatch} onReplace={replaceImage} batchId={currentBatchId ?? undefined}/>}<BatchHistoryPanel active={!batchOpen} openingId={loadingBatchId} progress={batchLoadProgress} onOpen={record => void openBatch(record)} userName={userName} onSharedRecordsChanged={onSharedRecordsChanged} onTransferringChange={setTransferring}/></section><div className="upload-column"><UploadPanel busy={busy || savingBatch || transferring || Boolean(loadingBatchId)} dropActive={dropActive} progress={progress} metadata={batchMetadata} onMetadataChange={setBatchMetadata} onUpload={() => void upload()} batchOpen={batchOpen} activeTab={uploadPanelTab} onTabChange={setUploadPanelTab} selectedAssetIds={selectedAssetIds} onConfirmAttributes={confirmAttributes} assets={assets}/><Button className="generate-schematic-button" type="primary" size="large" icon={classifying ? <Loading size="small" inline /> : undefined} disabled={!assets.length || busy || savingBatch || confirmingReview || classifying || guideActive} onClick={() => void openReview()}>{classifying ? '正在分类…' : '生成示意图'}</Button></div><ReviewAssetPicker open={reviewOpen} assets={orderAssetsByProductGroup(assets)} batchId={currentBatchId ?? undefined} selectedIds={reviewSelectedIds} confirming={confirmingReview} onChange={setReviewSelectedIds} onCancel={() => { if (!confirmingReview) { setReviewOpen(false); setClassifiedAssets(null); setReviewSelectedIds(new Set()) } }} onConfirm={() => void confirmReview()} /></main></ProductGroupingContext.Provider> }
 
 

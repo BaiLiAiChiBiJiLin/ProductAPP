@@ -14,6 +14,12 @@ import type { EditorSelection } from '../services/canvasAnnotationService'
 import { detailTextSelection, type DetailTextDraft } from '../services/detailTextService'
 
 const imageCache = new Map<string, HTMLImageElement>()
+const MAX_ACCESSORY_IMAGES = 64
+function rememberAccessoryElement(key: string, image: HTMLImageElement) {
+  imageCache.delete(key)
+  imageCache.set(key, image)
+  while (imageCache.size > MAX_ACCESSORY_IMAGES) imageCache.delete(imageCache.keys().next().value!)
+}
 export type AccessoryVisual = DetailImageVisual
 export type EditableTextTarget = 'heading' | 'size' | 'qt' | 'finish' | 'note' | 'accessoryCode' | `field:${string}`
 export type EditImageGroupText = (itemIds: string[], target: EditableTextTarget, value: string) => void
@@ -56,13 +62,13 @@ function AccessoryImage({ src, x, y, width, height, code, caption, captionHeight
       const resolved = await resolveRemoteImage(src)
       if (cancelled) return
       const cached = imageCache.get(resolved)
-      if (cached) { rememberAccessoryImage(src, cached); setImage(cached); return }
+      if (cached) { imageCache.delete(resolved); imageCache.set(resolved, cached); rememberAccessoryImage(src, cached); setImage(cached); return }
       element = new window.Image()
       element.crossOrigin = 'anonymous'
       element.onload = () => {
         if (!cancelled && element) {
           rememberAccessoryImage(src, element)
-          imageCache.set(resolved, element)
+          rememberAccessoryElement(resolved, element)
           setImage(element)
         }
       }
