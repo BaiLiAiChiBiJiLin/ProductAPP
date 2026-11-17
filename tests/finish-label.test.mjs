@@ -46,6 +46,49 @@ test('process, film and material attributes share the red lower-right label', ()
   for (const value of label.lines) assert.match(svg, new RegExp(`>${value}</text>`))
 })
 
+test('Chinese film, process and epoxy attributes remain visible through arrangement and both exports', () => {
+  const asset = stickerAsset('钥匙扣', {
+    膜: '星星膜',
+    工艺: '烫金',
+    滴胶: '双面滴胶',
+    QT: '2',
+  })
+  const original = structuredClone(asset)
+  const expected = ['星星膜', '烫金', '双面滴胶']
+  const details = detailsForAsset(asset)
+  for (const value of expected) assert.ok(details.finish.split('\n').includes(value), `${value} should be part of the footer`)
+  const [page] = paginateAssets([asset])
+  const group = page.imageGroups[0]
+  assert.deepEqual(new Set(finishLabel(group).lines), new Set(expected))
+  for (const svg of [pageSvg(page, new Map([[asset.id, asset]])), pageRasterSvg(page, new Map([[asset.id, asset]]))]) {
+    for (const value of expected) {
+      assert.match(svg, new RegExp(`<text[^>]*font-size="11"[^>]*fill="#ff4d4f"[^>]*>${value}</text>`))
+    }
+  }
+  assert.deepEqual(asset, original)
+})
+
+test('an empty saved detail panel list does not hide the group process footer', () => {
+  const asset = stickerAsset('Keychains', { Technique: 'Front Side Epoxy' })
+  const [page] = paginateAssets([asset])
+  const group = page.imageGroups[0]
+  group.detailGroups = []
+  assert.equal(finishLabel(group).text, 'Front Side Epoxy')
+  for (const svg of [pageSvg(page, new Map([[asset.id, asset]])), pageRasterSvg(page, new Map([[asset.id, asset]]))]) {
+    assert.match(svg, /<text[^>]*font-size="11"[^>]*fill="#ff4d4f"[^>]*>Front Side Epoxy<\/text>/)
+  }
+})
+
+test('standard English production values export with the default 11px red footer style', () => {
+  const asset = stickerAsset('Keychains', { Technique: 'Front Side Epoxy', 'Holo Film': 'Star Holographic' })
+  const [page] = paginateAssets([asset])
+  for (const svg of [pageSvg(page, new Map([[asset.id, asset]])), pageRasterSvg(page, new Map([[asset.id, asset]]))]) {
+    for (const value of ['Front Side Epoxy', 'Star Holographic']) {
+      assert.match(svg, new RegExp(`<text[^>]*font-size="11"[^>]*fill="#ff4d4f"[^>]*>${value}</text>`))
+    }
+  }
+})
+
 test('sticker material and finish stay combined through arrangement, edits and SVG export', () => {
   const asset = stickerAsset('Stickers', { Material: 'Vinyl', Finish: 'Glossy' })
   const [page] = paginateAssets([asset])
@@ -61,10 +104,10 @@ test('long Finish stays one line anchored inside the bottom of the unchanged gro
   const group = { x: 10, y: 20, width: 60, height: 80, details: { finish: 'A very long finish\nwith another process' } }
   const label = finishLabel(group)
   assert.equal(label.text, 'A very long finish\nwith another process')
-  assert.equal(label.y, 75)
+  assert.equal(label.y, 72)
   assert.equal(label.x + label.width, 66)
   assert.equal(group.height, 80)
-  assert.equal(label.height, 21)
+  assert.equal(label.height, 24)
 })
 
 test('no additional technique is hidden without removing saved attributes or real sticker material', () => {

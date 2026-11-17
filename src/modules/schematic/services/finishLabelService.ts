@@ -1,8 +1,9 @@
 import type { ImageGroup } from '../layoutTypes'
 import { isHiddenAttributeValue } from './attributeDisplayService.ts'
 
-export const FINISH_LABEL_FONT_SIZE = 10
-export const FINISH_LABEL_LINE_HEIGHT = 11
+export const FINISH_LABEL_FONT_SIZE = 11
+export const FINISH_LABEL_LINE_HEIGHT = 13
+export const FINISH_LABEL_COLOR = '#ff4d4f'
 export const FINISH_LABEL_BOTTOM_GAP = 4
 
 /** Older review snapshots already contain joined material/process labels. */
@@ -40,7 +41,8 @@ export function finishLabelValueReserve(value: string | undefined) {
 
 export function finishLabel(group: ImageGroup) {
   const lines: string[] = []
-  for (const value of group.detailGroups?.map(panel => panel.details.finish) ?? [group.details?.finish]) {
+  const values = group.detailGroups?.length ? group.detailGroups.map(panel => panel.details.finish) : [group.details?.finish]
+  for (const value of values) {
     for (const line of visibleFinishLines(value)) {
       if (!lines.some(existing => existing.trim().toLowerCase() === line.trim().toLowerCase())) lines.push(line)
     }
@@ -49,5 +51,5 @@ export function finishLabel(group: ImageGroup) {
   const height = finishLabelHeight(lines.length)
   const width = Math.max(1, group.width - 8)
   const bottom = group.y + (group.backgroundHeight ?? group.height)
-  return { text, lines, lineHeight: FINISH_LABEL_LINE_HEIGHT, height, x: group.x + 4, y: bottom - FINISH_LABEL_BOTTOM_GAP - height, width }
+  return { text, lines, fontSize: FINISH_LABEL_FONT_SIZE, color: FINISH_LABEL_COLOR, lineHeight: FINISH_LABEL_LINE_HEIGHT, height, x: group.x + 4, y: bottom - FINISH_LABEL_BOTTOM_GAP - height, width }
 }

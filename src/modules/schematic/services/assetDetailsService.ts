@@ -75,7 +75,7 @@ function productionAttributeValues(asset: Asset, productName: string | undefined
     // material is already included in that footer as “材质 工艺”.
     if (['finish', '工艺', '表面'].includes(normalizedKey)) continue
     if (sticker && ['material', '材质'].includes(normalizedKey)) continue
-    if (!/(technique|epoxy|holo|film|material|surface|工艺|膜|材质)/i.test(key)) continue
+    if (!/(technique|epoxy|holo|film|material|surface|工艺|滴胶|膜|材质)/i.test(key)) continue
     if (isHiddenAttributeValue(value)) continue
     const displayValue = value.replace(/\b[a-z][a-z']*/gi, word => /^[A-Z0-9]+$/.test(word) ? word : word.length === 1 ? word.toUpperCase() : `${word[0].toUpperCase()}${word.slice(1).toLowerCase()}`)
     values.push(displayValue)

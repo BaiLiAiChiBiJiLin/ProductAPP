@@ -8,7 +8,8 @@ It never creates one-copy-per-product quantity layers.
 from collections import Counter
 import math
 
-from nesting_common import pack_one
+from nesting_common import pack_one, pack_one_columns
+from nest_order_search import valid_single_board
 from nest_repeat_lots import improve_repeated_lots, template_key
 from nest_repeat_portfolio import improve_repeat_portfolio
 
@@ -94,6 +95,24 @@ def _complete_repeat_template(job, args, sheet_limit, progress):
                 if progress else None)
             if not any(remaining) and _counts(placed) == Counter({i: q for i, q in enumerate(quota) if q}):
                 return placed, repeat
+        # Row-first greedy scores prefer shorter individual placements. A
+        # whole-board column-first trial can fit another column at a larger
+        # spacing even when none of the ordinary ordering variants can.
+        # Reuse the same masks and native context, then validate in the
+        # original sheet coordinates before repeating this complete quota.
+        try:
+            remaining = quota.copy()
+            placed = pack_one_columns(
+                srcs, job['bank'], remaining, args.board_width, args.board_height,
+                args.gap, args.margin, args.resolution, args.seed, 'top', 'small',
+                max(1, args.lookahead),
+                (lambda count, unused: progress(0, repeat, count, (sum(quota) - count) * repeat))
+                if progress else None)
+            if not any(remaining) and valid_single_board(srcs, quota, placed, args):
+                return placed, repeat
+        except MemoryError:
+            # This is an optional candidate; keep the complete row-first plan.
+            pass
     return None
 
 

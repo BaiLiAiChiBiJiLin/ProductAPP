@@ -58,6 +58,21 @@ function mount(initialPage = fixture()) {
   return render(<ConfigProvider theme={{ token: { motion: false } }}><Harness/></ConfigProvider>)
 }
 
+test('canvas keeps the process footer visible with empty detail panels and uses 11px red defaults for notes and footer', () => {
+  const stage = createRef<Konva.Stage>(), page = fixture()
+  const group = page.imageGroups![0]
+  group.detailGroups = []
+  group.details!.finish = '星星膜\n双面滴胶'
+  group.details!.note = '生产备注'
+  render(<Stage ref={stage} width={500} height={500}><Layer><ImageGroupDetails group={group} page={page} assets={assets}/></Layer></Stage>)
+  const footer = stage.current!.find<Konva.Text>('Text').filter(node => ['星星膜', '双面滴胶'].includes(node.text()))
+  expect(footer).toHaveLength(2)
+  for (const node of [...footer, ...stage.current!.find<Konva.Text>('.image-detail-note')]) {
+    expect(node.fontSize()).toBe(11)
+    expect(node.fill()).toBe('#ff4d4f')
+  }
+})
+
 test('Size and QT canvas text both select on click and open the shared editor on double click', () => {
   const stage = createRef<Konva.Stage>(), select = vi.fn(), edit = vi.fn(), page = fixture()
   render(<Stage ref={stage} width={500} height={500}><Layer><ImageGroupDetails group={page.imageGroups![0]} page={page} assets={assets} onSelectEditor={select} onEditDetailText={edit}/></Layer></Stage>)
@@ -85,7 +100,7 @@ test('wrapped remarks open the shared editor with the complete original text ins
     act(() => node.fire('click', { evt: new MouseEvent('click') }, true))
     expect(select.mock.calls.at(-1)![0]).toMatchObject({ kind: 'detail', groupId: 'g', panelItemIds: ['a'], fieldKey: 'note' })
     act(() => node.fire('dblclick', { evt: new MouseEvent('dblclick') }, true))
-    expect(edit.mock.calls.at(-1)![0]).toMatchObject({ kind: 'detail', fieldKey: 'note', text: note, fontSize: layout.noteFontSize, color: '#666666' })
+    expect(edit.mock.calls.at(-1)![0]).toMatchObject({ kind: 'detail', fieldKey: 'note', text: note, fontSize: layout.noteFontSize, color: '#ff4d4f' })
   }
   expect(prompt).not.toHaveBeenCalled()
 })

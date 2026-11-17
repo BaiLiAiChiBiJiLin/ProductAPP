@@ -17,9 +17,11 @@ beforeEach(() => { vi.clearAllMocks(); native.invoke.mockImplementation(async (_
 afterEach(cleanup)
 const saved = () => JSON.parse(screen.getByLabelText('已保存备注').textContent!) as Asset
 
-test('note text controls default to 14px and persist a changed size', () => {
+test('note text controls default to 11px red and persist a changed size', () => {
   render(<Editor/>)
-  expect(screen.getByRole('spinbutton', { name: '备注字号' })).toHaveProperty('value', '14')
+  expect(screen.getByRole('spinbutton', { name: '备注字号' })).toHaveProperty('value', '11')
+  const colorPreview = screen.getByLabelText('备注文字颜色').querySelector<HTMLElement>('.ant-color-picker-color-block-inner')
+  expect(colorPreview?.style.backgroundColor).toBe('rgb(255, 77, 79)')
   fireEvent.change(screen.getByRole('spinbutton', { name: '备注字号' }), { target: { value: '18' } })
   expect(saved().noteFontSize).toBe(18)
   expect(screen.getByLabelText('备注文字颜色')).toBeTruthy()

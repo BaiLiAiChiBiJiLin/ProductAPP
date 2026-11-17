@@ -216,6 +216,26 @@ def pack_one(srcs, bank, remaining, board_w, board_h, gap, margin, res, seed, mo
                     gap, margin, res, seed, mode, order_mode, lookahead, progress, initial_occupancy)
 
 
+def pack_one_columns(srcs, bank, remaining, board_w, board_h, gap, margin, res, seed,
+                     mode='top', order_mode='small', lookahead=1, progress=None):
+    """Search an empty board down columns using the original immutable masks.
+
+    Row scoring tends to choose short, wide orientations even when a full
+    column layout holds more. Search the transposed board, then rigidly rotate
+    the complete result back into the original board. This is not reflection:
+    (x, y) becomes (board_w - y, x). Gap and symmetric margins are preserved.
+    Seeded/manual occupancy is intentionally unsupported by this candidate.
+    """
+    trial_remaining = list(remaining)
+    placed = pack_one(srcs, bank, trial_remaining, board_h, board_w, gap, margin, res,
+                      seed, mode, order_mode, lookahead, progress)
+    columns = [dict(p, angle=(p['angle'] + 90) % 360,
+                    tx=board_w - p['ty'], ty=p['tx']) for p in placed]
+    # Commit the quantities only after the complete transform succeeds.
+    remaining[:] = trial_remaining
+    return columns
+
+
 def pack_material_boards(srcs, bank, quantities, args, seed_offset=0, progress=None, *, max_sheets=None):
     """Pack a quantity vector using the board-saving heuristic.
 
@@ -245,6 +265,20 @@ def pack_material_boards(srcs, bank, quantities, args, seed_offset=0, progress=N
                           (lambda count, left: progress(0, run + 1, count, left)) if progress else None)
         if best is None or len(placed) > len(best[0]):
             best = (placed, rem)
+    srcs_by_id = {source['i']: source for source in srcs}
+    def density(board):
+        return len(board), sum(srcs_by_id[p['i']]['area'] for p in board)
+    if any(best[1]):
+        rem = remaining.copy()
+        try:
+            columns = pack_one_columns(
+                srcs, bank, rem, args.board_width, args.board_height, args.gap, args.margin,
+                args.resolution, args.seed + seed_offset, 'top', 'small', args.lookahead,
+                (lambda count, left: progress(0, args.runs + 1, count, left)) if progress else None)
+            if density(columns) > density(best[0]):
+                best = (columns, rem)
+        except MemoryError:
+            pass  # Optional orientation search never discards a complete row candidate.
     result = [best[0]]
     remaining = list(best[1])
     while sum(remaining):
@@ -258,7 +292,20 @@ def pack_material_boards(srcs, bank, quantities, args, seed_offset=0, progress=N
                               mode, order, args.lookahead,
                               (lambda count, left: progress(len(result), j + 1, count, left)) if progress else None)
             trials.append((placed, rem))
-        placed, remaining = max(trials, key=lambda t: (len(t[0]), sum(srcs[p['i']]['area'] for p in t[0])))
+        placed, next_remaining = max(trials, key=lambda t: density(t[0]))
+        if any(next_remaining):
+            rem = remaining.copy()
+            try:
+                columns = pack_one_columns(
+                    srcs, bank, rem, args.board_width, args.board_height, args.gap, args.margin,
+                    args.resolution, args.seed + seed_offset + 100 + len(result) * 7,
+                    'top', 'small', args.lookahead,
+                    (lambda count, left: progress(len(result), len(trials) + 1, count, left)) if progress else None)
+                if density(columns) > density(placed):
+                    placed, next_remaining = columns, rem
+            except MemoryError:
+                pass
+        remaining = next_remaining
         if not placed:
             raise SystemExit('No remaining item fits; try a smaller gap or finer resolution')
         result.append(placed)

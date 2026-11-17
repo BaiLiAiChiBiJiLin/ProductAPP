@@ -39,13 +39,20 @@ def fixed_capacity(capacity):
 
 
 class BoundedLotTests(unittest.TestCase):
+    def assert_axes_trials(self, search, args, rows, columns):
+        # The optional column trial swaps dimensions but must not search any
+        # additional sheet after the losing greedy prefix reaches its cap.
+        dimensions = Counter(tuple(call.args[3:5]) for call in search.call_args_list)
+        self.assertEqual(dimensions, {(args.board_width, args.board_height): rows,
+                                      (args.board_height, args.board_width): columns})
+
     def test_unbounded_default_keeps_all_boards_and_input_quantities(self):
         quantities = [3, 2]
         sources, args = [source(0), source(1)], arguments()
         with patch.object(common, 'pack_one', side_effect=fixed_capacity(2)) as search:
             result = common.pack_material_boards(sources, {}, quantities, args)
         self.assertEqual(len(result), 3)
-        self.assertEqual(search.call_count, args.runs + 6)
+        self.assert_axes_trials(search, args, args.runs + 6, 2)
         self.assertEqual(Counter(p['i'] for board in result for p in board), {0: 3, 1: 2})
         self.assertEqual(quantities, [3, 2])
         self.assertTrue(lots._valid(dict(srcs=sources, quantities=quantities), args, result))
@@ -57,7 +64,7 @@ class BoundedLotTests(unittest.TestCase):
         with patch.object(common, 'pack_one', side_effect=fixed_capacity(2)) as search:
             actual = common.pack_material_boards(sources, {}, quantities, args, max_sheets=3)
         self.assertEqual(actual, expected)
-        self.assertEqual(search.call_count, args.runs + 6)
+        self.assert_axes_trials(search, args, args.runs + 6, 2)
         self.assertEqual(quantities, [3, 2])
 
     def test_cap_with_remaining_demand_stops_before_any_next_board_search(self):
@@ -65,7 +72,7 @@ class BoundedLotTests(unittest.TestCase):
         with patch.object(common, 'pack_one', side_effect=fixed_capacity(2)) as search:
             result = common.pack_material_boards(sources, {}, quantities, args, max_sheets=2)
         self.assertIsNone(result)  # An incomplete prefix must never look complete.
-        self.assertEqual(search.call_count, args.runs + 3)
+        self.assert_axes_trials(search, args, args.runs + 3, 2)
         self.assertEqual(quantities, [3, 2])
 
     def test_zero_cap_skips_search_but_accepts_empty_demand(self):
@@ -95,7 +102,7 @@ class BoundedLotTests(unittest.TestCase):
                 patch.object(common, 'pack_one', side_effect=fixed_capacity(1)) as search, \
                 patch.object(lots, 'repeated_pattern_lots', return_value=iter([(subpattern, {})])) as patterns:
             result = lots.improve_repeated_lots(job, args, baseline)
-        self.assertEqual(search.call_count, 6 + 3 * 2)  # No fourth greedy board.
+        self.assert_axes_trials(search, args, 6 + 3 * 2, 3)  # No fourth greedy board.
         patterns.assert_called_once()
         self.assertEqual(patterns.call_args.args[2], [4])
         self.assertEqual(len(result), 4)

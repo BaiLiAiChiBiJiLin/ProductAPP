@@ -12,6 +12,25 @@ const images = [{ src: 'front.png', name: '正面 <参考>' }, { src: 'back.png'
 const asset = { id: 'a', productId: 'p', width: 100, height: 100, attributes: { QT: '2' }, note: '生产备注', noteImage: 'front.png', noteImages: images }
 const makeGroup = details => ({ id: 'group', itemIds: ['a'], x: 10, y: 20, width: 300, height: 160, details })
 
+test('note text defaults to 11px red in details and exports while saved manual styles remain intact', () => {
+  for (const savedStyle of [undefined, { noteFontSize: 18, noteColor: '#126abc' }]) {
+    const artwork = { ...asset, name: 'Artwork', svg: '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100"/></svg>', previewUrl: '', thumbnailUrl: '', note: '生产备注', noteImages: [], noteImage: '', ...savedStyle }
+    const details = detailsForAsset(artwork)
+    const fontSize = savedStyle?.noteFontSize ?? 11
+    const color = savedStyle?.noteColor ?? '#ff4d4f'
+    assert.deepEqual(details.textOverrides.note, { fontSize, color })
+    const group = makeGroup(details)
+    const layout = imageDetailsLayout(group)
+    assert.equal(layout.noteFontSize, fontSize)
+    assert.equal(layout.noteColor, color)
+    const page = { id: 1, name: 'Page', items: [{ id: 'a', assetId: 'a', x: 30, y: 50, w: 20, h: 20, rotation: 0 }], imageGroups: [group] }
+    const assets = new Map([[artwork.id, artwork]])
+    for (const svg of [pageSvg(page, assets), pageRasterSvg(page, assets)]) {
+      assert.match(svg, new RegExp(`<text[^>]*font-size="${fontSize}"[^>]*fill="${color}"[^>]*>生产备注</text>`))
+    }
+  }
+})
+
 test('all note images and optional names reach the production details and exported SVG', () => {
   const details = detailsForAsset(asset)
   assert.deepEqual(details.noteImages, images)

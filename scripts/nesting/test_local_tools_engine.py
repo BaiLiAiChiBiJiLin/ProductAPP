@@ -144,6 +144,14 @@ class LocalToolsTests(unittest.TestCase):
         import test_combined_nesting as checks
         checks.CombinedNestingTests().verify(req, result)
 
+    def test_uniform_compares_whole_board_axes_at_four_mm(self):
+        import test_combined_nesting as checks
+        req = json.loads((Path(__file__).parent / 'fixtures/repeated-board-axes.json').read_text())
+        result = self.solve(req)
+        checks.CombinedNestingTests().verify(req, result)
+        self.assertEqual(checks.result_score(req, result)[1:], (25, 1),
+                         'The complete 500-piece order fits 25 repeated 20-piece sheets at 4 mm')
+
     def test_uniform_keeps_complete_dense_plan_when_shared_quota_cannot_fit(self):
         first, second = item("a", 2, 10, 10), item("b", 2, 10, 10)
         first["polygon"] = [[0, 0], [10, 0], [0, 10]]

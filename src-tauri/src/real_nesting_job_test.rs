@@ -812,6 +812,76 @@ fn real_ds_and_backup_jobs() {
     }
 }
 
+/// Export the exact production import/outline input for a reproducible Python
+/// search benchmark. No solver, order database or production asset store runs.
+/// Set PRINTFLOW_REAL_SOURCE_SVG and optionally PRINTFLOW_REAL_REPORT_DIR,
+/// PRINTFLOW_REAL_SOURCE_QT (250) and PRINTFLOW_REAL_SOURCE_GAP (4).
+#[test]
+#[ignore = "requires an explicit local source SVG; writes only a fresh diagnostic directory"]
+fn export_real_source_nesting_request() {
+    let source = PathBuf::from(std::env::var_os("PRINTFLOW_REAL_SOURCE_SVG")
+        .expect("set PRINTFLOW_REAL_SOURCE_SVG"));
+    let original = fs::read(&source).expect("read source SVG");
+    let report_root = std::env::var_os("PRINTFLOW_REAL_REPORT_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    fs::create_dir_all(&report_root).expect("create diagnostic root");
+    let report = report_root.join(format!("source-nesting-{}-{}", std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    fs::create_dir(&report).expect("create fresh diagnostic directory");
+    let quantity = std::env::var("PRINTFLOW_REAL_SOURCE_QT")
+        .map(|value| value.parse::<u32>().expect("QT must be a positive integer"))
+        .unwrap_or(250);
+    let gap = std::env::var("PRINTFLOW_REAL_SOURCE_GAP")
+        .map(|value| value.parse::<f64>().expect("gap must be millimetres"))
+        .unwrap_or(4.0);
+    assert!(quantity > 0 && gap.is_finite() && gap >= 0.0);
+    let assets = crate::assets::import_with_stage_workers(
+        &source, "", "auto", "source-probe", 1, |_, _, _| {}, |_| {},
+    ).expect("production SVG import");
+    assert!(!assets.is_empty());
+    let mut items = Vec::with_capacity(assets.len());
+    let mut manifest = Vec::with_capacity(assets.len());
+    for asset in &assets {
+        // Keep the same authored-size/aspect-ratio rule as
+        // imposition_import::image_metadata, including its display-size fallback.
+        let (width, height) = (f64::from(asset.width), f64::from(asset.height));
+        assert!(width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0);
+        let (width_mm, height_mm) = if asset.source_group_width_mm > 0.0
+            && asset.source_group_height_mm > 0.0
+            && ((asset.source_group_width_mm / asset.source_group_height_mm) / (width / height)).ln().abs() <= 0.08
+        {
+            (asset.source_group_width_mm, asset.source_group_height_mm)
+        } else {
+            (width * 25.4 / 96.0, height * 25.4 / 96.0)
+        };
+        let path = report.join(format!("{}.svg", asset.id));
+        fs::write(&path, asset.svg.as_bytes()).expect("write diagnostic split SVG");
+        let geometry = extract_svg_geometry(&path, width_mm, height_mm)
+            .expect("production contour extraction");
+        manifest.push(json!({"id": asset.id, "name": asset.name, "path": path,
+            "widthMm": width_mm, "heightMm": height_mm, "vertices": geometry.polygon.len(),
+            "lineOnly": geometry.line_only}));
+        items.push(NestItem { id: asset.id.clone(), width_mm, height_mm, quantity,
+            line_only: geometry.line_only, polygon: Some(geometry.polygon) });
+    }
+    let mut payload = request(items, "local-tools");
+    payload.spacing_mm = gap;
+    payload.allow_base_mixing = true;
+    payload.objective = "least-cutting".into();
+    payload.thread_count = Some(2);
+    fs::write(report.join("request.json"), serde_json::to_vec(&payload).unwrap())
+        .expect("write diagnostic nesting request");
+    fs::write(report.join("sources.json"), serde_json::to_vec_pretty(&manifest).unwrap())
+        .expect("write diagnostic source metadata");
+    assert_eq!(fs::read(&source).unwrap(), original, "original SVG must remain unchanged");
+    eprintln!("source_report={} assets={} total_qt={}", report.display(), assets.len(),
+        payload.items.iter().map(|item| item.quantity as u64).sum::<u64>());
+    for entry in manifest {
+        eprintln!("source={entry}");
+    }
+}
+
 #[test]
 fn contour_metrics_do_not_flag_rotated_bbox_only_overlap() {
     let polygon = vec![[0.0, 0.0], [20.0, 0.0], [0.0, 20.0]];

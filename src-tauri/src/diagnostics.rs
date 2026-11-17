@@ -1,6 +1,6 @@
 //! Device-local, bounded diagnostic events and a deliberately limited support
 //! export. Never copy recovery payloads, configuration files or raw log lines.
-use rusqlite::{params, Connection, OpenFlags};
+use rusqlite::{Connection, OpenFlags};
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
@@ -711,6 +711,7 @@ pub async fn export_diagnostic_bundle(
 
 #[cfg(test)]
 mod tests {
+    use rusqlite::params;
     use super::*;
 
     fn archive_text(path: &Path) -> String {
