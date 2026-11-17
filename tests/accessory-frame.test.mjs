@@ -13,6 +13,16 @@ test('embedded white and transparent margins do not count as accessory artwork',
   assert.deepEqual(visibleAccessoryBounds(pixels, 100, 100), { x: 0, y: 0, width: 100, height: 100 })
 })
 
+test('white accessory parts on transparent PNGs are retained in their entirety', () => {
+  const pixels = new Uint8ClampedArray(10 * 10 * 4)
+  for (let y = 1; y <= 8; y++) for (let x = 2; x <= 7; x++) {
+    const index = (y * 10 + x) * 4
+    pixels.set([255, 255, 255, 255], index)
+  }
+  pixels.set([80, 80, 80, 255], (5 * 10 + 5) * 4)
+  assert.deepEqual(visibleAccessoryBounds(pixels, 10, 10), { x: 2, y: 1, width: 6, height: 8 })
+})
+
 test('portrait accessory white backing follows fitted width with four units total padding', () => {
   rememberAccessorySize('portrait', 20, 100)
   const frame = accessoryFrame('portrait', 10, 20, 50, '43')

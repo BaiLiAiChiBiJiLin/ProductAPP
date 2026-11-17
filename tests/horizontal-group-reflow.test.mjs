@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { artworkBounds, defaultLayoutBounds, GROUP_GAP, HEADER_BLOCK_HEIGHT, PAPER_HEIGHT, PAPER_WIDTH, pageSvg } from '../src/model.ts'
+import { artworkBounds, defaultLayoutBounds, GROUP_GAP, HORIZONTAL_IMAGE_GAP, HEADER_BLOCK_HEIGHT, PAPER_HEIGHT, PAPER_WIDTH, pageSvg } from '../src/model.ts'
 import { createHorizontalGroupReflowRequest, planHorizontalGroupReflow, applyHorizontalGroupReflow, horizontalGroupPages } from '../src/modules/schematic/services/horizontalGroupReflowService.ts'
 import { detailPanelsForGroup } from '../src/modules/schematic/arrangement/productGroupDetails.ts'
 import { autoArrangePages, paginateAssets } from '../src/modules/schematic/services/paginationService.ts'
@@ -51,6 +51,12 @@ test('horizontal group spans full width, retains edits and exports images in one
   const items = converted.itemIds.map(id => result[0].items.find(item => item.id === id))
   assert.ok(items.every(item => Math.abs(item.y - items[0].y) < 1e-6))
   assert.ok(items.every((item, index) => index === 0 || item.x > items[index - 1].x))
+  for (let index = 1; index < items.length; index++) {
+    const previous = items[index - 1]
+    const previousScale = index === 1 ? 1.2 : 1
+    const gap = items[index].x - items[index].w / 2 - previous.x - previous.w * previousScale / 2
+    assert.ok(gap >= HORIZONTAL_IMAGE_GAP - 1e-6, 'horizontal rows retain the larger image gap after visual scaling')
+  }
   assert.equal(items[0].captionHidden, true)
   assert.equal(items[0].rulerHeightMm, 67.3)
   assert.deepEqual(allIds(result), allIds(pages))

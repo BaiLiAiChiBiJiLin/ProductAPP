@@ -1,4 +1,4 @@
-import { artworkBounds, GROUP_GAP, HEADER_BLOCK_HEIGHT, HOLDER_DETAIL_AREA_RATIO, PAPER_HEIGHT, PAPER_WIDTH, headerColumnBounds, headerDetailLabel, type HeaderColumn, type Item, type LayoutBounds, type Page } from '../../../model.ts'
+import { artworkBounds, GROUP_GAP, HORIZONTAL_IMAGE_GAP, HEADER_BLOCK_HEIGHT, HOLDER_DETAIL_AREA_RATIO, PAPER_HEIGHT, PAPER_WIDTH, headerColumnBounds, headerDetailLabel, type HeaderColumn, type Item, type LayoutBounds, type Page } from '../../../model.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
 import { headerFor } from '../arrangement/pageSections.ts'
 import { imageGroupsForPage } from './groupBackgroundService.ts'
@@ -106,7 +106,7 @@ function headerSignature(header: HeaderGeometry) {
 function horizontalLayout(request: HorizontalGroupReflowRequest) {
   const { slots, detailWidth, detailHeight: minimumDetails } = request.selected
   const imageWidth = request.bounds.width - detailWidth
-  const gap = GROUP_GAP * 2
+  const gap = Math.min(HORIZONTAL_IMAGE_GAP, imageWidth * .65 / (slots.length + 1))
   const availableWidth = Math.max(1, imageWidth - gap * (slots.length + 1))
   const scale = Math.min(1, availableWidth / Math.max(1, slots.reduce((sum, slot) => sum + slot.width, 0)))
   const captionSpace = 22 // Captions and width rulers both need clearance above the image.

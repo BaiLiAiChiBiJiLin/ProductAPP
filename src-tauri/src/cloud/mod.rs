@@ -277,6 +277,16 @@ pub fn dispatch(
         "save_batch" => batches::save(conn, env, user, args, expected),
         "load_batch" => batches::load(conn, env, user, required(args, "id")?),
         "load_batch_asset_svg" => batches::artwork(conn, env, user, args),
+        "load_batch_asset_preview" => {
+            let batch = batches::get(conn, required(args, "batchId")?, user, false)?;
+            let asset = batch.value["assets"].as_array().into_iter().flatten()
+                .find(|asset| asset["id"] == args["assetId"]).ok_or("批次图片不存在")?;
+            let reference = required(asset, "storagePath")?;
+            let path = resources::path(conn, env, reference)?;
+            let expected = reference.strip_prefix(resources::FILE).ok_or("不是共享资源引用")?;
+            let edge = args["maxEdgePx"].as_u64().unwrap_or(256).clamp(128, 512) as u32;
+            Ok(json!(crate::asset_previews::from_path(&path, edge, Some(expected))?))
+        }
         "load_batch_thumbnails" => batches::thumbnails(conn, env, user, required(args, "id")?),
         "delete_batch" => batches::delete(conn, user, required(args, "id")?, expected),
         "delete_asset" => {

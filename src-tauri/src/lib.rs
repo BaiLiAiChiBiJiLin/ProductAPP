@@ -1,4 +1,6 @@
 mod asset_storage;
+mod asset_preview_png;
+mod asset_previews;
 pub mod assets;
 mod batch_history;
 mod batch_thumbnails;
@@ -6,6 +8,7 @@ pub mod cloud;
 mod compositor;
 mod coreldraw;
 mod custom_products;
+mod diagnostics;
 mod finish_matching;
 mod fonts;
 mod geometry;
@@ -1626,6 +1629,13 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
+            let diagnostic_root = project_data_dir();
+            let diagnostic_version = app.package_info().version.to_string();
+            tauri::async_runtime::spawn_blocking(move || {
+                if diagnostics::record_startup(&diagnostic_root, &diagnostic_version).is_err() {
+                    log::warn!(target: "printflow::diagnostics", "startup diagnostic event unavailable");
+                }
+            });
             let status_path = project_data_dir().join("cache/local-api.json");
             let port = local_api::start(app.handle().clone(), &status_path)
                 .map_err(|e| format!("本地 API 启动失败：{e}"))?;
@@ -1645,6 +1655,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            diagnostics::append_diagnostic_event,
+            diagnostics::export_diagnostic_bundle,
             cloud::cloud_operation,
             cloud::cloud_resource,
             cloud::storage_mode,
@@ -1693,6 +1705,9 @@ pub fn run() {
             save_batch,
             discard_temp_assets,
             load_temp_asset_svg,
+            asset_previews::load_temp_asset_preview,
+            asset_previews::load_batch_asset_preview,
+            asset_previews::load_inline_asset_preview,
             list_batches,
             load_batch_thumbnails,
             load_batch,

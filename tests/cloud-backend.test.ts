@@ -170,6 +170,58 @@ test('retry after restart retains the loaded revision for an existing batch', as
   })
 })
 
+test('a committed transfer with a lost response replays the exact request after restart', async () => {
+  let transferCount = 0
+  let committed: Record<string, unknown> | undefined
+  const result = { taskId: 'transfer-task', recipient: 'Bob', shared: true }
+  shared((command, request) => {
+    if (command === 'load_batch') return { id: 'transferred', version: 4 }
+    if (command !== 'send_shared_batch') throw new Error(`unexpected command ${command}`)
+    transferCount++
+    // The server commits ownership before the response is lost. Its request
+    // ledger replays this result before checking the sender's new ownership.
+    if (!committed) { committed = structuredClone(request); throw new Error('reply lost') }
+    if (request.requestId !== committed.requestId) throw new Error('该历史批次已转移或不属于当前用户，请刷新列表')
+    expect(request).toEqual(committed)
+    return { result }
+  })
+  const firstSession = await import('../src/services/backend')
+  await firstSession.invoke('load_batch', { id: 'transferred' })
+  const args = { batchId: 'transferred', userName: 'Alice', recipient: 'Bob' }
+  await expect(firstSession.invoke('send_shared_batch', args)).rejects.toThrow('reply lost')
+  expect(committed).toMatchObject({ expectedVersion: 4, args })
+
+  vi.resetModules()
+  const restartedSession = await import('../src/services/backend')
+  await expect(restartedSession.invoke('send_shared_batch', args)).resolves.toEqual(result)
+  expect(transferCount).toBe(2)
+})
+
+test('a save after ownership transfer is preserved as rejected and never becomes a new batch automatically', async () => {
+  const ownershipError = '该历史批次已转移或不属于当前用户，请刷新列表'
+  shared(command => {
+    if (command === 'load_batch') return { id: 'old-owner', version: 4 }
+    if (command === 'send_shared_batch') return { result: { recipient: 'Bob', shared: true } }
+    if (command === 'save_batch') throw new Error(ownershipError)
+    throw new Error(`unexpected command ${command}`)
+  })
+  const firstSession = await import('../src/services/backend')
+  await firstSession.invoke('load_batch', { id: 'old-owner' })
+  await firstSession.invoke('send_shared_batch', { batchId: 'old-owner', recipient: 'Bob' })
+  const localEdits = { id: 'old-owner', savedAt: 'first', assets: ['retained local image'] }
+  await expect(firstSession.invoke('save_batch', localEdits)).rejects.toThrow(ownershipError)
+  const rejected = api.invoke.mock.calls.at(-1)?.[1]
+  vi.resetModules()
+  const restartedSession = await import('../src/services/backend')
+  await expect(restartedSession.invoke('save_batch', { ...localEdits, savedAt: 'second' })).rejects.toThrow(ownershipError)
+  expect(api.invoke.mock.calls.at(-1)?.[1]).toEqual(rejected)
+  const saves = api.invoke.mock.calls.filter(([, args]) => args?.command === 'save_batch').map(([, args]) => args)
+  expect(saves).toHaveLength(2)
+  expect(saves.every(request => request.args.id === 'old-owner' && request.args.assets[0] === 'retained local image')).toBe(true)
+  const { classifyCloudSyncError } = await import('../src/services/cloudSyncErrors')
+  expect(classifyCloudSyncError(ownershipError)).toMatchObject({ kind: 'permission', retryable: false })
+})
+
 
 test('an unsent queued batch retains its loaded base revision after restart', async () => {
   shared(command => command === 'load_batch' ? { id: 'queued', version: 4 } : { result: { version: 5 } })

@@ -92,6 +92,15 @@ async function chooseCatalogProduct() {
   await choose('产品', 'Clear Acrylic Keychains')
 }
 
+test('existing catalog products hide Size options while retaining quantity controls', async () => {
+ mount(savedAssets())
+ await ready()
+ fireEvent.click(screen.getByRole('button', { name: '编辑组合' }))
+ await chooseCatalogProduct()
+ expect(screen.queryByRole('combobox', { name: '尺寸' })).toBeNull()
+ expect(screen.getByRole('spinbutton', { name: 'QT（数量）' })).toBeTruthy()
+})
+
 test('reopening a saved Shaker on a follower lets its product switch update the whole group', async () => {
   const original = savedAssets()
   const { save, confirmAttributes } = mount(original)
@@ -141,7 +150,7 @@ test('a saved standee follower can switch product while shared count stays locke
   expect(input('产品').disabled).toBe(false)
   expect(screen.getByRole('tab', { name: '自定义' }).getAttribute('aria-disabled')).not.toBe('true')
   expect(input('立牌数量').disabled).toBe(true)
-  expect(input('尺寸').disabled).toBe(false)
+  expect(screen.queryByRole('combobox', { name: '尺寸' })).toBeNull()
   expect((screen.getByRole('spinbutton', { name: 'QT（数量）' }) as HTMLInputElement).disabled).toBe(false)
   expect((screen.getByRole('spinbutton', { name: 'QT（数量）' }) as HTMLInputElement).value).toBe('0')
 
@@ -224,9 +233,9 @@ test('confirming one image does not carry its product or options into the next b
   expect(screen.queryByRole('combobox', { name: '尺寸' })).toBeNull()
   expect((screen.getByRole('spinbutton', { name: 'QT（数量）' }) as HTMLInputElement).value).toBe('')
   await choose('产品', 'Clear Acrylic Keychains')
-  expect(input('尺寸').closest('.ant-select')?.textContent).not.toContain('small')
+  expect(screen.queryByRole('combobox', { name: '尺寸' })).toBeNull()
   rerender(panel(saved.id))
-  expect(input('尺寸').closest('.ant-select')?.textContent).toContain('large')
+  expect(screen.queryByRole('combobox', { name: '尺寸' })).toBeNull()
   expect((screen.getByRole('spinbutton', { name: 'QT（数量）' }) as HTMLInputElement).value).toBe('2')
 })
 

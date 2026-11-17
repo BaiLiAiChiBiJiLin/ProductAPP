@@ -1,7 +1,7 @@
 vi.mock('../src/services/backend', async () => { const core = await import('@tauri-apps/api/core'); return { invoke: core.invoke, storageMode: async () => ({ shared: false }) } })
 vi.mock('../src/services/localSyncState', async () => (await import('./helpers/localSyncStateMock')).browserLocalSyncStateMock())
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { DragDropEvent } from '@tauri-apps/api/webview'
 import type { Event } from '@tauri-apps/api/event'
 import { PhysicalPosition } from '@tauri-apps/api/dpi'
@@ -16,8 +16,8 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(), save: vi.fn() }))
 vi.mock('../src/modules/schematic/services/uploadService', () => ({ importAssets: mocks.importAssets }))
 vi.mock('../src/modules/schematic/services/productConfigService', async importOriginal => ({ ...await importOriginal<object>(), loadProductConfigs: async () => [] }))
 vi.mock('../src/modules/schematic/services/finishService', () => ({ loadFinishNames: async () => ({}) }))
-vi.mock('../src/modules/schematic/ArrangePage', () => ({ default: ({ pages }: { pages: Page[] }) => {
-  mocks.arrange(pages)
+vi.mock('../src/modules/schematic/ArrangePage', () => ({ default: ({ pages, assets, onRefresh }: { pages: Page[]; assets: Asset[]; onRefresh: () => void }) => {
+  mocks.arrange(pages, assets, onRefresh)
   return <div>示意图排列页</div>
 } }))
 import SchematicPage from '../src/modules/schematic/SchematicPage'
@@ -56,6 +56,39 @@ function mockHistoryBatch(metadata: BatchMetadata, savedAt: string) {
 }
 
 describe('product upload workflow', () => {
+  it('opens an 84-image history without reading originals, then hydrates only artwork chosen for arrangement', async () => {
+    vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} })
+    const originals = Array.from({ length: 84 }, (_, index) => ({ ...asset, id: `history-${index}`, name: `历史图 ${index}`, svg: '', storagePath: `D:/history/${index}.svg` }))
+    let finishArtwork!: (bytes: ArrayBuffer) => void
+    const previous = mocks.invoke.getMockImplementation()!
+    mocks.invoke.mockImplementation(async (command, args) => {
+      if (command === 'list_batches') return { records: [{ id: 'large-history', savedAt: '2026-11-17', customerName: '84张历史', assetCount: 84 }], total: 1, page: 1, pageSize: 12 }
+      if (command === 'load_batch') return { id: 'large-history', savedAt: '2026-11-17', assets: originals }
+      if (command === 'load_batch_asset_svg') return new Promise(resolve => { finishArtwork = resolve })
+      return previous(command, args)
+    })
+    try {
+      render(<SchematicPage/>)
+      fireEvent.click(await screen.findByRole('button', { name: '打开批次 84张历史' }))
+      await screen.findByText('当前批次图片')
+      expect(mocks.invoke.mock.calls.filter(([command]) => command === 'load_batch_asset_svg')).toHaveLength(0)
+      expect(screen.getAllByText('共 84 张').length).toBeGreaterThan(0)
+      fireEvent.click(screen.getByText('生成示意图'))
+      const picker = await screen.findByRole('list', { name: '图片池' })
+      fireEvent.click(screen.getAllByText('取消全选').at(-1)!)
+      fireEvent.click(within(picker).getByRole('listitem', { name: '选择 历史图 0' }))
+      fireEvent.click(screen.getByText('确认并生成'))
+      await waitFor(() => expect(finishArtwork).toBeTypeOf('function'))
+      expect(mocks.arrange).not.toHaveBeenCalled()
+      await act(async () => finishArtwork(new TextEncoder().encode(asset.svg).buffer))
+      await screen.findByText('示意图排列页')
+      const [pages, current] = mocks.arrange.mock.lastCall as [Page[], Asset[]]
+      expect(pages.flatMap(page => page.items).map(item => item.assetId)).toEqual(['history-0'])
+      expect(current.find(value => value.id === 'history-0')?.svg).toBe(asset.svg)
+      expect(current.filter(value => value.id !== 'history-0').every(value => value.svg === '')).toBe(true)
+      expect(mocks.invoke.mock.calls.filter(([command]) => command === 'load_batch_asset_svg')).toHaveLength(1)
+    } finally { vi.unstubAllGlobals() }
+  }, 15_000)
   it('routes window SVG drops only to the visible module while retaining the schematic batch', async () => {
     const imported = vi.fn()
     const workspace = (schematicActive: boolean) => <><SchematicPage active={schematicActive}/><ImpositionUpload disabled={schematicActive} onImported={imported}/></>

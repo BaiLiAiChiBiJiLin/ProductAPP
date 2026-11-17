@@ -16,11 +16,13 @@ import { invalidateFinishNames } from './modules/schematic/services/finishServic
 import UpdateButton from './modules/update/UpdateButton'
 import { FeatureTour, listFeatureTours } from './modules/feature-tour'
 import SettingsModal from './modules/settings/SettingsModal'
+import DiagnosticsPanel from './modules/settings/DiagnosticsPanel'
 import { installButtonKeyboardGuard } from './buttonKeyboard'
 import { storageMode } from './services/backend'
 import { needsCloudRegistration, confirmCloudRegistration } from './services/cloudRegistration'
 import { startCloudSyncRecovery, onCloudSyncStatus, type CloudSyncStatus } from './services/cloudSyncQueue'
 import CloudSyncStatusTag from './components/CloudSyncStatusTag'
+import { startDiagnosticTracking } from './services/diagnosticEvents'
 const modules = [orderModule, imageEditModule, schematicModule, schematicReviewModule, impositionModule, progressModule]
 // React StrictMode mounts effects twice in development. Keep the startup
 // refresh single-flight so two 9 MB responses cannot overlap and double the
@@ -28,6 +30,7 @@ const modules = [orderModule, imageEditModule, schematicModule, schematicReviewM
 let startupProductConfigRefresh: Promise<void> | undefined
 export default function App() {
   useEffect(() => installButtonKeyboardGuard(), [])
+  useEffect(() => startDiagnosticTracking(), [])
   const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>({ state: 'idle', pending: 0 })
   useEffect(() => onCloudSyncStatus(setCloudSyncStatus), [])
   const [notice, noticeContext] = message.useMessage()
@@ -50,6 +53,7 @@ export default function App() {
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [signingIn, setSigningIn] = useState(false)
+  const [exportingStartupDiagnostics, setExportingStartupDiagnostics] = useState(false)
   const [identityError, setIdentityError] = useState('')
   const [identityReady, setIdentityReady] = useState(!isTauri())
   const [registrationRequired, setRegistrationRequired] = useState(false)
@@ -102,7 +106,7 @@ export default function App() {
     return startCloudSyncRecovery()
   }, [identityReady])
   const saveAccountName = async () => {
-    if (signingIn) return
+    if (signingIn || exportingStartupDiagnostics) return
     const value = draftAccountName.trim()
     if (!validSharedUserName(value)) { notice.error('请填写有效用户名，不要使用路径符号或 Windows 保留名称'); return }
     if (schematicWorking) { notice.warning('请等待当前图片处理完成后再修改用户名'); return }
@@ -137,7 +141,7 @@ export default function App() {
     }).then(stop => { if (cancelled) stop(); else unlisten = stop }).catch(() => {})
     return () => { cancelled = true; unlisten() }
   }, [active])
-  return <>{noticeContext}<Modal title="设置用户名" open={!accountName || registrationRequired || Boolean(identityError)} closable={false} maskClosable={false} keyboard={false} footer={<Button type="primary" onClick={saveAccountName} loading={signingIn} disabled={!draftAccountName.trim() || signingIn}>保存用户名</Button>}><p>请输入你的用户名，用于识别历史批次归属和接收转移。</p>{identityError && <p role="alert">{identityError}</p>}<Input aria-label="首次设置用户名" autoFocus maxLength={30} value={draftAccountName} onChange={event => setDraftAccountName(event.target.value)} onPressEnter={saveAccountName}/></Modal><SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)}/><FeatureTour enabled={featureTourReady} requestOpen={featureTourRequest} onOpenChange={setFeatureTourOpen}/><div className="app-shell"><header className="topbar"><div className="brand"><div className="brand-mark"><img src={printflowIcon} alt="PrintFlow" /></div><span>PrintFlow</span></div><nav className="workflow">{modules.map(module => <button key={module.id} className={active === module.id ? 'active' : ''} onClick={() => switchModule(module.id)}>{module.label}</button>)}</nav><div className="topbar-actions">{syncTag}<UpdateButton autoCheck showButton={false} enabled={identityReady && Boolean(accountName) && !featureTourOpen && !settingsOpen} onDialogOpenChange={automaticUpdateChanged}/><Dropdown trigger={['click']} open={userMenuOpen} onOpenChange={setUserMenuOpen} dropdownRender={() => userMenu}><button className="user-menu"><span className="avatar">{accountName.slice(0, 1) || '?'}</span><span>{accountName || '请设置用户名'}</span><ChevronDown size={14}/></button></Dropdown></div></header><main className={`module-stage direction-${transitionDirection}`}>{identityReady && modules.map(module => visitedModules.has(module.id) && <section key={module.id} className={`module-view ${active === module.id ? (leaving ? 'is-active is-entering' : 'is-active') : leaving === module.id ? 'is-leaving' : 'is-hidden'}`} inert={active !== module.id} aria-hidden={active !== module.id}>{module.id === 'schematic' ? <SchematicPage active={active === 'schematic'} key={restoreRequest?.token ?? 'new'} initialRecord={restoreRequest?.record} onRecordSaved={() => setReviewRevision(value => value + 1)} onWorkingChange={setSchematicWorking} userName={accountName} onSharedRecordsChanged={sharedRecordsChanged}/> : module.id === 'schematic-review' ? <SchematicReviewPage active={active === 'schematic-review'} revision={reviewRevision} working={schematicWorking} onImpositionSubmitted={() => setImpositionRevision(value => value + 1)} onImposition={() => switchModule('imposition')} onEdit={record => { setRestoreRequest({ token: crypto.randomUUID(), record }); switchModule('schematic') }}/> : module.id === 'imposition' ? <ImpositionPage active={active === 'imposition'} revision={impositionRevision} onReturned={() => setReviewRevision(value => value + 1)}/> : <ModulePage title={module.label} description="模块正在建设中"/>}</section>)}</main></div></>
+  return <>{noticeContext}<Modal title="设置用户名" open={!accountName || registrationRequired || Boolean(identityError)} closable={false} maskClosable={false} keyboard={false} footer={<Button type="primary" onClick={saveAccountName} loading={signingIn} disabled={!draftAccountName.trim() || signingIn || exportingStartupDiagnostics}>保存用户名</Button>}><p>请输入你的用户名，用于识别历史批次归属和接收转移。</p>{identityError && <><p role="alert">{identityError}</p><DiagnosticsPanel active disabled={signingIn} onBusyChange={setExportingStartupDiagnostics}/></>}<Input aria-label="首次设置用户名" autoFocus maxLength={30} value={draftAccountName} onChange={event => setDraftAccountName(event.target.value)} onPressEnter={saveAccountName}/></Modal><SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)}/><FeatureTour enabled={featureTourReady} requestOpen={featureTourRequest} onOpenChange={setFeatureTourOpen}/><div className="app-shell"><header className="topbar"><div className="brand"><div className="brand-mark"><img src={printflowIcon} alt="PrintFlow" /></div><span>PrintFlow</span></div><nav className="workflow">{modules.map(module => <button key={module.id} className={active === module.id ? 'active' : ''} onClick={() => switchModule(module.id)}>{module.label}</button>)}</nav><div className="topbar-actions">{syncTag}<UpdateButton autoCheck showButton={false} enabled={identityReady && Boolean(accountName) && !featureTourOpen && !settingsOpen} onDialogOpenChange={automaticUpdateChanged}/><Dropdown trigger={['click']} open={userMenuOpen} onOpenChange={setUserMenuOpen} dropdownRender={() => userMenu}><button className="user-menu"><span className="avatar">{accountName.slice(0, 1) || '?'}</span><span>{accountName || '请设置用户名'}</span><ChevronDown size={14}/></button></Dropdown></div></header><main className={`module-stage direction-${transitionDirection}`}>{identityReady && modules.map(module => visitedModules.has(module.id) && <section key={module.id} className={`module-view ${active === module.id ? (leaving ? 'is-active is-entering' : 'is-active') : leaving === module.id ? 'is-leaving' : 'is-hidden'}`} inert={active !== module.id} aria-hidden={active !== module.id}>{module.id === 'schematic' ? <SchematicPage active={active === 'schematic'} key={restoreRequest?.token ?? 'new'} initialRecord={restoreRequest?.record} onRecordSaved={() => setReviewRevision(value => value + 1)} onWorkingChange={setSchematicWorking} userName={accountName} onSharedRecordsChanged={sharedRecordsChanged}/> : module.id === 'schematic-review' ? <SchematicReviewPage active={active === 'schematic-review'} revision={reviewRevision} working={schematicWorking} onImpositionSubmitted={() => setImpositionRevision(value => value + 1)} onImposition={() => switchModule('imposition')} onEdit={record => { setRestoreRequest({ token: crypto.randomUUID(), record }); switchModule('schematic') }}/> : module.id === 'imposition' ? <ImpositionPage active={active === 'imposition'} revision={impositionRevision} onReturned={() => setReviewRevision(value => value + 1)}/> : <ModulePage title={module.label} description="模块正在建设中"/>}</section>)}</main></div></>
 }
 
 

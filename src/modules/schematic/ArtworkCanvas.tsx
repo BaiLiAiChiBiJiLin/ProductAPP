@@ -9,7 +9,7 @@ import { itemsInSelection, selectionBounds, type CanvasPoint } from './services/
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
 import { Stage, Layer, Rect, Group, Image as KonvaImage, Transformer, Text, Line } from 'react-konva'
 import type Konva from 'konva'
-import { ARRANGEMENT_FRAME_SHADOW, ARRANGEMENT_FRAME_STYLE, arrangementFrameRect, artworkBounds, constrain, defaultLayoutBounds, PAPER_HEIGHT, PAPER_WIDTH, svgObjectUrl, type Asset, type HeaderBlock, type Item, type LayoutBounds, type Page, type PageHeader } from '../../model'
+import { ARRANGEMENT_FRAME_SHADOW, ARRANGEMENT_FRAME_STYLE, arrangementFrameRect, artworkBounds, constrain, defaultLayoutBounds, PAPER_HEIGHT, PAPER_WIDTH, releaseSvgObjectUrl, svgObjectUrl, type Asset, type HeaderBlock, type Item, type LayoutBounds, type Page, type PageHeader } from '../../model'
 import HeaderBlockCanvas from './components/HeaderBlockCanvas'
 import ImageGroupBackgrounds from './components/ImageGroupBackgrounds'
 import GroupResizeHandles from './components/GroupResizeHandles'
@@ -24,7 +24,7 @@ import { itemForCanvasDisplay } from './services/canvasDisplayScaleService'
 type CachedSvgImage = { image: HTMLImageElement; url: string }
 const svgImageCache = new Map<string, CachedSvgImage>()
 function releaseSvgUrl(url: string) {
-  if (url.startsWith('blob:')) URL.revokeObjectURL(url)
+  releaseSvgObjectUrl(url)
 }
 function pruneSvgImageCache(activeSources: ReadonlySet<string>) {
   for (const [source, cached] of svgImageCache) {
@@ -88,13 +88,29 @@ const Artwork = memo(function Artwork({ item, asset, visualScale = 1, selected, 
     const img = new window.Image()
     let cancelled = false
     const url = svgObjectUrl(sourceSvg)
+    let ownsCache = false
+    let released = false
+    const release = () => { if (!released) { released = true; releaseSvgUrl(url) } }
     img.decoding = 'async'
-    img.onload = () => { if (cancelled) { releaseSvgUrl(url); return }; svgImageCache.set(sourceSvg, { image: img, url }); if (svgImageCache.size > 64) { const oldest = svgImageCache.keys().next().value; if (oldest && oldest !== sourceSvg) { const evicted = svgImageCache.get(oldest); svgImageCache.delete(oldest); if (evicted) releaseSvgUrl(evicted.url) } }; setImage(img); setFailed(false) }
-    img.onerror = () => { releaseSvgUrl(url); if (!cancelled) setFailed(true) }
+    img.onload = () => {
+      if (cancelled) { release(); return }
+      const existing = svgImageCache.get(sourceSvg)
+      // Front/Back placements may finish loading the same SVG together. The
+      // decoded-image cache owns one URL lease, regardless of placement count.
+      if (existing) { release(); setImage(existing.image); setFailed(false); return }
+      ownsCache = true
+      svgImageCache.set(sourceSvg, { image: img, url })
+      if (svgImageCache.size > 64) {
+        const oldest = svgImageCache.keys().next().value
+        if (oldest && oldest !== sourceSvg) { const evicted = svgImageCache.get(oldest); svgImageCache.delete(oldest); if (evicted) releaseSvgUrl(evicted.url) }
+      }
+      setImage(img); setFailed(false)
+    }
+    img.onerror = () => { release(); if (!cancelled) setFailed(true) }
     // Keep SVG as the source artwork; preview fields are compatibility URLs
     // and must not replace the editable/vector asset on the canvas.
     img.src = url
-    return () => { cancelled = true; img.onload = null; img.onerror = null; if (!svgImageCache.has(sourceSvg)) releaseSvgUrl(url) }
+    return () => { cancelled = true; img.onload = null; img.onerror = null; if (!ownsCache) release() }
   }, [asset.svg, item.backSvg])
   const displayItem = itemForCanvasDisplay(item, visualScale)
   useEffect(() => {

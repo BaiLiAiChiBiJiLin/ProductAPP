@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Dropdown, Modal, Popconfirm, Tag } from 'antd'
 import type { Asset } from '../../../model'
-import { svgObjectUrl } from '../../../model'
 import LazySvgImage from './LazySvgImage'
+import AssetName from './AssetName'
 import type { ProductConfig } from '../services/productConfigService'
 import { useProductGroup } from '../grouping/useProductGrouping'
 import { canSelectGroupAsset } from '../grouping/productGroupSelection'
@@ -11,7 +11,6 @@ import UploadImageGrid from './UploadImageGrid'
 import AssetDetailsModal from './AssetDetailsModal'
 import { ImageUp, Info, Trash2 } from 'lucide-react'
 import { getNoteImages } from '../services/assetNotesService'
-import { loadAssetSvg } from '../services/assetSvgService'
 import { isHiddenAttributeValue } from '../services/attributeDisplayService'
 
 export default function UploadImageList({ assets, allAssets, selectedIds, onSelectionChange, products, disabled, onDelete, onReplace, batchId }: {
@@ -26,24 +25,10 @@ export default function UploadImageList({ assets, allAssets, selectedIds, onSele
     return orderedAllAssets.filter(asset => visibleIds.has(asset.id))
   }, [assets, orderedAllAssets])
   const groups = [...new Set(orderedAllAssets.map(asset => asset.productGroupId).filter(Boolean))]
-  const [preview, setPreview] = useState<{ name: string; src: string } | null>(null)
-  const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null)
+  const [preview, setPreview] = useState<{ name: string; src?: string; asset?: Asset } | null>(null)
   const [detailsId, setDetailsId] = useState<string | null>(null)
-  useEffect(() => () => {
-    if (preview?.src.startsWith('blob:')) URL.revokeObjectURL(preview.src)
-  }, [preview])
-  const openAssetPreview = async (asset: Asset) => {
-    if (previewLoadingId === asset.id) return
-    try {
-      setPreviewLoadingId(asset.id)
-      const svg = await loadAssetSvg(asset, batchId)
-      setPreview({ name: asset.name, src: svgObjectUrl(svg) })
-    } catch {
-      // The card remains usable when a staged resource is temporarily unavailable.
-    } finally {
-      setPreviewLoadingId(current => current === asset.id ? null : current)
-    }
-  }
+  useEffect(() => { setPreview(null) }, [batchId])
+  const openAssetPreview = (asset: Asset) => setPreview({ name: asset.name, asset })
   const select = (asset: Asset, event: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) => {
     if (disabled) return
     if (session) { if (canSelectGroupAsset(asset, session.memberIds, 'list', session.trigger.kind === 'free')) grouping!.selectMember(asset.id); return }
@@ -68,10 +53,10 @@ export default function UploadImageList({ assets, allAssets, selectedIds, onSele
       }}><article data-asset-id={asset.id} data-product-group={asset.productGroupId || undefined} style={{ backgroundColor: member ? '#e6f4ff' : blocked ? undefined : asset.productGroupId ? asset.productGroupColor : undefined }} className={`upload-image-card ${(session ? Boolean(member) : selectedIds.has(asset.id)) ? 'is-selected' : ''} ${session ? blocked ? 'is-guide-blocked' : member ? 'is-guide-member' : 'is-guide-dimmed' : ''}`} onMouseDown={event => { if (event.shiftKey) event.preventDefault() }} onClick={event => select(asset, event)}>
       <div className="upload-image-card-head"><label onClick={event => event.stopPropagation()}><input type="checkbox" checked={session ? Boolean(member) : selectedIds.has(asset.id)} disabled={disabled || blocked} aria-label={`选择 ${asset.name}`} onChange={() => {}} onClick={event => select(asset, event)}/><span>NO: {orderedAllAssets.indexOf(asset) + 1}</span></label><span className="upload-image-card-actions" onClick={event => event.stopPropagation()} onMouseDown={event => event.stopPropagation()}><Tag color={member ? 'blue' : asset.attributesConfirmed ? blocked ? 'red' : 'blue' : 'default'} title={blocked ? '已选产品，不能加入当前组' : undefined}>{asset.attributesConfirmed ? '已选产品' : '未选产品'}</Tag><Popconfirm title="删除这张图片？" description="删除后将从当前批次中移除，无法在列表中恢复。" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => onDelete(asset)}><Button type="text" danger size="small" icon={<Trash2 size={14}/>} aria-label={`删除 ${asset.name}`} title="删除图片" disabled={disabled || Boolean(session)} onClick={event => event.stopPropagation()}/></Popconfirm></span></div>
       <div className="upload-image-card-media">
-        <button type="button" className="upload-image-art" aria-label={`预览 ${asset.name}`} aria-busy={previewLoadingId === asset.id} onClick={event => { event.stopPropagation(); void openAssetPreview(asset) }}><LazySvgImage svg={asset.svg} storagePath={asset.storagePath} assetId={asset.id} batchId={batchId} alt={asset.name}/></button>
+        <button type="button" className="upload-image-art" aria-label={`预览 ${asset.name}`} onClick={event => { event.stopPropagation(); void openAssetPreview(asset) }}><LazySvgImage svg={asset.svg} storagePath={asset.storagePath} assetId={asset.id} batchId={batchId} previewOrder={orderedAllAssets.indexOf(asset)} alt={asset.name}/></button>
         {accessoryImage && <button type="button" className="card-accessory-preview" aria-label={`预览配件颜色 ${asset.name}`} onClick={event => { event.stopPropagation(); setPreview({ name: `${asset.name} · 配件颜色`, src: accessoryImage }) }}><img src={accessoryImage} alt={`${asset.name} · 配件颜色`} loading="lazy" decoding="async"/></button>}
       </div>
-      <div className="upload-image-card-info"><strong>{asset.name}</strong>
+      <div className="upload-image-card-info"><AssetName name={asset.name}/>
         {asset.productGroupId && <Tag className="product-group-badge">产品组 {groups.indexOf(asset.productGroupId) + 1}</Tag>}
         <span>产品：{products.find(product => product.id === asset.productId)?.title || asset.productName || '未选择产品'}</span>
         <span className="card-physical-size">真实尺寸：{Number.isFinite(asset.sourceGroupWidthMm) && Number.isFinite(asset.sourceGroupHeightMm) && asset.sourceGroupWidthMm! > 0 && asset.sourceGroupHeightMm! > 0
@@ -83,5 +68,5 @@ export default function UploadImageList({ assets, allAssets, selectedIds, onSele
       </div>
     </article></Dropdown>}}/>
     {!assets.length && <p>该分类暂无图片</p>}
-  </div><Modal open={Boolean(preview)} footer={null} title={preview?.name} onCancel={() => setPreview(null)} centered><img className="asset-full-preview" src={preview?.src} alt={preview?.name}/></Modal><AssetDetailsModal asset={allAssets.find(asset => asset.id === detailsId) ?? null} products={products} onClose={() => setDetailsId(null)}/></>
+  </div><Modal open={Boolean(preview)} footer={null} title={preview?.name} onCancel={() => setPreview(null)} centered>{preview?.asset ? <LazySvgImage className="asset-full-preview" svg={preview.asset.svg} storagePath={preview.asset.storagePath} assetId={preview.asset.id} batchId={batchId} alt={preview.name}/> : <img className="asset-full-preview" src={preview?.src} alt={preview?.name}/>}</Modal><AssetDetailsModal asset={allAssets.find(asset => asset.id === detailsId) ?? null} products={products} onClose={() => setDetailsId(null)}/></>
 }

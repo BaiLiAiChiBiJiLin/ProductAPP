@@ -35,6 +35,16 @@ const assets = new Map([[asset.id, asset]])
 const page = (id = 1): Page => ({ id, name: `Page ${id}`, items: [{ id: `item-${id}`, assetId: asset.id, x: 100, y: 200, w: 100, h: 50, rotation: 0, caption: 'Front' }], imageGroups: [{ id: `group-${id}`, itemIds: [`item-${id}`], x: 20, y: 150, width: 200, height: 100 }] })
 const parseSvg = (svg: string) => new DOMParser().parseFromString(svg, 'image/svg+xml')
 
+it('only a blank page exposes deletion next to its state without selecting it', () => {
+ const remove = vi.fn(), select = vi.fn()
+ render(<PageThumbnailList pages={[page(), { id: 7, name: '空页', items: [] }, { id: 8, name: '备注页', items: [], annotations: [{ id: 'text', kind: 'text', x: 1, y: 1, text: '保留备注', color: '#000', fontSize: 14 }] }]} assets={assets} activePage={1} onSelect={select} onDelete={remove} disabled={false}/>)
+ expect(screen.queryByRole('button', { name: '删除第 1 页空白页' })).toBeNull()
+ expect(screen.queryByRole('button', { name: '删除第 3 页空白页' })).toBeNull()
+ fireEvent.click(screen.getByRole('button', { name: '删除第 2 页空白页' }))
+ expect(remove).toHaveBeenCalledExactlyOnceWith(7)
+ expect(select).not.toHaveBeenCalled()
+})
+
 function pressCanvasNode(node: Konva.Node) {
   const origin = node.getAbsolutePosition()
   const down = new MouseEvent('mousedown', { clientX: origin.x, clientY: origin.y, buttons: 1 })

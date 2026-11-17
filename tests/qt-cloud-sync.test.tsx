@@ -17,11 +17,14 @@ vi.mock('../src/modules/schematic/services/finishService', () => ({ loadFinishNa
 vi.mock('../src/modules/schematic/history/BatchHistoryPanel', () => ({ default: () => null }))
 vi.mock('../src/modules/schematic/components/CustomProductForm', () => ({ default: () => null }))
 vi.mock('../src/modules/schematic/components/CorelDrawTool', () => ({ default: () => null }))
-vi.mock('../src/modules/schematic/ArrangePage', () => ({ default: ({ pages }: { pages: Page[] }) => <div>{pages.length}</div> }))
+vi.mock('../src/modules/schematic/ArrangePage', () => ({ default: ({ pages, assets, onDropAsset }: { pages: Page[]; assets: Asset[]; onDropAsset: (id: string) => void }) => <div>{pages.length}<button onClick={() => onDropAsset('B')}>添加未载入图片</button><output data-testid="arrangement-artwork">{JSON.stringify({ pages, assets })}</output></div> }))
 vi.mock('../src/modules/schematic/components/LazySvgImage', () => ({ default: ({ alt }: { alt: string }) => <img alt={alt}/> }))
 
 import SchematicPage from '../src/modules/schematic/SchematicPage'
-import { flushCloudSyncQueue } from '../src/services/cloudSyncQueue'
+import { clearCloudBatchSave, cloudSyncTasks, flushCloudSyncQueue, recoverCloudBatchAsNew } from '../src/services/cloudSyncQueue'
+import { createReviewRecord } from '../src/modules/schematic-review/reviewRecords'
+import { emptyArrangementDisplayState } from '../src/modules/schematic/services/arrangementDisplayState'
+import { defaultLayoutBounds } from '../src/model'
 
 type SaveArgs = { id: string; assets: Asset[]; metadata: unknown }
 type PendingSave = { args: SaveArgs; resolve: (value: unknown) => void }
@@ -195,4 +198,59 @@ test('deleting an image keeps finalized resource paths when upload sync finishes
   expect(container.querySelector('[data-asset-id="A"]')).toBeNull()
   expect(pending[0].args.assets.map(asset => asset.id)).toEqual(['B', 'C'])
   expect(pending[0].args.assets.map(asset => asset.storagePath)).toEqual(['printflow:B', 'printflow:C'])
+})
+
+test('adding an unused metadata-only image reads its SVG before placing it on the canvas', async () => {
+  const first = { ...assets[0], svg: '<svg>first</svg>' }
+  const unused = { ...assets[1], storagePath: 'temp-assets/B.svg' }
+  const record = createReviewRecord({
+    sourceBatchId: 'batch', assets: [first, unused], pages: [{ id: 1, name: 'page', items: [] }], activePage: 1,
+    metadata: { customerName: '客户', drawingDate: '', estimatedShipDate: '', designer: '' },
+    layoutBounds: defaultLayoutBounds, arrangementSort: 'default', defaultArrangementIds: [],
+  }, emptyArrangementDisplayState(), 'layout', '')
+  const original = mocks.invoke.getMockImplementation()!
+  let finishArtwork!: (value: ArrayBuffer) => void
+  mocks.invoke.mockImplementation((command: string, args: SaveArgs) => command === 'load_temp_asset_svg'
+    ? new Promise(resolve => { finishArtwork = resolve }) : original(command, args))
+  render(<SchematicPage initialRecord={record}/>)
+  fireEvent.click(screen.getByRole('button', { name: '添加未载入图片' }))
+  await waitFor(() => expect(finishArtwork).toBeTypeOf('function'))
+  expect(JSON.parse(screen.getByTestId('arrangement-artwork').textContent!).pages[0].items).toHaveLength(0)
+  await act(async () => finishArtwork(new TextEncoder().encode('<svg>loaded B</svg>').buffer))
+  await waitFor(() => {
+    const current = JSON.parse(screen.getByTestId('arrangement-artwork').textContent!)
+    expect(current.assets.find((asset: Asset) => asset.id === 'B').svg).toBe('<svg>loaded B</svg>')
+    expect(current.pages.flatMap((page: Page) => page.items).some((item: { assetId: string }) => item.assetId === 'B')).toBe(true)
+  })
+})
+
+test('an open editor follows a recovered batch ID and keeps its acknowledged source paths', async () => {
+  const imported = assets.map(asset => ({ ...asset, storagePath: `temp-assets/${asset.id}.svg` }))
+  mocks.importAssets.mockResolvedValue(imported)
+  let originalId = ''
+  let recoveredId = ''
+  mocks.invoke.mockImplementation((command: string, args: SaveArgs) => {
+    if (command !== 'save_batch') return Promise.resolve()
+    originalId ||= args.id
+    if (args.id === originalId) return Promise.reject(new Error('记录已被其他用户修改'))
+    return Promise.resolve({ ...savedResult(args), assets: args.assets.map(asset => ({ ...asset, storagePath: `printflow-file:${asset.id}` })) })
+  })
+  try {
+    render(<SchematicPage/>)
+    fireEvent.click(screen.getByRole('button', { name: /上传 SVG 文件/ }))
+    await waitFor(() => expect(cloudSyncTasks()[0]).toMatchObject({ blocked: true }))
+    await act(async () => { recoveredId = await recoverCloudBatchAsNew(originalId); await flushCloudSyncQueue(recoveredId) })
+    fireEvent.click(screen.getByRole('button', { name: '保存批次' }))
+    await waitFor(() => {
+      const saves = mocks.invoke.mock.calls.filter(([command]) => command === 'save_batch')
+      expect(saves).toHaveLength(3)
+      expect(saves[2][1]).toMatchObject({ id: recoveredId })
+      expect((saves[2][1] as SaveArgs).assets.map(asset => asset.storagePath)).toEqual(['printflow-file:A', 'printflow-file:B', 'printflow-file:C'])
+    })
+    await act(async () => flushCloudSyncQueue(recoveredId))
+    expect(mocks.invoke.mock.calls.filter(([command, args]) => command === 'save_batch' && args.id === originalId)).toHaveLength(1)
+  } finally {
+    if (originalId) await clearCloudBatchSave(originalId)
+    if (recoveredId) await clearCloudBatchSave(recoveredId)
+  }
 })

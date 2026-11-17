@@ -122,7 +122,7 @@ test('opening a healthy history batch is not blocked by another batch with a mis
   await enqueueCloudBatchSave({ id: record.id, savedAt: 'now', assets: [{ id: 'missing-asset', name: '尺寸 · __printflow_measure_0', storagePath: 'temp-assets/missing.svg', attributes: { QT: '25' } }] })
   await waitFor(() => expect(rejectSave).toBeDefined())
   const loading = loadHistoryBatch(saved.id)
-  const loaded = expect(loading).resolves.toEqual({ ...saved, assets: [{ ...saved.assets[0], svg: '<svg/>' }] })
+  const loaded = expect(loading).resolves.toEqual(saved)
   rejectSave?.('图片 尺寸 · __printflow_measure_0 的源文件不可访问')
   await loaded
   expect(api.invoke).toHaveBeenCalledWith('load_batch', { id: saved.id })

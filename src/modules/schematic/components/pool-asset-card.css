@@ -4,4 +4,7 @@
 .pool-asset-drag img { pointer-events: none; -webkit-user-drag: none; }
 .pool-asset-drag > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pool-asset-preview-button { position: absolute; top: 3px; right: 3px; display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid #cbd5e1; border-radius: 4px; background: white; color: #475569; cursor: zoom-in; }
+.pool-asset-delete-button { position:absolute; top:30px; right:3px; display:grid; place-items:center; width:24px; height:24px; border:1px solid #fecaca; border-radius:4px; background:#fff; color:#ef4444; cursor:pointer; }
+.pool-asset-delete-button:hover { background:#fff1f2; }
+.pool-asset-delete-button:disabled { opacity:.4; cursor:default; }
 .pool-drag-feedback { position: fixed; z-index: 9999; pointer-events: none; padding: 6px 10px; border: 1px solid #93c5fd; border-radius: 6px; background: #eff6ff; color: #1d4ed8; max-width: 200px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

@@ -1,0 +1,8 @@
+.asset-name-row { display:flex; align-items:center; gap:4px; width:100%; max-width:100%; min-width:0; }
+.asset-name-row > .asset-name-text { display:block; flex:1; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; line-height:22px; }
+.asset-name-row > .asset-name-copy { display:grid; place-items:center; flex:0 0 22px; width:22px; height:22px; align-self:center; padding:0; border:0; border-radius:4px; background:transparent; color:#64748b; cursor:pointer; }
+.asset-name-row > .asset-name-copy:hover { background:#eaf2fc; color:#1677ff; }
+.asset-name-row > .asset-name-copy:focus-visible { outline:2px solid #1677ff; outline-offset:2px; }
+.asset-name-row > .asset-name-copy[data-copy-state=copied] { color:#15803d; }
+.asset-name-row > .asset-name-copy[data-copy-state=failed] { color:#dc2626; }
+.asset-name-copy-status { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }

@@ -1,10 +1,12 @@
 import { afterEach, beforeAll, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Asset } from '../src/model'
 import UploadImageList from '../src/modules/schematic/components/UploadImageList'
 import AssetDetailsModal from '../src/modules/schematic/components/AssetDetailsModal'
 
-vi.mock('../src/modules/schematic/components/LazySvgImage', () => ({ default: ({ alt }: { alt: string }) => <img alt={alt}/> }))
+const previews = vi.hoisted(() => ({ original: vi.fn().mockResolvedValue('<svg/>') }))
+vi.mock('../src/modules/schematic/services/assetSvgService', () => ({ loadAssetSvg: previews.original }))
+vi.mock('../src/modules/schematic/components/LazySvgImage', () => ({ default: ({ alt, maxEdgePx = 256 }: { alt: string; maxEdgePx?: number }) => <img alt={alt} data-preview-size={maxEdgePx}/> }))
 vi.mock('../src/modules/schematic/grouping/useProductGrouping', () => ({ useProductGroup: () => null }))
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', { writable: true, value: vi.fn().mockImplementation(query => ({ matches: false, media: query, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() })) })
@@ -20,6 +22,38 @@ const asset: Asset = {
   sourceGroupWidthMm: 44.477, sourceGroupHeightMm: 192.807, attributes: { QT: '0' },
   sourceImages: [{ nodeId: 'front', format: 'PNG', widthPx: 2000, heightPx: 3000, widthMm: 40, heightMm: 60 }, { nodeId: 'back', format: 'JPEG', widthPx: 800, heightPx: 600, widthMm: 32, heightMm: 24 }],
 }
+
+test('opening the list preview uses a bounded image without loading the original SVG into the WebView', async () => {
+  previews.original.mockClear()
+  render(<UploadImageList assets={[asset]} allAssets={[asset]} selectedIds={new Set()} onSelectionChange={vi.fn()} products={[]} disabled={false} onDelete={vi.fn()}/>)
+  fireEvent.click(screen.getByRole('button', { name: '预览 多图资产' }))
+  const dialog = await screen.findByRole('dialog', { name: asset.name })
+  expect(previews.original).not.toHaveBeenCalled()
+  expect(within(dialog).getByAltText(asset.name).getAttribute('data-preview-size')).toBe('256')
+})
+
+test('the compact filename keeps the full name available and copying does not select or preview the asset', async () => {
+  const name = 'Backup_of_Backup_of_Sarah Bartley · __printflow_measure_42 · 一个很长的完整图片名称'
+  const named = { ...asset, name }
+  const select = vi.fn()
+  const writeText = vi.fn().mockResolvedValue(undefined)
+  const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+  try {
+    render(<UploadImageList assets={[named]} allAssets={[named]} selectedIds={new Set()} onSelectionChange={select} products={[]} disabled={false} onDelete={vi.fn()}/>)
+    expect(screen.getByText(name).getAttribute('title')).toBe(name)
+    const copy = screen.getByRole('button', { name: `复制图片名 ${name}` })
+    fireEvent.mouseDown(copy)
+    fireEvent.click(copy)
+    await waitFor(() => expect(writeText).toHaveBeenCalledExactlyOnceWith(name))
+    await waitFor(() => expect(copy.getAttribute('title')).toBe('已复制完整图片名'))
+    expect(select).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  } finally {
+    if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard)
+    else Reflect.deleteProperty(navigator, 'clipboard')
+  }
+})
 
 test('card right click opens details for that asset without changing selection or opening preview', async () => {
   const select = vi.fn()

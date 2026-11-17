@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-const api = vi.hoisted(() => ({ register: vi.fn(), mode: vi.fn() }))
+const api = vi.hoisted(() => ({ register: vi.fn(), mode: vi.fn(), exportDiagnostic: vi.fn() }))
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true }))
 vi.mock('@tauri-apps/api/event', () => ({ listen: async () => () => {} }))
 vi.mock('../src/services/backend', () => ({ storageMode: api.mode }))
@@ -12,6 +12,7 @@ vi.mock('../src/modules', () => ({
 }))
 vi.mock('../src/modules/schematic/SchematicPage', () => ({ default: () => <div>业务页面已加载</div> }))
 vi.mock('../src/modules/settings/SettingsModal', () => ({ default: () => null }))
+vi.mock('../src/modules/settings/diagnosticsService', () => ({ exportDiagnosticBundle: api.exportDiagnostic }))
 vi.mock('../src/modules/update/UpdateButton', () => ({ default: () => null }))
 vi.mock('../src/modules/schematic/services/productConfigService', () => ({ refreshProductConfigs: async () => {} }))
 vi.mock('../src/modules/schematic/services/finishService', () => ({ invalidateFinishNames: () => {} }))
@@ -22,6 +23,7 @@ beforeEach(() => {
   localStorage.setItem('printflow-account-name', '旧用户名')
   api.mode.mockResolvedValue({ shared: true, environment: 'production', configPath: 'production/config.toml' })
   api.register.mockResolvedValue('shared-root')
+  api.exportDiagnostic.mockResolvedValue({ path: 'D:\\diagnostics.zip', bytes: 2048, warnings: [] })
   Object.defineProperty(window, 'matchMedia', { writable: true, value: () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} }) })
 })
 afterEach(cleanup)
@@ -47,4 +49,16 @@ test('failed registration keeps business pages blocked and does not remember con
   await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('连接失败'))
   expect(screen.queryByText('业务页面已加载')).toBeNull()
   expect(localStorage.getItem('printflow-cloud-registration-v2:production:production/config.toml')).toBeNull()
+})
+
+test('a startup connection failure still lets the employee export a diagnostic bundle', async () => {
+  api.register.mockRejectedValue(new Error('云数据库连接失败'))
+  render(<App />)
+  fireEvent.click(await screen.findByRole('button', { name: '保存用户名' }))
+  await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('云数据库连接失败'))
+  expect(screen.queryByText('业务页面已加载')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '导出诊断包' }))
+  await screen.findByText('诊断包已导出')
+  expect(api.exportDiagnostic).toHaveBeenCalledOnce()
+  expect(screen.getByText('D:\\diagnostics.zip')).toBeTruthy()
 })

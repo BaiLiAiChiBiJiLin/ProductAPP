@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import PoolAssetCard from '../src/modules/schematic/components/PoolAssetCard'
 import { POOL_DROP_EVENT } from '../src/modules/schematic/services/poolDragService'
 vi.mock('../src/modules/schematic/components/LazySvgImage', () => ({ default: (props: { alt: string }) => <img alt={props.alt}/> }))
@@ -32,4 +32,15 @@ test('pointer drag emits drop once and cancellation does not add', () => {
  fireEvent.pointerCancel(card);fireEvent.pointerUp(card,{clientX:100,clientY:100})
  expect(drop).toHaveBeenCalledTimes(1)
  window.removeEventListener(POOL_DROP_EVENT,drop);vi.unstubAllGlobals()
+})
+
+test('pool deletion requires confirmation and does not add or open the image', async () => {
+ const remove = vi.fn().mockResolvedValue(undefined), add = vi.fn(), preview = vi.fn()
+ render(<PoolAssetCard asset={asset} used={false} onAdd={add} onPreview={preview} onDelete={remove}/>)
+ fireEvent.click(screen.getByRole('button', { name: '删除池中图片 test image' }))
+ expect(remove).not.toHaveBeenCalled()
+ fireEvent.click(await screen.findByRole('button', { name: /^删\s*除$/ }))
+ await waitFor(() => expect(remove).toHaveBeenCalledExactlyOnceWith(asset.id))
+ expect(add).not.toHaveBeenCalled()
+ expect(preview).not.toHaveBeenCalled()
 })

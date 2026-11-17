@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Button, Popover, Tag, theme } from 'antd'
-import { cloudSyncTasks, flushCloudSyncQueue, type CloudSyncStatus } from '../services/cloudSyncQueue'
+import { Button, Popconfirm, Popover, Tag, theme } from 'antd'
+import { cloudSyncTasks, flushCloudSyncQueue, recoverCloudBatchAsNew, type CloudSyncStatus } from '../services/cloudSyncQueue'
 import './cloud-sync-status.css'
 
 const taskStateLabels = { queued: '等待同步', syncing: '正在同步', error: '等待重试', blocked: '需要处理' }
@@ -10,6 +10,7 @@ export default function CloudSyncStatusTag({ status }: { status: CloudSyncStatus
   const [open, setOpen] = useState(false)
   const [retryingId, setRetryingId] = useState<string>()
   const [retryError, setRetryError] = useState<{ id: string; message: string }>()
+  const [recoveryNotice, setRecoveryNotice] = useState('')
   const [now, setNow] = useState(Date.now)
   const { token } = theme.useToken()
   useEffect(() => {
@@ -31,9 +32,19 @@ export default function CloudSyncStatusTag({ status }: { status: CloudSyncStatus
     catch (error) { setRetryError({ id, message: String(error) }) }
     finally { setRetryingId(undefined) }
   }
+  const recover = async (id: string) => {
+    if (retryingId) return
+    setRetryingId(id); setRetryError(undefined); setRecoveryNotice('')
+    try {
+      await recoverCloudBatchAsNew(id)
+      setRecoveryNotice('已保留本机修改并创建恢复副本，后台保存成功后可在历史记录中打开。')
+    } catch (error) { setRetryError({ id, message: String(error) }) }
+    finally { setRetryingId(undefined) }
+  }
   const tasks = open ? cloudSyncTasks() : []
   const details = <div className="cloud-sync-details">
     <p>{countHint}</p>
+    {recoveryNotice && <p role="status">{recoveryNotice}</p>}
     {status.error && !tasks.some(task => task.error === status.error) && <p role="alert" style={{ color: token.colorErrorText }}>{errorMessage(status.error)}</p>}
     {tasks.map(task => {
       const localError = retryError?.id === task.id ? retryError.message : undefined
@@ -55,6 +66,9 @@ export default function CloudSyncStatusTag({ status }: { status: CloudSyncStatus
         {!localError && !task.blocked && task.nextAttemptAt && task.state !== 'syncing' && <p>预计 {Math.max(0, Math.ceil((task.nextAttemptAt - now) / 1_000))} 秒后自动重试</p>}
         <div className="cloud-sync-task-actions">
           {task.attempts > 0 && <span>已尝试 {task.attempts} 次</span>}
+          {task.recoverableAsNew && <Popconfirm title="将本机修改保留为新批次？" description="先备份待同步内容，再创建恢复副本。云端原批次和归属保持不变。" okText="创建恢复副本" cancelText="取消" onConfirm={() => recover(task.id)}>
+            <Button size="small" disabled={syncing || !!retryingId}>保留为新批次</Button>
+          </Popconfirm>}
           {!task.deletionRequested && <Button size="small" loading={retryingId === task.id} disabled={syncing || !!retryingId} onClick={() => void retry(task.id)}>立即重试</Button>}
         </div>
       </section>

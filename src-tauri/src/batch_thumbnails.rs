@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::{fs, path::Path, sync::Mutex, time::UNIX_EPOCH};
 
 // Even independent WebView requests must never decode several SVGs at once.
-static RENDER_LOCK: Mutex<()> = Mutex::new(());
+pub(crate) static RENDER_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -87,7 +87,7 @@ pub fn load(conn: &Connection, batch_id: &str) -> Result<Vec<BatchThumbnail>, St
             let inline: String = conn.query_row("SELECT COALESCE(json_extract(image.value,'$.svg'),'') FROM batches, json_each(batches.payload) image
                 WHERE batches.id=?1 AND json_extract(image.value,'$.id')=?2 LIMIT 1", params![batch_id, id], |row| row.get(0)).map_err(|error| error.to_string())?;
             let source = if inline.is_empty() {
-                fs::read(&path).map_err(|error| error.to_string())?
+                crate::asset_previews::read_bounded(Path::new(&path))?
             } else {
                 inline.into_bytes()
             };
@@ -127,7 +127,7 @@ pub fn load_path(path: &Path) -> Result<String, String> {
 pub fn load_path_at_size(path: &Path, max_edge_px: u32) -> Result<String, String> {
     let _guard = RENDER_LOCK.lock().map_err(|error| error.to_string())?;
     let edge = max_edge_px.clamp(128, 512);
-    let source = fs::read(path).map_err(|error| error.to_string())?;
+    let source = crate::asset_previews::read_bounded(path)?;
     let png = if path
         .extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("svg"))
@@ -150,21 +150,7 @@ fn render(source: &[u8], path: &Path) -> Result<Vec<u8>, String> {
 }
 
 fn render_at_size(source: &[u8], path: &Path, edge: u32) -> Result<Vec<u8>, String> {
-    let mut options = crate::assets::export_options()?;
-    options.resources_dir = path.parent().map(Path::to_owned);
-    let tree = usvg::Tree::from_data(source, &options).map_err(|error| error.to_string())?;
-    let scale = edge as f32 / tree.size().width().max(tree.size().height());
-    let mut pixmap = tiny_skia::Pixmap::new(
-        (tree.size().width() * scale).ceil().clamp(1.0, edge as f32) as u32,
-        (tree.size().height() * scale).ceil().clamp(1.0, edge as f32) as u32,
-    )
-    .ok_or("无法创建缩略图")?;
-    resvg::render(
-        &tree,
-        tiny_skia::Transform::from_scale(scale, scale),
-        &mut pixmap.as_mut(),
-    );
-    pixmap.encode_png().map_err(|error| error.to_string())
+    crate::asset_previews::render_png(source, path, edge)
 }
 
 pub fn remove(conn: &Connection, batch_id: &str) -> Result<(), String> {

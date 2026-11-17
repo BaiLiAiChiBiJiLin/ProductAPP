@@ -26,9 +26,10 @@ type UploadPanelProps = {
   selectedAssetIds: Set<string>
   onConfirmAttributes: (patch: ProductAttributePatch) => Promise<void>
   assets: Asset[]
+  batchId?: string
 }
 
-export default function UploadPanel({ busy, dropActive, progress, metadata, onMetadataChange, onUpload, batchOpen, activeTab, onTabChange, selectedAssetIds, onConfirmAttributes, assets }: UploadPanelProps) {
+export default function UploadPanel({ busy, dropActive, progress, metadata, onMetadataChange, onUpload, batchOpen, activeTab, onTabChange, selectedAssetIds, onConfirmAttributes, assets, batchId }: UploadPanelProps) {
   const grouping = useProductGroup()
   const visibleTab = batchOpen ? activeTab : 'upload'
   const renderStage = (label: string, value: ImportProgress, active: boolean) => {
@@ -49,7 +50,7 @@ export default function UploadPanel({ busy, dropActive, progress, metadata, onMe
       {busy && <div className="import-progress"><div className="import-progress-title">导入进度</div>{renderStage('解析 SVG 图层', progress.parse, progress.parse.completed < progress.parse.total || progress.generate.total === 0)}{renderStage('生成图片资源', progress.generate, progress.generate.total > 0 && progress.generate.completed < progress.generate.total)}</div>}
       <CorelDrawTool />
       {batchOpen && <div className="batch-metadata" aria-label="图片批次信息"><div className="batch-metadata-title">图片批次信息</div><label><span>客户名称</span><input value={metadata.customerName} disabled={busy} onChange={event => update('customerName', event.target.value)} placeholder="请输入客户名称" /></label><label><span>Drawing Date / 绘图日期</span><input type="date" value={metadata.drawingDate} disabled={busy} onChange={event => update('drawingDate', event.target.value)} /></label><label><span>Estimated Ship Date / 预计发货日期</span><input type="date" value={metadata.estimatedShipDate} disabled={busy} onChange={event => update('estimatedShipDate', event.target.value)} /></label><label><span>Designer / 来源</span><input value={metadata.designer} disabled={busy} onChange={event => update('designer', event.target.value)} placeholder="来源" /></label></div>}
-    </div>{batchOpen && <div hidden={visibleTab !== 'attributes'}><ProductAttributesPanel assets={assets} selectedAssetIds={selectedAssetIds} onConfirmAttributes={onConfirmAttributes} disabled={busy}/></div>}
+    </div>{batchOpen && <div hidden={visibleTab !== 'attributes'}><ProductAttributesPanel assets={assets} batchId={batchId} selectedAssetIds={selectedAssetIds} onConfirmAttributes={onConfirmAttributes} disabled={busy}/></div>}
     </div>
   </section>
 }

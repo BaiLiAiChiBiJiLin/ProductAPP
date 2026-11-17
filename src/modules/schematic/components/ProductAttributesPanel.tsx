@@ -20,7 +20,7 @@ import { restoreProductGroup } from '../grouping/productGroupRestore'
 import { orderAssetsByProductGroup } from '../services/productGroupOrdering'
 import { useAttributePanelOverflow } from '../hooks/useAttributePanelOverflow'
 
-type Props = { assets: Asset[]; selectedAssetIds: Set<string>; onConfirmAttributes: (patch: ProductAttributePatch) => Promise<void>; disabled?: boolean; selectionHint?: string; allowGrouping?: boolean; showSelectionSummary?: boolean }
+type Props = { assets: Asset[]; batchId?: string; selectedAssetIds: Set<string>; onConfirmAttributes: (patch: ProductAttributePatch) => Promise<void>; disabled?: boolean; selectionHint?: string; allowGrouping?: boolean; showSelectionSummary?: boolean }
 type ProductSource = 'local' | 'public'
 
 function defaultCatalogSelection(product: NonNullable<ProductConfig>) {
@@ -40,7 +40,7 @@ function defaultCatalogSelection(product: NonNullable<ProductConfig>) {
   return { attributes, images }
 }
 
-export default function ProductAttributesPanel({ assets, selectedAssetIds, onConfirmAttributes, disabled = false, selectionHint, allowGrouping = true, showSelectionSummary = true }: Props) {
+export default function ProductAttributesPanel({ assets, batchId, selectedAssetIds, onConfirmAttributes, disabled = false, selectionHint, allowGrouping = true, showSelectionSummary = true }: Props) {
   const { products: localProducts, loading, error: configError, refreshing, refresh } = useProductConfigs()
   const { products: publicProducts, loading: publicLoading, error: publicConfigError, refreshing: publicRefreshing, refresh: refreshPublic } = usePublicProductConfigs()
   const products = useMemo(() => [...localProducts, ...publicProducts], [localProducts, publicProducts])
@@ -175,7 +175,7 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
           description={<><div>{publicConfigError || '公共产品缓存尚未准备好，请稍后重试。'}</div><Button style={{ marginTop: 8 }} disabled={publicRefreshing || publicLoading} icon={publicRefreshing ? <Loading size="small" inline/> : undefined} onClick={() => void refreshPublic()}>{publicRefreshing ? '正在刷新…' : '刷新公共产品'}</Button></>}/>}
         <div className="product-config-form">
           <label className="product-config-field"><span>{productTab === 'public' ? '公共产品' : '产品'}</span><Select aria-label={productTab === 'public' ? '公共产品' : '产品'} showSearch optionFilterProp="label" disabled={!selected.length || (productTab === 'public' ? publicLoading : loading) || productLocked} placeholder="请选择产品" value={tabProducts.some(item => item.id === product?.id) ? product?.id : undefined} options={tabProducts.map(item => ({ value: item.id, label: item.title }))} onChange={selectProduct}/></label>
-          {product?.options.map(option => { const values = availableOptionValues(option, draft.attributes); const value = draft.attributes[option.name] ?? (option.name.trim().toLowerCase() === 'finish' ? draft.attributes['工艺'] : undefined); const image = draft.images[option.name] ?? (option.name.trim().toLowerCase() === 'finish' ? draft.images['工艺'] : undefined); return values.length ? <ProductOptionField key={`${product.id}:${option.name}`} option={option} values={values} value={value} imageOverride={image} disabled={!selected.length || (quantityLocked && lockedOptions.has(option.name))} onChange={(nextValue, nextImage) => changeOption(option.name, nextValue, nextImage)}/> : null })}
+          {product?.options.filter(option => !/^(size|sizes|尺寸|尺寸选项|大小)$/i.test(option.name.trim()) && !/^(尺寸|尺寸选项|大小)$/.test(option.label?.trim() ?? '')).map(option => { const values = availableOptionValues(option, draft.attributes); const value = draft.attributes[option.name] ?? (option.name.trim().toLowerCase() === 'finish' ? draft.attributes['工艺'] : undefined); const image = draft.images[option.name] ?? (option.name.trim().toLowerCase() === 'finish' ? draft.images['工艺'] : undefined); return values.length ? <ProductOptionField key={`${product.id}:${option.name}`} option={option} values={values} value={value} imageOverride={image} disabled={!selected.length || (quantityLocked && lockedOptions.has(option.name))} onChange={(nextValue, nextImage) => changeOption(option.name, nextValue, nextImage)}/> : null })}
           <label className="product-config-field"><span>QT（数量）</span><InputNumber aria-label="QT（数量）" disabled={!selected.length} min={0} max={2147483647} precision={0} value={draft.attributes.QT ? Number(draft.attributes.QT) : undefined} onChange={value => changeOption('QT', value == null ? '' : String(value))}/></label>
         </div>
       </div>
@@ -183,7 +183,7 @@ export default function ProductAttributesPanel({ assets, selectedAssetIds, onCon
       <AssetNotesEditor assets={selected.map(asset => ({ ...asset, note: draft.note, noteFontSize: draft.noteFontSize, noteColor: draft.noteColor, ...noteImagesPatch(getNoteImages(draft)) }))} onUploadingChange={setUploadingNote} onAssign={patch => changeEditor({ ...editor, draft: { ...draft, ...(patch.note !== undefined ? { note: patch.note } : {}), ...(patch.noteFontSize !== undefined ? { noteFontSize: patch.noteFontSize } : {}), ...(patch.noteColor !== undefined ? { noteColor: patch.noteColor } : {}), ...(patch.noteImages !== undefined || patch.noteImage !== undefined ? noteImagesPatch(getNoteImages(patch)) : {}) } })}/>
     </fieldset>
     {error && <div role="alert" className="product-config-error">{error}</div>}
-    <ProductGroupGuide assets={assets}/>
+    <ProductGroupGuide assets={assets} batchId={batchId}/>
     {!session && selected.length === 1 && grouping?.isPending(selected[0].id) && <p role="status" className="product-group-pending">这张图片的分组已保存，属性尚未确认，请点击“确认”保存。</p>}
     <div ref={groupEntryRef} className={`attribute-confirm ${overflowing ? 'has-scroll-shadow' : ''}`}>{session && <Tooltip title="取消选择并退出引导，保留已保存内容，放弃尚未保存的修改"><Button disabled={disabled || confirming || uploadingNote || grouping?.saving} onClick={() => grouping!.cancelGuide()}>退出引导</Button></Tooltip>}<Button type="primary" disabled={!selected.length || disabled || confirming || uploadingNote || grouping?.saving} icon={confirming || grouping?.saving ? <Loading size="small" inline/> : undefined} onClick={() => void confirm()}>{confirming || grouping?.saving ? '正在保存…' : '确认'}</Button></div>
   </div>

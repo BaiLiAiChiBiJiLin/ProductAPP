@@ -311,7 +311,7 @@ mod artwork_recovery_tests {
 pub fn load(conn: &mut impl Queryable, env: &Environment, user: &str, id: &str) -> Result<Value> {
     let record = get(conn, id, user, false)?;
     let mut value = record.value;
-    resources::hydrate(conn, env, &mut value, true)?;
+    resources::hydrate_manifest(conn, env, &mut value)?;
     value["version"] = json!(record.version);
     Ok(value)
 }

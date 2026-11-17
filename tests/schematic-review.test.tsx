@@ -1,4 +1,5 @@
 vi.mock('../src/services/backend', async () => { const core = await import('@tauri-apps/api/core'); return { invoke: core.invoke, storageMode: async () => ({ shared: false }) } })
+vi.mock('../src/services/localSyncState', async () => (await import('./helpers/localSyncStateMock')).browserLocalSyncStateMock())
 import type { ComponentProps } from 'react'
 import { ConfigProvider } from 'antd'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -55,6 +56,65 @@ function fixture() {
 const summary = (record: SchematicReviewRecord) => ({ id: record.id, savedAt: record.savedAt, output: record.output, format: record.format, paymentStatus: record.paymentStatus, customerName: record.metadata.customerName, pageCount: record.pages.length, imageCount: 1 })
 const latestArrange = () => mocks.arrange.mock.calls.at(-1)![0] as ComponentProps<typeof ArrangePage>
 const layoutPreferenceKey = 'printflow-schematic-layout-bounds'
+
+it('PDF export asks before opening the save dialog, and export-only leaves review records unchanged', async () => {
+  const record = fixture(), onSaved = vi.fn()
+  render(<SchematicPage initialRecord={record} onRecordSaved={onSaved}/>)
+  fireEvent.click(screen.getByText('导出测试 PDF'))
+  expect(await screen.findByText('是否生成新的示意图审核记录？')).toBeTruthy()
+  expect(mocks.save).not.toHaveBeenCalled()
+  expect(mocks.exportPdf).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: '仅导出 PDF' }))
+  await waitFor(() => expect(mocks.exportPdf).toHaveBeenCalledOnce())
+  await screen.findByText('PDF 已导出，未生成审核记录')
+  expect(mocks.invoke.mock.calls.some(([command]) => command === 'save_schematic_review')).toBe(false)
+  expect(onSaved).not.toHaveBeenCalled()
+  // A later explicit save still updates the original record's identity.
+  fireEvent.click(screen.getByText('保存测试布局'))
+  await waitFor(() => expect(onSaved).toHaveBeenCalledOnce())
+  expect(mocks.invoke.mock.calls.find(([command]) => command === 'save_schematic_review')![1].record.id).toBe(record.id)
+})
+
+it('canceling the PDF record question does not write either a file or a review', async () => {
+  render(<SchematicPage initialRecord={fixture()}/>)
+  fireEvent.click(screen.getByText('导出测试 PDF'))
+  const dialog = await screen.findByRole('dialog', { name: '导出 PDF' })
+  fireEvent.click(within(dialog).getByRole('button', { name: /^取\s*消$/ }))
+  expect(mocks.save).not.toHaveBeenCalled()
+  expect(mocks.exportPdf).not.toHaveBeenCalled()
+  expect(mocks.invoke.mock.calls.some(([command]) => command === 'save_schematic_review')).toBe(false)
+})
+
+it('deleting the active blank page selects a surviving page and persists the shorter page list', async () => {
+  render(<SchematicPage initialRecord={{ ...fixture(), activePage: 2 }}/>)
+  act(() => latestArrange().onDeletePage?.(2))
+  expect(latestArrange().activePage).toBe(1)
+  expect(latestArrange().pages.map(page => page.id)).toEqual([1])
+  act(() => fireEvent.keyDown(window, { key: 'z', ctrlKey: true }))
+  expect(latestArrange().pages.map(page => page.id)).toEqual([1, 2])
+  expect(latestArrange().activePage).toBe(2)
+  act(() => latestArrange().onDeletePage?.(2))
+  fireEvent.click(screen.getByText('保存测试布局'))
+  await waitFor(() => expect(mocks.invoke.mock.calls.some(([command]) => command === 'save_schematic_review')).toBe(true))
+  expect(mocks.invoke.mock.calls.find(([command]) => command === 'save_schematic_review')![1].record.pages).toHaveLength(1)
+})
+
+it('pool deletion removes every placement of the asset and retains unrelated assets', async () => {
+  const record = fixture()
+  record.sourceBatchId = 'another-users-private-batch'
+  record.assets.push({ ...asset, id: 'keep-unused', name: '保留的图片' })
+  render(<SchematicPage initialRecord={record}/>)
+  await act(async () => { await latestArrange().onDeleteAsset?.(asset.id) })
+  expect(latestArrange().assets.map(asset => asset.id)).toEqual(['keep-unused'])
+  expect(latestArrange().pages.flatMap(page => page.items)).toHaveLength(0)
+  expect(latestArrange().pages.flatMap(page => page.imageGroups ?? [])).toHaveLength(0)
+  act(() => fireEvent.keyDown(window, { key: 'z', ctrlKey: true }))
+  expect(latestArrange().pages.flatMap(page => page.items)).toHaveLength(0)
+  expect(mocks.invoke.mock.calls.some(([command]) => ['delete_asset', 'delete_batch', 'save_batch'].includes(command))).toBe(false)
+  fireEvent.click(screen.getByText('保存测试布局'))
+  await waitFor(() => expect(mocks.invoke.mock.calls.some(([command]) => command === 'save_schematic_review')).toBe(true))
+  expect(mocks.invoke.mock.calls.find(([command]) => command === 'save_schematic_review')![1].record.assets.map((asset: Asset) => asset.id)).toEqual(['keep-unused'])
+})
 
 it('re-exporting a review refreshes a reused resource ID instead of restoring cached old artwork', async () => {
   const record = fixture()
@@ -213,6 +273,7 @@ it('showing a back preserves current scale through export and undoes the added p
   act(() => latestArrange().onShowBack?.(source.id))
   expect(latestArrange().pages.flatMap(page => page.items).filter(item => item.manualBack)).toHaveLength(1)
   fireEvent.click(screen.getByRole('button', { name: '导出测试 PDF' }))
+  fireEvent.click(await screen.findByRole('button', { name: '生成新记录并导出' }))
   await waitFor(() => expect(mocks.exportPdf).toHaveBeenCalledOnce())
   expect(mocks.exportPdf.mock.calls[0][0].flatMap((page: { items: unknown[] }) => page.items)).toContainEqual(back)
   expect(mocks.exportPdf.mock.calls[0][8].get(back.id)).toBe(1.6)
@@ -266,6 +327,7 @@ it('refresh fills deleted rows using existing blocks, exports the result and und
   expect(mocks.autoArrange).not.toHaveBeenCalled()
 
   fireEvent.click(screen.getByText('导出测试 PDF'))
+  fireEvent.click(await screen.findByRole('button', { name: '生成新记录并导出' }))
   await waitFor(() => expect(mocks.invoke.mock.calls.some(([command]) => command === 'save_schematic_review')).toBe(true))
   const saved = mocks.invoke.mock.calls.find(([command]) => command === 'save_schematic_review')![1].record as SchematicReviewRecord
   expect(saved.pages).toEqual(refreshed)
@@ -307,6 +369,7 @@ it('keeps a valid active page and allows export when changed bounds reduce the p
   expect(latestArrange().selectedItem).toBeNull()
   expect(latestArrange().selectedGroupIds).toEqual([])
   fireEvent.click(screen.getByRole('button', { name: '导出测试 PDF' }))
+  fireEvent.click(await screen.findByRole('button', { name: '生成新记录并导出' }))
   await waitFor(() => expect(mocks.exportPdf).toHaveBeenCalledOnce())
 })
 
@@ -390,9 +453,10 @@ it('saves and restores editor annotations, deleted captions, colors, horizontal 
   expect(latestArrange().pages.map(page => page.id)).toEqual([2, 1])
   expect(latestArrange().activePage).toBe(1)
   fireEvent.click(screen.getByText('导出测试 PDF'))
+  fireEvent.click(await screen.findByRole('button', { name: '生成新记录并导出' }))
   await waitFor(() => expect(onSaved).toHaveBeenCalledOnce())
   const saved = mocks.invoke.mock.calls.find(([command]) => command === 'save_schematic_review')![1].record as SchematicReviewRecord
-  expect(saved.id).toBe(record.id)
+  expect(saved.id).not.toBe(record.id)
   expect(saved.pages.map(page => page.id)).toEqual([2, 1])
   expect(saved.pages[1]).toEqual(edited)
   expect(mocks.exportPdf.mock.calls[0][0]).toEqual(saved.pages)
@@ -491,6 +555,7 @@ it('updates the restored review only after successful export and keeps later edi
   mocks.exportPdf.mockReturnValue(new Promise<void>(resolve => { complete = resolve }))
   render(<SchematicPage initialRecord={record} onRecordSaved={saved}/> )
   fireEvent.click(await screen.findByText('导出测试 PDF'))
+  fireEvent.click(await screen.findByRole('button', { name: '生成新记录并导出' }))
   await waitFor(() => expect(mocks.exportPdf).toHaveBeenCalledOnce())
   expect(mocks.exportPdf.mock.calls[0][0][0].items[0]).toMatchObject({ svgLayerIds: ['svg-layer-0', 'svg-layer-1'], backSvg: record.pages[0].items[0].backSvg })
   expect(mocks.exportPdf.mock.calls[0][7]).toEqual(restoreArrangementDisplay(record.display).accessoryVisuals)
@@ -501,9 +566,9 @@ it('updates the restored review only after successful export and keeps later edi
   expect(first.pages).toEqual(record.pages)
   expect(first.pages[0].items[0].svgLayerIds).toEqual(['svg-layer-0', 'svg-layer-1'])
   expect(first.display).toEqual(record.display)
-  expect(first.sourceRecordId).toBe('original-review')
-  expect(first.paymentStatus).toBe('paid')
-  expect(first.id).toBe(record.id)
+  expect(first.sourceRecordId).toBeUndefined()
+  expect(first.paymentStatus).toBe('unpaid')
+  expect(first.id).not.toBe(record.id)
   fireEvent.click(screen.getByText('移动主图'))
   fireEvent.click(screen.getByText('放大主图'))
   act(() => latestArrange().onChangeItem({ ...latestArrange().pages[0].items[0], svgLayerIds: ['svg-layer-1', 'svg-layer-2'], backSvg: '<svg><circle fill="blue"/><path fill="green"/></svg>' }))
@@ -522,21 +587,23 @@ it('updates the restored review only after successful export and keeps later edi
   expect(second.assets[0].width).toBe(42.756)
 })
 
-it('repeated PDF exports from a new arrangement update one record even when the output filename changes', async () => {
+it('PDF exports create distinct records when the user chooses a new record each time', async () => {
   mockPreferenceBatch()
   const saved = vi.fn()
   render(<SchematicPage onRecordSaved={saved}/> )
   await openPreferenceBatch()
   fireEvent.click(screen.getByText('导出测试 PDF'))
+  fireEvent.click(await screen.findByRole('button', { name: '生成新记录并导出' }))
   await waitFor(() => expect(saved).toHaveBeenCalledOnce())
   const first = mocks.invoke.mock.calls.find(call => call[0] === 'save_schematic_review')![1].record as SchematicReviewRecord
   fireEvent.click(screen.getByText('移动主图'))
   fireEvent.click(screen.getByText('放大主图'))
   mocks.save.mockResolvedValueOnce('C:\\updated-proof.pdf')
   fireEvent.click(screen.getByText('导出测试 PDF'))
+  fireEvent.click(await screen.findByRole('button', { name: '生成新记录并导出' }))
   await waitFor(() => expect(saved).toHaveBeenCalledTimes(2))
   const records = mocks.invoke.mock.calls.filter(call => call[0] === 'save_schematic_review').map(call => call[1].record as SchematicReviewRecord)
-  expect(new Set(records.map(record => record.id)).size).toBe(1)
+  expect(new Set(records.map(record => record.id)).size).toBe(2)
   expect(records[1].output).toBe('C:\\updated-proof.pdf')
   expect(records[1].pages[0].items[0].x).toBe(123)
   expect(records[1].display.visualScales[0][1]).toBe(2)
@@ -546,12 +613,13 @@ it('repeated PDF exports from a new arrangement update one record even when the 
   act(() => latestArrange().onBackToHistory?.())
   await openPreferenceBatch()
   fireEvent.click(screen.getByText('导出测试 PDF'))
+  fireEvent.click(await screen.findByRole('button', { name: '生成新记录并导出' }))
   await waitFor(() => expect(saved).toHaveBeenCalledTimes(3))
   const next = mocks.invoke.mock.calls.filter(call => call[0] === 'save_schematic_review')[2][1].record as SchematicReviewRecord
   expect(next.id).not.toBe(first.id)
 })
 
-it('another export after a save failure reuses the pending record and removes its stale retry action', async () => {
+it('another PDF export can create a new record after a save failure and removes its stale retry action', async () => {
   mockPreferenceBatch()
   const previous = mocks.invoke.getMockImplementation()!
   let attempts = 0
@@ -559,16 +627,18 @@ it('another export after a save failure reuses the pending record and removes it
     if (command === 'save_schematic_review' && attempts++ === 0) throw new Error('数据库暂时不可写')
     return previous(command, args)
   })
-  render(<SchematicPage/> )
+  render(<ConfigProvider theme={{ token: { motion: false } }}><SchematicPage/></ConfigProvider>)
   await openPreferenceBatch()
   fireEvent.click(screen.getByText('导出测试 PDF'))
+  fireEvent.click(await screen.findByRole('button', { name: '生成新记录并导出' }))
   await screen.findByRole('button', { name: '重试保存记录' })
   fireEvent.click(screen.getByText('移动主图'))
   fireEvent.click(screen.getByText('导出测试 PDF'))
+  fireEvent.click(await screen.findByRole('button', { name: '生成新记录并导出' }))
   await waitFor(() => expect(attempts).toBe(2))
   await waitFor(() => expect(screen.queryByRole('button', { name: '重试保存记录' })).toBeNull())
   const records = mocks.invoke.mock.calls.filter(call => call[0] === 'save_schematic_review').map(call => call[1].record as SchematicReviewRecord)
-  expect(records[1].id).toBe(records[0].id)
+  expect(records[1].id).not.toBe(records[0].id)
   expect(records[1].pages[0].items[0].x).toBe(123)
 })
 
@@ -577,9 +647,11 @@ it('cancel and export failure never create a review record', async () => {
   mocks.exportPdf.mockRejectedValueOnce(new Error('磁盘已满'))
   render(<SchematicPage initialRecord={fixture()}/> )
   fireEvent.click(await screen.findByText('导出测试 PDF'))
+  fireEvent.click(await screen.findByRole('button', { name: '生成新记录并导出' }))
   await waitFor(() => expect(latestArrange().exporting).toBe(false))
   expect(mocks.exportPdf).not.toHaveBeenCalled()
   fireEvent.click(screen.getByText('导出测试 PDF'))
+  fireEvent.click(await screen.findByRole('button', { name: '生成新记录并导出' }))
   await screen.findByText('Error: 磁盘已满')
   expect(mocks.invoke.mock.calls.filter(call => call[0] === 'save_schematic_review')).toHaveLength(0)
 })
@@ -603,6 +675,7 @@ it('retries record persistence without exporting the file again', async () => {
   const onRecordSaved = vi.fn()
   render(<SchematicPage initialRecord={fixture()} onRecordSaved={onRecordSaved}/> )
   fireEvent.click(await screen.findByText('导出测试 PDF'))
+  fireEvent.click(await screen.findByRole('button', { name: '生成新记录并导出' }))
   fireEvent.click(await screen.findByRole('button', { name: '重试保存记录' }))
   await waitFor(() => expect(onRecordSaved).toHaveBeenCalledOnce())
   expect(mocks.exportPdf).toHaveBeenCalledOnce()

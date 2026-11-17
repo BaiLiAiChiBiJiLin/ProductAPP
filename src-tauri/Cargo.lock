@@ -84,7 +84,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "app"
-version = "0.1.47"
+version = "0.1.48"
 dependencies = [
  "aws-lc-rs",
  "base64 0.22.1",
@@ -96,6 +96,7 @@ dependencies = [
  "log",
  "mysql",
  "pdf-writer 0.12.1",
+ "png 0.17.16",
  "printpdf",
  "reqwest",
  "resvg",
@@ -118,6 +119,7 @@ dependencies = [
  "toml 0.8.2",
  "usvg 0.45.1",
  "windows",
+ "zip",
 ]
 
 [[package]]

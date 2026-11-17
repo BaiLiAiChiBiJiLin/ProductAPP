@@ -103,7 +103,7 @@ pub fn list(conn: &Connection, query: &BatchListQuery) -> Result<BatchListResult
     })
 }
 
-fn read_record(conn: &Connection, id: &str) -> Result<BatchRecord, String> {
+pub(super) fn read_record(conn: &Connection, id: &str) -> Result<BatchRecord, String> {
     let row: Option<(String, String, String)> = conn
         .query_row(
             "SELECT saved_at,payload,metadata FROM batches WHERE id=?1",

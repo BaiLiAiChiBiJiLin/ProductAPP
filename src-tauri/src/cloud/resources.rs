@@ -6,7 +6,7 @@ use mysql::prelude::Queryable;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, HashMap},
     fs,
     io::Write,
     path::{Component, Path, PathBuf},
@@ -229,6 +229,241 @@ pub fn hydrate(
         _ => {}
     }
     Ok(())
+}
+
+/// Opening a batch resolves resource metadata in one lookup. Main storage
+/// references stay opaque so both later artwork reads and saves use `read`,
+/// including canonical paths and content checks. Ownership is checked by the
+/// batch caller before reaching this function.
+pub fn hydrate_manifest(
+    conn: &mut impl Queryable,
+    env: &Environment,
+    value: &mut Value,
+) -> Result<()> {
+    let mut canonical_root = None;
+    hydrate_manifest_with(
+        value,
+        &env.storage_root,
+        |ids| {
+            let mut result = HashMap::new();
+            for ids in ids.chunks(256) {
+                let query = format!(
+                    "SELECT hash,relative_path FROM pf_resources WHERE hash IN ({})",
+                    vec!["?"; ids.len()].join(",")
+                );
+                let params = mysql::Params::Positional(
+                    ids.iter().cloned().map(mysql::Value::from).collect(),
+                );
+                let rows: Vec<(String, String)> = conn.exec(query, params).map_err(error)?;
+                result.extend(rows);
+            }
+            Ok(result)
+        },
+        |id, path| read_manifest_text(&env.storage_root, &mut canonical_root, id, path),
+    )
+}
+
+fn read_manifest_text(
+    root: &Path,
+    canonical_root: &mut Option<PathBuf>,
+    id: &str,
+    path: &Path,
+) -> Result<String> {
+    if canonical_root.is_none() {
+        *canonical_root =
+            Some(fs::canonicalize(root).map_err(|_| "共享目录不可访问，请检查局域网连接")?);
+    }
+    let actual = fs::canonicalize(path).map_err(|_| "共享图片文件不存在或不可访问")?;
+    if !actual.starts_with(canonical_root.as_ref().unwrap()) {
+        return Err("共享图片路径超出存储目录".into());
+    }
+    let bytes = fs::read(path).map_err(|_| "读取共享图片失败")?;
+    if hash(&bytes) != id {
+        return Err("共享图片校验失败，文件可能被外部修改".into());
+    }
+    String::from_utf8(bytes).map_err(|_| "审核图片内容编码无效".into())
+}
+
+fn hydrate_manifest_with(
+    value: &mut Value,
+    root: &Path,
+    mut lookup: impl FnMut(&[String]) -> Result<HashMap<String, String>>,
+    mut read_text: impl FnMut(&str, &Path) -> Result<String>,
+) -> Result<()> {
+    let mut ids = BTreeSet::new();
+    references(value, &mut ids);
+    for id in &ids {
+        valid_id(id)?;
+    }
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let ids: Vec<String> = ids.into_iter().collect();
+    let paths = lookup(&ids)?;
+    let mut text_cache = HashMap::new();
+    fn walk(
+        value: &mut Value,
+        preserve_file_reference: bool,
+        root: &Path,
+        paths: &HashMap<String, String>,
+        text_cache: &mut HashMap<String, String>,
+        read_text: &mut impl FnMut(&str, &Path) -> Result<String>,
+    ) -> Result<()> {
+        match value {
+            Value::String(reference)
+                if reference.starts_with(FILE) || reference.starts_with(TEXT) =>
+            {
+                let is_text = reference.starts_with(TEXT);
+                let id = reference
+                    .strip_prefix(FILE)
+                    .or_else(|| reference.strip_prefix(TEXT))
+                    .unwrap()
+                    .to_owned();
+                let relative = paths.get(&id).ok_or("共享资源记录不存在")?;
+                let path = resolve(root, relative)?;
+                if !is_text && preserve_file_reference {
+                    return Ok(());
+                }
+                *reference = if is_text {
+                    if let Some(content) = text_cache.get(&id) {
+                        content.clone()
+                    } else {
+                        let content = read_text(&id, &path)?;
+                        text_cache.insert(id, content.clone());
+                        content
+                    }
+                } else {
+                    path.to_string_lossy().into_owned()
+                };
+            }
+            Value::Object(map) => {
+                for (key, value) in map {
+                    walk(
+                        value,
+                        key == "storagePath",
+                        root,
+                        paths,
+                        text_cache,
+                        read_text,
+                    )?;
+                }
+            }
+            Value::Array(values) => {
+                for value in values {
+                    walk(value, false, root, paths, text_cache, read_text)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    walk(value, false, root, &paths, &mut text_cache, &mut read_text)
+}
+
+#[cfg(test)]
+mod manifest_hydration_tests {
+    use super::*;
+    use serde_json::json;
+    use std::cell::Cell;
+
+    #[test]
+    fn eighty_four_file_references_use_one_lookup_without_opening_artwork() {
+        let mut value = json!({"assets": (0..84).map(|index| json!({"id":format!("asset-{index}"), "storagePath":format!("{FILE}{index:064x}")})).collect::<Vec<_>>()});
+        let lookups = Cell::new(0);
+        hydrate_manifest_with(
+            &mut value,
+            Path::new("C:/unavailable-share"),
+            |ids| {
+                lookups.set(lookups.get() + 1);
+                Ok(ids
+                    .iter()
+                    .map(|id| (id.clone(), format!("batch/assets/{id}.svg")))
+                    .collect())
+            },
+            |_, _| panic!("opening a manifest must not read original artwork"),
+        )
+        .unwrap();
+        assert_eq!(lookups.get(), 1);
+        assert_eq!(value["assets"].as_array().unwrap().len(), 84);
+        // A metadata-only save must follow the same strict resources::read
+        // branch as an artwork read, rather than trusting an unchecked path.
+        assert_eq!(
+            value["assets"][83]["storagePath"],
+            format!("{FILE}{:064x}", 83)
+        );
+    }
+
+    #[test]
+    fn duplicate_text_resources_are_hydrated_once_and_keep_note_content() {
+        let text = "data:image/png;base64,original-note";
+        let id = hash(text.as_bytes());
+        let mut value = json!({"assets":[{"noteImages":[{"src":format!("{TEXT}{id}")},{"src":format!("{TEXT}{id}")}],"attributeImages":{"note":format!("{TEXT}{id}")}}]});
+        let reads = Cell::new(0);
+        hydrate_manifest_with(
+            &mut value,
+            Path::new("C:/share"),
+            |ids| {
+                Ok(ids
+                    .iter()
+                    .map(|id| (id.clone(), "notes/note.txt".into()))
+                    .collect())
+            },
+            |_, _| {
+                reads.set(reads.get() + 1);
+                Ok(text.into())
+            },
+        )
+        .unwrap();
+        assert_eq!(reads.get(), 1);
+        assert_eq!(value["assets"][0]["noteImages"][1]["src"], text);
+        assert_eq!(value["assets"][0]["attributeImages"]["note"], text);
+    }
+
+    #[test]
+    fn manifest_still_rejects_invalid_identifiers_missing_rows_and_escaping_paths() {
+        let root = Path::new("C:/share");
+        let mut invalid = json!({"storagePath":format!("{FILE}invalid")});
+        assert!(hydrate_manifest_with(
+            &mut invalid,
+            root,
+            |_| panic!("invalid identifiers never reach SQL"),
+            |_, _| panic!()
+        )
+        .is_err());
+        let id = "a".repeat(64);
+        for relative in [None, Some("../private.svg")] {
+            let mut missing = json!({"storagePath":format!("{FILE}{id}")});
+            assert!(hydrate_manifest_with(
+                &mut missing,
+                root,
+                |_| Ok(relative
+                    .map(|path| HashMap::from([(id.clone(), path.into())]))
+                    .unwrap_or_default()),
+                |_, _| panic!()
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn text_attachments_keep_content_integrity_checks() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("note.txt");
+        let original = "data:image/png;base64,original-note";
+        fs::write(&path, original).unwrap();
+        let id = hash(original.as_bytes());
+        let mut canonical_root = None;
+        assert_eq!(
+            read_manifest_text(root.path(), &mut canonical_root, &id, &path).unwrap(),
+            original
+        );
+        fs::write(&path, "modified attachment").unwrap();
+        assert!(
+            read_manifest_text(root.path(), &mut canonical_root, &id, &path)
+                .unwrap_err()
+                .contains("校验失败")
+        );
+    }
 }
 pub fn references(value: &Value, ids: &mut BTreeSet<String>) {
     match value {

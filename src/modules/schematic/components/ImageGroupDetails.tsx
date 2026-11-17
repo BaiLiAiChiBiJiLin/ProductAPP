@@ -5,7 +5,7 @@ import type { ImageGroup } from '../layoutTypes'
 import { imageDetailsLayout } from '../services/imageDetailsLayoutService'
 import { detailPanelsForGroup } from '../arrangement/productGroupDetails'
 import { finishLabel } from '../services/finishLabelService'
-import { accessoryFrame, rememberAccessoryImage } from '../services/accessoryFrameService'
+import { accessoryFrame, accessorySourceRect, rememberAccessoryImage } from '../services/accessoryFrameService'
 import { resolveRemoteImage } from '../services/remoteImageService'
 import type { DimensionDisplayOverride, DimensionDisplayPrecision } from '../services/imageDimensionService'
 import { groupForDimensionDisplay } from '../services/dimensionDisplayService'
@@ -84,6 +84,7 @@ function AccessoryImage({ src, x, y, width, height, code, caption, captionHeight
   const safeScale = Number.isFinite(visual.scale) && visual.scale > 0 ? visual.scale : 1
   if (framed) {
     const frame = accessoryFrame(src, x, y, width, code)
+    const source = accessorySourceRect(frame)
     const centerX = frame.x + frame.frameWidth / 2, centerY = frame.y + frame.frameHeight / 2
     const dragBoundFunc = bounds ? function (this: KonvaNode, position: { x: number; y: number }) {
       return accessoryDragBound(this, position, bounds, frame.frameWidth, frame.frameHeight, safeScale)
@@ -92,7 +93,7 @@ function AccessoryImage({ src, x, y, width, height, code, caption, captionHeight
       onClick={event => { if (!selectionKey || !onSelect) return; event.cancelBubble = true; onSelect(selectionKey) }} onTap={event => { if (!selectionKey || !onSelect) return; event.cancelBubble = true; onSelect(selectionKey) }}
       onDragEnd={event => { if (selectionKey && onChange) onChange(selectionKey, { x: event.target.x() - centerX, y: event.target.y() - centerY }) }}>
       {selected && <Rect x={frame.x - 1} y={frame.y - 1} width={frame.frameWidth + 2} height={frame.frameHeight + 2} stroke="#2563eb" strokeWidth={1.5} listening={false}/>}<Rect x={frame.x} y={frame.y} width={frame.frameWidth} height={frame.frameHeight} fill="#fff" cornerRadius={1}/>
-      <KonvaImage image={image} crop={frame.crop} x={frame.imageX} y={frame.imageY} width={frame.width} height={frame.height}/>
+      <Group clipX={frame.imageX} clipY={frame.imageY} clipWidth={frame.width} clipHeight={frame.height}><KonvaImage image={image} {...source}/></Group>
       {code && <Text x={frame.x} y={frame.codeY} width={frame.frameWidth} height={12} text={code} align="center" fontSize={8} fontStyle="bold" fill="#475569" onDblClick={event => { event.cancelBubble = true; const next = window.prompt('编辑文字', code); if (next !== null && next !== code) onEditText?.(itemIds, 'accessoryCode', next) }} onDblTap={event => { event.cancelBubble = true; const next = window.prompt('编辑文字', code); if (next !== null && next !== code) onEditText?.(itemIds, 'accessoryCode', next) }}/>}
     </Group>
   }

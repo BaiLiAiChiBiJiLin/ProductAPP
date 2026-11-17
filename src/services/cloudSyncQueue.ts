@@ -1,6 +1,7 @@
 import { invoke, storageMode } from './backend'
 import { classifyCloudSyncError } from './cloudSyncErrors'
 import { LocalSyncState } from './localSyncState'
+import { trackDiagnosticEvent } from './diagnosticEvents'
 
 /** Shared-mode edits are coalesced locally and pushed after the editor is free. */
 export type CloudBatchSaveArgs = {
@@ -26,9 +27,10 @@ type QueueEntry = {
 }
 
 export type CloudSyncStatus = { state: 'idle' | 'queued' | 'syncing' | 'error' | 'blocked'; pending: number; error?: string }
-export type CloudSyncTask = { id: string; name: string; customerName?: string; operation: 'save_batch' | 'delete_batch'; assetCount: number; state: Exclude<CloudSyncStatus['state'], 'idle'>; attempts: number; error?: string; action?: string; blocked: boolean; deletionRequested?: boolean; nextAttemptAt?: number }
-export type CloudBatchSaveResult = { batchId?: string; assets?: unknown[]; metadata?: unknown; duplicate?: boolean }
+export type CloudSyncTask = { id: string; name: string; customerName?: string; operation: 'save_batch' | 'delete_batch'; assetCount: number; state: Exclude<CloudSyncStatus['state'], 'idle'>; attempts: number; error?: string; action?: string; blocked: boolean; recoverableAsNew?: boolean; deletionRequested?: boolean; nextAttemptAt?: number }
+export type CloudBatchSaveResult = { batchId?: string; assets?: unknown[]; metadata?: unknown; duplicate?: boolean; version?: number }
 export type CloudBatchSaveComplete = { id: string; revision: string; submitted: CloudBatchSaveArgs; result: CloudBatchSaveResult }
+export type CloudBatchRecovered = { id: string; batchId: string; submitted: CloudBatchSaveArgs; args: CloudBatchSaveArgs }
 const STORAGE_KEY = 'printflow-cloud-sync-queue-v1'
 const queueStore = new LocalSyncState<QueueEntry[]>('cloud-sync-queue', 'batches', STORAGE_KEY, () => [],
   (value): value is QueueEntry[] => Array.isArray(value) && value.every(entry => entry && typeof entry === 'object'
@@ -42,6 +44,7 @@ const queueStore = new LocalSyncState<QueueEntry[]>('cloud-sync-queue', 'batches
 const RETRY_DELAYS = [2_000, 5_000, 15_000, 30_000, 60_000]
 const listeners = new Set<(status: CloudSyncStatus) => void>()
 const saveListeners = new Set<(event: CloudBatchSaveComplete) => void>()
+const recoveryListeners = new Set<(event: CloudBatchRecovered) => void>()
 let runner: Promise<void> | undefined
 let inFlight: QueueEntry | undefined
 let inFlightDone: Promise<void> | undefined
@@ -54,6 +57,7 @@ const retainedAssetPaths = new Map<string, number>()
 const requestedRevisions = new Map<string, string>()
 const deferredCleanup = new Map<string, unknown>()
 const pendingEnqueues = new Map<string, QueueEntry>()
+const recoveries = new Map<string, Promise<string>>()
 
 const isLatestRequested = (entry: QueueEntry) => !requestedRevisions.has(entry.args.id) || requestedRevisions.get(entry.args.id) === entry.revision
 
@@ -103,6 +107,7 @@ export function cloudSyncTasks(): CloudSyncTask[] {
       assetCount: entry.args.assets.length, state, attempts: entry.attempts,
       error: entry.error, action: entry.deletionRequested ? '删除尚未完成，请在历史记录中重试删除。' : failure?.action,
       blocked,
+      recoverableAsNew: !entry.deletionRequested && !!failure && (failure.kind === 'conflict' || /已转移或不属于当前用户/.test(failure.message)),
       deletionRequested: entry.deletionRequested,
       ...(!entry.deletionRequested && !isBlocked(entry) && entry.error ? { nextAttemptAt: entry.nextAttemptAt } : {}) }
   })
@@ -130,6 +135,10 @@ export function onCloudSyncStatus(listener: (status: CloudSyncStatus) => void) {
 export function onCloudBatchSaveComplete(listener: (event: CloudBatchSaveComplete) => void) {
   saveListeners.add(listener)
   return () => { saveListeners.delete(listener) }
+}
+export function onCloudBatchRecovered(listener: (event: CloudBatchRecovered) => void) {
+  recoveryListeners.add(listener)
+  return () => { recoveryListeners.delete(listener) }
 }
 function scheduleRetry(at: number) {
   if (retryTimer !== undefined) window.clearTimeout(retryTimer)
@@ -188,6 +197,7 @@ async function runQueue(): Promise<void> {
         // Obsolete replies may advance the backend version, but must not
         // restore an older snapshot in an editor that has already moved on.
         if (acknowledged) {
+          trackDiagnosticEvent({ event: 'sync_committed', command: 'save_batch', stage: 'queue', batchId: entry.args.id, revision: entry.revision, resultVersion: result.version })
           const completed: CloudBatchSaveComplete = { id: entry.args.id, revision: entry.revision, submitted: entry.args, result }
           for (const listener of saveListeners) {
             try { listener(completed) } catch (error) { console.warn('共享批次同步完成通知失败', error) }
@@ -214,6 +224,7 @@ async function runQueue(): Promise<void> {
           return { ...item, attempts, nextAttemptAt: Date.now() + jittered, error: String(error), blocked: !failure.retryable }
         }), () => readQueue().find(item => item.key === entry.key))
         if (!failureSaved) continue
+        trackDiagnosticEvent({ event: 'sync_error', command: 'save_batch', stage: 'queue', batchId: entry.args.id, revision: entry.revision, attempts, errorKind: failure.kind, retryable: failure.retryable })
         emit('error', next.length, String(error))
         // A failed batch keeps its files and retry state, but must not prevent
         // other batches from reaching the cloud. The next loop schedules the
@@ -248,6 +259,7 @@ export async function enqueueCloudBatchSave(args: CloudBatchSaveArgs) {
       { ...entry, ...(deletions.has(args.id) || current.find(item => item.key === entry.key)?.deletionRequested ? { deletionRequested: true } : {}) }], entry, true)
   } finally { pendingEnqueues.delete(entry.revision) }
   if (persistenceFailures.get(args.id) === previousFailure) persistenceFailures.delete(args.id)
+  trackDiagnosticEvent({ event: 'sync_queued', command: 'save_batch', stage: 'queue', batchId: args.id, revision: entry.revision, assetCount: detached.assets.length })
   emit('queued', entries.length)
   startQueue()
 }
@@ -259,6 +271,49 @@ export async function clearCloudBatchSave(id: string) {
   if (!remaining.length && retryTimer !== undefined) { window.clearTimeout(retryTimer); retryTimer = undefined }
   emit(remaining.length ? 'queued' : 'idle', remaining.length)
   cleanDeferredAssets()
+}
+
+/** Explicit recovery preserves the old snapshot before moving its work to a
+ * fresh batch ID. Never rebase an old edit onto somebody else's cloud revision. */
+export function recoverCloudBatchAsNew(id: string): Promise<string> {
+  const existing = recoveries.get(id)
+  if (existing) return existing
+  const operation = (async () => {
+    await readyQueue()
+    const original = visibleQueue().find(entry => entry.args.id === id)
+    if (!original || !cloudSyncTasks().find(task => task.id === id)?.recoverableAsNew) throw new Error('只有版本或归属冲突的保存任务可以恢复为新批次')
+    if (inFlight?.args.id === id || deletions.has(id) || [...pendingEnqueues.values()].some(entry => entry.args.id === id)) throw new Error('当前批次仍在处理，请稍后重试')
+    const archive = new LocalSyncState<{ original: QueueEntry; recoveredBatchId: string } | null>(
+      'cloud-sync-recovery', original.revision, `printflow-cloud-sync-recovery:${original.revision}`, () => null,
+      (value): value is { original: QueueEntry; recoveredBatchId: string } | null => value === null || !!value && typeof value === 'object'
+        && typeof (value as { recoveredBatchId?: unknown }).recoveredBatchId === 'string'
+        && (value as { original?: QueueEntry }).original?.revision === original.revision)
+    await archive.ready()
+    const backup = await archive.update(saved => saved ?? { original, recoveredBatchId: crypto.randomUUID() })
+    if (!backup) throw new Error('恢复副本备份失败，原同步任务已保留')
+    const metadata = original.args.metadata && typeof original.args.metadata === 'object' ? original.args.metadata as Record<string, unknown> : {}
+    const customerName = typeof metadata.customerName === 'string' ? metadata.customerName : id
+    const copy: QueueEntry = { key: `save_batch:${backup.recoveredBatchId}`, command: 'save_batch', revision: crypto.randomUUID(), attempts: 0, nextAttemptAt: Date.now(),
+      args: { ...original.args, id: backup.recoveredBatchId, savedAt: new Date().toISOString(), metadata: { ...metadata, customerName: `${customerName}（恢复副本）` } } }
+    await updateQueue(entries => {
+      const current = entries.find(entry => entry.args.id === id)
+      if (current?.revision !== original.revision || !isLatestRequested(original) || deletions.has(id) || inFlight?.args.id === id) throw new Error('待同步内容已变化，原任务已保留，请重新处理')
+      // One durable commit adds the recovery and removes the blocked original.
+      return [...entries.filter(entry => entry.args.id !== id && entry.args.id !== copy.args.id), copy]
+    })
+    persistenceFailures.delete(id)
+    requestedRevisions.set(copy.args.id, copy.revision)
+    trackDiagnosticEvent({ event: 'sync_recovered', command: 'save_batch', stage: 'queue', batchId: id, recoveredBatchId: copy.args.id, revision: copy.revision, assetCount: copy.args.assets.length })
+    const recovered: CloudBatchRecovered = { id, batchId: copy.args.id, submitted: original.args, args: copy.args }
+    for (const listener of recoveryListeners) {
+      try { listener(recovered) } catch { console.warn('恢复批次通知失败') }
+    }
+    emit('queued')
+    startQueue()
+    return copy.args.id
+  })().finally(() => { recoveries.delete(id) })
+  recoveries.set(id, operation)
+  return operation
 }
 /** Cancel saves only for the deleted batch; a failed upload must not block deletion. */
 export function deleteBatchWithPendingSync(id: string): Promise<void> {
@@ -362,14 +417,14 @@ export async function flushCloudSyncQueue(batchId?: string) {
       void runQueue().then(() => check(true), error => { listeners.delete(listener); reject(error) })
     })
   }
-  // Explicit save/confirm is a synchronization barrier, including entries that
-  // were waiting for a retry. Background failures remain queued and visible.
+  // A global barrier wakes transient retries, but cannot resolve a version or
+  // ownership conflict. Those require an explicit per-batch recovery action.
   if (retryTimer !== undefined) { window.clearTimeout(retryTimer); retryTimer = undefined }
   const failed = new Map(persistenceFailures)
   await updateQueue(current => {
     const entries = new Map(current.map(entry => [entry.args.id, entry]))
     for (const [id, entry] of failed) if (!entries.get(id)?.deletionRequested && !deletions.has(id)) entries.set(id, entry)
-    return [...entries.values()].map(entry => entry.deletionRequested ? entry : { ...entry, nextAttemptAt: Date.now(), error: undefined, blocked: false })
+    return [...entries.values()].map(entry => entry.deletionRequested || isBlocked(entry) ? entry : { ...entry, nextAttemptAt: Date.now(), error: undefined, blocked: false })
   })
   for (const [id, entry] of failed) if (persistenceFailures.get(id) === entry) persistenceFailures.delete(id)
   await runQueue()

@@ -6,6 +6,7 @@ import { chooseHistoryDirectory, loadStorageSettings, saveStorageSettings, type 
 import './settings.css'
 import { invoke } from '../../services/backend'
 import { readPools } from '../imposition/impositionPoolStore'
+import DiagnosticsPanel from './DiagnosticsPanel'
 
 type Props = { open: boolean; onClose: () => void }
 
@@ -15,6 +16,7 @@ export default function SettingsModal({ open, onClose }: Props) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [choosing, setChoosing] = useState(false)
+  const [exportingDiagnostics, setExportingDiagnostics] = useState(false)
   const [error, setError] = useState('')
   const [revision, setRevision] = useState(0)
   const [section, setSection] = useState('storage')
@@ -96,13 +98,14 @@ export default function SettingsModal({ open, onClose }: Props) {
     finally { busy.current = false; setSaving(false) }
   }
 
-  const settingsBusy = saving || choosing
+  const settingsBusy = saving || choosing || exportingDiagnostics
   const closeSettings = () => { setSection('storage'); onClose() }
-  return <><Modal title="设置" open={open} width="96vw" className="app-settings-modal" onCancel={() => { if (!settingsBusy) closeSettings() }}
+  return <><Modal title="设置" open={open} width="96vw" className="app-settings-modal" onCancel={() => { if (!busy.current) closeSettings() }}
     closable={!settingsBusy} maskClosable={false} keyboard={false} footer={null}>
     <div className="app-settings-shell">
       <nav className="app-settings-nav" aria-label="设置项目">
         <button type="button" aria-current={section === 'storage' ? 'page' : undefined} disabled={settingsBusy} onClick={() => setSection('storage')}>历史记录保存目录</button>
+        <button type="button" aria-current={section === 'diagnostics' ? 'page' : undefined} disabled={settingsBusy} onClick={() => setSection('diagnostics')}>诊断与反馈</button>
       </nav>
       <div className="app-settings-content">
     <div className="storage-settings" hidden={section !== 'storage'}>
@@ -135,6 +138,7 @@ export default function SettingsModal({ open, onClose }: Props) {
       </>}
       {saved && <Alert type="success" showIcon message="历史记录保存目录已保存"/>}
     </div>
+    <DiagnosticsPanel active={open && section === 'diagnostics'} disabled={settingsBusy && !exportingDiagnostics} onBusyChange={value => { busy.current = value; setExportingDiagnostics(value) }}/>
       </div>
     </div>
   </Modal><Modal title="删除本机旧数据？" open={deleteConfirmOpen} onCancel={() => { if (!saving) setDeleteConfirmOpen(false) }} onOk={async () => { await maintain('delete_local_data'); setDeleteConfirmOpen(false) }} okText="删除旧数据" cancelText="取消" okButtonProps={{ danger: true }} confirmLoading={saving} maskClosable={!saving} keyboard={!saving}><p>删除后无法从本机恢复。共享数据源中的已迁移记录不受影响。</p></Modal>

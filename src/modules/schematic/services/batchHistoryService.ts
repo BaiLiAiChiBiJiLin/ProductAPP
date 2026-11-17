@@ -3,6 +3,8 @@ import { invoke } from '../../../services/backend'
 import { deleteBatchWithPendingSync, flushCloudSyncQueue, pendingCloudAssetPaths } from '../../../services/cloudSyncQueue'
 import type { Asset } from '../../../model'
 import type { BatchMetadata } from '../types'
+import { loadAssetSvg } from './assetSvgService'
+import { clearAssetPreviewCache } from './assetPreviewService'
 
 export type BatchRecord = { id: string; savedAt: string; assets: Asset[]; metadata?: BatchMetadata }
 export type BatchLoadProgress = { completed: number; total: number }
@@ -30,21 +32,21 @@ export function discardTemporaryAssets(assets: Asset[]): Promise<void> {
 export async function loadHistoryBatch(id: string, onProgress?: (progress: BatchLoadProgress) => void): Promise<BatchRecord> {
   await flushCloudSyncQueue(id)
   const record = await invoke<BatchRecord>('load_batch', { id })
+  clearAssetPreviewCache(id)
   const assets: Asset[] = []
-  const decoder = new TextDecoder('utf-8', { fatal: true })
   onProgress?.({ completed: 0, total: record.assets.length })
-  // Await each response before reading the next image. Promise.all would bring
-  // back the same memory peak as one giant batch response in the WebView.
+  // Normal history is a metadata manifest. Visible cards and editing actions
+  // read their own source files instead of blocking on every SVG in the batch.
+  // Older local records can contain inline-only artwork without a saved path;
+  // hydrate only those records so saving/grouping never loses their source.
   for (const asset of record.assets) {
-    try {
-      const bytes = await invoke<ArrayBuffer>('load_batch_asset_svg', { batchId: id, assetId: asset.id })
-      const svg = decoder.decode(bytes)
-      if (!svg) throw new Error('原始图片内容为空')
-      assets.push({ ...asset, svg })
-    } catch (error) {
-      throw new Error(`无法加载 ${asset.name}：${String(error)}`)
+    if (!asset.svg && !asset.storagePath) {
+      try { assets.push({ ...asset, svg: await loadAssetSvg(asset, id) }) }
+      catch (error) { throw new Error(`无法加载 ${asset.name}：${String(error)}`) }
+    } else {
+      assets.push(asset)
     }
-    onProgress?.({ completed: assets.length, total: record.assets.length })
   }
+  onProgress?.({ completed: assets.length, total: record.assets.length })
   return { ...record, assets }
 }

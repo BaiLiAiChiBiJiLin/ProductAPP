@@ -425,11 +425,12 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       const top = cell.base ? 23 : cell.caption ? 23 : 14
       // Horizontal artwork only needs side arrow clearance. The larger left
       // gutter is reserved for vertical measurement text, not every image.
-      const left = cell.base ? 4 : shaker ? 13 : originalW >= originalH ? 4 : 13
+      const rowGutter = cells.some(other => other !== cell && Math.abs(other.y - cell.y) < .01 && Math.abs(other.x - cell.x) > .01) ? GAP : 0
+      const left = (cell.base ? 4 : shaker ? 13 : originalW >= originalH ? 4 : 13) + rowGutter
       // A lone landscape artwork can use the full image column up to the
       // details boundary; the details renderer already provides text padding.
       const fillSingleLandscape = verticallyCenterSingleImage && originalW > originalH && !shaker && !chainTargetLongest
-      const right = cell.base ? 4 : fillSingleLandscape ? 0 : 5
+      const right = (cell.base ? 4 : fillSingleLandscape ? 0 : 5) + rowGutter
       // Front and derived Back share the most restrictive bottom clearance.
       const pairedAtBottom = cells.some(other => other.asset.id === cell.asset.id && other.y + other.height >= height - 0.1)
       const notePadding = cell.note ? 13 : 0

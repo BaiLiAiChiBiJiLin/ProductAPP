@@ -10,12 +10,25 @@ function trimFrameCache(cache: Map<string, unknown>) {
 }
 export function visibleAccessoryBounds(data: Uint8ClampedArray, width: number, height: number): Crop {
   let left = width, top = height, right = -1, bottom = -1
+  // White pixels can be actual artwork on a transparent PNG. Only opaque
+  // photographs need the white-background heuristic.
+  let transparent = false
+  for (let index = 3; index < data.length; index += 4) if (data[index] <= 8) { transparent = true; break }
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     const i = (y * width + x) * 4
-    if (data[i + 3] <= 8 || (data[i] >= 248 && data[i + 1] >= 248 && data[i + 2] >= 248)) continue
+    if (data[i + 3] <= 8 || (!transparent && data[i] >= 248 && data[i + 1] >= 248 && data[i + 2] >= 248)) continue
     left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y)
   }
   return right < left ? { x: 0, y: 0, width, height } : { x: left, y: top, width: right - left + 1, height: bottom - top + 1 }
+}
+
+/** Draw the complete source in one coordinate space, then clip to the fitted
+ * frame. Shared by Konva and SVG instead of engine-specific image cropping. */
+export function accessorySourceRect(frame: ReturnType<typeof accessoryFrame>) {
+  const scaleX = frame.width / frame.crop.width
+  const scaleY = frame.height / frame.crop.height
+  return { x: frame.imageX - frame.crop.x * scaleX, y: frame.imageY - frame.crop.y * scaleY,
+    width: frame.natural.width * scaleX, height: frame.natural.height * scaleY }
 }
 export function rememberAccessoryImage(src: string, image: HTMLImageElement) {
   rememberAccessorySize(src, image.naturalWidth, image.naturalHeight)

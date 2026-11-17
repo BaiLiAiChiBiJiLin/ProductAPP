@@ -103,7 +103,7 @@ export default function BatchHistoryPanel({ active, openingId, progress, onOpen,
   const filtering = Boolean(query.search || query.dateFrom || query.dateTo)
 
   if (openingId) return <div className="batch-history" hidden={!active}>
-    <div className="history-loading"><Loading size="large" text={`正在加载批次图片（${progress.completed}/${progress.total}）…`}/></div>
+    <div className="history-loading"><Loading size="large" text={progress.total ? `正在读取批次信息（${progress.total} 张图片）…` : '正在读取批次信息…'}/></div>
   </div>
 
   return <ConfigProvider locale={zhCN}><div className="batch-history" hidden={!active}>

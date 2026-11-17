@@ -21,6 +21,7 @@ export type LayoutBounds = { top: number; left: number; right: number; bottom: n
 export const PAPER_WIDTH = 500
 export const PAPER_HEIGHT = PAPER_WIDTH * 297 / 210
 export const GROUP_GAP = 1.8 * PAPER_WIDTH / 210
+export const HORIZONTAL_IMAGE_GAP = GROUP_GAP * 3
 export const PAGE_HEADER_HEIGHT = 90
 export const defaultLayoutBounds: LayoutBounds = { top: 95.2381, left: 8 * PAPER_WIDTH / 210, right: 8 * PAPER_WIDTH / 210, bottom: 10 * PAPER_WIDTH / 210, paddingLeft: 3 * PAPER_WIDTH / 210, paddingRight: 3 * PAPER_WIDTH / 210 }
 export const HEADER_BLOCK_HEIGHT = 26
@@ -167,14 +168,29 @@ export function svgDataUrl(svg: string) {
 // Blob URLs avoid expanding every SVG to a base64 string in the WebView. The
 // same asset is often shown in the pool, page thumbnails and the Konva canvas;
 // reusing one URL keeps large batches from duplicating their encoded payload.
-const svgObjectUrls = new Map<string, string>()
+type SvgObjectUrl = { url: string; users: number }
+const svgObjectUrls = new Map<string, SvgObjectUrl>()
+const svgSourcesByUrl = new Map<string, string>()
+/** Acquire one owner of an SVG preview URL; pair with releaseSvgObjectUrl. */
 export function svgObjectUrl(svg: string) {
   const cached = svgObjectUrls.get(svg)
-  if (cached) return cached
+  if (cached) { cached.users += 1; return cached.url }
   if (typeof URL.createObjectURL !== 'function') return svgDataUrl(svg)
   const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }))
-  svgObjectUrls.set(svg, url)
+  svgObjectUrls.set(svg, { url, users: 1 })
+  svgSourcesByUrl.set(url, svg)
   return url
+}
+
+/** Only the final preview owner may revoke a shared URL and remove its SVG. */
+export function releaseSvgObjectUrl(url: string) {
+  const source = svgSourcesByUrl.get(url)
+  if (source === undefined) return
+  const cached = svgObjectUrls.get(source)
+  if (!cached || cached.url !== url || --cached.users > 0) return
+  svgObjectUrls.delete(source)
+  svgSourcesByUrl.delete(url)
+  URL.revokeObjectURL(url)
 }
 
 function xmlText(value: unknown) {

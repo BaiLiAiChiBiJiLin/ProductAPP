@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-const queue = vi.hoisted(() => ({ cloudSyncTasks: vi.fn(), flushCloudSyncQueue: vi.fn() }))
+const queue = vi.hoisted(() => ({ cloudSyncTasks: vi.fn(), flushCloudSyncQueue: vi.fn(), recoverCloudBatchAsNew: vi.fn() }))
 vi.mock('../src/services/cloudSyncQueue', () => queue)
 import CloudSyncStatusTag from '../src/components/CloudSyncStatusTag'
 
@@ -31,6 +31,21 @@ test('blocked conflicts explain the required action rather than promising automa
   fireEvent.click(screen.getByRole('button', { name: '查看后台同步任务' }))
   expect(await screen.findByText('请核对云端内容，本地修改已保留。')).toBeTruthy()
   expect(screen.queryByText(/秒后自动重试/)).toBeNull()
+})
+
+test('a blocked conflict offers a confirmed recovery copy without retrying an overwrite', async () => {
+  queue.cloudSyncTasks.mockReturnValue([{ id: 'conflict', name: '冲突批次', operation: 'save_batch', assetCount: 28, state: 'blocked', attempts: 843, blocked: true,
+    recoverableAsNew: true, error: '记录已被其他用户修改' }])
+  queue.recoverCloudBatchAsNew.mockResolvedValue('recovery-copy')
+  render(<CloudSyncStatusTag status={{ state: 'blocked', pending: 1, error: '记录已被其他用户修改' }}/>)
+  fireEvent.click(screen.getByRole('button', { name: '查看后台同步任务' }))
+  fireEvent.click(await screen.findByRole('button', { name: '保留为新批次' }))
+  expect(queue.recoverCloudBatchAsNew).not.toHaveBeenCalled()
+  expect(await screen.findByText('先备份待同步内容，再创建恢复副本。云端原批次和归属保持不变。')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: '创建恢复副本' }))
+  await waitFor(() => expect(queue.recoverCloudBatchAsNew).toHaveBeenCalledExactlyOnceWith('conflict'))
+  expect(queue.flushCloudSyncQueue).not.toHaveBeenCalled()
+  expect(await screen.findByText('已保留本机修改并创建恢复副本，后台保存成功后可在历史记录中打开。')).toBeTruthy()
 })
 
 test('a failed deletion directs the user to retry deletion instead of resurrecting the saved batch', async () => {

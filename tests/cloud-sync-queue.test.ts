@@ -4,6 +4,7 @@ const api = vi.hoisted(() => ({ invoke: vi.fn(), storageMode: vi.fn() }))
 vi.mock('../src/services/backend', () => api)
 
 import { clearCloudBatchSave, cloudSyncTasks, deleteBatchWithPendingSync, enqueueCloudBatchSave, flushCloudSyncQueue, onCloudBatchSaveComplete, onCloudSyncStatus, pendingCloudAssetPaths, retainCloudAssetPaths, startCloudSyncRecovery } from '../src/services/cloudSyncQueue'
+import * as syncQueue from '../src/services/cloudSyncQueue'
 
 beforeEach(() => {
   localStorage.clear()
@@ -403,4 +404,86 @@ test('reconnect wakes a transient retry immediately without resuming a failed de
     expect(api.invoke.mock.calls.length - attemptsBefore).toBe(1)
     expect(JSON.parse(localStorage.getItem('printflow-cloud-sync-queue-v1')!).map((entry: { args: { id: string } }) => entry.args.id)).toEqual(['conflict', 'deleted'])
   } finally { stop(); for (const id of ['wake', 'conflict', 'deleted']) await clearCloudBatchSave(id); vi.clearAllTimers(); vi.useRealTimers() }
+})
+
+test('a blocked conflict can be preserved as a new batch without overwriting the cloud original', async () => {
+  const source = { id: 'artwork', svg: '<svg/>', storagePath: 'temp-assets/conflicted.svg', attributes: { QT: '25' } }
+  api.invoke.mockImplementation((command: string, args: { id: string; assets: unknown[] }) => {
+    if (command !== 'save_batch') return Promise.resolve()
+    if (args.id === 'recover-original') return Promise.reject(new Error('记录已被其他用户修改'))
+    return Promise.resolve({ batchId: args.id, assets: args.assets })
+  })
+  let recoveredId: string | undefined
+  try {
+    await enqueueCloudBatchSave({ id: 'recover-original', savedAt: 'now', assets: [source], metadata: { customerName: '客户' } })
+    await expect(flushCloudSyncQueue('recover-original')).rejects.toThrow('记录已被其他用户修改')
+    recoveredId = await syncQueue.recoverCloudBatchAsNew('recover-original')
+    await flushCloudSyncQueue(recoveredId)
+    expect(recoveredId).not.toBe('recover-original')
+    const saves = api.invoke.mock.calls.filter(([command]) => command === 'save_batch')
+    expect(saves.filter(([, args]) => args.id === 'recover-original')).toHaveLength(1)
+    expect(saves).toContainEqual(['save_batch', expect.objectContaining({ id: recoveredId, assets: [source], metadata: { customerName: '客户（恢复副本）' } })])
+    expect(cloudSyncTasks()).toEqual([])
+    const archived = Object.keys(localStorage).filter(key => key.startsWith('printflow-cloud-sync-recovery:')).map(key => localStorage.getItem(key))
+    expect(archived.join('')).toContain('recover-original')
+    expect(archived.join('')).toContain('"QT":"25"')
+  } finally {
+    await clearCloudBatchSave('recover-original')
+    if (recoveredId) await clearCloudBatchSave(recoveredId)
+  }
+})
+
+test('failed recovery persistence never discards the original conflict or its artwork', async () => {
+  api.invoke.mockRejectedValue(new Error('记录已被其他用户修改'))
+  await enqueueCloudBatchSave({ id: 'recover-failed', savedAt: 'now', assets: [{ storagePath: 'temp-assets/keep.svg' }] })
+  await expect(flushCloudSyncQueue('recover-failed')).rejects.toThrow('记录已被其他用户修改')
+  const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('磁盘不可写') })
+  try {
+    await expect(syncQueue.recoverCloudBatchAsNew('recover-failed')).rejects.toThrow('磁盘不可写')
+    expect(cloudSyncTasks()).toEqual([expect.objectContaining({ id: 'recover-failed', blocked: true })])
+    expect(pendingCloudAssetPaths()).toContain('temp-assets/keep.svg')
+    expect(api.invoke.mock.calls.filter(([command]) => command === 'save_batch')).toHaveLength(1)
+  } finally { storage.mockRestore(); await clearCloudBatchSave('recover-failed') }
+})
+
+test('a global flush does not resume a legacy conflict with hundreds of futile attempts', async () => {
+  localStorage.setItem('printflow-cloud-sync-queue-v1', JSON.stringify([{
+    key: 'save_batch:legacy-conflict', command: 'save_batch', revision: 'legacy-revision',
+    args: { id: 'legacy-conflict', savedAt: 'now', assets: [] }, attempts: 843, nextAttemptAt: 0,
+    error: '记录已被其他用户修改，请重新打开后再保存；本次修改未覆盖云端内容',
+  }]))
+  api.invoke.mockRejectedValue(new Error('记录已被其他用户修改'))
+  try {
+    await expect(flushCloudSyncQueue()).rejects.toThrow('记录已被其他用户修改')
+    expect(api.invoke).not.toHaveBeenCalled()
+    expect(cloudSyncTasks()[0]).toMatchObject({ id: 'legacy-conflict', attempts: 843, blocked: true, recoverableAsNew: true })
+  } finally { await clearCloudBatchSave('legacy-conflict') }
+})
+
+test('recovery retries reuse the saved copy ID if interrupted between backup and queue commit', async () => {
+  api.invoke.mockImplementation((command: string, args: { id: string; assets: unknown[] }) => command === 'save_batch' && args.id === 'interrupted-recovery'
+    ? Promise.reject(new Error('记录已被其他用户修改')) : Promise.resolve({ batchId: args?.id, assets: args?.assets }))
+  await enqueueCloudBatchSave({ id: 'interrupted-recovery', savedAt: 'now', assets: [{ storagePath: 'temp-assets/recover.svg' }] })
+  await expect(flushCloudSyncQueue('interrupted-recovery')).rejects.toThrow('记录已被其他用户修改')
+  const originalSet = Storage.prototype.setItem
+  let copiedId = ''
+  const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function(this: Storage, key, value) {
+    if (key === 'printflow-cloud-sync-queue-v1' && value.includes('恢复副本')) throw new Error('队列提交中断')
+    return originalSet.call(this, key, value)
+  })
+  try {
+    await expect(syncQueue.recoverCloudBatchAsNew('interrupted-recovery')).rejects.toThrow('队列提交中断')
+    expect(cloudSyncTasks()[0].id).toBe('interrupted-recovery')
+    expect(pendingCloudAssetPaths()).toContain('temp-assets/recover.svg')
+    const archiveKey = Object.keys(localStorage).find(key => key.startsWith('printflow-cloud-sync-recovery:'))!
+    copiedId = JSON.parse(localStorage.getItem(archiveKey)!).recoveredBatchId
+    storage.mockRestore()
+    expect(await syncQueue.recoverCloudBatchAsNew('interrupted-recovery')).toBe(copiedId)
+    await flushCloudSyncQueue(copiedId)
+    expect(cloudSyncTasks()).toEqual([])
+  } finally {
+    storage.mockRestore()
+    await clearCloudBatchSave('interrupted-recovery')
+    if (copiedId) await clearCloudBatchSave(copiedId)
+  }
 })

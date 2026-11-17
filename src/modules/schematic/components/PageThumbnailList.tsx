@@ -2,10 +2,13 @@ import { useRef, useState } from 'react'
 import { ArrowDown, ArrowUp, GripVertical } from 'lucide-react'
 import type { Asset, Page } from '../../../model'
 import PageThumbnail from './PageThumbnail'
+import { isEmptyArrangementPage } from '../services/emptyPageService'
 
-export default function PageThumbnailList({ pages, assets, activePage, onSelect, onReorder, disabled, visualScales }: {
+export default function PageThumbnailList({ pages, assets, activePage, onSelect, onReorder, onDelete, disabled, visualScales, batchId }: {
   pages: Page[]; assets: Map<string, Asset>; activePage: number; onSelect: (id: number) => void
   onReorder?: (source: number, target: number) => void; disabled: boolean; visualScales?: ReadonlyMap<string, number>
+  batchId?: string
+  onDelete?: (id: number) => void
 }) {
   const [source, setSource] = useState<number | null>(null)
   const [over, setOver] = useState<number | null>(null)
@@ -42,7 +45,7 @@ export default function PageThumbnailList({ pages, assets, activePage, onSelect,
     onDragOver={event => { if (disabled || !event.dataTransfer.types.includes('application/x-printflow-page')) return; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setOver(page.id) }}
     onDragEnd={() => { setSource(null); setOver(null) }}
     onDrop={event => { event.preventDefault(); const id = Number(event.dataTransfer.getData('application/x-printflow-page')); if (!disabled && pages.some(value => value.id === id)) onReorder?.(id, page.id); setSource(null); setOver(null) }}>
-    <PageThumbnail page={page} pageNumber={index + 1} assets={assets} active={activePage === page.id} onClick={() => !disabled && !suppressClick.current && onSelect(page.id)} visualScales={visualScales}/>
+    <PageThumbnail batchId={batchId} page={page} pageNumber={index + 1} assets={assets} active={activePage === page.id} onClick={() => !disabled && !suppressClick.current && onSelect(page.id)} visualScales={visualScales} onDelete={onDelete && pages.length > 1 && isEmptyArrangementPage(page) ? () => onDelete(page.id) : undefined} deleteDisabled={disabled}/>
     <div className="page-sort-controls"><GripVertical size={14} aria-label="拖动排序"/><button aria-label={`上移第 ${index + 1} 页`} disabled={disabled || index === 0 || !onReorder} onClick={() => onReorder?.(page.id, pages[index - 1].id)}><ArrowUp size={14}/></button><button aria-label={`下移第 ${index + 1} 页`} disabled={disabled || index === pages.length - 1 || !onReorder} onClick={() => onReorder?.(page.id, pages[index + 1].id)}><ArrowDown size={14}/></button></div>
   </div>)}</div>
 }

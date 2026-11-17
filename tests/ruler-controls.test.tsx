@@ -9,6 +9,7 @@ vi.mock('../src/modules/schematic/components/AssetPool',()=>({default:()=>null})
 vi.mock('../src/modules/schematic/components/PageThumbnail',()=>({default:()=>null}))
 import ArrangePage from '../src/modules/schematic/ArrangePage'
 import CanvasTools from '../src/modules/schematic/components/CanvasTools'
+import { annotationsSvg, manualRulerLabel } from '../src/modules/schematic/services/canvasAnnotationService'
 import { emptyArrangementDisplayState } from '../src/modules/schematic/services/arrangementDisplayState'
 afterEach(cleanup)
 const asset={id:'a',name:'a',productId:'a',width:100,height:200,svg:'<svg/>',previewUrl:'',thumbnailUrl:''}
@@ -95,4 +96,20 @@ it('locks the combined export selector while exporting', () => {
  render(<Harness exporting/>)
  expect((screen.getByRole('combobox', { name: '导出格式' }) as HTMLSelectElement).disabled).toBe(true)
  expect((screen.getByRole('button', { name: '导出中…' }) as HTMLButtonElement).disabled).toBe(true)
+})
+
+it('manual rulers support integer precision and keep the mm unit after editing and export', () => {
+ render(<Harness/>)
+ fireEvent.click(screen.getByRole('button', { name: '编辑自定义标尺' }))
+ fireEvent.change(screen.getByLabelText('标尺数值'), { target: { value: '12.70' } })
+ fireEvent.click(screen.getByRole('button', { name: /^确\s*认$/ }))
+ const decimal = screen.getByRole('spinbutton', { name: '小数位数' }) as HTMLInputElement
+ expect(decimal.disabled).toBe(false)
+ fireEvent.change(decimal, { target: { value: '0' } })
+ fireEvent.blur(decimal)
+ fireEvent.change(screen.getByLabelText('尺寸显示精度'), { target: { value: 'round' } })
+ const state = JSON.parse(screen.getByLabelText('页面状态').textContent!)
+ expect(state.annotations[0]).toMatchObject({ measuredMm: 12.7, label: '12.70', decimalPlaces: 0, precision: 'round' })
+ expect(annotationsSvg(state.annotations)).toContain('13 mm')
+ expect(manualRulerLabel(12.7, '12.70 mm')).toBe('12.70 mm')
 })

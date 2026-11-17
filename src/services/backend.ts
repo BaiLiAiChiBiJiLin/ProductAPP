@@ -1,5 +1,6 @@
 import { CloudWriteJournal, type PendingCloudWrite } from './cloudWriteJournal'
 import { classifyCloudSyncError } from './cloudSyncErrors'
+import { trackDiagnosticEvent, type DiagnosticEvent } from './diagnosticEvents'
 import { invoke as nativeInvoke, isTauri } from '@tauri-apps/api/core'
 
 export type StorageMode = { shared: boolean; environment: string; configPath: string; storageRoot?: string }
@@ -10,7 +11,7 @@ export function storageMode(): Promise<StorageMode> {
   return modeRequest
 }
 const sharedCommands = new Set([
-  'save_batch', 'load_batch', 'list_batches', 'delete_batch', 'delete_asset', 'load_batch_asset_svg', 'load_batch_thumbnails',
+  'save_batch', 'load_batch', 'list_batches', 'delete_batch', 'delete_asset', 'load_batch_asset_svg', 'load_batch_thumbnails', 'load_batch_asset_preview',
   'initialize_shared_user', 'list_shared_transfer_users', 'shared_transfer_directory', 'preview_shared_batch_transfer', 'send_shared_batch', 'refresh_shared_transfers',
   'save_schematic_review', 'load_schematic_review', 'list_schematic_reviews', 'load_schematic_review_resource', 'delete_schematic_review', 'update_schematic_review_payment_status',
   'submit_schematic_review_to_imposition', 'list_pending_impositions', 'load_imposition_job', 'return_imposition_to_review', 'update_imposition_image_quantity', 'update_imposition_image_quantities',
@@ -66,8 +67,20 @@ export function resetCloudSession() {
   for (const state of sessions.values()) state.listedVersions.clear()
 }
 
-async function sendWrite(state: CloudSession, key: string, pending: PendingCloudWrite): Promise<unknown> {
+function writeDiagnostic(key: string, pending: PendingCloudWrite, phase: 'submit' | 'ack' | 'committed' | 'error', details: Partial<DiagnosticEvent> = {}) {
+  trackDiagnosticEvent({
+    event: pending.command === 'send_shared_batch' ? `transfer_${phase}` : `sync_${phase}`,
+    batchId: key.startsWith('batch:') ? key.slice(6) : undefined,
+    requestId: pending.requestId, command: pending.command, expectedVersion: pending.expectedVersion,
+    userName: localStorage.getItem('printflow-account-name') ?? undefined,
+    recipient: pending.command === 'send_shared_batch' && typeof pending.args.recipient === 'string' ? pending.args.recipient : undefined,
+    ...details,
+  })
+}
+
+async function sendWrite(state: CloudSession, key: string, pending: PendingCloudWrite, replayed = false): Promise<unknown> {
   let response: { result: unknown }
+  writeDiagnostic(key, pending, 'submit', { replayed })
   try {
     response = await nativeInvoke('cloud_operation', {
       command: pending.command, args: pending.args,
@@ -75,6 +88,7 @@ async function sendWrite(state: CloudSession, key: string, pending: PendingCloud
     })
   } catch (error) {
     const failure = classifyCloudSyncError(error)
+    writeDiagnostic(key, pending, 'error', { stage: 'request', errorKind: failure.kind, retryable: failure.retryable })
     // Only dispatch rejections after the server's idempotency lookup prove this
     // request did not commit. Configuration, identity and request-digest failures
     // can precede that lookup even when an earlier attempt already committed.
@@ -86,13 +100,20 @@ async function sendWrite(state: CloudSession, key: string, pending: PendingCloud
     throw error
   }
   if (!response || typeof response !== 'object' || !Object.hasOwn(response, 'result')) {
+    writeDiagnostic(key, pending, 'error', { stage: 'acknowledgement', errorKind: 'data', retryable: true })
     throw new Error('云端保存响应无效，请稍后重试确认保存结果')
   }
   const result = response.result as Versioned | null
+  writeDiagnostic(key, pending, 'ack', { resultVersion: result?.version })
   const removed = ['delete_batch', 'delete_schematic_review', 'send_shared_batch'].includes(pending.command)
   // The acknowledgement and new base revision are persisted together. If this
   // fails, the original pending request remains available for another replay.
-  await state.journal.finish(key, pending.requestId, result?.version, removed)
+  try { await state.journal.finish(key, pending.requestId, result?.version, removed) }
+  catch (error) {
+    writeDiagnostic(key, pending, 'error', { stage: 'journal', errorKind: 'local-storage', retryable: false })
+    throw error
+  }
+  writeDiagnostic(key, pending, 'committed', { stage: 'journal', resultVersion: result?.version })
   if (removed) state.listedVersions.delete(key)
   else if (typeof result?.version === 'number') rememberListed(state, key, result.version)
   return response.result
@@ -113,7 +134,7 @@ function write(state: CloudSession, key: string, command: string, args: Args): P
         throw new Error('本地云端同步日志内容无效，请保留本地数据并联系管理员恢复')
       }
       try {
-        const acknowledged = await sendWrite(state, key, pending)
+        const acknowledged = await sendWrite(state, key, pending, true)
         if (pending.fingerprint === content) return acknowledged
       } catch (error) {
         if (state.journal.pending(key) || pending.fingerprint === content) throw error

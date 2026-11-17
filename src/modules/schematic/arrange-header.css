@@ -2,6 +2,12 @@
   container: schematic-canvas / inline-size;
 }
 
+.page-thumbnail-wrapper { position:relative; width:100%; }
+.page-card.has-delete .page-meta { padding-right:26px; }
+.page-empty-delete { position:absolute; right:8px; bottom:6px; width:22px; height:22px; display:grid; place-items:center; border:0; border-radius:4px; background:transparent; color:#ef4444; cursor:pointer; }
+.page-empty-delete:hover { background:#fff1f2; }
+.page-empty-delete:disabled { opacity:.4; cursor:default; }
+
 .arrange-page-enter .canvas-head {
   flex-wrap: nowrap;
   overflow-x: auto;

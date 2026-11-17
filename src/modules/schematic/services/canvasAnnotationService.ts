@@ -1,7 +1,7 @@
 import type { Asset, Page } from '../../../model.ts'
 import type { CanvasAnnotation } from '../layoutTypes.ts'
 import { itemForCanvasDisplay } from './canvasDisplayScaleService.ts'
-import { physicalSourceSize } from './imageDimensionService.ts'
+import { physicalSourceSize, formatDimensionNumber, type DimensionDisplayOverride } from './imageDimensionService.ts'
 import { imageGroupsForPage } from './groupBackgroundService.ts'
 import { RULER_COLOR, RULER_STROKE_WIDTH } from './imageDimensionService.ts'
 import { updateDetailText, type DetailTextSelection } from './detailTextService.ts'
@@ -47,9 +47,14 @@ export function constrainRulerPoint(start: Point, point: Point, mode: RulerMode)
 const MANUAL_RULER_NUMBER = /^(?:\d+(?:\.\d*)?|\.\d+)$/
 
 /** Keep an edited label's decimal text intact; new rulers use the two-place default. */
-export function manualRulerLabel(mm: number, raw?: string) {
-  const text = raw?.trim()
-  return `${text && MANUAL_RULER_NUMBER.test(text) ? text : Number(mm.toFixed(2))} mm`
+export function manualRulerLabel(mm: number, raw?: string, display?: Partial<DimensionDisplayOverride>) {
+  const text = raw?.trim().replace(/\s*mm$/i, '').trim()
+  const edited = text && MANUAL_RULER_NUMBER.test(text) ? text : undefined
+  const number = edited ? Number(edited) : mm
+  const formatted = display?.decimalPlaces !== undefined || display?.precision !== undefined
+    ? formatDimensionNumber(number, display.precision, display.decimalPlaces ?? 2)
+    : edited ?? Number(mm.toFixed(2))
+  return `${formatted} mm`
 }
 
 /** Place the dimension line parallel to two measured points at the chosen signed offset. */
@@ -72,7 +77,7 @@ export function manualRulerGeometry(annotation: Extract<CanvasAnnotation, { kind
   const ux = dx / length, uy = dy / length
   const nx = -uy, ny = ux
   const extensionLength = Number.isFinite(annotation.extensionOffset) ? annotation.extensionOffset! : Math.min(18, Math.max(8, length * 0.22))
-  const textWidth = Math.max(16, manualRulerLabel(annotation.measuredMm, annotation.label).length * 4 + 4)
+  const textWidth = Math.max(16, manualRulerLabel(annotation.measuredMm, annotation.label, annotation).length * 4 + 4)
   const gap = Math.min(textWidth / 2 + 3, Math.max(0, length / 2 - 5))
   const mx = (x + x2) / 2, my = (y + y2) / 2
   const angle = Math.atan2(dy, dx) * 180 / Math.PI
@@ -119,6 +124,6 @@ export function annotationsSvg(annotations: CanvasAnnotation[] = []) {
     const geometry = manualRulerGeometry(annotation)
     const line = ([x1, y1, x2, y2]: [number, number, number, number]) => `<path d="M${x1} ${y1}L${x2} ${y2}" stroke="${color}" stroke-width="${RULER_STROKE_WIDTH}" stroke-linecap="round"/>`
     const polygon = (points: [number, number, number, number, number, number]) => `<path d="M${points[0]} ${points[1]}L${points[2]} ${points[3]}L${points[4]} ${points[5]}Z" fill="${color}" stroke="${color}" stroke-width="${RULER_STROKE_WIDTH}"/>`
-    return `<g>${geometry.extension.map(line).join('')}${geometry.segment.map(line).join('')}${polygon(geometry.arrowStart)}${polygon(geometry.arrowEnd)}<text x="${geometry.textX}" y="${geometry.textY}" text-anchor="middle" dominant-baseline="central" transform="rotate(${geometry.textRotation} ${geometry.textX} ${geometry.textY})" font-size="8" fill="${color}">${manualRulerLabel(annotation.measuredMm, annotation.label)}</text></g>`
+    return `<g>${geometry.extension.map(line).join('')}${geometry.segment.map(line).join('')}${polygon(geometry.arrowStart)}${polygon(geometry.arrowEnd)}<text x="${geometry.textX}" y="${geometry.textY}" text-anchor="middle" dominant-baseline="central" transform="rotate(${geometry.textRotation} ${geometry.textX} ${geometry.textY})" font-size="8" fill="${color}">${manualRulerLabel(annotation.measuredMm, annotation.label, annotation)}</text></g>`
   }).join('')}</g>`
 }
