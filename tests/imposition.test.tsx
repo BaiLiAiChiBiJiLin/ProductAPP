@@ -1084,7 +1084,7 @@ it('shows base mixing in production, defaults on, invalidates cached choices and
   expect(calls().slice(6).every(call => call[1].request.allowBaseMixing === true)).toBe(true)
 })
 
-it('defaults to all, solves three strategies serially from one contour extraction, and renders only the selected plan', async () => {
+it('defaults to all, automatically previews cutting while later strategies run serially, and retains the selected plan', async () => {
   const finish: Array<(value: unknown) => void> = []
   const job = mockComparisonJob(() => new Promise(resolve => finish.push(resolve)))
   render(<ConfigProvider theme={{ token: { motion: false } }}><ImpositionPage active revision={0}/></ConfigProvider>)
@@ -1096,21 +1096,44 @@ it('defaults to all, solves three strategies serially from one contour extractio
   await selectWholeJobAndCalculate(job)
   const calls = () => mocks.invoke.mock.calls.filter(call => call[0] === 'pack_imposition_irregular')
   await waitFor(() => expect(finish).toHaveLength(1))
-  expect(calls().map(call => call[1].request.objective)).toEqual(['least-material'])
+  expect(calls().map(call => call[1].request.objective)).toEqual(['least-cutting'])
   expect(mocks.canvas.mock.calls.at(-1)![0].pages).toEqual([])
-  await act(async () => finish[0](comparisonResult(1)))
+  await act(async () => finish[0](comparisonResult(3)))
   await waitFor(() => expect(finish).toHaveLength(2))
-  expect((screen.getByRole('button', { name: /节省板材\s*版面 1/ }) as HTMLButtonElement).disabled).toBe(true)
-  await act(async () => finish[1](comparisonResult(3)))
+  const cuttingChoice = screen.getByRole('button', { name: /切割方案优先\s*版面 3/ }) as HTMLButtonElement
+  expect(cuttingChoice.disabled).toBe(false)
+  expect((screen.getByRole('button', { name: /节省板材\s*正在计算/ }) as HTMLButtonElement).disabled).toBe(true)
+  expect((screen.getByRole('button', { name: /综合最少\s*等待计算/ }) as HTMLButtonElement).disabled).toBe(true)
+  await waitFor(() => expect(mocks.canvas.mock.calls.at(-1)![0].pages).toHaveLength(3))
+  const cuttingPages = mocks.canvas.mock.calls.at(-1)![0].pages
+  expect(cuttingChoice.getAttribute('aria-pressed')).toBe('true')
+  expect(document.querySelector('.imposition-packing-results')!.textContent).toContain('本次版面 3')
+  expect(screen.getByRole('progressbar')).toBeTruthy()
+  expect((screen.getByRole('checkbox', { name: `选择任务 ${job.customerName}` }) as HTMLInputElement).disabled).toBe(true)
+  expect((screen.getByRole('combobox', { name: '拼版策略' }) as HTMLInputElement).disabled).toBe(true)
+  expect((screen.getByRole('button', { name: '导出 PDF' }) as HTMLButtonElement).disabled).toBe(true)
+  const calculating = screen.getByRole('button', { name: /智能拼版/ }) as HTMLButtonElement
+  expect(calculating.disabled).toBe(true)
+  fireEvent.click(calculating)
+  expect(calls()).toHaveLength(2)
+  await act(async () => finish[1](comparisonResult(1)))
   await waitFor(() => expect(finish).toHaveLength(3))
+  expect(mocks.canvas.mock.calls.at(-1)![0].pages).toBe(cuttingPages)
+  expect(cuttingChoice.getAttribute('aria-pressed')).toBe('true')
+  const materialChoice = screen.getByRole('button', { name: /节省板材\s*版面 1/ }) as HTMLButtonElement
+  expect(materialChoice.disabled).toBe(false)
+  fireEvent.click(materialChoice)
+  const materialPages = mocks.canvas.mock.calls.at(-1)![0].pages
+  expect(materialPages).toHaveLength(1)
   await act(async () => finish[2](comparisonResult(2)))
   const choices = screen.getByLabelText('拼版方案比较')
   await waitFor(() => expect((within(choices).getByRole('button', { name: /综合最少\s*版面 2/ }) as HTMLButtonElement).disabled).toBe(false))
-  expect(calls().map(call => call[1].request.objective)).toEqual(['least-material', 'least-cutting', 'combined'])
+  expect(calls().map(call => call[1].request.objective)).toEqual(['least-cutting', 'least-material', 'combined'])
   expect(calls().every(call => call[1].request.items === calls()[0][1].request.items)).toBe(true)
   expect(mocks.invoke.mock.calls.filter(call => call[0] === 'load_imposition_geometry')).toHaveLength(1)
-  expect(document.querySelector('.imposition-packing-results')).toBeNull()
-  expect(mocks.canvas.mock.calls.at(-1)![0].pages).toEqual([])
+  expect(mocks.canvas.mock.calls.at(-1)![0].pages).toBe(materialPages)
+  expect(materialChoice.getAttribute('aria-pressed')).toBe('true')
+  await waitFor(() => expect(screen.queryByRole('progressbar')).toBeNull())
   fireEvent.click(within(choices).getByRole('button', { name: /综合最少\s*版面 2/ }))
   await waitFor(() => expect(mocks.canvas.mock.calls.at(-1)![0].pages).toHaveLength(2))
   expect(mocks.canvas.mock.calls.at(-1)![0].pages.flat()).toHaveLength(3)
@@ -1142,8 +1165,39 @@ it('defaults to all, solves three strategies serially from one contour extractio
   for (const index of [3, 4, 5]) {
     await waitFor(() => expect(finish).toHaveLength(index + 1))
     await act(async () => finish[index](comparisonResult(1)))
+    if (index === 3) {
+      expect(mocks.canvas.mock.calls.at(-1)![0].pages).toHaveLength(1)
+      expect(screen.getByRole('button', { name: /切割方案优先\s*版面 1/ }).getAttribute('aria-pressed')).toBe('true')
+    }
   }
   await waitFor(() => expect((screen.getByRole('button', { name: /节省板材\s*版面 1/ }) as HTMLButtonElement).disabled).toBe(false))
+}, 15000)
+
+it('keeps an early preview usable when a later strategy fails and continues to the final strategy', async () => {
+  const pending: Array<{ resolve: (value: unknown) => void; reject: (reason: Error) => void }> = []
+  const job = mockComparisonJob(() => new Promise((resolve, reject) => pending.push({ resolve, reject })))
+  render(<ConfigProvider theme={{ token: { motion: false } }}><ImpositionPage active revision={0}/></ConfigProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: '开始拼版' }))
+  await selectWholeJobAndCalculate(job)
+  await waitFor(() => expect(pending).toHaveLength(1))
+  await act(async () => pending[0].resolve(comparisonResult(1)))
+  await waitFor(() => expect(pending).toHaveLength(2))
+  const cutting = screen.getByRole('button', { name: /切割方案优先\s*版面 1/ }) as HTMLButtonElement
+  expect(cutting.disabled).toBe(false)
+  expect(cutting.getAttribute('aria-pressed')).toBe('true')
+  const preview = mocks.canvas.mock.calls.at(-1)![0].pages
+  expect(preview).toHaveLength(1)
+  await act(async () => pending[1].reject(new Error('材料策略失败')))
+  await waitFor(() => expect(pending).toHaveLength(3))
+  expect((screen.getByRole('button', { name: /节省板材\s*计算失败：材料策略失败/ }) as HTMLButtonElement).disabled).toBe(true)
+  expect(cutting.disabled).toBe(false)
+  expect(cutting.getAttribute('aria-pressed')).toBe('true')
+  expect(mocks.canvas.mock.calls.at(-1)![0].pages).toBe(preview)
+  expect(screen.getByRole('progressbar')).toBeTruthy()
+  await act(async () => pending[2].resolve(comparisonResult(2)))
+  await waitFor(() => expect(screen.queryByRole('progressbar')).toBeNull())
+  expect(mocks.canvas.mock.calls.at(-1)![0].pages).toBe(preview)
+  expect((screen.getByRole('button', { name: '导出 PDF' }) as HTMLButtonElement).disabled).toBe(false)
 })
 
 it.each(['add-image', 'cancel-image', 'back'])('releases all comparison choices and canvas results when %s invalidates the workspace', async action => {

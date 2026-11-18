@@ -29,6 +29,10 @@ const products = normalizeProductConfigs([
     { name: 'Count', labelZh: '立牌数量', values: ['1', '2'] },
     { name: 'Size', labelZh: '尺寸', values: ['small', 'large'] },
   ] },
+  { productId: 'size-default', title: 'Hidden Size Default Product', productOptions: [
+    { name: 'Size', labelZh: '尺寸', defaultValue: 'large', values: [{ name: 'large', image: 'default-size.png' }] },
+    { name: 'Technique', labelZh: '工艺', defaultValue: 'Glossy', values: [{ name: 'Glossy', labelZh: '亮面', image: 'glossy.png' }] },
+  ] },
 ])
 const publicProducts = [{ id: 'public:P23', title: '公共立牌', options: [{ name: 'Size', label: '尺寸', values: [{ name: 'small', label: '小号', hidden: false, deleted: false, parentValues: [] }] }] }]
 
@@ -99,6 +103,44 @@ test('existing catalog products hide Size options while retaining quantity contr
  await chooseCatalogProduct()
  expect(screen.queryByRole('combobox', { name: '尺寸' })).toBeNull()
  expect(screen.getByRole('spinbutton', { name: 'QT（数量）' })).toBeTruthy()
+})
+
+test('confirming multiple images never saves the hidden Size default or its image', async () => {
+  const selected = savedAssets().map(asset => ({ ...asset, productGroupId: '', productId: '', productName: '', attributes: {}, attributeImages: {} }))
+  const confirm = vi.fn(async (_patch: unknown) => {})
+  render(<ConfigProvider theme={{ token: { motion: false } }}><ProductAttributesPanel allowGrouping={false} assets={selected} selectedAssetIds={new Set(selected.map(asset => asset.id))} onConfirmAttributes={confirm}/></ConfigProvider>)
+  await ready()
+  await choose('产品', 'Hidden Size Default Product')
+  expect(screen.queryByRole('combobox', { name: '尺寸' })).toBeNull()
+  fireEvent.change(screen.getByRole('spinbutton', { name: 'QT（数量）' }), { target: { value: '4' } })
+  fireEvent.click(screen.getByRole('button', { name: /^确\s*认$/ }))
+  await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1))
+  expect(confirm.mock.calls[0][0]).toMatchObject({
+    productId: 'size-default', attributes: { Technique: 'Glossy', QT: '4' }, attributeImages: { Technique: 'glossy.png' }, clearAttributes: true,
+  })
+  const patch = confirm.mock.calls[0][0] as { attributes: Record<string, string>; attributeImages: Record<string, string> }
+  expect(patch.attributes.Size).toBeUndefined()
+  expect(patch.attributeImages.Size).toBeUndefined()
+})
+
+test('confirming a saved product group removes hidden Size selections and images while preserving Count and independent QT', async () => {
+  const original = savedAssets().map(asset => ({ ...asset,
+    productId: 'standees', productName: 'Clear Acrylic Standees',
+    attributes: { Count: '2', Size: 'small', QT: asset.attributes!.QT }, attributeImages: { Size: `${asset.id}-size.png` },
+  }))
+  const { save } = mount(original)
+  await ready()
+  fireEvent.click(screen.getByRole('button', { name: '编辑组合' }))
+  expect(screen.queryByRole('combobox', { name: '尺寸' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: /^确\s*认$/ }))
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
+  const saved = save.mock.calls[0][0]
+  expect(saved.map(asset => asset.attributes?.QT ?? '')).toEqual(['3', '0', ''])
+  for (const asset of saved) {
+    expect(asset.attributes?.Count).toBe('2')
+    expect(asset.attributes?.Size).toBeUndefined()
+    expect(asset.attributeImages?.Size).toBeUndefined()
+  }
 })
 
 test('reopening a saved Shaker on a follower lets its product switch update the whole group', async () => {

@@ -24,6 +24,11 @@ export type CommonSelectionValues = { productId?: string; attributes: Record<str
 
 const normalized = (value: string) => value.trim().toLowerCase()
 
+/** Catalog size choices are hidden in the image editor and never saved onto artwork. */
+export function isCatalogSizeOption(option: Pick<ProductOption, 'name' | 'label'>): boolean {
+  return [option.name, option.label].some(value => /^(size|sizes|尺寸|尺寸选项|大小)$/i.test(value?.trim() ?? ''))
+}
+
 /** Return only values shared by every selected asset. Missing attributes count as empty. */
 export function commonSelectionValues(assets: Asset[], selectedIds: Set<string>, optionNames: string[]): CommonSelectionValues {
   const selected = assets.filter(asset => selectedIds.has(asset.id))

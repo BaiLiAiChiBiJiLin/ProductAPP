@@ -19,21 +19,23 @@ const artwork = {
 }
 
 for (const sample of fixture.cases) {
-  test(`${sample.name}: public and existing selections preserve attributes and export equal dimensions/accessories`, () => {
+  test(`${sample.name}: public and existing confirmations omit hidden Size and export equal source dimensions/accessories`, () => {
     const [publicProduct] = normalizePublicProductOptions({ categories: [{ products: [sample.public] }] })
     const [existingProduct] = normalizeProductConfigs({ products: [sample.local] })
     const assets = [publicProduct, existingProduct].map((product, index) => {
       const selections = sample.selections[index === 0 ? 'public' : 'local']
+      const { Size: _hiddenSize, ...expectedAttributes } = selections
       const patch = catalogConfirmationPatch({ ...emptyAttributeDraft(), productId: product.id, attributes: selections }, product)
       const confirmed = applyProductAttributePatch(artwork, patch)
-      assert.deepEqual(confirmed.attributes, selections)
+      assert.deepEqual(confirmed.attributes, expectedAttributes)
+      assert.equal(confirmed.attributeImages.Size, undefined)
       assert.equal(confirmed.attributeImages['Accessories Color'], 'https://fakestar-oss.oss-us-west-1.aliyuncs.com/uploads/1778827283218-24.png')
-      assert.deepEqual(readSelectionDraft([confirmed]).attributes, selections)
+      assert.deepEqual(readSelectionDraft([confirmed]).attributes, expectedAttributes)
       // finish_matching's Rust regression verifies these persisted process
       // names. This stage consumes the asset returned by the save command.
       return { ...confirmed, attributes: { ...confirmed.attributes, Finish: sample.finish } }
     })
-    assert.equal(dimensionForItem(assets[0], {}).label, '63.5 mm')
+    assert.equal(dimensionForItem(assets[0], {}).label, '50.0 mm')
     assert.deepEqual(detailsForAsset(assets[0]), detailsForAsset(assets[1]))
     assert.equal(detailsForAsset(assets[0]).accessoryCode, '24')
     const pages = assets.map((asset, index) => paginateAssets([asset], 12, undefined, [[publicProduct], [existingProduct]][index])[0])
@@ -42,7 +44,7 @@ for (const sample of fixture.cases) {
     for (const exporter of [pageSvg, pageRasterSvg]) {
       const exported = pages.map((page, index) => exporter(page, new Map([[assets[index].id, assets[index]]])))
       assert.equal(exported[0], exported[1])
-      assert.match(exported[0], /Size: 63\.5 mm/)
+      assert.match(exported[0], /Size: 50\.0 mm/)
       assert.match(exported[0], /QT: 12/)
       assert.ok(exported[0].includes(sample.finish))
       assert.ok(exported[0].includes(assets[0].attributeImages['Accessories Color']))

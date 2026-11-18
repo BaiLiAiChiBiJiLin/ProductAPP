@@ -1,7 +1,7 @@
 import type { Asset, NoteImage } from '../../../model'
 import { DEFAULT_NOTE_COLOR, DEFAULT_NOTE_FONT_SIZE, getNoteImages, noteImagesPatch, sameNoteImages } from './assetNotesService.ts'
 import type { ProductConfig } from './productConfigService'
-import { availableOptionValues, type ProductAttributePatch } from './productOptionRules.ts'
+import { availableOptionValues, isCatalogSizeOption, type ProductAttributePatch } from './productOptionRules.ts'
 
 export type AttributeDraft = { productId: string; attributes: Record<string, string>; images: Record<string, string>; note: string; noteFontSize: number; noteColor: string; noteImage: string; noteImages?: NoteImage[]; finishMatchDisabled?: boolean }
 export const emptyAttributeDraft = (): AttributeDraft => ({ productId: '', attributes: {}, images: {}, note: '', noteFontSize: DEFAULT_NOTE_FONT_SIZE, noteColor: DEFAULT_NOTE_COLOR, noteImage: '', finishMatchDisabled: false })
@@ -48,13 +48,16 @@ export function catalogConfirmationPatch(draft: AttributeDraft, product: Product
       if (!selected) continue
       resolvedOptions.add(option.name)
       selections[option.name] = selected.name
+      changed = true
+      // A hidden size may validate a linked option, but neither its value nor
+      // its image belongs in the confirmed artwork attributes.
+      if (isCatalogSizeOption(option)) continue
       // Catalog configs may call the process option `Finish`, while the
       // canvas uses the canonical `工艺` field. Keep one stored value.
       const targetKey = option.name.trim().toLowerCase() === 'finish' ? '工艺' : option.name
       attributes[targetKey] = selected.name
       const image = draft.images[option.name] || (option.name.trim().toLowerCase() === 'finish' ? draft.images['工艺'] : '') || selected.image || option.image
       if (image) attributeImages[targetKey] = image
-      changed = true
     }
   }
   if (draft.attributes.QT) attributes.QT = draft.attributes.QT

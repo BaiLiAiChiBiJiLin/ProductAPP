@@ -2,8 +2,8 @@ import type { NestRequest, NestResult } from './impositionRecords'
 import type { PackingObjective, PackingPlan } from './packingAlgorithms'
 
 export const PACKING_STRATEGIES: Array<{ value: PackingObjective; label: string }> = [
-  { value: 'least-material', label: '节省板材' },
   { value: 'least-cutting', label: '切割方案优先' },
+  { value: 'least-material', label: '节省板材' },
   { value: 'combined', label: '综合最少' },
 ]
 export type PackingChoice = {

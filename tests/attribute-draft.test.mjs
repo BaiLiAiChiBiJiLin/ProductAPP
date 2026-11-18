@@ -2,13 +2,40 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { emptyAttributeDraft, readSelectionDraft, catalogConfirmationPatch } from '../src/modules/schematic/services/attributeDraftService.ts'
 import { normalizeProductConfigs } from '../src/modules/schematic/services/productConfigService.ts'
+import { applyProductAttributePatch } from '../src/modules/schematic/services/productOptionRules.ts'
 
 test('catalog Finish is stored once as the canonical process field', () => {
   const product = { id: 'standees', title: 'Clear Acrylic Standees', options: [{ name: 'Finish', values: [{ name: 'Front Side Epoxy' }] }] }
   const patch = catalogConfirmationPatch({ ...emptyAttributeDraft(), attributes: { Finish: 'Front Side Epoxy' } }, product)
   assert.deepEqual(patch.attributes, { '工艺': 'Front Side Epoxy' })
-  assert.equal(patch.noteFontSize, 14)
-  assert.equal(patch.noteColor, '#666666')
+  assert.equal(patch.noteFontSize, 11)
+  assert.equal(patch.noteColor, '#ff4d4f')
+})
+
+test('hidden catalog size selections and their images are never confirmed onto artwork', () => {
+  for (const [name, label] of [['Size', '尺寸'], [' sizes ', 'Sizes'], ['尺寸', '尺寸'], ['尺寸选项', '尺寸选项'], ['大小', '大小'], ['dimension-choice', '尺寸']]) {
+    const [product] = normalizeProductConfigs([{ productId: 'p', title: '产品', productOptions: [
+      { name, label, defaultValue: 'small', image: 'size-option.png', values: [{ name: 'small', image: 'size-value.png' }] },
+      { name: 'Finish', values: [{ name: 'Epoxy', image: 'epoxy.png' }] },
+    ] }])
+    const draft = { ...emptyAttributeDraft(), attributes: { [name]: 'small', Finish: 'Epoxy', QT: '0' }, images: { [name]: 'old-size.png' } }
+    const patch = catalogConfirmationPatch(draft, product)
+    assert.deepEqual(patch.attributes, { 工艺: 'Epoxy', QT: '0' }, name)
+    assert.deepEqual(patch.attributeImages, { 工艺: 'epoxy.png' }, name)
+    const updated = applyProductAttributePatch({ id: 'a', width: 140, height: 180, sourceGroupWidthMm: 40, sourceGroupHeightMm: 50, attributes: { Size: 'old', [name]: 'small' }, attributeImages: { Size: 'legacy.png', [name]: 'old-size.png' } }, patch)
+    assert.deepEqual(updated.attributes, { 工艺: 'Epoxy', QT: '0' })
+    assert.deepEqual(updated.attributeImages, { 工艺: 'epoxy.png' })
+    assert.deepEqual([updated.width, updated.height, updated.sourceGroupWidthMm, updated.sourceGroupHeightMm], [140, 180, 40, 50])
+  }
+})
+
+test('a hidden size can validate a dependent option without being persisted itself', () => {
+  const [product] = normalizeProductConfigs([{ productId: 'p', title: '产品', productOptions: [
+    { name: 'Technique', linkedParent: 'Size', values: [{ name: 'Epoxy', parentValues: ['small'] }] },
+    { name: 'Size', label: '尺寸', defaultValue: 'small', values: ['small'] },
+  ] }])
+  const patch = catalogConfirmationPatch({ ...emptyAttributeDraft(), attributes: { Size: 'small', Technique: 'Epoxy', QT: '2' } }, product)
+  assert.deepEqual(patch.attributes, { Technique: 'Epoxy', QT: '2' })
 })
 
 test('blank images start fresh while populated images hydrate only their own values', () => {
