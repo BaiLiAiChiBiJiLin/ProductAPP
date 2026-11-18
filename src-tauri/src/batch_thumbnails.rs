@@ -2,10 +2,7 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path, sync::Mutex, time::UNIX_EPOCH};
-
-// Even independent WebView requests must never decode several SVGs at once.
-pub(crate) static RENDER_LOCK: Mutex<()> = Mutex::new(());
+use std::{fs, path::Path, time::UNIX_EPOCH};
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -16,7 +13,6 @@ pub struct BatchThumbnail {
 }
 
 pub fn load(conn: &Connection, batch_id: &str) -> Result<Vec<BatchThumbnail>, String> {
-    let _guard = RENDER_LOCK.lock().map_err(|error| error.to_string())?;
     let saved_at: String = conn
         .query_row(
             "SELECT saved_at FROM batches WHERE id=?1",
@@ -82,6 +78,8 @@ pub fn load(conn: &Connection, batch_id: &str) -> Result<Vec<BatchThumbnail>, St
     let mut complete = true;
     for (id, name, path) in sources {
         let rendered = (|| {
+            let bytes = fs::metadata(&path).ok().map(|info|info.len() as usize);
+            let _permit = if let Some(bytes) = bytes { crate::preview_runtime::acquire(bytes)? } else { crate::preview_runtime::acquire_unknown()? };
             // Older batches may still contain inline artwork. Resolve just the
             // current image when needed; never hydrate the other batch images.
             let inline: String = conn.query_row("SELECT COALESCE(json_extract(image.value,'$.svg'),'') FROM batches, json_each(batches.payload) image
@@ -117,15 +115,15 @@ pub fn load(conn: &Connection, batch_id: &str) -> Result<Vec<BatchThumbnail>, St
     Ok(previews)
 }
 
-/// Individual lazy previews share the history renderer's lock so expanding
-/// a nesting task cannot decode dozens of original SVGs simultaneously.
+/// Individual lazy previews share the CPU/memory budget with history previews.
 pub fn load_path(path: &Path) -> Result<String, String> {
     load_path_at_size(path, 128)
 }
 
-/// Canvas previews share the serial renderer, with a hard decoded-pixel bound.
+/// Canvas previews use bounded concurrency and a hard decoded-pixel bound.
 pub fn load_path_at_size(path: &Path, max_edge_px: u32) -> Result<String, String> {
-    let _guard = RENDER_LOCK.lock().map_err(|error| error.to_string())?;
+    let bytes = fs::metadata(path).map_err(|error|error.to_string())?.len() as usize;
+    let _permit = crate::preview_runtime::acquire(bytes)?;
     let edge = max_edge_px.clamp(128, 512);
     let source = crate::asset_previews::read_bounded(path)?;
     let png = if path

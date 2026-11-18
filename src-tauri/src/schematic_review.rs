@@ -1,6 +1,7 @@
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
 const RESOURCE_PREFIX: &str = "printflow-review:";
@@ -53,6 +54,9 @@ pub(super) fn ensure_store(conn: &Connection) -> Result<(), String> {
     ); CREATE TABLE IF NOT EXISTS schematic_review_resources (
         record_id TEXT NOT NULL, resource_id TEXT NOT NULL, content BLOB NOT NULL,
         PRIMARY KEY (record_id, resource_id)
+    ); CREATE TABLE IF NOT EXISTS schematic_review_resource_aliases (
+        record_id TEXT NOT NULL, alias TEXT NOT NULL, resource_id TEXT NOT NULL,
+        PRIMARY KEY (record_id, alias)
     ); CREATE TABLE IF NOT EXISTS schematic_review_payment_states (
         record_id TEXT PRIMARY KEY, payment_status TEXT NOT NULL CHECK (payment_status IN ('unpaid', 'paid'))
     ); CREATE INDEX IF NOT EXISTS schematic_reviews_saved_at ON schematic_reviews(saved_at DESC);")
@@ -95,9 +99,11 @@ fn externalize(
                 std::mem::take(text)
             };
             *count += 1;
-            let resource_id = format!("r{count}");
-            conn.execute("INSERT INTO schematic_review_resources (record_id, resource_id, content) VALUES (?1, ?2, ?3)",
+            let resource_id = format!("{:x}", Sha256::digest(content.as_bytes()));
+            conn.execute("INSERT OR IGNORE INTO schematic_review_resources (record_id, resource_id, content) VALUES (?1, ?2, ?3)",
                 params![id, resource_id, content.as_bytes()]).map_err(|error| error.to_string())?;
+            conn.execute("INSERT OR IGNORE INTO schematic_review_resource_aliases (record_id,alias,resource_id) VALUES (?1,?2,?3)",
+                params![id,format!("r{count}"),resource_id]).map_err(|error|error.to_string())?;
             *text = format!("{RESOURCE_PREFIX}{resource_id}");
             if let Some(key) = temporary {
                 staged.insert(key, text.clone());
@@ -123,6 +129,11 @@ fn externalize(
 // Resolve them before replacing resources so a failed save can roll back both.
 fn restore_resource_contents(conn: &Connection, id: &str, value: &mut Value) -> Result<(), String> {
     match value {
+        Value::String(text) if text.starts_with(crate::artwork_source::SNAPSHOT_PREFIX) => {
+            let source = crate::artwork_source::snapshot(text)?;
+            *text = String::from_utf8(load_resource(conn, &source.id, &source.resource_id)?)
+                .map_err(|_| "审核图片编码无效")?;
+        }
         Value::String(text) if text.starts_with(RESOURCE_PREFIX) => {
             let resource_id = text.strip_prefix(RESOURCE_PREFIX).unwrap();
             *text = String::from_utf8(load_resource(conn, id, resource_id)?)
@@ -227,6 +238,22 @@ pub(super) fn save_record(conn: &Connection, mut record: Value) -> Result<(), St
         object.insert("thumbnailUrl".into(), Value::String(String::new()));
     }
     restore_resource_contents(&transaction, &id, &mut record)?;
+    // Freeze old positional IDs before replacing blobs. A currently open lazy
+    // workspace may still refer to r1/r2 after notes are inserted or reordered.
+    {
+        let mut statement = transaction.prepare("SELECT resource_id,content FROM schematic_review_resources WHERE record_id=?1 AND length(resource_id)<>64").map_err(|e|e.to_string())?;
+        let mut rows = statement.query([&id]).map_err(|e|e.to_string())?;
+        let mut aliases = Vec::new();
+        while let Some(row) = rows.next().map_err(|e|e.to_string())? {
+            let old: String = row.get(0).map_err(|e|e.to_string())?;
+            let bytes: Vec<u8> = row.get(1).map_err(|e|e.to_string())?;
+            aliases.push((old,format!("{:x}",Sha256::digest(&bytes))));
+        }
+        drop(rows); drop(statement);
+        for (old,hash) in aliases {
+            transaction.execute("INSERT OR IGNORE INTO schematic_review_resource_aliases (record_id,alias,resource_id) VALUES (?1,?2,?3)",params![id,old,hash]).map_err(|e|e.to_string())?;
+        }
+    }
     transaction.execute("DELETE FROM schematic_review_resources WHERE record_id = ?1", [&id])
         .map_err(|error| error.to_string())?;
     record["paymentStatus"] = Value::String(summary.payment_status.as_str().into());
@@ -353,6 +380,7 @@ pub(super) fn delete_record(conn: &Connection, id: &str) -> Result<(), String> {
             [id],
         )
         .map_err(|error| error.to_string())?;
+    transaction.execute("DELETE FROM schematic_review_resource_aliases WHERE record_id=?1",[id]).map_err(|e|e.to_string())?;
     transaction
         .execute("DELETE FROM schematic_reviews WHERE id = ?1", [id])
         .map_err(|error| error.to_string())?;
@@ -436,7 +464,7 @@ pub(super) fn load_resource(
     resource_id: &str,
 ) -> Result<Vec<u8>, String> {
     conn.query_row(
-        "SELECT content FROM schematic_review_resources WHERE record_id = ?1 AND resource_id = ?2",
+        "SELECT content FROM schematic_review_resources WHERE record_id = ?1 AND (resource_id = ?2 OR resource_id = (SELECT resource_id FROM schematic_review_resource_aliases WHERE record_id=?1 AND alias=?2)) LIMIT 1",
         params![id, resource_id],
         |row| row.get(0),
     )
@@ -849,7 +877,8 @@ mod tests {
         assert_eq!(saved["pages"], updated["pages"]);
         assert_eq!(saved["display"], updated["display"]);
         assert_eq!(saved["paymentStatus"], "paid");
-        assert_eq!(load_resource(&conn, "reexport", "r1").unwrap(), "replacement".repeat(20_000).as_bytes());
+        let current_resource = saved["assets"][0]["svg"].as_str().unwrap().strip_prefix(RESOURCE_PREFIX).unwrap();
+        assert_eq!(load_resource(&conn, "reexport", current_resource).unwrap(), "replacement".repeat(20_000).as_bytes());
         assert_eq!(load_resource(&conn, "reexport", "r2").unwrap(), retained_back);
         let listed = list_records(&conn, &ReviewListQuery::default()).unwrap();
         assert_eq!(listed.total, 1);
@@ -937,6 +966,43 @@ mod tests {
             "metadata":{"customerName":"测试客户"},"pages":[{"items":[{"id":"one","x":23,"rulerHeightRange":[0.2,0.8]}, {"id":"back","derivedFrom":"one"}]}],
             "display":{"visualScales":[["one",1.5]],"dimensionDisplayOverrides":[["one",{"decimalPlaces":0,"precision":"default"}]]},
             "assets":[{"id":"asset","svg":"<svg>original</svg>","previewUrl":"blob:expired","storagePath":"old.svg"}]})
+    }
+
+    #[test]
+    fn deferred_snapshot_can_be_saved_as_a_new_independent_review() {
+        let conn = Connection::open_in_memory().unwrap();
+        let content = format!("<svg><!--{}--></svg>", "original".repeat(10_000));
+        let mut source = record("source");
+        source["assets"][0]["svg"] = json!(content);
+        save_record(&conn, source).unwrap();
+        let mut copy = load_record(&conn, "source").unwrap();
+        let resource = copy["assets"][0]["svg"].as_str().unwrap().strip_prefix(RESOURCE_PREFIX).unwrap().to_owned();
+        copy["id"] = json!("copy");
+        copy["assets"][0]["svg"] = json!(format!("{}{}", crate::artwork_source::SNAPSHOT_PREFIX, json!({"id":"source","resourceId":resource,"savedAt":"now"})));
+        save_record(&conn, copy).unwrap();
+        conn.execute("DELETE FROM schematic_review_resources WHERE record_id='source'", []).unwrap();
+        let saved = load_record(&conn, "copy").unwrap();
+        let resource = saved["assets"][0]["svg"].as_str().unwrap().strip_prefix(RESOURCE_PREFIX).unwrap();
+        assert_eq!(String::from_utf8(load_resource(&conn,"copy",resource).unwrap()).unwrap(), content);
+    }
+
+    #[test]
+    fn editing_notes_keeps_original_resource_identity_and_legacy_aliases_stable() {
+        let conn = Connection::open_in_memory().unwrap();
+        let content = "original-svg".repeat(10_000);
+        let mut source = record("stable"); source["assets"][0]["svg"] = json!(content);
+        save_record(&conn, source).unwrap();
+        let mut saved = load_record(&conn,"stable").unwrap();
+        let reference = saved["assets"][0]["svg"].as_str().unwrap().to_owned();
+        let resource = reference.strip_prefix(RESOURCE_PREFIX).unwrap().to_owned();
+        // Simulate a pre-upgrade positional resource and its loaded workspace.
+        conn.execute("UPDATE schematic_review_resources SET resource_id='r1' WHERE record_id='stable' AND resource_id=?1",[&resource]).unwrap();
+        saved["assets"][0]["svg"] = json!(format!("{}{}",crate::artwork_source::SNAPSHOT_PREFIX,json!({"id":"stable","resourceId":"r1","savedAt":"old"})));
+        saved["assets"][0]["noteImage"] = json!("note-image".repeat(10_000));
+        save_record(&conn,saved).unwrap();
+        assert_eq!(load_record(&conn,"stable").unwrap()["assets"][0]["svg"],reference);
+        assert_eq!(load_resource(&conn,"stable","r1").unwrap(),content.as_bytes());
+        assert_eq!(load_resource(&conn,"stable",&resource).unwrap(),content.as_bytes());
     }
 
     #[test]

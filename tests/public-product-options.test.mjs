@@ -1,13 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { normalizePublicProductOptions } from '../src/modules/schematic/services/publicProductOptionService.ts'
+import { normalizePublicProductOptions, PUBLIC_UNCATEGORIZED_CATEGORY } from '../src/modules/schematic/services/publicProductOptionService.ts'
 import { availableOptionValues } from '../src/modules/schematic/services/productOptionRules.ts'
 
-test('public product options flatten categories and keep the public id namespace', () => {
+test('public product options retain category labels and keep the public id namespace', () => {
   const products = normalizePublicProductOptions({
     success: true,
     categories: [{
       name: 'standees',
+      title: 'Standees',
+      titleZh: '立牌',
       products: [{
         productId: 'P23',
         title: 'Broken Glass Acrylic Standees',
@@ -28,12 +30,30 @@ test('public product options flatten categories and keep the public id namespace
 
   assert.deepEqual(products.map(product => product.id), ['public:P23', 'public:P99'])
   assert.equal(products[0].title, '全息玻璃碎立牌')
+  assert.deepEqual(products[0].category, { id: 'standees', title: '立牌' })
   assert.equal(products[0].options[0].label, '立牌数量')
   assert.deepEqual(products[0].options[0].values[0], {
     name: '2', label: '2件', image: 'quantity.png', hidden: false, deleted: false, parentValues: [],
   })
   assert.equal(products[1].title, 'English Product')
+  assert.deepEqual(products[1].category, PUBLIC_UNCATEGORIZED_CATEGORY)
   assert.equal(products[1].options[0].values[0].name, 'small')
+})
+
+test('category labels fall back to English, name and a stable unnamed category without changing product order', () => {
+  const response = { categories: [
+    { name: 'keychains', titleZh: ' ', title: 'Keychains', products: [{ productId: 'P1', title: 'A' }] },
+    { name: 'pins', products: [{ productId: 'P2', title: 'B' }] },
+    { products: [{ title: 'C' }, { productId: 'hidden', title: 'Hidden', hidden: true }] },
+  ], uncategorizedProducts: [{ productId: 'P4', title: 'D' }] }
+  const products = normalizePublicProductOptions(response)
+  assert.deepEqual(products.map(product => [product.id, product.category]), [
+    ['public:P1', { id: 'keychains', title: 'Keychains' }],
+    ['public:P2', { id: 'pins', title: 'pins' }],
+    ['public:product-3', { id: 'category-3', title: '分类 3' }],
+    ['public:P4', PUBLIC_UNCATEGORIZED_CATEGORY],
+  ])
+  assert.deepEqual(normalizePublicProductOptions(response), products)
 })
 
 test('public products remain selectable even when they have no configurable options', () => {

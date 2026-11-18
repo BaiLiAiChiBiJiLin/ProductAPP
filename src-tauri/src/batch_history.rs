@@ -123,6 +123,13 @@ pub(super) fn read_record(conn: &Connection, id: &str) -> Result<BatchRecord, St
     })
 }
 
+/// Preview/edit one original without deserializing every asset in its batch.
+pub(super) fn read_asset(conn: &Connection, batch_id: &str, asset_id: &str) -> Result<Asset,String> {
+    let value: String = conn.query_row("SELECT image.value FROM batches, json_each(batches.payload) image WHERE batches.id=?1 AND json_extract(image.value,'$.id')=?2 LIMIT 1",
+        params![batch_id,asset_id], |row|row.get(0)).optional().map_err(|error|error.to_string())?.ok_or("图片不属于当前历史批次")?;
+    serde_json::from_str(&value).map_err(|error|format!("历史图片读取失败：{error}"))
+}
+
 /// Never hydrate an entire batch into one WebView IPC response. Original SVGs
 /// are read separately so native serialization does not multiply batch memory.
 pub(super) fn manifest(conn: &Connection, id: &str) -> Result<BatchRecord, String> {
@@ -142,11 +149,7 @@ pub(super) fn artwork(
 ) -> Result<Vec<u8>, String> {
     // Resolve only assets belonging to this saved batch; the frontend does not
     // provide an arbitrary file path. Inline SVGs from older records still work.
-    let asset: Asset = read_record(conn, batch_id)?
-        .assets
-        .into_iter()
-        .find(|asset| asset.id == asset_id)
-        .ok_or("图片不属于当前历史批次")?;
+    let asset = read_asset(conn, batch_id, asset_id)?;
     let bytes = if asset.svg.is_empty() {
         if asset.storage_path.is_empty() {
             return Err(format!("图片 {} 缺少原始文件", asset.name));
@@ -431,6 +434,18 @@ mod tests {
         assert!(artwork(&conn, "ds", "one")
             .unwrap_err()
             .contains("读取失败"));
+    }
+
+    #[test]
+    fn one_preview_does_not_deserialize_unrelated_assets_in_the_batch() {
+        let good = asset("target");
+        let conn = database(json!([good, {"id":"unrelated","width":"legacy-invalid-number","svg":"do-not-load"}]));
+        assert!(read_record(&conn,"ds").is_err());
+        let selected = read_asset(&conn,"ds","target").unwrap();
+        assert_eq!(selected.id,"target");
+        assert_eq!(selected.note,"保留备注");
+        assert!(read_asset(&conn,"other-batch","target").is_err());
+        assert!(read_asset(&conn,"ds","unknown").is_err());
     }
 
     #[test]

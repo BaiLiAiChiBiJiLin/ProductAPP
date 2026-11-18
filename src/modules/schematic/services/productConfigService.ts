@@ -21,6 +21,7 @@ export type ProductOption = {
 export type ProductConfig = {
   id: string
   title: string
+  category?: { id: string; title: string }
   options: ProductOption[]
 }
 

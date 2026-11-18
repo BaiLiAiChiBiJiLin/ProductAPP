@@ -12,6 +12,6 @@
 .stage-wrap.is-drawing-mode { cursor: crosshair; }
 .page-sort-item { touch-action: none; user-select: none; position: relative; border-radius: 8px; content-visibility: auto; contain-intrinsic-size: 128px; }
 .page-sort-item.is-drag-over { outline: 2px solid #1677ff; outline-offset: 2px; }
-.page-sort-controls { display: flex; justify-content: flex-end; gap: 4px; margin: -4px 0 8px; }
-.page-sort-controls button { color: #64748b; border: 0; background: transparent; cursor: pointer; }
+.page-sort-controls { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin: -4px 0 8px; }
+.page-sort-controls button { display: inline-flex; align-items: center; justify-content: center; color: #64748b; border: 0; background: transparent; cursor: pointer; }
 .page-sort-controls button:disabled { opacity: .3; cursor: default; }

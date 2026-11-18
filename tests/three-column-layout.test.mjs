@@ -152,7 +152,7 @@ test('Finish overlays a single line without changing group height or pagination'
  assert.ok(item.y < plain.items[0].y)
  assert.ok(item.y + item.h / 2 <= group.y + group.height - 16 + 1e-7)
  const svg = pageSvg(page, new Map(assets.map(asset => [asset.id, asset])))
- assert.match(svg, /text-anchor="end"[^>]*font-size="10"[^>]*fill="#ff4d4f">Epoxy/)
+ assert.match(svg, /text-anchor="end"[^>]*font-size="11"[^>]*fill="#ff4d4f">Epoxy/)
 })
 test('a group with one image centers the artwork vertically inside its image cell', () => {
  const source = { ...asset('single-center'), width: 100, height: 45 }

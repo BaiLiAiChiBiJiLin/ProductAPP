@@ -3,10 +3,11 @@ import { headerFor } from '../arrangement/pageSections.ts'
 import type { ArrangementDisplayState } from './arrangementDisplayState.ts'
 import { itemForCanvasDisplay } from './canvasDisplayScaleService.ts'
 import { imageGroupsForPage } from './groupBackgroundService.ts'
-import { selectSvgLayers, svgLayers, withWindowLayerOverlay } from './svgLayerService.ts'
+import { selectSvgLayers, svgLayerPlan, svgLayers, withWindowLayerOverlay } from './svgLayerService.ts'
+import { artworkGeometrySvg } from './artworkSourceService.ts'
 
 /** Add an editable back placement without regenerating the source or its group. */
-export function showBackArtwork(page: Page, itemId: string, asset: Asset, display: ArrangementDisplayState, bounds: LayoutBounds = defaultLayoutBounds) {
+export function showBackArtwork(page: Page, itemId: string, asset: Asset, display: ArrangementDisplayState, bounds: LayoutBounds = defaultLayoutBounds, version?: string) {
   const source = page.items.find(item => item.id === itemId && item.assetId === asset.id)
   if (!source) return undefined
   const layers = svgLayers(asset.svg, asset.sourceImages)
@@ -35,8 +36,9 @@ export function showBackArtwork(page: Page, itemId: string, asset: Asset, displa
   const width = Math.abs(Math.cos(angle)) * visible.w + Math.abs(Math.sin(angle)) * visible.h
   const height = Math.abs(Math.sin(angle)) * visible.w + Math.abs(Math.cos(angle)) * visible.h
   const dx = width + GROUP_GAP * 2
+  const backSvg = selectSvgLayers(asset.svg, ids)
   const back: Item = { ...source, id, derivedFrom: sourceId, manualBack: true, x: source.x + dx,
-    backSvg: selectSvgLayers(asset.svg, ids), svgLayerIds: ids, svgLayerId: ids.length === 1 ? ids[0] : undefined,
+    backSvg: version ? undefined : backSvg, artworkVariant: version ? { layers: { version, ...svgLayerPlan(asset.svg, ids) } } : undefined, geometrySvg: artworkGeometrySvg(backSvg), svgLayerIds: ids, svgLayerId: ids.length === 1 ? ids[0] : undefined,
     mirrorX: true, caption: 'Back', captionHidden: false, note: undefined,
     suppressRuler: true, rulerWidth: false, rulerHeight: false }
   const groups = imageGroupsForPage(page)

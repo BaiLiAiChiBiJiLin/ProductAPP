@@ -210,6 +210,14 @@ pub fn hydrate(
     texts: bool,
 ) -> Result<()> {
     match value {
+        Value::String(s) if texts && s.starts_with(crate::artwork_source::SNAPSHOT_PREFIX) => {
+            let source = crate::artwork_source::snapshot(s)?;
+            let record = super::reviews::get(conn, &source.id, false)?;
+            let mut refs = BTreeSet::new();
+            references(&record.value, &mut refs);
+            if !refs.contains(&source.resource_id) { return Err("资源不属于当前审核快照".into()); }
+            *s = String::from_utf8(read(conn, env, &format!("{TEXT}{}",source.resource_id))?).map_err(|_| "审核图片编码无效")?;
+        }
         Value::String(s) if s.starts_with(FILE) => {
             *s = path(conn, env, s)?.to_string_lossy().into_owned()
         }

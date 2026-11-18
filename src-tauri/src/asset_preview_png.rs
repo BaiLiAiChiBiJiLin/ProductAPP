@@ -43,7 +43,7 @@ pub(crate) fn reduce(source: impl Read, edge: u32) -> Result<ReducedPng, String>
     {
         return Err("PNG 尺寸超过逐行预览预算".into());
     }
-    let ratio = (edge.clamp(1, 512) as f64 / width.max(height) as f64).min(1.0);
+    let ratio = (edge.clamp(1, 4096) as f64 / width.max(height) as f64).min(1.0);
     let out_width = (width as f64 * ratio).round().max(1.0) as u32;
     let out_height = (height as f64 * ratio).round().max(1.0) as u32;
     let xs: Vec<u32> = (0..out_width)

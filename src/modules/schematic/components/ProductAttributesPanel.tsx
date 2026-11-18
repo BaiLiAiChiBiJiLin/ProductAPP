@@ -7,6 +7,7 @@ import type { ProductConfig } from '../services/productConfigService'
 import Loading from '../../../components/Loading'
 import useProductConfigs from '../hooks/useProductConfigs'
 import usePublicProductConfigs from '../hooks/usePublicProductConfigs'
+import { PUBLIC_UNCATEGORIZED_CATEGORY } from '../services/publicProductOptionService'
 import ProductOptionField from './ProductOptionField'
 import CustomProductForm from './CustomProductForm'
 import { availableOptionValues, applyAttributeValues, applyAttributeImages, dependentOptionNames, isCatalogSizeOption, type ProductAttributePatch } from '../services/productOptionRules'
@@ -61,6 +62,7 @@ export default function ProductAttributesPanel({ assets, batchId, selectedAssetI
   const [notice, noticeContext] = message.useMessage()
   const [localMode, setMode] = useState<'existing' | 'custom'>('existing')
   const [productSource, setProductSource] = useState<ProductSource>('local')
+  const [publicCategoryId, setPublicCategoryId] = useState('')
   const [localDraft, setDraft] = useState(emptyAttributeDraft)
   const [localCustom, setCustom] = useState(emptyCustomProduct)
   const editor = session?.editors[session.activeId] ?? { mode: localMode, draft: localDraft, custom: localCustom }
@@ -75,6 +77,7 @@ export default function ProductAttributesPanel({ assets, batchId, selectedAssetI
   const [previousSelection, setPreviousSelection] = useState<string | null>(null)
   if (selectionKey !== previousSelection) {
     setPreviousSelection(selectionKey)
+    setPublicCategoryId('')
     setError('')
     const cached = selected.length === 1 ? grouping?.readDraft(selected[0].id) : undefined
     const next = cached?.draft ?? readSelectionDraft(selected)
@@ -111,7 +114,20 @@ export default function ProductAttributesPanel({ assets, batchId, selectedAssetI
   }
   const product = products.find(item => item.id === draft.productId)
   const productTab = mode === 'custom' ? 'custom' : draft.productId ? draft.productId.startsWith('public:') ? 'public' : 'local' : productSource
-  const tabProducts = productTab === 'public' ? publicProducts : localProducts
+  const publicCategories = useMemo(() => [...new Map(publicProducts.map(item => {
+    const category = item.category ?? PUBLIC_UNCATEGORIZED_CATEGORY
+    return [category.id, category] as const
+  })).values()], [publicProducts])
+  const activeCategoryId = publicCategories.some(category => category.id === publicCategoryId) ? publicCategoryId : ''
+  const tabProducts = productTab === 'public'
+    ? publicProducts.filter(item => !activeCategoryId || (item.category ?? PUBLIC_UNCATEGORIZED_CATEGORY).id === activeCategoryId)
+    : localProducts
+  const selectPublicCategory = (id: string) => {
+    setPublicCategoryId(id)
+    if (id && draft.productId && (!product || (product.category ?? PUBLIC_UNCATEGORIZED_CATEGORY).id !== id)) {
+      changeEditor({ ...editor, mode: 'existing', draft: { ...draft, productId: '', attributes: {}, images: {}, finishMatchDisabled: false } }, false)
+    }
+  }
   const selectProduct = (id: string) => {
     setProductSource(id.startsWith('public:') ? 'public' : 'local')
     const selectedProduct = products.find(item => item.id === id)
@@ -161,6 +177,7 @@ export default function ProductAttributesPanel({ assets, batchId, selectedAssetI
           changeEditor(nextEditor, Boolean(groupingTrigger(nextEditor, products)))
           return
         }
+        if (key === 'public' && productTab !== 'public') setPublicCategoryId('')
         setProductSource(key as ProductSource)
         const nextEditor = { ...editor, mode: 'existing' as const, draft: productTab === key ? draft : { ...draft, productId: '', attributes: {}, images: {}, finishMatchDisabled: false } }
         changeEditor(nextEditor, false)
@@ -174,7 +191,8 @@ export default function ProductAttributesPanel({ assets, batchId, selectedAssetI
           message={publicProducts.length ? '公共产品更新失败，当前使用本地缓存' : '公共产品配置不可用'}
           description={<><div>{publicConfigError || '公共产品缓存尚未准备好，请稍后重试。'}</div><Button style={{ marginTop: 8 }} disabled={publicRefreshing || publicLoading} icon={publicRefreshing ? <Loading size="small" inline/> : undefined} onClick={() => void refreshPublic()}>{publicRefreshing ? '正在刷新…' : '刷新公共产品'}</Button></>}/>}
         <div className="product-config-form">
-          <label className="product-config-field"><span>{productTab === 'public' ? '公共产品' : '产品'}</span><Select aria-label={productTab === 'public' ? '公共产品' : '产品'} showSearch optionFilterProp="label" disabled={!selected.length || (productTab === 'public' ? publicLoading : loading) || productLocked} placeholder="请选择产品" value={tabProducts.some(item => item.id === product?.id) ? product?.id : undefined} options={tabProducts.map(item => ({ value: item.id, label: item.title }))} onChange={selectProduct}/></label>
+          {productTab === 'public' && <label className="product-config-field"><span>产品大类</span><Select aria-label="产品大类" showSearch optionFilterProp="label" disabled={!selected.length || publicLoading || productLocked} value={activeCategoryId} options={[{ value: '', label: '全部产品' }, ...publicCategories.map(category => ({ value: category.id, label: category.title }))]} onChange={selectPublicCategory}/></label>}
+          <label className="product-config-field"><span>{productTab === 'public' ? '具体产品' : '产品'}</span><Select aria-label={productTab === 'public' ? '具体产品' : '产品'} showSearch optionFilterProp="label" disabled={!selected.length || (productTab === 'public' ? publicLoading : loading) || productLocked} placeholder="请选择产品" value={tabProducts.some(item => item.id === product?.id) ? product?.id : undefined} options={tabProducts.map(item => ({ value: item.id, label: item.title }))} onChange={selectProduct}/></label>
           {product?.options.filter(option => !isCatalogSizeOption(option)).map(option => { const values = availableOptionValues(option, draft.attributes); const value = draft.attributes[option.name] ?? (option.name.trim().toLowerCase() === 'finish' ? draft.attributes['工艺'] : undefined); const image = draft.images[option.name] ?? (option.name.trim().toLowerCase() === 'finish' ? draft.images['工艺'] : undefined); return values.length ? <ProductOptionField key={`${product.id}:${option.name}`} option={option} values={values} value={value} imageOverride={image} disabled={!selected.length || (quantityLocked && lockedOptions.has(option.name))} onChange={(nextValue, nextImage) => changeOption(option.name, nextValue, nextImage)}/> : null })}
           <label className="product-config-field"><span>QT（数量）</span><InputNumber aria-label="QT（数量）" disabled={!selected.length} min={0} max={2147483647} precision={0} value={draft.attributes.QT ? Number(draft.attributes.QT) : undefined} onChange={value => changeOption('QT', value == null ? '' : String(value))}/></label>
         </div>

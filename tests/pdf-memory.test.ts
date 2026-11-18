@@ -10,6 +10,8 @@ vi.mock('../src/modules/schematic/services/accessoryFrameService', async importO
 import { exportPdf } from '../src/modules/schematic/services/exportService'
 import { createReviewRecord, exportAndRecord, loadReviewRecord } from '../src/modules/schematic-review/reviewRecords'
 import { StagedArtwork, writeStagedText } from '../src/modules/schematic/services/stagedArtworkService'
+import { loadAssetSvg } from '../src/modules/schematic/services/assetSvgService'
+import { parseSnapshotArtwork } from '../src/modules/schematic/services/artworkSourceService'
 
 test('chunk boundaries preserve Unicode and a failed transfer still cleans its resources', async () => {
   const source = 'x'.repeat(65535) + '🌸中文' + 'y'.repeat(65536)
@@ -28,9 +30,9 @@ test('chunk boundaries preserve Unicode and a failed transfer still cleans its r
   expect(mocks.invoke).toHaveBeenLastCalledWith('clear_pdf_pages', { ids: [reference.slice('printflow-export:'.length)] })
 })
 
-test('review restore loads original and derived resources one at a time without losing display precision', async () => {
+test('review restore keeps originals and selected artwork lazy without losing display precision', async () => {
   const references = ['printflow-review:r1', 'printflow-review:r2']
-  const manifest = { schemaVersion: 1, assets: [{ id: 'a', svg: references[0], width: 42.756 }], pages: [{ items: [{ id: 'i', backSvg: references[1], rulerHeightRange: [0.2, 0.8] }] }], metadata: {}, layoutBounds: {}, display: { dimensionDisplayOverrides: [['i', { decimalPlaces: 0 }]] } }
+  const manifest = { schemaVersion: 1, assets: [{ id: 'a', svg: references[0], storagePath: 'original.svg', width: 42.756 }], pages: [{ items: [{ id: 'i', backSvg: references[1], svgLayerIds: ['front', 'window'], rulerHeightRange: [0.2, 0.8] }] }], metadata: {}, layoutBounds: {}, display: { dimensionDisplayOverrides: [['i', { decimalPlaces: 0 }]] } }
   let active = 0
   let peak = 0
   mocks.invoke.mockImplementation(async (command, args) => {
@@ -44,11 +46,15 @@ test('review restore loads original and derived resources one at a time without 
     }
   })
   const record = await loadReviewRecord('review')
-  expect(record.assets[0].svg).toBe('<svg>r1原图🌸</svg>')
-  expect(record.pages[0].items[0].backSvg).toBe('<svg>r2原图🌸</svg>')
+  expect(parseSnapshotArtwork(record.assets[0].svg)?.resourceId).toBe('r1')
+  expect(parseSnapshotArtwork(record.pages[0].items[0].backSvg!)?.resourceId).toBe('r2')
+  expect(record.pages[0].items[0].svgLayerIds).toEqual(['front', 'window'])
+  expect(record.assets[0].storagePath).toBe('original.svg')
   expect(record.display).toEqual(manifest.display)
   expect(record.assets[0].width).toBe(42.756)
-  expect(peak).toBeGreaterThan(1)
+  expect(peak).toBe(0)
+  expect(await loadAssetSvg(record.assets[0])).toBe('<svg>r1原图🌸</svg>')
+  expect(peak).toBe(1)
 })
 
 test('large original and derived artwork never enter page or review IPC as giant JSON strings', async () => {

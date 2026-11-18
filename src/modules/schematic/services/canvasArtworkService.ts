@@ -4,6 +4,9 @@ import { productLayoutKind } from '../arrangement/threeColumnLayout'
 import { replaceAssetArtwork } from './assetReplacementService'
 import { rulerDimensionLabel, type DimensionDisplayOverride } from './imageDimensionService'
 import { backLayerSvg } from './svgBackLayerService'
+import { hasInlineArtwork } from './artworkSourceService'
+
+const lazyBack = (asset: Asset) => ({ back: true as const, fitFirstImage: productLayoutKind(asset) === 'standee', roles: asset.sourceImages?.map(image => image.layerRole ?? '') ?? [] })
 
 /** Replace the list artwork and every canvas reference to that resource together. */
 export function replaceCanvasItemArtwork(assets: Asset[], pages: Page[], itemId: string, artwork: Asset, displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>): { assets: Asset[]; pages: Page[] } {
@@ -34,8 +37,10 @@ export function replaceCanvasItemArtwork(assets: Asset[], pages: Page[], itemId:
         const scale = Math.min(value.w / artwork.width, value.h / artwork.height)
         const nextItem: Item = {
           ...value, assetId: artwork.id, arrangementSourceAssetId: sourceId === artwork.id ? undefined : sourceId,
+          geometrySvg: undefined,
           w: artwork.width * scale, h: artwork.height * scale,
-          backSvg: value.derivedFrom
+          artworkVariant: value.derivedFrom && !hasInlineArtwork(replacement.svg) ? lazyBack(replacement) : undefined,
+          backSvg: value.derivedFrom && hasInlineArtwork(replacement.svg)
             ? replacementBack ??= backLayerSvg(replacement.svg, productLayoutKind(replacement) === 'standee', replacement.sourceImages)
             : undefined,
           svgLayerId: undefined, svgLayerIds: undefined,
@@ -99,11 +104,13 @@ export function replaceCanvasItemWithAsset(pages: Page[], itemId: string, artwor
   const labels = new Map<string, string>()
   const nextItem: Item = {
     ...item,
+    geometrySvg: undefined,
     assetId: artwork.id,
     arrangementSourceAssetId: undefined,
     w: artwork.width * scale,
     h: artwork.height * scale,
-    backSvg: item.derivedFrom ? backLayerSvg(artwork.svg, productLayoutKind(artwork) === 'standee', artwork.sourceImages) : undefined,
+    artworkVariant: item.derivedFrom && !hasInlineArtwork(artwork.svg) ? lazyBack(artwork) : undefined,
+    backSvg: item.derivedFrom && hasInlineArtwork(artwork.svg) ? backLayerSvg(artwork.svg, productLayoutKind(artwork) === 'standee', artwork.sourceImages) : undefined,
     svgLayerId: undefined,
     svgLayerIds: undefined,
   }

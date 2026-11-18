@@ -56,7 +56,7 @@ function mockHistoryBatch(metadata: BatchMetadata, savedAt: string) {
 }
 
 describe('product upload workflow', () => {
-  it('opens an 84-image history without reading originals, then hydrates only artwork chosen for arrangement', async () => {
+  it('opens and arranges an 84-image history entirely from metadata', async () => {
     vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} })
     const originals = Array.from({ length: 84 }, (_, index) => ({ ...asset, id: `history-${index}`, name: `历史图 ${index}`, svg: '', storagePath: `D:/history/${index}.svg` }))
     let finishArtwork!: (bytes: ArrayBuffer) => void
@@ -78,15 +78,12 @@ describe('product upload workflow', () => {
       fireEvent.click(screen.getAllByText('取消全选').at(-1)!)
       fireEvent.click(within(picker).getByRole('listitem', { name: '选择 历史图 0' }))
       fireEvent.click(screen.getByText('确认并生成'))
-      await waitFor(() => expect(finishArtwork).toBeTypeOf('function'))
-      expect(mocks.arrange).not.toHaveBeenCalled()
-      await act(async () => finishArtwork(new TextEncoder().encode(asset.svg).buffer))
       await screen.findByText('示意图排列页')
       const [pages, current] = mocks.arrange.mock.lastCall as [Page[], Asset[]]
       expect(pages.flatMap(page => page.items).map(item => item.assetId)).toEqual(['history-0'])
-      expect(current.find(value => value.id === 'history-0')?.svg).toBe(asset.svg)
+      expect(current.find(value => value.id === 'history-0')?.svg).toBe('')
       expect(current.filter(value => value.id !== 'history-0').every(value => value.svg === '')).toBe(true)
-      expect(mocks.invoke.mock.calls.filter(([command]) => command === 'load_batch_asset_svg')).toHaveLength(1)
+      expect(mocks.invoke.mock.calls.filter(([command]) => command === 'load_batch_asset_svg')).toHaveLength(0)
     } finally { vi.unstubAllGlobals() }
   }, 15_000)
   it('routes window SVG drops only to the visible module while retaining the schematic batch', async () => {

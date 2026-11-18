@@ -10,8 +10,12 @@ const source: Asset = { id: 'a', name: 'Art', productId: 'a', width: 60, height:
 const assets = new Map([[source.id, source]])
 const original: Item = { id: 'front', assetId: source.id, x: 120, y: 230, w: 60, h: 80, rotation: 0, rulerWidth: true, rulerHeight: true, rulerWidthRange: [.1, .85], rulerHeightRange: [.15, .9] }
 const other: Item = { ...original, id: 'back', x: 280, y: 230, derivedFrom: 'front', caption: 'Back', mirrorX: true }
+const previewApi = vi.hoisted(() => ({ invoke: vi.fn() }))
+vi.mock('../src/services/backend', () => ({ invoke: previewApi.invoke }))
+const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOInXLnPwAF7ALNUXCMXgAAAABJRU5ErkJggg=='
 
 beforeEach(() => {
+  previewApi.invoke.mockReset().mockResolvedValue(PNG)
   Konva.autoDrawEnabled = false
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => new Proxy({
     measureText: (text: string) => ({ width: text.length * 4 }), getImageData: () => ({ data: new Uint8ClampedArray(4) }),
@@ -39,6 +43,29 @@ function release(point: { x: number; y: number }) {
   act(() => { fireEvent.mouseUp(window, { clientX: point.x, clientY: point.y }) })
 }
 const position = (node: Konva.Node) => node.getAbsolutePosition()
+
+it('loads the current canvas from bounded PNGs without browser decoding the original SVG', async () => {
+  const large = { ...source, id: 'large-canvas', storagePath: 'temp-assets/large-canvas.svg', svg: source.svg.replace('</svg>', `<!--${'x'.repeat(300 * 1024)}--></svg>`) }
+  const page: Page = { id: 64, name: 'current', items: [{ ...original, assetId: large.id }] }
+  const createUrl = vi.spyOn(URL, 'createObjectURL')
+  render(<ArtworkCanvas page={page} assets={new Map([[large.id, large]])} selected={null} onSelect={vi.fn()} onChange={vi.fn()} onDropAsset={vi.fn()} onHeaderBlockChange={vi.fn()}/>)
+  await waitFor(() => expect(Konva.stages.at(-1)!.find('.schematic-artwork')).toHaveLength(1))
+  expect(previewApi.invoke).toHaveBeenCalledWith('load_temp_asset_preview', expect.objectContaining({ path: large.storagePath }))
+  expect(createUrl).not.toHaveBeenCalled()
+})
+
+it('previews selected layers and a mirrored back from their edited SVG rather than the saved front', async () => {
+  const editedSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><circle r="5" fill="blue"/></svg>'
+  const asset = { ...source, id: 'edited-preview', storagePath: 'temp-assets/edited-preview.svg' }
+  const back = { ...other, assetId: asset.id, backSvg: editedSvg }
+  const page: Page = { id: 65, name: 'layers', items: [{ ...original, assetId: asset.id }, back] }
+  const before = structuredClone(page)
+  render(<ArtworkCanvas batchId="batch" page={page} assets={new Map([[asset.id, asset]])} selected={null} onSelect={vi.fn()} onChange={vi.fn()} onDropAsset={vi.fn()} onHeaderBlockChange={vi.fn()}/>)
+  await waitFor(() => expect(Konva.stages.at(-1)!.find('.schematic-artwork')).toHaveLength(2))
+  expect(previewApi.invoke).toHaveBeenCalledWith('load_inline_asset_preview', { svg: editedSvg, maxEdgePx: 512 })
+  expect(Konva.stages.at(-1)!.findOne('#back')!.scaleX()).toBe(-1)
+  expect(page).toEqual(before)
+})
 function expectOffset(actual: { x: number; y: number }, before: { x: number; y: number }, delta: { x: number; y: number }) {
   expect(actual.x).toBeCloseTo(before.x + delta.x)
   expect(actual.y).toBeCloseTo(before.y + delta.y)

@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type ImgHTMLAttributes } from 'react'
 import { loadAssetPreview } from '../services/assetPreviewService'
+import type { Item } from '../../../model'
 
 type Props = Omit<ImgHTMLAttributes<HTMLImageElement>, 'src'> & {
-  svg: string; storagePath?: string; assetId?: string; batchId?: string; maxEdgePx?: number; previewOrder?: number
+  svg: string; sourceSvg?: string; layerIds?: readonly string[]; artworkVariant?: Item['artworkVariant']; storagePath?: string; assetId?: string; batchId?: string; maxEdgePx?: number; previewOrder?: number; stagedInline?: boolean
 }
 
 /** Queue every thumbnail, prioritize the live viewport and retain completed PNGs. */
-export default function LazySvgImage({ svg, storagePath, assetId, batchId, maxEdgePx = 256, previewOrder, alt, style, onClick, onError, title, ...props }: Props) {
+export default function LazySvgImage({ svg, sourceSvg, layerIds, artworkVariant, storagePath, assetId, batchId, maxEdgePx = 256, previewOrder, stagedInline = false, alt, style, onClick, onError, title, ...props }: Props) {
   const ref = useRef<HTMLImageElement>(null)
   const retry = useRef<() => void>(() => {})
   const [src, setSrc] = useState<string>()
@@ -27,7 +28,7 @@ export default function LazySvgImage({ svg, storagePath, assetId, batchId, maxEd
       if (disposed || controller || (!assetId && !svg && !storagePath)) return
       const current = ++generation
       controller = new AbortController()
-      void loadAssetPreview({ id: assetId ?? '', svg, storagePath }, batchId, maxEdgePx, controller.signal, () => ({ visible, order: order.current }))
+      void loadAssetPreview({ id: assetId ?? '', svg, sourceSvg, layerIds, artworkVariant, storagePath }, batchId, maxEdgePx, controller.signal, () => ({ visible, order: order.current }), stagedInline)
         .then(value => {
           if (disposed || current !== generation) return
           setSrc(value)
@@ -45,7 +46,7 @@ export default function LazySvgImage({ svg, storagePath, assetId, batchId, maxEd
     if (observer) observer.observe(element)
     load()
     return () => { disposed = true; generation++; controller?.abort(); observer?.disconnect(); retry.current = () => {} }
-  }, [assetId, batchId, maxEdgePx, storagePath, svg])
+  }, [assetId, batchId, maxEdgePx, stagedInline, storagePath, svg, sourceSvg, layerIds, artworkVariant])
 
   return <img ref={ref} src={src} alt={failed ? '预览不可用' : src ? alt : ''} aria-label={alt} aria-busy={!src && !failed}
     title={failed ? '预览不可用，点击重试' : title} loading="lazy" decoding="async"

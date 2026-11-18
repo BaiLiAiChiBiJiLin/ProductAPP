@@ -71,6 +71,7 @@ async function exportFormat(format: 'pdf' | 'svg' | 'png' | 'jpg', quality: 'sta
   fireEvent.change(await screen.findByRole('combobox', { name: '导出格式' }), { target: { value: format === 'pdf' ? `pdf:${quality}` : format } })
   const completed = mocks.recordSaved.mock.calls.length
   fireEvent.click(screen.getByRole('button', { name: '导出', exact: true }))
+  if (format === 'pdf') fireEvent.click(await screen.findByRole('button', { name: '生成新记录并导出' }))
   await waitFor(() => expect(mocks.recordSaved).toHaveBeenCalledTimes(completed + 1))
 }
 function expectExportedScale(svg: string, scale: number, itemId: string) {

@@ -5,6 +5,7 @@ import { emptyArrangementDisplayState } from '../src/modules/schematic/services/
 import { showBackArtwork } from '../src/modules/schematic/services/showBackArtworkService.ts'
 import { refreshArrangementPages } from '../src/modules/schematic/services/refreshArrangementService.ts'
 import { removeCanvasItems } from '../src/modules/schematic/services/removeCanvasItems.ts'
+import { svgLayerPlan } from '../src/modules/schematic/services/svgLayerService.ts'
 
 const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-7, `${a} != ${b}`)
 const asset = {
@@ -22,6 +23,18 @@ function fixture(width = 300) {
   display.dimensionDisplayOverrides.set('front', { precision: 'truncate', decimalPlaces: 2 })
   return { page, display }
 }
+
+test('showing a back from lightweight layer metadata retains a deferred source and its window overlay', () => {
+  const { page, display } = fixture()
+  const result = showBackArtwork(page, front.id, asset, display, defaultLayoutBounds, 'source-version')
+  const back = result.page.items.find(item => item.derivedFrom === front.id)
+  assert.equal(back.backSvg, undefined)
+  assert.equal(back.artworkVariant.layers.version, 'source-version')
+  assert.deepEqual(back.artworkVariant.layers, { version: 'source-version', ...svgLayerPlan(asset.svg, back.svgLayerIds) })
+  assert.match(back.geometrySvg, /id="b"/)
+  assert.match(back.geometrySvg, /id="w"/)
+  assert.doesNotMatch(back.geometrySvg, /id="f"/)
+})
 
 test('back uses the marked layer and window, preserving the source and its current visual size', () => {
   const { page, display } = fixture()

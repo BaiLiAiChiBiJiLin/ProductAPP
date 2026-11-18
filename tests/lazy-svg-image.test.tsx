@@ -2,16 +2,20 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import LazySvgImage from '../src/modules/schematic/components/LazySvgImage'
 import PoolAssetCard from '../src/modules/schematic/components/PoolAssetCard'
+import ReviewAssetPicker from '../src/modules/schematic/components/ReviewAssetPicker'
+import type { Asset } from '../src/model'
 import { clearAssetPreviewCache, loadAssetPreview } from '../src/modules/schematic/services/assetPreviewService'
 
 const api = vi.hoisted(() => ({ invoke: vi.fn() }))
 vi.mock('../src/services/backend', () => ({ invoke: api.invoke }))
+vi.mock('@tauri-apps/api/core', () => ({ invoke: api.invoke }))
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOInXLnPwAF7ALNUXCMXgAAAABJRU5ErkJggg=='
 const observers: { callback: IntersectionObserverCallback; element?: Element; disconnect: ReturnType<typeof vi.fn> }[] = []
 function intersect(index: number, visible: boolean) {
   return act(async () => { observers[index].callback([{ isIntersecting: visible, target: observers[index].element } as IntersectionObserverEntry], {} as IntersectionObserver) })
 }
 beforeEach(() => {
+  vi.spyOn(navigator, 'hardwareConcurrency', 'get').mockReturnValue(2)
   clearAssetPreviewCache()
   api.invoke.mockReset().mockResolvedValue(PNG)
   observers.length = 0
@@ -22,7 +26,113 @@ beforeEach(() => {
     observe(element: Element) { observers[this.index].element = element }
   })
 })
-afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+
+test('several page thumbnails start loading before the first original finishes, with bounded concurrency', async () => {
+  vi.spyOn(navigator, 'hardwareConcurrency', 'get').mockReturnValue(8)
+  const finish = new Map<string, (value: string) => void>()
+  let active = 0, peak = 0
+  api.invoke.mockImplementation((_command, args) => new Promise(resolve => {
+    active++; peak = Math.max(peak, active)
+    finish.set(args.assetId, value => { active--; resolve(value) })
+  }))
+  const reads = Array.from({ length: 12 }, (_, index) => loadAssetPreview({ id: `parallel-${index}`, svg: '' }, 'parallel-pages'))
+  try {
+    await vi.waitFor(() => expect(finish.size).toBeGreaterThan(1), { timeout: 500 })
+    expect(finish.size).toBeLessThanOrEqual(4)
+    api.invoke.mockResolvedValue(PNG)
+    for (const resolve of finish.values()) resolve(PNG)
+    await Promise.all(reads)
+    expect(peak).toBeLessThanOrEqual(4)
+  } finally {
+    api.invoke.mockResolvedValue(PNG)
+    for (const resolve of finish.values()) resolve(PNG)
+    await Promise.allSettled(reads)
+  }
+})
+
+test('parallel loading keeps the layer popup and active canvas ahead of waiting page thumbnails', async () => {
+  vi.spyOn(navigator, 'hardwareConcurrency', 'get').mockReturnValue(8)
+  const finish = new Map<string,(value: string)=>void>()
+  api.invoke.mockImplementation((_command,args)=>new Promise(resolve=>{ finish.set(args.assetId,resolve) }))
+  const running = Array.from({length:4},(_,index)=>loadAssetPreview({ id:`parallel-busy-${index}`,svg:'' },'parallel-priority'))
+  await vi.waitFor(()=>expect(finish.size).toBe(4))
+  const queued = Array.from({length:8},(_,index)=>loadAssetPreview({ id:`parallel-thumb-${index}`,svg:'' },'parallel-priority',256,undefined,()=>({visible:true})))
+  const canvas = loadAssetPreview({id:'parallel-canvas',svg:''},'parallel-priority',512,undefined,()=>({visible:true,canvas:true}))
+  const menu = loadAssetPreview({id:'parallel-menu',svg:''},'parallel-priority',128,undefined,()=>({visible:true,canvas:true,interactive:true}))
+  try {
+    finish.get('parallel-busy-0')!(PNG)
+    await vi.waitFor(()=>expect(finish.has('parallel-menu')).toBe(true))
+    expect(finish.has('parallel-canvas')).toBe(false)
+    finish.get('parallel-busy-1')!(PNG)
+    await vi.waitFor(()=>expect(finish.has('parallel-canvas')).toBe(true))
+    expect(api.invoke.mock.calls.slice(4).map(([,args])=>args.assetId)).toEqual(['parallel-menu','parallel-canvas'])
+  } finally {
+    api.invoke.mockResolvedValue(PNG)
+    for (const resolve of finish.values()) resolve(PNG)
+    await Promise.allSettled([...running,...queued,canvas,menu])
+  }
+})
+
+test('confirming 64 pictures preserves loaded and queued previews while save paths and SVG hydration change', async () => {
+  const assets: Asset[] = Array.from({ length: 64 }, (_, index) => ({ id: `confirm-${index}`, name: `确认图${index}`, productId: 'a', width: 10, height: 10, svg: '', storagePath: `temp-assets/confirm-${index}.svg`, previewUrl: '', thumbnailUrl: '' }))
+  const props = { open: true, assets, batchId: 'before-save', selectedIds: new Set(assets.map(asset => asset.id)), confirming: false, onChange: vi.fn(), onCancel: vi.fn(), onConfirm: vi.fn() }
+  let finishNinth!: (value: string) => void
+  let reads = 0
+  api.invoke.mockImplementation(() => ++reads === 9 ? new Promise(resolve => { finishNinth = resolve }) : Promise.resolve(PNG))
+  const view = render(<ReviewAssetPicker {...props}/>)
+  await waitFor(() => expect(reads).toBe(9))
+  const images = () => [...document.querySelectorAll<HTMLImageElement>('.review-asset-picker-item img')]
+  expect(images().filter(image => image.getAttribute('src') === PNG)).toHaveLength(8)
+  fireEvent.click(screen.getByRole('button', { name: '确认并生成' }))
+  const saved = assets.map(asset => ({ ...asset, storagePath: `printflow-file:${asset.id}`, svg: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>' }))
+  try {
+    view.rerender(<ReviewAssetPicker {...props} assets={saved} batchId="after-save" confirming/>)
+    expect(images().filter(image => image.getAttribute('src') === PNG)).toHaveLength(8)
+    await act(async () => finishNinth(PNG))
+    await waitFor(() => expect(images().filter(image => image.getAttribute('src') === PNG)).toHaveLength(64), { timeout: 5000 })
+    expect(api.invoke).toHaveBeenCalledTimes(64)
+    expect(api.invoke.mock.calls.every(([command, args]) => command === 'load_temp_asset_preview' && args.path.startsWith('temp-assets/confirm-'))).toBe(true)
+    expect(props.onConfirm).toHaveBeenCalledOnce()
+  } finally { finishNinth?.(PNG) }
+}, 15_000)
+
+test('a failed confirmation releases its preview snapshot and subsequent image replacements still refresh', async () => {
+  const asset: Asset = { id: 'failed-confirm', name: '失败重试', productId: 'a', width: 10, height: 10, svg: '', storagePath: 'temp-assets/failed-confirm.svg', previewUrl: '', thumbnailUrl: '' }
+  const props = { open: true, assets: [asset], batchId: 'before-save', selectedIds: new Set([asset.id]), confirming: false, onChange: vi.fn(), onCancel: vi.fn(), onConfirm: vi.fn() }
+  const view = render(<ReviewAssetPicker {...props}/>)
+  const image = () => document.querySelector<HTMLImageElement>('.review-asset-picker-item img')!
+  await waitFor(() => expect(image().getAttribute('src')).toBe(PNG))
+  fireEvent.click(screen.getByRole('button', { name: '确认并生成' }))
+  const saved = { ...asset, storagePath: 'printflow-file:failed-confirm' }
+  view.rerender(<ReviewAssetPicker {...props} assets={[saved]} batchId="after-save" confirming/>)
+  expect(image().getAttribute('src')).toBe(PNG)
+  const updated = `${PNG}#updated`
+  api.invoke.mockResolvedValue(updated)
+  view.rerender(<ReviewAssetPicker {...props} assets={[saved]} batchId="after-save"/>)
+  await waitFor(() => expect(image().getAttribute('src')).toBe(updated))
+  expect(api.invoke).toHaveBeenCalledTimes(2)
+  const replaced = `${PNG}#replaced`
+  api.invoke.mockResolvedValue(replaced)
+  view.rerender(<ReviewAssetPicker {...props} assets={[{ ...saved, svg: '<svg>new artwork</svg>' }]} batchId="after-save"/>)
+  await waitFor(() => expect(image().getAttribute('src')).toBe(replaced))
+  expect(api.invoke).toHaveBeenCalledTimes(3)
+})
+
+test('cache identity includes original source version, layer selection and resolution', async () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>'
+  const source = { id: 'variant', svg, sourceSvg: `${svg}<!--v1-->`, layerIds: ['front'] }
+  await loadAssetPreview(source, undefined, 128)
+  await loadAssetPreview({ ...source }, undefined, 128)
+  expect(api.invoke).toHaveBeenCalledTimes(1)
+  await loadAssetPreview({ ...source, sourceSvg: `${svg}<!--v2-->` }, undefined, 128)
+  await loadAssetPreview({ ...source, layerIds: ['back'] }, undefined, 128)
+  await loadAssetPreview(source, undefined, 512)
+  expect(api.invoke).toHaveBeenCalledTimes(4)
+  await loadAssetPreview({ id: 'same-file', svg, storagePath: 'temp-assets/a.svg' })
+  await loadAssetPreview({ id: 'same-file', svg: svg.replace('10', '11'), storagePath: 'temp-assets/a.svg' })
+  expect(api.invoke).toHaveBeenCalledTimes(6)
+})
 
 test('a visible card requests a bounded PNG instead of original SVG bytes', async () => {
   render(<LazySvgImage svg="" storagePath="printflow-file:a" assetId="a" batchId="batch" alt="图片"/>)
@@ -95,6 +205,55 @@ test('large inline originals are rejected before IPC instead of duplicating the 
   expect(api.invoke).not.toHaveBeenCalled()
 })
 
+test('edited canvas artwork is chunked for native preview and the temporary resource is cleared', async () => {
+  const svg = `<svg><!--${'x'.repeat(300 * 1024)}--></svg>`
+  const original = svg
+  const url = await loadAssetPreview({ id: '', svg }, undefined, 512, undefined, () => ({ visible: true, canvas: true }), true)
+  expect(url).toBe(PNG)
+  const chunks = api.invoke.mock.calls.filter(([command]) => command === 'write_export_resource_chunk')
+  expect(chunks.map(([, args]) => args.text).join('')).toBe(original)
+  expect(chunks.every(([, args]) => args.text.length <= 64 * 1024)).toBe(true)
+  expect(api.invoke).toHaveBeenCalledWith('load_inline_asset_preview', { svg: expect.stringMatching(/^printflow-export:/), maxEdgePx: 512 })
+  expect(api.invoke).toHaveBeenLastCalledWith('clear_pdf_pages', { ids: [chunks[0][1].id] })
+  expect(svg).toBe(original)
+})
+
+test('a restored review can preview its independent SVG when its old batch file is gone', async () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>'
+  api.invoke.mockImplementation(command => command === 'load_inline_asset_preview' ? Promise.resolve(PNG) : Promise.reject(new Error('源批次已删除')))
+  await expect(loadAssetPreview({ id: 'review-only', storagePath: 'D:/old-batch/artwork.svg', svg }, 'deleted-batch', 512, undefined, () => ({ visible: true, canvas: true }), true)).resolves.toBe(PNG)
+  expect(api.invoke).toHaveBeenCalledWith('load_inline_asset_preview', { svg, maxEdgePx: 512 })
+})
+
+test('the active canvas goes ahead of 64 queued thumbnails and shares its result with its page thumbnail', async () => {
+  let finish!: (value: string) => void
+  api.invoke.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const running = loadAssetPreview({ id: 'running', svg: '' }, 'canvas-priority', 512)
+  await vi.waitFor(() => expect(finish).toBeDefined())
+  const background = Array.from({ length: 64 }, (_, index) => loadAssetPreview({ id: String(index), svg: '' }, 'canvas-priority', 512, undefined, () => ({ visible: false, order: index })))
+  const canvas = loadAssetPreview({ id: '63', svg: '' }, 'canvas-priority', 512, undefined, () => ({ visible: true, canvas: true }), true)
+  finish(PNG)
+  await canvas
+  expect(api.invoke.mock.calls[1]).toEqual(['load_batch_asset_preview', { batchId: 'canvas-priority', assetId: '63', maxEdgePx: 512 }])
+  await Promise.all([running, ...background])
+  const before = api.invoke.mock.calls.length
+  await loadAssetPreview({ id: '63', svg: '' }, 'canvas-priority', 512)
+  expect(api.invoke).toHaveBeenCalledTimes(before)
+  expect(api.invoke.mock.calls.filter(([, args]) => args.assetId === '63')).toHaveLength(1)
+})
+
+test('an open layer menu goes ahead of queued canvas previews', async () => {
+  let finish!: (value: string) => void
+  api.invoke.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const running = loadAssetPreview({ id: 'busy', svg: '' }, 'interactive-priority', 512)
+  await vi.waitFor(() => expect(finish).toBeDefined())
+  const canvas = loadAssetPreview({ id: 'canvas', svg: '' }, 'interactive-priority', 512, undefined, () => ({ visible: true, canvas: true }))
+  const menu = loadAssetPreview({ id: 'layer', svg: '' }, 'interactive-priority', 128, undefined, () => ({ visible: true, canvas: true, interactive: true }))
+  finish(PNG)
+  await Promise.all([running, canvas, menu])
+  expect(api.invoke.mock.calls[1][1].assetId).toBe('layer')
+})
+
 test('preview work is serial and abandoning queued work never downloads its original', async () => {
   let finish!: (value: string) => void
   api.invoke.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
@@ -126,7 +285,7 @@ test('the thumbnail cache evicts old entries to bound accumulated memory across 
   expect(api.invoke).toHaveBeenCalledTimes(129)
   await loadAssetPreview({ id: '0', svg: '' }, 'batch')
   expect(api.invoke).toHaveBeenCalledTimes(130)
-})
+}, 15000)
 
 test('large thumbnail responses hit the byte budget before the entry limit', async () => {
   api.invoke.mockResolvedValue(PNG + 'A'.repeat(900 * 1024))

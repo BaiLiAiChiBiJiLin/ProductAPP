@@ -9,7 +9,7 @@ import { itemsInSelection, selectionBounds, type CanvasPoint } from './services/
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
 import { Stage, Layer, Rect, Group, Image as KonvaImage, Transformer, Text, Line } from 'react-konva'
 import type Konva from 'konva'
-import { ARRANGEMENT_FRAME_SHADOW, ARRANGEMENT_FRAME_STYLE, arrangementFrameRect, artworkBounds, constrain, defaultLayoutBounds, PAPER_HEIGHT, PAPER_WIDTH, releaseSvgObjectUrl, svgObjectUrl, type Asset, type HeaderBlock, type Item, type LayoutBounds, type Page, type PageHeader } from '../../model'
+import { ARRANGEMENT_FRAME_SHADOW, ARRANGEMENT_FRAME_STYLE, arrangementFrameRect, artworkBounds, constrain, defaultLayoutBounds, PAPER_HEIGHT, PAPER_WIDTH, type Asset, type HeaderBlock, type Item, type LayoutBounds, type Page, type PageHeader } from '../../model'
 import HeaderBlockCanvas from './components/HeaderBlockCanvas'
 import ImageGroupBackgrounds from './components/ImageGroupBackgrounds'
 import GroupResizeHandles from './components/GroupResizeHandles'
@@ -20,19 +20,11 @@ import type { AccessoryVisual, EditImageGroupText } from './components/ImageGrou
 import type { RulerChange } from './components/ImageDimensionMarkers'
 import type { DimensionDisplayOverride, DimensionDisplayPrecision } from './services/imageDimensionService'
 import { itemForCanvasDisplay } from './services/canvasDisplayScaleService'
+import { loadAssetPreview } from './services/assetPreviewService'
 
-type CachedSvgImage = { image: HTMLImageElement; url: string }
-const svgImageCache = new Map<string, CachedSvgImage>()
-function releaseSvgUrl(url: string) {
-  releaseSvgObjectUrl(url)
-}
-function pruneSvgImageCache(activeSources: ReadonlySet<string>) {
-  for (const [source, cached] of svgImageCache) {
-    if (activeSources.has(source)) continue
-    svgImageCache.delete(source)
-    releaseSvgUrl(cached.url)
-  }
-}
+// Only bounded PNGs are decoded by the WebView; editable SVGs stay in assets.
+const previewImages = new Map<string, HTMLImageElement>()
+const MAX_DECODED_PREVIEWS = 32
 function displayDate(value?: string) {
   if (!value) return '-'
   const match = value.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
@@ -69,8 +61,8 @@ function PageHeaderCanvas({ pageNumber, totalPages, metadata }: { pageNumber: nu
   </Group>
 }
 
-const Artwork = memo(function Artwork({ item, asset, visualScale = 1, selected, interactive, bounds, groupBounds, onSelect, onChange, onPreviewChange, onContextMenu, editorSelection, onSelectCaption }: {
-  editorSelection?: EditorSelection | null; onSelectCaption?: (selection: EditorSelection) => void; item: Item; asset: Asset; visualScale?: number; selected: boolean; interactive: boolean; bounds: LayoutBounds; groupBounds?: { x: number; y: number; width: number; height: number }; onSelect: (id: string | null) => void; onChange: (item: Item) => void; onContextMenu?: (itemId: string, point: CanvasPoint) => void
+const Artwork = memo(function Artwork({ item, asset, batchId, visualScale = 1, selected, interactive, bounds, groupBounds, onSelect, onChange, onPreviewChange, onContextMenu, editorSelection, onSelectCaption }: {
+  batchId?: string; editorSelection?: EditorSelection | null; onSelectCaption?: (selection: EditorSelection) => void; item: Item; asset: Asset; visualScale?: number; selected: boolean; interactive: boolean; bounds: LayoutBounds; groupBounds?: { x: number; y: number; width: number; height: number }; onSelect: (id: string | null) => void; onChange: (item: Item) => void; onContextMenu?: (itemId: string, point: CanvasPoint) => void
   onPreviewChange: (item?: Item) => void
 }) {
   const [image, setImage] = useState<HTMLImageElement>()
@@ -78,40 +70,32 @@ const Artwork = memo(function Artwork({ item, asset, visualScale = 1, selected, 
   const nodeRef = useRef<Konva.Image>(null)
   const transformerRef = useRef<Konva.Transformer>(null)
   useEffect(() => {
-    const sourceSvg = item.backSvg ?? asset.svg
-    const cached = svgImageCache.get(sourceSvg)
-    if (cached) {
-      svgImageCache.delete(sourceSvg)
-      svgImageCache.set(sourceSvg, cached)
-      setImage(cached.image); setFailed(false); return
-    }
-    const img = new window.Image()
-    let cancelled = false
-    const url = svgObjectUrl(sourceSvg)
-    let ownsCache = false
-    let released = false
-    const release = () => { if (!released) { released = true; releaseSvgUrl(url) } }
-    img.decoding = 'async'
-    img.onload = () => {
-      if (cancelled) { release(); return }
-      const existing = svgImageCache.get(sourceSvg)
-      // Front/Back placements may finish loading the same SVG together. The
-      // decoded-image cache owns one URL lease, regardless of placement count.
-      if (existing) { release(); setImage(existing.image); setFailed(false); return }
-      ownsCache = true
-      svgImageCache.set(sourceSvg, { image: img, url })
-      if (svgImageCache.size > 64) {
-        const oldest = svgImageCache.keys().next().value
-        if (oldest && oldest !== sourceSvg) { const evicted = svgImageCache.get(oldest); svgImageCache.delete(oldest); if (evicted) releaseSvgUrl(evicted.url) }
+    const controller = new AbortController()
+    let img: HTMLImageElement | undefined
+    setImage(undefined)
+    setFailed(false)
+    const source = item.backSvg !== undefined ? { id: '', svg: item.backSvg, sourceSvg: asset.svg, layerIds: item.svgLayerIds ?? [item.svgLayerId ?? 'derived'] } : { ...asset, artworkVariant: item.artworkVariant }
+    void loadAssetPreview(source, item.backSvg !== undefined ? undefined : batchId, 512, controller.signal,
+      () => ({ visible: true, canvas: true }), true).then(url => {
+      if (controller.signal.aborted) return
+      const cached = previewImages.get(url)
+      if (cached) {
+        previewImages.delete(url); previewImages.set(url, cached)
+        setImage(cached); return
       }
-      setImage(img); setFailed(false)
-    }
-    img.onerror = () => { release(); if (!cancelled) setFailed(true) }
-    // Keep SVG as the source artwork; preview fields are compatibility URLs
-    // and must not replace the editable/vector asset on the canvas.
-    img.src = url
-    return () => { cancelled = true; img.onload = null; img.onerror = null; if (!ownsCache) release() }
-  }, [asset.svg, item.backSvg])
+      img = new window.Image()
+      img.decoding = 'async'
+      img.onload = () => {
+        if (controller.signal.aborted || !img) return
+        previewImages.set(url, img)
+        while (previewImages.size > MAX_DECODED_PREVIEWS) previewImages.delete(previewImages.keys().next().value!)
+        setImage(img)
+      }
+      img.onerror = () => { if (!controller.signal.aborted) setFailed(true) }
+      img.src = url
+    }).catch(error => { if (!controller.signal.aborted && error?.name !== 'AbortError') setFailed(true) })
+    return () => { controller.abort(); if (img) { img.onload = null; img.onerror = null } }
+  }, [asset.id, asset.svg, asset.storagePath, batchId, item.backSvg, item.artworkVariant, item.svgLayerId, item.svgLayerIds])
   const displayItem = itemForCanvasDisplay(item, visualScale)
   useEffect(() => {
     if (selected && nodeRef.current) transformerRef.current?.nodes([nodeRef.current])
@@ -136,17 +120,14 @@ const Artwork = memo(function Artwork({ item, asset, visualScale = 1, selected, 
 })
 
 /** Keep per-pointer updates local; saved pages and other canvas panels change only on release. */
-function ArtworkImages({ page, assets, selected, selectedIds = [], onSelect, onChange, visualScales, interactive, bounds,
+function ArtworkImages({ page, assets, batchId, selected, selectedIds = [], onSelect, onChange, visualScales, interactive, bounds,
   dimensionItemIds, dimensionPrecision, dimensionDecimalPlaces, dimensionDisplayOverrides, onChangeRuler, onEditRuler,
   onArtworkContextMenu, editorSelection, onSelectEditor,
-}: Pick<ComponentProps<typeof ArtworkCanvas>, 'page' | 'assets' | 'selected' | 'selectedIds' | 'onSelect' | 'onChange' | 'visualScales'
+}: Pick<ComponentProps<typeof ArtworkCanvas>, 'page' | 'assets' | 'batchId' | 'selected' | 'selectedIds' | 'onSelect' | 'onChange' | 'visualScales'
   | 'dimensionItemIds' | 'dimensionPrecision' | 'dimensionDecimalPlaces' | 'dimensionDisplayOverrides' | 'onChangeRuler' | 'onEditRuler'
   | 'onArtworkContextMenu' | 'editorSelection' | 'onSelectEditor'> & { interactive: boolean; bounds: LayoutBounds }) {
   const [dragPreview, setDragPreview] = useState<{ page: Page; item: Item }>()
   const previewChange = useCallback((item?: Item) => setDragPreview(item ? { page, item } : undefined), [page])
-  useEffect(() => {
-    pruneSvgImageCache(new Set(page.items.map(item => item.backSvg ?? assets.get(item.assetId)?.svg).filter((source): source is string => Boolean(source))))
-  }, [page, assets])
   // A new saved page invalidates any in-flight preview (including page switches).
   const markerPage = useMemo(() => dragPreview?.page === page
     ? { ...page, items: page.items.map(item => item.id === dragPreview.item.id ? dragPreview.item : item) }
@@ -155,7 +136,7 @@ function ArtworkImages({ page, assets, selected, selectedIds = [], onSelect, onC
     {page.items.map(item => {
       const asset = assets.get(item.assetId)
       const group = page.imageGroups?.find(candidate => candidate.itemIds.includes(item.id))
-      return asset && <Artwork key={item.id} item={item} asset={asset} visualScale={visualScales?.get(item.id) ?? 1}
+      return asset && <Artwork key={item.id} item={item} asset={asset} batchId={batchId} visualScale={visualScales?.get(item.id) ?? 1}
         selected={selected === item.id || selectedIds.includes(item.id)} interactive={interactive} bounds={bounds} groupBounds={group}
         onSelect={onSelect} onChange={onChange} onPreviewChange={previewChange} onContextMenu={interactive ? onArtworkContextMenu : undefined}
         editorSelection={editorSelection} onSelectCaption={onSelectEditor}/>
@@ -165,11 +146,11 @@ function ArtworkImages({ page, assets, selected, selectedIds = [], onSelect, onC
   </>
 }
 
-export default function ArtworkCanvas({ page, assets, selected, selectedIds = [], onBoxSelect, selectedGroupIds = [], onSelect, onSelectGroup, onResizeGroup, onSelectAccessory, selectedAccessoryKey, accessoryVisuals, onChangeAccessory, onChange, onDropAsset, metadata, totalPages, mode = 'select', rulerMode = 'free', zoom = 1, onZoomChange, layoutBounds = defaultLayoutBounds, onHeaderBlockChange, dimensionPrecision = 'default', dimensionDecimalPlaces = 1, dimensionItemIds = [], dimensionDisplayOverrides, visualScales, onChangeRuler, onEditText, onArtworkContextMenu, pageNumber = page.id, editorSelection, onSelectEditor, onChangeAnnotation, onEditAnnotation, onPlaceText, onAddRuler, onCancelTool, textColor = '#000000', onEditRuler, onEditDetailText }: {
+export default function ArtworkCanvas({ page, assets, batchId, selected, selectedIds = [], onBoxSelect, selectedGroupIds = [], onSelect, onSelectGroup, onResizeGroup, onSelectAccessory, selectedAccessoryKey, accessoryVisuals, onChangeAccessory, onChange, onDropAsset, metadata, totalPages, mode = 'select', rulerMode = 'free', zoom = 1, onZoomChange, layoutBounds = defaultLayoutBounds, onHeaderBlockChange, dimensionPrecision = 'default', dimensionDecimalPlaces = 1, dimensionItemIds = [], dimensionDisplayOverrides, visualScales, onChangeRuler, onEditText, onArtworkContextMenu, pageNumber = page.id, editorSelection, onSelectEditor, onChangeAnnotation, onEditAnnotation, onPlaceText, onAddRuler, onCancelTool, textColor = '#000000', onEditRuler, onEditDetailText }: {
   pageNumber?: number; onEditDetailText?: (draft: DetailTextDraft) => void; editorSelection?: EditorSelection | null; onSelectEditor?: (selection: EditorSelection) => void
   onChangeAnnotation?: (annotation: CanvasAnnotation) => void; onEditAnnotation?: (annotation: CanvasAnnotation) => void
   onPlaceText?: (point: Point) => void; onAddRuler?: (ruler: CanvasAnnotation) => void; onCancelTool?: () => void; textColor?: string; onEditRuler?: EditRulerValue
-  page: Page; assets: Map<string, Asset>; selected: string | null; onSelect: (id: string | null) => void
+  batchId?: string; page: Page; assets: Map<string, Asset>; selected: string | null; onSelect: (id: string | null) => void
   onArtworkContextMenu?: (itemId: string, point: CanvasPoint) => void
   selectedIds?: string[]; onBoxSelect?: (ids: string[]) => void
   selectedGroupIds?: string[]; onSelectGroup?: (id: string, ctrlKey: boolean) => void
@@ -319,7 +300,7 @@ export default function ArtworkCanvas({ page, assets, selected, selectedIds = []
           {...ARRANGEMENT_FRAME_SHADOW}/>
         <Group clipX={0} clipY={0} clipWidth={PAPER_WIDTH} clipHeight={PAPER_HEIGHT}>
           <ImageGroupBackgrounds onEditDetailText={editing ? onEditDetailText : undefined} page={canvasPage} assets={assets} selectedItemIds={dimensionItemIds} precision={dimensionPrecision} decimalPlaces={dimensionDecimalPlaces} displayOverrides={dimensionDisplayOverrides} selectedAccessoryKey={selectedAccessoryKey} accessoryVisuals={accessoryVisuals} onSelectAccessory={!editing ? undefined : onSelectAccessory} onChangeAccessory={!editing ? undefined : onChangeAccessory} selectedGroupIds={selectedGroupIds} onSelectGroup={!editing ? undefined : selectGroup} onEditText={!editing ? undefined : onEditText} editorSelection={editorSelection} onSelectCaption={editing ? onSelectEditor : undefined}/>
-          <ArtworkImages key={page.id} page={canvasPage} assets={assets} selected={selected} selectedIds={selectedIds} onSelect={select} onChange={onChange}
+          <ArtworkImages key={page.id} page={canvasPage} assets={assets} batchId={batchId} selected={selected} selectedIds={selectedIds} onSelect={select} onChange={onChange}
             visualScales={visualScales} interactive={editing} bounds={imageBounds} dimensionItemIds={dimensionItemIds} dimensionPrecision={dimensionPrecision}
             dimensionDecimalPlaces={dimensionDecimalPlaces} dimensionDisplayOverrides={dimensionDisplayOverrides} onChangeRuler={onChangeRuler} onEditRuler={onEditRuler}
             onArtworkContextMenu={onArtworkContextMenu} editorSelection={editorSelection} onSelectEditor={onSelectEditor}/>

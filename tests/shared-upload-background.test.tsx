@@ -18,13 +18,14 @@ vi.mock('../src/modules/schematic/ArrangePage', () => ({ default: ({ pages, asse
   mocks.arrange(assets)
   return <div data-testid="arrangement-pages">{pages.length}</div>
 } }))
-vi.mock('../src/modules/schematic/components/LazySvgImage', () => ({ default: ({ alt }: { alt: string }) => <img alt={alt}/> }))
 
 import SchematicPage from '../src/modules/schematic/SchematicPage'
 import { clearCloudBatchSave, cloudSyncTasks, enqueueCloudBatchSave, flushCloudSyncQueue } from '../src/services/cloudSyncQueue'
+import { clearAssetPreviewCache } from '../src/modules/schematic/services/assetPreviewService'
 
 const asset: Asset = { id: 'shared-asset', name: '共享测试图', productId: 'a', width: 200, height: 100, svg: '', storagePath: 'temp-assets/shared-asset.svg', thumbnailUrl: '', previewUrl: '' }
 const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100"><rect width="200" height="100"/></svg>'
+const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOInXLnPwAF7ALNUXCMXgAAAABJRU5ErkJggg=='
 type SaveArgs = { id: string; assets: Asset[]; metadata?: unknown }
 let pending: Array<{ args: SaveArgs; resolve: (value: unknown) => void; reject: (error: Error) => void }> = []
 let saveFailure: Error | undefined
@@ -34,11 +35,13 @@ beforeEach(() => {
   vi.clearAllMocks()
   pending = []
   saveFailure = undefined
+  clearAssetPreviewCache()
   mocks.storageMode.mockReset().mockResolvedValue({ shared: true })
   mocks.importAssets.mockResolvedValue([asset])
   mocks.invoke.mockImplementation((command: string, args: SaveArgs) => {
     if (command === 'save_batch') return saveFailure ? Promise.reject(saveFailure) : new Promise((resolve, reject) => pending.push({ args, resolve, reject }))
     if (command === 'load_temp_asset_svg') return Promise.resolve(new TextEncoder().encode(svg).buffer)
+    if (command === 'load_temp_asset_preview' || command === 'load_batch_asset_preview') return Promise.resolve(PNG)
     if (command === 'discard_temp_assets') return Promise.resolve(undefined)
     return Promise.resolve(undefined)
   })
@@ -72,12 +75,31 @@ test('shows parsed assets before shared file storage finishes', async () => {
   expect((screen.getByRole('button', { name: '保存批次' }) as HTMLButtonElement).disabled).toBe(false)
 })
 
+test('64-image generation uses metadata without transferring any original SVG', async () => {
+  const assets = Array.from({ length: 64 }, (_, index) => ({ ...asset, id: `metadata-${index}`, name: `图${index}`, storagePath: `temp-assets/metadata-${index}.svg`, sourceGroupWidthMm: 60, sourceGroupHeightMm: 70 }))
+  mocks.importAssets.mockResolvedValue(assets)
+  const invoke = mocks.invoke.getMockImplementation()!
+  mocks.invoke.mockImplementation((command, args) => {
+    if (command === 'load_temp_asset_svg' || command === 'load_batch_asset_svg') throw new Error('generation must not request original SVG')
+    return invoke(command, args)
+  })
+  await uploadBatch()
+  fireEvent.click(screen.getByRole('button', { name: '生成示意图' }))
+  fireEvent.click(await screen.findByRole('button', { name: '确认并生成' }, { timeout: 5000 }))
+  await screen.findByTestId('arrangement-pages', {}, { timeout: 5000 })
+  const current: Asset[] = mocks.arrange.mock.lastCall![0]
+  expect(current).toHaveLength(64)
+  expect(current.every(asset => asset.svg === '')).toBe(true)
+  expect(current.map(asset => asset.id)).toEqual(assets.map(asset => asset.id))
+  expect(mocks.invoke.mock.calls.some(([command]) => command === 'load_temp_asset_svg' || command === 'load_batch_asset_svg')).toBe(false)
+}, 15_000)
+
 test('generates from local artwork while the current cloud upload is still in flight', async () => {
   await uploadBatch()
   await waitFor(() => expect(pending).toHaveLength(1))
   await confirmArrangement()
   expect((await screen.findByTestId('arrangement-pages')).textContent).toBe('1')
-  expect(mocks.invoke).toHaveBeenCalledWith('load_temp_asset_svg', { path: asset.storagePath })
+  expect(mocks.invoke.mock.calls.some(([command]) => command === 'load_temp_asset_svg')).toBe(false)
   expect(mocks.invoke.mock.calls.some(([command]) => command === 'load_batch_asset_svg')).toBe(false)
   expect(cloudSyncTasks()).toHaveLength(1)
 })
@@ -150,8 +172,8 @@ test('keeps local artwork available and uses current metadata when an acknowledg
     await act(async () => { releaseMode({ shared: true }); await mode })
   }
   expect((await screen.findByTestId('arrangement-pages')).textContent).toBe('1')
-  expect(mocks.invoke).toHaveBeenCalledWith('load_temp_asset_svg', { path: asset.storagePath })
+  expect(mocks.invoke.mock.calls.some(([command]) => command === 'load_temp_asset_svg')).toBe(false)
   expect(mocks.invoke.mock.calls.some(([command]) => command === 'load_batch_asset_svg')).toBe(false)
-  expect(mocks.arrange.mock.lastCall?.[0]).toEqual([expect.objectContaining({ storagePath: 'printflow:shared-asset', attributes: { QT: '7' }, svg })])
+  expect(mocks.arrange.mock.lastCall?.[0]).toEqual([expect.objectContaining({ storagePath: 'printflow:shared-asset', attributes: { QT: '7' }, svg: '' })])
   expect(localStorage.getItem('printflow-cloud-sync-queue-v1')).toContain('确认期间更新的客户')
 })

@@ -39,6 +39,48 @@ pub fn storage_mode() -> Result<config::Mode> {
     config::mode()
 }
 
+/// Keep transient original-artwork caching separate when the active cloud
+/// identity/environment changes, without querying MySQL for every thumbnail.
+pub(crate) fn artwork_cache_scope(app: &tauri::AppHandle) -> Result<String> {
+    let Some(env) = config::load()? else { return Ok("local".into()); };
+    let path = identity_path(app, &env)?;
+    let identity = fs::read(&path).map_err(|_| "请先设置用户名并连接云数据库")?;
+    Ok(resources::hash(&[path.to_string_lossy().as_bytes(), &identity].concat()))
+}
+
+pub(crate) fn source_artwork(app: &tauri::AppHandle, batch_id: &str, asset_id: &str) -> Result<String> {
+    let env = config::load()?.ok_or("未启用共享存储")?;
+    let mut conn = store::connect(&env)?;
+    let user = current_user(app, &env, &mut conn)?;
+    let batch = batches::get(&mut conn, batch_id, &user, false)?;
+    let reference = batch.value["assets"].as_array().into_iter().flatten().find(|asset| asset["id"] == asset_id)
+        .and_then(|asset| asset["storagePath"].as_str()).ok_or("批次图片不存在")?;
+    String::from_utf8(resources::read(&mut conn, &env, reference)?).map_err(|_| "原图编码错误".into())
+}
+
+pub(crate) fn snapshot_artwork(app: &tauri::AppHandle, reference: &crate::artwork_source::Snapshot) -> Result<Vec<u8>> {
+    let env = config::load()?.ok_or("未启用共享存储")?;
+    let mut conn = store::connect(&env)?;
+    current_user(app, &env, &mut conn)?;
+    let record = reviews::get(&mut conn, &reference.id, false)?;
+    let mut refs = std::collections::BTreeSet::new();
+    resources::references(&record.value, &mut refs);
+    if !refs.contains(&reference.resource_id) { return Err("资源不属于当前审核快照".into()); }
+    resources::read(&mut conn, &env, &format!("{}{}",resources::TEXT,reference.resource_id))
+}
+
+pub(crate) fn snapshot_artwork_path(app: &tauri::AppHandle, reference: &crate::artwork_source::Snapshot) -> Result<(PathBuf,String)> {
+    let env = config::load()?.ok_or("未启用共享存储")?;
+    let mut conn = store::connect(&env)?;
+    current_user(app, &env, &mut conn)?;
+    let record = reviews::get(&mut conn, &reference.id, false)?;
+    let mut refs = std::collections::BTreeSet::new();
+    resources::references(&record.value, &mut refs);
+    if !refs.contains(&reference.resource_id) { return Err("资源不属于当前审核快照".into()); }
+    let path = resources::path(&mut conn,&env,&format!("{}{}",resources::TEXT,reference.resource_id))?;
+    Ok((path,reference.resource_id.clone()))
+}
+
 #[tauri::command]
 pub async fn cloud_resource(
     app: tauri::AppHandle,

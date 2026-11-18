@@ -2,6 +2,7 @@ import { defaultLayoutBounds, DETAIL_AREA_RATIO, HOLDER_DETAIL_AREA_RATIO, GROUP
 import { cleanFinishLabel, detailsForAsset } from '../services/assetDetailsService.ts'
 import { dimensionForItem, physicalSourceSize } from '../services/imageDimensionService.ts'
 import { backLayerSvg } from '../services/svgBackLayerService.ts'
+import { hasInlineArtwork } from '../services/artworkSourceService.ts'
 import { backfillPages } from './backfillPages.ts'
 import { fillFreeRegions } from './freeRegionPacking.ts'
 import { applyPhysicalImageScale } from './physicalImageSizing.ts'
@@ -451,7 +452,7 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       const centerY = verticallyCenterSingleImage
         ? y + cell.y + (cell.height + top - bottomPadding) / 2
         : y + cell.y + top + h / 2
-      const item: Item = { id: cell.back ? `${sourceId}-back` : sourceId, assetId: cell.asset.id, x: x + cell.x + left + (cell.width - left - right) / 2, y: centerY, w, h, rotation: 0, caption: cell.caption, captionAlign: cell.base ? 'left' : undefined, captionFontSize: cell.base ? 7 : undefined, note: cell.note, mirrorX: cell.back, backSvg: cell.back ? backLayerSvg(cell.asset.svg, unit.kind === 'standee', cell.asset.sourceImages) : undefined, derivedFrom: cell.back ? sourceId : undefined, suppressRuler: cell.ruler === false }
+      const item: Item = { id: cell.back ? `${sourceId}-back` : sourceId, assetId: cell.asset.id, x: x + cell.x + left + (cell.width - left - right) / 2, y: centerY, w, h, rotation: 0, caption: cell.caption, captionAlign: cell.base ? 'left' : undefined, captionFontSize: cell.base ? 7 : undefined, note: cell.note, mirrorX: cell.back, backSvg: cell.back && hasInlineArtwork(cell.asset.svg) ? backLayerSvg(cell.asset.svg, unit.kind === 'standee', cell.asset.sourceImages) : undefined, artworkVariant: cell.back && !hasInlineArtwork(cell.asset.svg) ? { back: true, fitFirstImage: unit.kind === 'standee', roles: cell.asset.sourceImages?.map(image => image.layerRole ?? '') ?? [] } : undefined, derivedFrom: cell.back ? sourceId : undefined, suppressRuler: cell.ruler === false }
       page!.items.push(item); group.itemIds.push(item.id)
       if (unit.kind === 'holder' && cell.caption && (holderPortraitRoles || cell.caption !== 'Example')) item.x = x + cell.x + cell.width / 2
       group.imageCells!.push({ itemId: item.id, x: x + cell.x, y: y + cell.y, width: cell.width, height: cell.height })

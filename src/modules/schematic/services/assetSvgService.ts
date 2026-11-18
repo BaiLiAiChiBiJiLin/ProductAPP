@@ -1,5 +1,6 @@
 import type { Asset } from '../../../model'
 import { invoke } from '../../../services/backend'
+import { parseSnapshotArtwork } from './artworkSourceService'
 
 const decoder = new TextDecoder('utf-8', { fatal: true })
 const maxConcurrentReads = 2
@@ -74,6 +75,8 @@ async function readAssetSvg(asset: Pick<Asset, 'svg' | 'storagePath' | 'id'>, ba
  */
 export function loadAssetSvg(asset: Pick<Asset, 'svg' | 'storagePath' | 'id'>, batchId?: string, signal?: AbortSignal): Promise<string> {
   if (signal?.aborted) return Promise.reject(aborted())
+  const snapshot = parseSnapshotArtwork(asset.svg)
+  if (snapshot) return invoke<ArrayBuffer>('load_schematic_review_resource', { id: snapshot.id, resourceId: snapshot.resourceId }).then(bytes => decoder.decode(bytes))
   if (asset.svg) return Promise.resolve(asset.svg)
   const key = JSON.stringify([batchId ?? '', asset.id, asset.storagePath ?? ''])
   let read = pendingReads.get(key)

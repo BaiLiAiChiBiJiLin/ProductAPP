@@ -108,7 +108,7 @@ export function autoArrangePages(pages: Page[], _activePage: number, assets: Ass
       const scale = Math.min(item.w / artwork.width, item.h / artwork.height)
       return {
         ...restored, assetId: previous.assetId, arrangementSourceAssetId: previous.arrangementSourceAssetId,
-        backSvg: previous.backSvg, svgLayerId: previous.svgLayerId, svgLayerIds: previous.svgLayerIds, mirrorX: previous.mirrorX,
+        backSvg: previous.backSvg, geometrySvg: previous.geometrySvg, artworkVariant: previous.artworkVariant, svgLayerId: previous.svgLayerId, svgLayerIds: previous.svgLayerIds, mirrorX: previous.mirrorX,
         ...(previous.arrangementSourceAssetId ? { w: artwork.width * scale, h: artwork.height * scale } : {}),
       }
     })

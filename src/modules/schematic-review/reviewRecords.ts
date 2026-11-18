@@ -3,6 +3,7 @@ import { copyWorkspaceValue, stageLargeWorkspaceValues, StagedArtwork, REVIEW_AR
 import type { Asset, LayoutBounds, Page } from '../../model'
 import type { BatchMetadata } from '../schematic/types'
 import { saveArrangementDisplay, type ArrangementDisplayState, type SavedArrangementDisplay } from '../schematic/services/arrangementDisplayState'
+import { snapshotArtwork } from '../schematic/services/artworkSourceService'
 
 export type ExportFormat = 'pdf' | 'svg' | 'png' | 'jpg'
 /** A review can be saved before a file is exported. */
@@ -82,11 +83,17 @@ export async function saveReviewRecord(record: SchematicReviewRecord): Promise<v
   } finally { await resources.dispose() }
 }
 export async function loadReviewRecord(id: string): Promise<SchematicReviewRecord> {
-  const record = await invoke<SchematicReviewRecord>('load_schematic_review', { id })
+  const record = copyWorkspaceValue(await invoke<SchematicReviewRecord>('load_schematic_review', { id }))
   if (record.schemaVersion !== 1) throw new Error('该示意图记录版本暂不支持，请更新软件')
   if (!record.pages?.length || !record.assets?.length || !record.display || !record.metadata || !record.layoutBounds) {
     throw new Error('示意图记录不完整，无法恢复')
   }
+  // Keep canonical and selected artwork in its owning snapshot. Only small
+  // non-artwork resources (for example notes) are hydrated during restoration.
+  const lazy = (svg: string) => svg.startsWith(REVIEW_ARTWORK_PREFIX)
+    ? snapshotArtwork({ id, resourceId: svg.slice(REVIEW_ARTWORK_PREFIX.length), savedAt: record.savedAt }) : svg
+  record.assets = record.assets.map(asset => ({ ...asset, svg: lazy(asset.svg ?? '') }))
+  record.pages = record.pages.map(page => ({ ...page, items: page.items.map(item => item.backSvg ? { ...item, backSvg: lazy(item.backSvg) } : item) }))
   const references = new Map<string, string>()
   copyWorkspaceValue(record, text => { if (text.startsWith(REVIEW_ARTWORK_PREFIX)) references.set(text, ''); return text })
   const decoder = new TextDecoder('utf-8', { fatal: true })

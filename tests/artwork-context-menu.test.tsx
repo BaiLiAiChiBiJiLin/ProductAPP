@@ -7,6 +7,12 @@ import { emptyArrangementDisplayState } from '../src/modules/schematic/services/
 import ArrangePage from '../src/modules/schematic/ArrangePage'
 import ArtworkContextMenu from '../src/modules/schematic/components/ArtworkContextMenu'
 import { selectSvgLayer, selectSvgLayers, svgLayers } from '../src/modules/schematic/services/svgLayerService'
+import { clearAssetPreviewCache } from '../src/modules/schematic/services/assetPreviewService'
+
+const api = vi.hoisted(() => ({ invoke: vi.fn() }))
+vi.mock('../src/services/backend', () => ({ invoke: api.invoke }))
+const previewSources = new Map<string, string>()
+const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOInXLnPwAF7ALNUXCMXgAAAABJRU5ErkJggg=='
 
 vi.mock('../src/modules/schematic/components/ProductAttributesPanel', () => ({ default: () => null }))
 vi.mock('../src/modules/schematic/components/AssetPool', () => ({ default: () => null }))
@@ -27,6 +33,15 @@ const createObjectURL = vi.fn((blob: Blob) => {
 const revokeObjectURL = vi.fn()
 
 beforeEach(() => {
+  clearAssetPreviewCache()
+  previewSources.clear()
+  api.invoke.mockReset().mockImplementation(async (command, args) => {
+    if (command === 'load_inline_asset_preview') {
+      const url = `${PNG}#${previewSources.size}`
+      previewSources.set(url, args.svg)
+      return url
+    }
+  })
   previewBlobs.clear()
   createObjectURL.mockClear()
   revokeObjectURL.mockClear()
@@ -59,6 +74,89 @@ test('show back is visible only for a marked back layer and invokes the selected
   expect(onChange).not.toHaveBeenCalled()
   view.rerender(<ArtworkContextMenu {...props} asset={{ ...marked, sourceImages: marked.sourceImages!.map(image => ({ ...image, layerRole: 'front' })) }}/>)
   expect(screen.queryByRole('menuitem', { name: '展示背面' })).toBeNull()
+})
+
+test('opening and confirming a metadata-only layer menu keeps original bytes on the backend', async () => {
+  const metadata = { ...asset, svg: '', storagePath: 'printflow-file:source' }
+  const invoke = api.invoke.getMockImplementation()!
+  api.invoke.mockImplementation((command, args) => {
+    if (command === 'load_artwork_layer_document') return Promise.resolve({ svg, version: 'lazy-source-v1' })
+    if (command === 'load_artwork_preview') return Promise.resolve(PNG)
+    return invoke(command, args)
+  })
+  const onChange = vi.fn()
+  render(<ArtworkContextMenu target={{ itemId: front.id, x: 240, y: 220 }} item={front} asset={metadata} batchId="lazy-batch" onClose={noop} onChange={onChange}/>)
+  fireEvent.click(await screen.findByRole('menuitem', { name: /^切换图层/ }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'back-layer' }))
+  await confirmLayers()
+  expect(api.invoke.mock.calls.filter(([command]) => command === 'load_artwork_layer_document')).toEqual([['load_artwork_layer_document', { source: { batchId: 'lazy-batch', assetId: asset.id, path: metadata.storagePath, svg: '', variant: undefined } }]])
+  expect(api.invoke.mock.calls.some(([command]) => command === 'load_batch_asset_svg')).toBe(false)
+  expect(metadata.svg).toBe('')
+  expect(onChange.mock.calls[0][0].backSvg).toBeUndefined()
+  expect(onChange.mock.calls[0][0].svgLayerIds).toEqual(['svg-layer-1'])
+  expect(onChange.mock.calls[0][0].artworkVariant.layers).toEqual({ version: 'lazy-source-v1', remove: [1], reveal: [3, 0] })
+})
+
+test('metadata-only layer choices appear without transferring the original SVG', async () => {
+  const metadata = { ...asset, id: 'quick-layer-list', svg: '', storagePath: 'printflow-file:quick-layers' }
+  const invoke = api.invoke.getMockImplementation()!
+  api.invoke.mockImplementation((command, args) => {
+    if (command === 'load_batch_asset_svg') return new Promise(() => {})
+    if (command === 'load_artwork_layer_document') return Promise.resolve({ svg, version: 'source-v1' })
+    if (command === 'load_artwork_preview') return Promise.resolve(PNG)
+    return invoke(command, args)
+  })
+  render(<ArtworkContextMenu target={{ itemId: front.id, x: 240, y: 220 }} item={front} asset={metadata} batchId="quick-batch" onClose={noop} onChange={noop}/>)
+  fireEvent.click(await screen.findByRole('menuitem', { name: /^切换图层/ }))
+  expect(await screen.findByRole('menuitem', { name: 'back-layer' }, { timeout: 500 })).toBeTruthy()
+  expect(api.invoke.mock.calls.some(([command]) => command === 'load_batch_asset_svg')).toBe(false)
+})
+
+test('reopening a metadata layer menu reuses its lightweight document and PNGs, while replacement invalidates both', async () => {
+  const metadata = { ...asset, id: 'layer-cache', svg: '', storagePath: 'printflow-file:layer-cache-v1' }
+  const invoke = api.invoke.getMockImplementation()!
+  api.invoke.mockImplementation((command, args) => {
+    if (command === 'load_artwork_layer_document') return Promise.resolve({ svg, version: args.source.path })
+    if (command === 'load_artwork_preview') return Promise.resolve(PNG)
+    return invoke(command, args)
+  })
+  const props = { target: { itemId: front.id, x: 240, y: 220 }, item: front, asset: metadata, batchId: 'cache-batch', onClose: noop, onChange: noop }
+  const view = render(<ArtworkContextMenu {...props}/>)
+  fireEvent.click(await screen.findByRole('menuitem', { name: /^切换图层/ }))
+  const loaded = () => Array.from(document.querySelectorAll<HTMLImageElement>('img.artwork-layer-thumbnail')).every(image => image.getAttribute('src') === PNG)
+  await screen.findByRole('menuitem', { name: 'back-layer' })
+  await waitFor(() => expect(loaded()).toBe(true))
+  const count = api.invoke.mock.calls.length
+  view.unmount()
+  const second = render(<ArtworkContextMenu {...props}/>)
+  fireEvent.click(await screen.findByRole('menuitem', { name: /^切换图层/ }))
+  await screen.findByRole('menuitem', { name: 'back-layer' })
+  await waitFor(() => expect(loaded()).toBe(true))
+  expect(api.invoke.mock.calls.length).toBe(count)
+  second.rerender(<ArtworkContextMenu {...props} asset={{ ...metadata, storagePath: 'printflow-file:layer-cache-v2' }}/>)
+  await waitFor(() => expect(api.invoke.mock.calls.filter(([command]) => command === 'load_artwork_layer_document')).toHaveLength(2))
+  await waitFor(() => expect(api.invoke.mock.calls.filter(([command]) => command === 'load_artwork_preview')).toHaveLength(6))
+  expect(api.invoke.mock.calls.some(([command]) => command === 'load_batch_asset_svg')).toBe(false)
+})
+
+test('deferred face selection keeps the color window, with no original read on confirmation or show back', async () => {
+  const skeleton = '<svg xmlns="http://www.w3.org/2000/svg"><image id="back" href="data:image/png;base64,"/><image id="window" href="data:image/png;base64,"/><image id="front" href="data:image/png;base64,"/></svg>'
+  const deferred: Asset = { ...asset, id: 'deferred-window', svg: '', storagePath: 'printflow-file:window-source', sourceImages: [
+    { nodeId: 'back', widthPx: 10, heightPx: 10, format: 'PNG', layerRole: 'back' },
+    { nodeId: 'window', widthPx: 10, heightPx: 10, format: 'PNG', layerRole: 'window' },
+    { nodeId: 'front', widthPx: 10, heightPx: 10, format: 'PNG', layerRole: 'front' },
+  ] }
+  api.invoke.mockImplementation(async command => command === 'load_artwork_layer_document' ? { svg: skeleton, version: 'window-v1' } : PNG)
+  const onChange = vi.fn(), onShowBack = vi.fn()
+  render(<ArtworkContextMenu target={{ itemId: front.id, x: 240, y: 220 }} item={front} asset={deferred} batchId="window-batch" onClose={noop} onChange={onChange} onShowBack={onShowBack}/>)
+  fireEvent.click(await screen.findByRole('menuitem', { name: /^切换图层/ }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'front（正面）' }))
+  await confirmLayers()
+  expect(onChange.mock.calls[0][0]).toMatchObject({ svgLayerIds: ['svg-layer-1', 'svg-layer-2'], artworkVariant: { layers: { version: 'window-v1' } } })
+  expect(onChange.mock.calls[0][0].backSvg).toBeUndefined()
+  fireEvent.click(await screen.findByRole('menuitem', { name: '展示背面' }))
+  expect(onShowBack).toHaveBeenCalledExactlyOnceWith(front.id, skeleton, 'window-v1')
+  expect(api.invoke.mock.calls.some(([command]) => command === 'load_batch_asset_svg')).toBe(false)
 })
 
 function mount(onReplace = vi.fn().mockResolvedValue(undefined), replacingArtwork = false, items: Item[] = [front, back], singleDelete = false, exporting = false) {
@@ -108,15 +206,9 @@ async function rightClick(id: string) {
 
 async function thumbnailSvg(option: HTMLElement) {
   const thumbnail = option.querySelector<HTMLImageElement>('img.artwork-layer-thumbnail')!
-  await waitFor(() => expect(thumbnail.getAttribute('src')).toMatch(/^blob:test-/))
-  const blob = previewBlobs.get(thumbnail.getAttribute('src')!)!
-  expect(blob.type).toBe('image/svg+xml')
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result))
-    reader.onerror = reject
-    reader.readAsText(blob)
-  })
+  await waitFor(() => expect(thumbnail.getAttribute('src')).toMatch(/^data:image\/png;base64,/))
+  expect(createObjectURL).not.toHaveBeenCalled()
+  return previewSources.get(thumbnail.getAttribute('src')!)!
 }
 
 async function confirmLayers() {
@@ -159,7 +251,7 @@ test.each(['front', 'back'])('right-click %s switches only that instance and kee
   expect(current.page().items.find(item => item.id === id)?.backSvg).not.toContain('id="back-layer"')
 })
 
-test('all layers and individual layers each show their own thumbnail, and closing the menu releases every preview', async () => {
+test('all layers and individual layers show small PNGs without SVG object URLs', async () => {
   const current = mount()
   fireEvent.click(await rightClick('front'))
   const allOption = await screen.findByRole('menuitem', { name: '全部图层' })
@@ -183,7 +275,8 @@ test('all layers and individual layers each show their own thumbnail, and closin
   expect(current.page().items).toEqual([front, back])
   await confirmLayers()
   await waitFor(() => expect(document.querySelector('img.artwork-layer-thumbnail')).toBeNull())
-  for (const url of urls) expect(revokeObjectURL).toHaveBeenCalledWith(url)
+  expect(createObjectURL).not.toHaveBeenCalled()
+  expect(revokeObjectURL).not.toHaveBeenCalled()
   expect(current.page().items.find(item => item.id === 'front')).toMatchObject({ svgLayerId: 'all', backSvg: svg })
   expect(current.page().items.find(item => item.id === 'front')?.svgLayerIds).toBeUndefined()
   expect(current.page().items.find(item => item.id === 'back')).toEqual(back)
@@ -271,7 +364,7 @@ test('deselecting every layer disables confirmation without changing artwork or 
   expect(screen.getByRole('menuitem', { name: 'front-layer' })).toBeTruthy()
 })
 
-test('thumbnail URLs are replaced when the original SVG changes and released on unmount', async () => {
+test('thumbnail PNGs are replaced when the source version changes', async () => {
   const props = { target: { itemId: front.id, x: 240, y: 220 }, item: front, asset, onClose: noop, onChange: noop }
   const view = render(<ArtworkContextMenu {...props}/>)
   fireEvent.click(await screen.findByRole('menuitem', { name: /^切换图层/ }))
@@ -280,12 +373,13 @@ test('thumbnail URLs are replaced when the original SVG changes and released on 
   const oldUrls = Array.from(document.querySelectorAll<HTMLImageElement>('img.artwork-layer-thumbnail'), image => image.getAttribute('src')!)
   const updatedSvg = svg.replace('fill="red"', 'fill="green"')
   view.rerender(<ArtworkContextMenu {...props} asset={{ ...asset, svg: updatedSvg }}/>)
-  await waitFor(() => { for (const url of oldUrls) expect(revokeObjectURL).toHaveBeenCalledWith(url) })
   expect(await thumbnailSvg(await screen.findByRole('menuitem', { name: 'front-layer' }))).toContain('fill="green"')
+  await waitFor(() => expect(Array.from(document.querySelectorAll<HTMLImageElement>('img.artwork-layer-thumbnail')).every(image => image.src.startsWith('data:image/png;'))).toBe(true))
   const newUrls = Array.from(document.querySelectorAll<HTMLImageElement>('img.artwork-layer-thumbnail'), image => image.getAttribute('src')!)
   expect(newUrls.every(url => !oldUrls.includes(url))).toBe(true)
   view.unmount()
-  for (const url of newUrls) expect(revokeObjectURL).toHaveBeenCalledWith(url)
+  expect(createObjectURL).not.toHaveBeenCalled()
+  expect(revokeObjectURL).not.toHaveBeenCalled()
 })
 
 test('only visible layer previews are generated and an existing derived image is not falsely selected as all layers', async () => {
@@ -311,10 +405,11 @@ test('only visible layer previews are generated and an existing derived image is
   expect(observer).toBeTruthy()
   act(() => observer.callback([{ target: image, isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver))
   expect(await thumbnailSvg(backOption)).toContain('id="back-layer"')
-  expect(createObjectURL).toHaveBeenCalledTimes(1)
+  expect(createObjectURL).not.toHaveBeenCalled()
+  expect(api.invoke).toHaveBeenCalledExactlyOnceWith('load_inline_asset_preview', { svg: selectSvgLayer(svg, 'svg-layer-1'), maxEdgePx: 128 })
   expect(observer.disconnect).toHaveBeenCalled()
   view.unmount()
-  expect(revokeObjectURL).toHaveBeenCalledExactlyOnceWith(image.getAttribute('src'))
+  expect(revokeObjectURL).not.toHaveBeenCalled()
   for (const record of observers) expect(record.disconnect).toHaveBeenCalled()
 })
 

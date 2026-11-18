@@ -90,7 +90,7 @@ impl Read for Base64Text<'_> {
     }
 }
 
-fn compact_large_svg(source: &[u8]) -> Result<Vec<u8>, String> {
+fn compact_large_svg(source: &[u8], max_edge: u32) -> Result<Vec<u8>, String> {
     let text = std::str::from_utf8(source).map_err(|_| "大 SVG 预览编码不支持")?;
     // Match usvg's parser: Corel exports include a standard SVG DOCTYPE.
     let document = roxmltree::Document::parse_with_options(
@@ -135,7 +135,7 @@ fn compact_large_svg(source: &[u8]) -> Result<Vec<u8>, String> {
             append(&mut compact, &source[offset..range.start])?;
             let reader =
                 base64::read::DecoderReader::new(Base64Text(encoded.as_bytes()), &STANDARD);
-            let reduced = crate::asset_preview_png::reduce(reader, 512)?;
+            let reduced = crate::asset_preview_png::reduce(reader, max_edge)?;
             let wrapper = raster_wrapper(reduced.width, reduced.height, &reduced.png);
             append(&mut compact, b"data:image/svg+xml;base64,")?;
             append(&mut compact, STANDARD.encode(wrapper).as_bytes())?;
@@ -155,6 +155,7 @@ fn resolve_image(
     data: Arc<Vec<u8>>,
     opts: &usvg::Options,
     budget: &Mutex<Budget>,
+    max_edge: u32,
 ) -> Option<usvg::ImageKind> {
     if budget
         .lock()
@@ -173,7 +174,8 @@ fn resolve_image(
     if mime == "image/svg+xml" {
         {
             let mut state = budget.lock().unwrap_or_else(|error| error.into_inner());
-            if data.len() > MAX_NESTED_BYTES || state.depth >= 4 {
+            let nested_limit = if max_edge > 512 { 96 * 1024 * 1024 } else { MAX_NESTED_BYTES };
+            if data.len() > nested_limit || state.depth >= 4 {
                 state.failed = true;
                 return None;
             }
@@ -202,10 +204,10 @@ fn resolve_image(
         return fail();
     };
     let pixels = u64::from(width) * u64::from(height);
-    if is_png && (width > 512 || height > 512) {
+    if is_png && (width > max_edge || height > max_edge) {
         // The PNG decoder retains only scanlines plus the small output. A
         // 26,575 x 34,097 image must never allocate its 3.6 GB pixel canvas.
-        let reduced = crate::asset_preview_png::reduce(Cursor::new(data.as_slice()), 512).ok();
+        let reduced = crate::asset_preview_png::reduce(Cursor::new(data.as_slice()), max_edge).ok();
         let tree = reduced.and_then(|reduced| {
             usvg::Tree::from_str(
                 &raster_wrapper(reduced.width, reduced.height, &reduced.png),
@@ -218,7 +220,7 @@ fn resolve_image(
     if width > 16_384 || height > 16_384 || pixels == 0 || pixels > MAX_RASTER_PIXELS {
         return fail();
     }
-    if width > 512 || height > 512 {
+    if width > max_edge || height > max_edge {
         // Decode only one bounded raster at a time, then retain the reduced PNG.
         // A nested SVG preserves the original natural dimensions even when the
         // authored <image> omits width/height or uses preserveAspectRatio.
@@ -231,7 +233,7 @@ fn resolve_image(
             limits.max_image_width = Some(16_384);
             limits.max_image_height = Some(16_384);
             reader.limits(limits);
-            let reduced = reader.decode().ok()?.thumbnail(512, 512);
+            let reduced = reader.decode().ok()?.thumbnail(max_edge, max_edge);
             let mut png = Cursor::new(Vec::new());
             reduced.write_to(&mut png, image::ImageFormat::Png).ok()?;
             let wrapper = raster_wrapper(width, height, &png.into_inner());
@@ -257,12 +259,18 @@ fn resolve_image(
 /// Parsing retains compressed image data; check dimensions before resvg can
 /// allocate its raster buffers. Never return a successful, incomplete preview.
 pub(crate) fn render_png(source: &[u8], path: &Path, max_edge: u32) -> Result<Vec<u8>, String> {
+    render_at_resolution(source, path, edge(Some(max_edge)))
+}
+
+/// PDF artwork uses its physical print size, independently of the 512 px UI cap.
+pub(crate) fn render_at_resolution(source: &[u8], path: &Path, max_edge: u32) -> Result<Vec<u8>, String> {
+    let max_edge = max_edge.clamp(1, 4096);
     if source.len() as u64 > MAX_SVG_SOURCE_BYTES {
         return Err("图片超过安全预览大小，原文件仍保留".into());
     }
     let compact;
     let source = if source.len() as u64 > MAX_SOURCE_BYTES {
-        compact = compact_large_svg(source)?;
+        compact = compact_large_svg(source, max_edge)?;
         compact.as_slice()
     } else {
         source
@@ -275,7 +283,7 @@ pub(crate) fn render_png(source: &[u8], path: &Path, max_edge: u32) -> Result<Ve
 
     options.image_href_resolver = usvg::ImageHrefResolver {
         resolve_data: Box::new(move |mime, data, opts| {
-            resolve_image(mime, data, opts, &data_budget)
+            resolve_image(mime, data, opts, &data_budget, max_edge)
         }),
         resolve_string: Box::new(move |href, opts| {
             let requested = opts
@@ -290,7 +298,7 @@ pub(crate) fn render_png(source: &[u8], path: &Path, max_edge: u32) -> Result<Ve
                     .failed = true;
                 return None;
             };
-            resolve_image("text/plain", Arc::new(data), opts, &string_budget)
+            resolve_image("text/plain", Arc::new(data), opts, &string_budget, max_edge)
         }),
     };
     let tree = usvg::Tree::from_data(source, &options).map_err(|_| "SVG 预览解析失败")?;
@@ -301,7 +309,6 @@ pub(crate) fn render_png(source: &[u8], path: &Path, max_edge: u32) -> Result<Ve
     {
         return Err("图片内容超过安全预览预算或存在无法读取的图层，原文件仍保留".into());
     }
-    let max_edge = edge(Some(max_edge));
     let scale = max_edge as f32 / tree.size().width().max(tree.size().height());
     let mut pixmap = tiny_skia::Pixmap::new(
         (tree.size().width() * scale)
@@ -386,9 +393,6 @@ fn from_path_in(
     max_edge: u32,
     expected_hash: Option<&str>,
 ) -> Result<String, String> {
-    let _guard = crate::batch_thumbnails::RENDER_LOCK
-        .lock()
-        .map_err(|_| "预览渲染暂不可用")?;
     let metadata = fs::metadata(path).map_err(|_| "预览源文件不可访问")?;
     if metadata.len() > MAX_SVG_SOURCE_BYTES {
         return Err("图片超过安全预览大小，原文件仍保留".into());
@@ -411,15 +415,26 @@ fn from_path_in(
         .as_bytes(),
     );
     let target = cache.join(format!("{key}.png"));
-    let png = if let Some(png) = cache_read(&target, max_edge) {
-        png
-    } else {
+    {
+        let _cache = crate::preview_runtime::CACHE_LOCK.lock().map_err(|_|"图片缓存暂不可用")?;
+        if let Some(png) = cache_read(&target,max_edge) {
+            return Ok(format!("data:image/png;base64,{}", STANDARD.encode(png)));
+        }
+    }
+    let _permit = crate::preview_runtime::acquire(metadata.len() as usize)?;
+    let entry = crate::preview_runtime::key_lock(&target)?;
+    let _entry = entry.lock().map_err(|_|"图片缓存暂不可用")?;
+    let cached = {
+        let _cache = crate::preview_runtime::CACHE_LOCK.lock().map_err(|_|"图片缓存暂不可用")?;
+        cache_read(&target,max_edge)
+    };
+    let png = if let Some(png) = cached { png } else {
         let bytes = read_bounded(path)?;
         if expected_hash.is_some_and(|expected| hash(&bytes) != expected) {
             return Err("共享图片校验失败，文件可能被外部修改".into());
         }
         let png = render_png(&bytes, path, max_edge)?;
-        publish(cache, &target, &png);
+        { let _cache = crate::preview_runtime::CACHE_LOCK.lock().map_err(|_|"图片缓存暂不可用")?; publish(cache, &target, &png); }
         png
     };
     Ok(format!("data:image/png;base64,{}", STANDARD.encode(png)))
@@ -439,9 +454,13 @@ pub(crate) fn from_path(
 }
 
 fn inline(source: &[u8], path: &Path, max_edge: u32) -> Result<String, String> {
-    let _guard = crate::batch_thumbnails::RENDER_LOCK
-        .lock()
-        .map_err(|_| "预览渲染暂不可用")?;
+    if path.as_os_str().is_empty() {
+        let png = crate::schematic_raster::with_cached(source, max_edge, "", &[], |cached| {
+            fs::read(cached).map_err(|_| "图片缓存读取失败".to_owned())
+        })?;
+        return Ok(format!("data:image/png;base64,{}", STANDARD.encode(png)));
+    }
+    let _permit = crate::preview_runtime::acquire(source.len())?;
     let png = render_png(source, path, max_edge)?;
     Ok(format!("data:image/png;base64,{}", STANDARD.encode(png)))
 }
@@ -455,10 +474,33 @@ pub async fn load_inline_asset_preview(
         return Err("此图片需要源文件路径才能生成安全预览".into());
     }
     tauri::async_runtime::spawn_blocking(move || {
+        let bytes = if let Some(id) = svg.strip_prefix(crate::staged_artwork::PREFIX) {
+            fs::metadata(crate::staged_artwork::path(id)?).map_err(|_|"预览临时资源不可访问")?.len() as usize
+        } else { svg.len() };
+        let _permit = crate::preview_runtime::acquire(bytes)?;
+        if let Some(id) = svg.strip_prefix(crate::staged_artwork::PREFIX) {
+            return staged_preview(id, edge(max_edge_px));
+        }
         inline(svg.as_bytes(), Path::new(""), edge(max_edge_px))
     })
     .await
     .map_err(|_| "预览任务异常结束".to_owned())?
+}
+
+// Edited layer selections/back artwork has no saved batch path. Reuse bounded
+// chunk staging rather than sending a second giant SVG JSON message to WebView2.
+fn staged_preview(id: &str, max_edge: u32) -> Result<String, String> {
+    let path = crate::staged_artwork::path(id)?;
+    let size = fs::metadata(&path).map_err(|_| "预览临时资源不可访问")?.len();
+    if size > MAX_SVG_SOURCE_BYTES {
+        return Err("图片超过安全预览大小，原文件仍保留".into());
+    }
+    let mut source = Vec::new();
+    source.try_reserve_exact(size as usize + 1).map_err(|_| "预览源文件内存不足")?;
+    fs::File::open(&path).map_err(|_| "预览临时资源不可访问")?
+        .take(size + 1).read_to_end(&mut source).map_err(|_| "预览临时资源读取失败")?;
+    if source.len() as u64 != size { return Err("预览临时资源读取期间发生变化".into()); }
+    inline(&source, Path::new(""), max_edge)
 }
 
 #[tauri::command]
@@ -487,12 +529,13 @@ pub async fn load_batch_asset_preview(
     max_edge_px: Option<u32>,
 ) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let record = crate::batch_history::read_record(&crate::database(&app)?, &batch_id)?;
-        let asset = record
-            .assets
-            .into_iter()
-            .find(|asset| asset.id == asset_id)
-            .ok_or("图片不属于当前历史批次")?;
+        let conn = crate::database(&app)?;
+        // A legacy inline batch may contain hundreds of megabytes of XML.
+        // Admit it before SQLite parses JSON, then keep that permit through
+        // rendering. Normal reference-only manifests stay fully parallel.
+        let payload_bytes: usize = conn.query_row("SELECT length(CAST(payload AS BLOB)) FROM batches WHERE id=?1", [&batch_id], |row|row.get(0)).map_err(|_|"历史批次不存在")?;
+        let _legacy = if payload_bytes > 1024*1024 { Some(crate::preview_runtime::acquire(payload_bytes)?) } else { None };
+        let asset = crate::batch_history::read_asset(&conn, &batch_id, &asset_id)?;
         if !asset.storage_path.is_empty() {
             from_path(Path::new(&asset.storage_path), edge(max_edge_px), None)
         } else {
@@ -506,7 +549,57 @@ pub async fn load_batch_asset_preview(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[ignore = "Read-only real-artwork benchmark; set PRINTFLOW_PREVIEW_FIXTURE to a batch metadata JSON"]
+    fn measure_parallel_page_previews() {
+        let fixture = std::env::var("PRINTFLOW_PREVIEW_FIXTURE").expect("metadata fixture");
+        let data: serde_json::Value = serde_json::from_slice(&fs::read(fixture).unwrap()).unwrap();
+        let mut sources: Vec<_> = data["assets"].as_array().unwrap().iter().filter_map(|asset| {
+            let path = PathBuf::from(asset["storagePath"].as_str()?);
+            let bytes = fs::metadata(&path).ok()?.len();
+            (bytes <= 16*1024*1024).then_some((path,bytes))
+        }).collect();
+        sources.sort_by_key(|(_,bytes)|std::cmp::Reverse(*bytes)); sources.truncate(8);
+        assert_eq!(sources.len(),8);
+        crate::assets::export_options().unwrap(); // Font initialization is common to both runs.
+        let run = |workers: usize| {
+            let cache = tempfile::tempdir().unwrap();
+            let start = std::time::Instant::now();
+            let mut result = Vec::new();
+            for chunk in sources.chunks(workers) {
+                std::thread::scope(|scope| {
+                    let jobs: Vec<_> = chunk.iter().map(|(path,_)| {
+                        let directory = cache.path();
+                        scope.spawn(move || from_path_in(path,directory,256,None).unwrap())
+                    }).collect();
+                    for job in jobs { result.push(job.join().unwrap()); }
+                });
+            }
+            (start.elapsed().as_millis(),result)
+        };
+        let (serial,expected) = run(1);
+        let (parallel,actual) = run(4);
+        assert_eq!(actual,expected);
+        for (path,bytes) in &sources { assert_eq!(fs::metadata(path).unwrap().len(),*bytes); }
+        println!("sources={} original_bytes={} serial_ms={serial} parallel_ms={parallel}",sources.len(),sources.iter().map(|(_,bytes)|bytes).sum::<u64>());
+    }
     const SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="4000" height="3000"><rect width="4000" height="3000" fill="#f00"/></svg>"##;
+    #[test]
+    fn edited_staged_artwork_returns_a_bounded_preview_without_changing_its_source() {
+        let id = format!("abc-{:x}", std::time::SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos());
+        let path = crate::staged_artwork::path(&id).unwrap();
+        let source = SVG.replace("</svg>", &format!("<!--{}--></svg>", "x".repeat(300 * 1024)));
+        fs::write(&path, source.as_bytes()).unwrap();
+        let result = staged_preview(&id, 512);
+        let unchanged = fs::read(&path).unwrap() == source.as_bytes();
+        fs::remove_file(&path).unwrap();
+        let bytes = STANDARD.decode(result.unwrap().strip_prefix("data:image/png;base64,").unwrap()).unwrap();
+        let image = tiny_skia::Pixmap::decode_png(&bytes).unwrap();
+        assert_eq!(image.width(), 512);
+        assert!(image.height() <= 512);
+        assert!(unchanged);
+        assert!(staged_preview("../untrusted.svg", 512).is_err());
+    }
     #[test]
     fn previews_are_png_bounded_and_do_not_change_artwork() {
         let root = tempfile::tempdir().unwrap();

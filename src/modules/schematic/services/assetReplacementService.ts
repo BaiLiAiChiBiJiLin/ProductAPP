@@ -28,6 +28,7 @@ export function replaceAssetArtwork(assets: Asset[], originalId: string, artwork
     name: artwork.name,
     sourceFileName: artwork.sourceFileName,
     svg: artwork.svg,
+    geometrySvg: artwork.geometrySvg,
     previewUrl: artwork.previewUrl,
     thumbnailUrl: artwork.thumbnailUrl,
     storagePath: artwork.storagePath,

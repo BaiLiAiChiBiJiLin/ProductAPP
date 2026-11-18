@@ -4,11 +4,23 @@ import { listen } from '@tauri-apps/api/event'
 import { defaultLayoutBounds, pageRasterSvg, pageSvg, type Asset, type DetailImageVisual, type LayoutBounds, type Page } from '../../../model'
 import type { BatchMetadata } from '../types'
 import type { DimensionDisplayOverride } from './imageDimensionService.ts'
-import { StagedArtwork, writeStagedText } from './stagedArtworkService'
-export async function exportPage(page: Page, assets: Asset[], output: string, format = 'svg', metadata: Partial<BatchMetadata> = {}, totalPages = 1, displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>, layoutBounds: LayoutBounds = defaultLayoutBounds, accessoryVisuals?: ReadonlyMap<string, DetailImageVisual>, visualScales?: ReadonlyMap<string, number>) {
+import { writeStagedText } from './stagedArtworkService'
+import { ExportArtwork } from './exportArtworkService'
+import { hasInlineArtwork } from './artworkSourceService'
+import { withArtworkGeometry } from './artworkGeometryService'
+export async function exportPage(page: Page, assets: Asset[], output: string, format = 'svg', metadata: Partial<BatchMetadata> = {}, totalPages = 1, displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>, layoutBounds: LayoutBounds = defaultLayoutBounds, accessoryVisuals?: ReadonlyMap<string, DetailImageVisual>, visualScales?: ReadonlyMap<string, number>, batchId?: string) {
   if (!isTauri()) throw new Error('请在 Tauri 桌面窗口中导出')
   await prepareAccessoryFrames([page])
+  assets = await withArtworkGeometry(assets.filter(asset => page.items.some(item => item.assetId === asset.id)), batchId)
   const map = new Map(assets.map(a => [a.id, a]))
+  if (format !== 'svg' || page.items.some(item => item.artworkVariant || !hasInlineArtwork(item.backSvg ?? map.get(item.assetId)?.svg ?? ''))) {
+    const resources = new ExportArtwork()
+    try {
+      await resources.prepare([page], map, format === 'svg' ? 'original' : 'high', batchId, visualScales)
+      const svg = pageRasterSvg(page, map, metadata, totalPages, displayOverrides, resources.href, layoutBounds, accessoryVisuals, visualScales)
+      return await invoke('export_artwork', { output, format, svg, staged: true })
+    } finally { await resources.dispose() }
+  }
   const svg = format === 'svg' ? pageSvg(page, map, metadata, totalPages, displayOverrides, layoutBounds, accessoryVisuals, visualScales)
     : pageRasterSvg(page, map, metadata, totalPages, displayOverrides, undefined, layoutBounds, accessoryVisuals, visualScales)
   return invoke('export_artwork', { output, format, svg })
@@ -16,30 +28,27 @@ export async function exportPage(page: Page, assets: Asset[], output: string, fo
 export type PdfExportProgress = { phase: 'artwork' | 'accessories' | 'prepare' | 'transfer' | 'rendering' | 'resources' | 'flatten' | 'fonts' | 'parse' | 'convert' | 'write' | 'page'; completed: number; total: number }
 export type PdfExportQuality = 'standard' | 'high' | 'original'
 export function pdfProgressText(progress: PdfExportProgress) {
-  const labels: Record<PdfExportProgress['phase'], string> = { artwork: '正在准备原始图片', accessories: '正在准备配件图片', prepare: '正在生成页面', transfer: '正在传输页面到导出服务', rendering: '正在初始化 PDF', resources: '正在加载配件和备注资源', flatten: '正在展开 SVG 图层', fonts: '正在准备字体', parse: '正在解析 SVG', convert: '正在转换矢量 PDF', write: '正在写入 PDF 文件', page: '已完成页面' }
+  const labels: Record<PdfExportProgress['phase'], string> = { artwork: '正在准备导出图片', accessories: '正在准备配件图片', prepare: '正在生成页面', transfer: '正在传输页面到导出服务', rendering: '正在初始化 PDF', resources: '正在加载配件和备注资源', flatten: '正在展开 SVG 图层', fonts: '正在准备字体', parse: '正在解析 SVG', convert: '正在转换矢量 PDF', write: '正在写入 PDF 文件', page: '已完成页面' }
   return `${labels[progress.phase]}（${progress.completed} / ${progress.total}）`
 }
-export async function exportPdf(pages: Page[], assets: Asset[], output: string, metadata: Partial<BatchMetadata> = {}, onProgress?: (progress: PdfExportProgress) => void, displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>, layoutBounds: LayoutBounds = defaultLayoutBounds, accessoryVisuals?: ReadonlyMap<string, DetailImageVisual>, visualScales?: ReadonlyMap<string, number>, quality: PdfExportQuality = 'standard') {
+export async function exportPdf(pages: Page[], assets: Asset[], output: string, metadata: Partial<BatchMetadata> = {}, onProgress?: (progress: PdfExportProgress) => void, displayOverrides?: ReadonlyMap<string, DimensionDisplayOverride>, layoutBounds: LayoutBounds = defaultLayoutBounds, accessoryVisuals?: ReadonlyMap<string, DetailImageVisual>, visualScales?: ReadonlyMap<string, number>, quality: PdfExportQuality = 'standard', batchId?: string) {
   if (!isTauri()) throw new Error('请在 Tauri 桌面窗口中导出')
   await prepareAccessoryFrames(pages, (completed, total) => onProgress?.({ phase: 'accessories', completed, total }))
+  const used = new Set(pages.flatMap(page => page.items.map(item => item.assetId)))
+  assets = await withArtworkGeometry(assets.filter(asset => used.has(asset.id)), batchId)
   const map = new Map(assets.map(asset => [asset.id, asset]))
   const ids: string[] = []
-  const resources = new StagedArtwork()
+  const resources = new ExportArtwork()
   const unlisten = await listen<PdfExportProgress>('pdf-export-progress', event => onProgress?.(event.payload))
   try {
-    for (const page of pages) for (const item of page.items) {
-      const svg = item.backSvg ?? map.get(item.assetId)?.svg
-      if (!svg) throw new Error('页面中有丢失的图片资源，无法导出')
-      resources.reference(svg)
-    }
-    await resources.write((completed, total) => onProgress?.({ phase: 'artwork', completed, total }))
+    await resources.prepare(pages, map, quality, batchId, visualScales, (completed, total) => onProgress?.({ phase: 'artwork', completed, total }))
     for (const [index, page] of pages.entries()) {
       onProgress?.({ phase: 'prepare', completed: index, total: pages.length })
       await new Promise<void>(resolve => setTimeout(resolve, 0))
       const id = crypto.randomUUID()
       ids.push(id)
       // Only layout and resource references cross IPC, never base64 artwork.
-      const svg = pageRasterSvg({ ...page, id: index + 1 }, map, metadata, pages.length, displayOverrides, resources.reference, layoutBounds, accessoryVisuals, visualScales)
+      const svg = pageRasterSvg({ ...page, id: index + 1 }, map, metadata, pages.length, displayOverrides, resources.href, layoutBounds, accessoryVisuals, visualScales)
       onProgress?.({ phase: 'transfer', completed: index, total: pages.length })
       if (svg.length <= 64 * 1024) await invoke('stage_pdf_page', { id, svg })
       else await writeStagedText(id, svg)

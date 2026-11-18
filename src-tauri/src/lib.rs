@@ -1,6 +1,9 @@
 mod asset_storage;
 mod asset_preview_png;
 mod asset_previews;
+mod preview_runtime;
+mod schematic_raster;
+mod artwork_source;
 pub mod assets;
 mod batch_history;
 mod batch_thumbnails;
@@ -1401,13 +1404,20 @@ async fn delete_batch(app: tauri::AppHandle, id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn export_artwork(output: String, svg: String, format: String) -> Result<(), String> {
+async fn export_artwork(output: String, svg: String, format: String, staged: Option<bool>) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         if format == "svg" {
+            let svg = if staged.unwrap_or(false) { staged_artwork::embed_images(svg)? } else { svg };
             return fs::write(output, svg).map_err(|e| e.to_string());
         }
+        let svg = if staged.unwrap_or(false) { flatten_svg_resources(svg, true)? } else { svg };
+        let mut artwork_options = assets::export_options()?;
+        if staged.unwrap_or(false) {
+            schematic_raster::validate_page(&svg)?;
+            artwork_options.image_href_resolver.resolve_string = Box::new(schematic_raster::resolve);
+        }
         if format == "jpg" || format == "jpeg" {
-            let tree = usvg::Tree::from_str(&svg, &assets::export_options()?)
+            let tree = usvg::Tree::from_str(&svg, &artwork_options)
                 .map_err(|e| e.to_string())?;
             let mut pixmap = tiny_skia::Pixmap::new(2480, 3508).ok_or("无法创建 JPG 画布")?;
             resvg::render(
@@ -1441,7 +1451,7 @@ async fn export_artwork(output: String, svg: String, format: String) -> Result<(
         }
         let svg = flatten_embedded_svg_images(svg)?;
         let tree =
-            usvg::Tree::from_str(&svg, &assets::export_options()?).map_err(|e| e.to_string())?;
+            usvg::Tree::from_str(&svg, &artwork_options).map_err(|e| e.to_string())?;
         let mut pixmap = tiny_skia::Pixmap::new(2480, 3508).ok_or("无法创建 PNG 画布")?;
         resvg::render(
             &tree,
@@ -1555,10 +1565,12 @@ async fn export_pdf_sources(
             let phase_start = Instant::now();
             report("flatten");
             let flattened = flatten_svg_resources(embedded, staged)?;
+            if staged { schematic_raster::validate_page(&flattened)?; }
             let flatten_ms = phase_start.elapsed().as_millis();
             let phase_start = Instant::now();
             report("fonts");
-            let options = assets::export_options()?;
+            let mut options = assets::export_options()?;
+            if staged { options.image_href_resolver.resolve_string = Box::new(schematic_raster::resolve); }
             let fonts_ms = phase_start.elapsed().as_millis();
             let phase_start = Instant::now();
             report("parse");
@@ -1708,6 +1720,11 @@ pub fn run() {
             asset_previews::load_temp_asset_preview,
             asset_previews::load_batch_asset_preview,
             asset_previews::load_inline_asset_preview,
+            schematic_raster::stage_schematic_png,
+            artwork_source::load_artwork_preview,
+            artwork_source::load_artwork_geometry,
+            artwork_source::load_artwork_layer_document,
+            artwork_source::stage_asset_artwork,
             list_batches,
             load_batch_thumbnails,
             load_batch,

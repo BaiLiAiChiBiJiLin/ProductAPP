@@ -1,4 +1,6 @@
 import type { Asset, Item, Page } from '../../../model.ts'
+import { hasInlineArtwork } from './artworkSourceService.ts'
+import { backLayerSvg } from './svgBackLayerService.ts'
 
 type Matrix = [number, number, number, number, number, number]
 const identity: Matrix = [1, 0, 0, 1, 0, 0]
@@ -147,7 +149,8 @@ export function pictureRulerBottomRatio(item: Item, page: Page, assets: Map<stri
   const standee = /立牌|standees?/i.test(name)
   const chain = /串串|串联|串連|chained|linked charm|connecting charm/i.test(name)
   if (standee || !chain || isLastChainMember(item, asset, page, assets)) return 1
-  const svg = item.backSvg ?? asset.svg
+  const original = item.geometrySvg ?? (hasInlineArtwork(item.backSvg ?? '') ? item.backSvg! : asset.geometrySvg ?? (hasInlineArtwork(asset.svg) ? asset.svg : ''))
+  const svg = item.artworkVariant?.back && original ? backLayerSvg(original, item.artworkVariant.fitFirstImage, item.artworkVariant.roles?.map(layerRole => ({ layerRole }))) : original
   if (!svg) return 1
   const entries = cache.get(asset) ?? []
   const cached = entries.find(entry => entry.svg === svg)

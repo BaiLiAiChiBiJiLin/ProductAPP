@@ -105,16 +105,26 @@ function normalizeProduct(raw: unknown, index: number): ProductConfig | null {
   return { id: rawId.startsWith('public:') ? rawId : `public:${rawId}`, title: asNonEmptyString(value.titleZh, asNonEmptyString(value.title, asNonEmptyString(value.name, `产品 ${index + 1}`))), options }
 }
 
-/** Normalize the public endpoint's category wrapper into the same editor model as local products. */
+export const PUBLIC_UNCATEGORIZED_CATEGORY = { id: '__uncategorized__', title: '未分类产品' }
+
+/** Preserve each public product's category while sharing the local editor model. */
 export function normalizePublicProductOptions(value: unknown): ProductConfig[] {
   const root = asRecord(value)
   const categories = root && Array.isArray(root.categories) ? root.categories : []
-  const products = categories.flatMap(category => {
+  const products = categories.flatMap((category, index) => {
     const record = asRecord(category)
-    return record && Array.isArray(record.products) ? record.products : []
+    if (!record || !Array.isArray(record.products)) return []
+    const name = asNonEmptyString(record.name)
+    const metadata = { id: name || `category-${index + 1}`, title: asNonEmptyString(record.titleZh, asNonEmptyString(record.title, name || `分类 ${index + 1}`)) }
+    return record.products.map(product => ({ product, category: metadata }))
   })
-  if (root && Array.isArray(root.uncategorizedProducts)) products.push(...root.uncategorizedProducts)
-  return products.map(normalizeProduct).filter((item): item is ProductConfig => Boolean(item))
+  if (root && Array.isArray(root.uncategorizedProducts)) {
+    products.push(...root.uncategorizedProducts.map(product => ({ product, category: PUBLIC_UNCATEGORIZED_CATEGORY })))
+  }
+  return products.flatMap(({ product, category }, index) => {
+    const normalized = normalizeProduct(product, index)
+    return normalized ? [{ ...normalized, category }] : []
+  })
 }
 
 let request: Promise<ProductConfig[]> | undefined

@@ -1,6 +1,7 @@
 export type SvgLayer = { id: string; label: string; role?: SourceLayerRole; imageNodeIds?: string[]; tag?: string }
 export type SourceLayerRole = 'front' | 'window' | 'back' | ''
 export type SourceLayerRoleImage = { nodeId?: string; layerRole?: string }
+export type SvgLayerPlan = { remove: number[]; reveal: number[] }
 
 type SvgNode = {
   start: number
@@ -238,10 +239,27 @@ export function selectSvgLayer(svg: string, id: string): string {
 /** Select several layers from one source while preserving their original paint order. */
 export function selectSvgLayers(svg: string, ids: readonly string[]): string {
   const nodes = parseNodes(svg)
+  const plan = svgLayerPlanForNodes(nodes, ids)
+  const patches = plan.remove.map(index => ({ start: nodes[index].start, end: nodes[index].end, text: '' }))
+  for (const index of plan.reveal) {
+    const node = nodes[index]
+    patches.push({ start: node.start, end: node.openEnd, text: revealTag(svg.slice(node.start, node.openEnd)) })
+  }
+  let result = svg
+  for (const patch of patches.sort((a, b) => b.start - a.start)) result = result.slice(0, patch.start) + patch.text + result.slice(patch.end)
+  return result
+}
+
+/** Element ordinals remain identical when embedded bitmap bytes are omitted. */
+export function svgLayerPlan(svg: string, ids: readonly string[]): SvgLayerPlan {
+  return svgLayerPlanForNodes(parseNodes(svg), ids)
+}
+
+function svgLayerPlanForNodes(nodes: SvgNode[], ids: readonly string[]): SvgLayerPlan {
   const layers = layerNodes(nodes)
   const requestedIds = new Set(ids)
   const selected = layers.filter((_node, index) => requestedIds.has(layerId(index)))
-  if (!selected.length) return svg
+  if (!selected.length) return { remove: [], reveal: [] }
   const hasSelectedGroup = selected.some(node => node.tag === 'g')
   const layerSet = new Set(layers)
 
@@ -253,17 +271,12 @@ export function selectSvgLayers(svg: string, ids: readonly string[]): string {
   // Removing a complete sibling group also removes its image children. Avoid
   // overlapping replacements so offsets always refer to the unmodified source.
   const removals = omitted.filter(node => !omitted.some(parent => parent !== node && contains(parent, node)))
-  const patches = removals.map(node => ({ start: node.start, end: node.end, text: '' }))
   // Several selected layers can share ancestors (or be nested in each other).
   // Rewrite each opening tag once so source offsets remain valid.
   const revealed = new Set<SvgNode>()
   for (const layer of selected) {
     for (let node: SvgNode | undefined = layer; node; node = node.parent) revealed.add(node)
   }
-  for (const node of revealed) {
-    patches.push({ start: node.start, end: node.openEnd, text: revealTag(svg.slice(node.start, node.openEnd)) })
-  }
-  let result = svg
-  for (const patch of patches.sort((a, b) => b.start - a.start)) result = result.slice(0, patch.start) + patch.text + result.slice(patch.end)
-  return result
+  const indexes = new Map(nodes.map((node, index) => [node, index]))
+  return { remove: removals.map(node => indexes.get(node)!), reveal: [...revealed].map(node => indexes.get(node)!) }
 }
