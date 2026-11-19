@@ -393,51 +393,85 @@ fn from_path_in(
     max_edge: u32,
     expected_hash: Option<&str>,
 ) -> Result<String, String> {
+    Ok(format!("data:image/png;base64,{}", STANDARD.encode(from_path_png_in(path,cache,max_edge,expected_hash)?)))
+}
+
+fn resize_preview(png: &[u8], edge: u32) -> Result<Vec<u8>,String> {
+    let image = image::load_from_memory(png).map_err(|_|"PNG 预览读取失败")?;
+    let scale = edge as f64 / image.width().max(image.height()) as f64;
+    let width = (image.width() as f64*scale).ceil().clamp(1.,edge as f64) as u32;
+    let height = (image.height() as f64*scale).ceil().clamp(1.,edge as f64) as u32;
+    let mut output = Cursor::new(Vec::new());
+    image.resize_exact(width,height,image::imageops::FilterType::Lanczos3).write_to(&mut output,image::ImageFormat::Png).map_err(|_|"PNG 预览缩小失败")?;
+    Ok(output.into_inner())
+}
+
+fn path_cache_key(path: &Path, metadata: &fs::Metadata, edge: u32, expected_hash: Option<&str>) -> String {
+    let modified = metadata.modified().ok().and_then(|value|value.duration_since(UNIX_EPOCH).ok()).map(|value|value.as_nanos());
+    hash(format!("bounded-preview-v3:{}:{}:{:?}:{}:{:?}",path.to_string_lossy(),metadata.len(),modified,edge,expected_hash).as_bytes())
+}
+
+fn from_path_png_in(path: &Path,cache: &Path,max_edge: u32,expected_hash: Option<&str>) -> Result<Vec<u8>,String> {
     let metadata = fs::metadata(path).map_err(|_| "预览源文件不可访问")?;
     if metadata.len() > MAX_SVG_SOURCE_BYTES {
         return Err("图片超过安全预览大小，原文件仍保留".into());
     }
-    let modified = metadata
-        .modified()
-        .ok()
-        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
-        .map(|value| value.as_nanos());
     let max_edge = edge(Some(max_edge));
-    let key = hash(
-        format!(
-            "bounded-preview-v3:{}:{}:{:?}:{}:{:?}",
-            path.to_string_lossy(),
-            metadata.len(),
-            modified,
-            max_edge,
-            expected_hash
-        )
-        .as_bytes(),
-    );
-    let target = cache.join(format!("{key}.png"));
+    let key_for = |edge| path_cache_key(path,&metadata,edge,expected_hash);
+    let target = cache.join(format!("{}.png",key_for(max_edge)));
     {
         let _cache = crate::preview_runtime::CACHE_LOCK.lock().map_err(|_|"图片缓存暂不可用")?;
         if let Some(png) = cache_read(&target,max_edge) {
-            return Ok(format!("data:image/png;base64,{}", STANDARD.encode(png)));
+            return Ok(png);
         }
     }
     let _permit = crate::preview_runtime::acquire(metadata.len() as usize)?;
-    let entry = crate::preview_runtime::key_lock(&target)?;
+    // All sizes for one source share the same work lock. A history request
+    // warming the 512 px master cannot race another view into decoding SVG twice.
+    let entry = crate::preview_runtime::key_lock(&cache.join(format!("{}.png",key_for(512))))?;
     let _entry = entry.lock().map_err(|_|"图片缓存暂不可用")?;
     let cached = {
         let _cache = crate::preview_runtime::CACHE_LOCK.lock().map_err(|_|"图片缓存暂不可用")?;
         cache_read(&target,max_edge)
     };
     let png = if let Some(png) = cached { png } else {
+        let larger = {
+            let _cache = crate::preview_runtime::CACHE_LOCK.lock().map_err(|_|"图片缓存暂不可用")?;
+            [256,512].into_iter().filter(|edge|*edge>max_edge).find_map(|edge|cache_read(&cache.join(format!("{}.png",key_for(edge))),edge))
+        };
+        let png = if let Some(png) = larger { resize_preview(&png,max_edge)? } else {
         let bytes = read_bounded(path)?;
         if expected_hash.is_some_and(|expected| hash(&bytes) != expected) {
             return Err("共享图片校验失败，文件可能被外部修改".into());
         }
-        let png = render_png(&bytes, path, max_edge)?;
+        render_png(&bytes, path, max_edge)?
+        };
         { let _cache = crate::preview_runtime::CACHE_LOCK.lock().map_err(|_|"图片缓存暂不可用")?; publish(cache, &target, &png); }
         png
     };
-    Ok(format!("data:image/png;base64,{}", STANDARD.encode(png)))
+    Ok(png)
+}
+
+pub(crate) fn try_stage_preview(path: &Path,expected_hash: Option<&str>,required_edge: u32,output: &Path) -> Result<bool,String> {
+    if required_edge>512 { return Ok(false); }
+    // A background batch save can clean a retained import after it was
+    // resolved. Treat this as a miss so the authoritative batch can recover.
+    let Ok(metadata) = fs::metadata(path) else { return Ok(false); };
+    let key = path_cache_key(path,&metadata,512,expected_hash);
+    crate::preview_runtime::pin_preview(&crate::project_data_dir().join("cache/asset-previews").join(format!("{key}.png")),required_edge,output)
+}
+
+/// History cards retain a small response while populating the exact 512 px PNG
+/// used by arrangement canvases. Smaller views derive from that cached master.
+pub(crate) fn history_preview_from_path(path: &Path, expected_hash: Option<&str>) -> Result<String,String> {
+    let cache = crate::project_data_dir().join("cache/asset-previews");
+    from_path_png_in(path,&cache,512,expected_hash)?;
+    from_path_in(path,&cache,128,expected_hash)
+}
+
+pub(crate) fn history_inline_preview(source: &[u8], path: &Path) -> Result<String,String> {
+    let png = inline_png(source,path,512)?;
+    Ok(format!("data:image/png;base64,{}", STANDARD.encode(resize_preview(&png,128)?)))
 }
 
 pub(crate) fn from_path(
@@ -454,15 +488,17 @@ pub(crate) fn from_path(
 }
 
 fn inline(source: &[u8], path: &Path, max_edge: u32) -> Result<String, String> {
+    Ok(format!("data:image/png;base64,{}", STANDARD.encode(inline_png(source,path,max_edge)?)))
+}
+
+fn inline_png(source: &[u8], path: &Path, max_edge: u32) -> Result<Vec<u8>, String> {
     if path.as_os_str().is_empty() {
-        let png = crate::schematic_raster::with_cached(source, max_edge, "", &[], |cached| {
+        return crate::schematic_raster::with_cached(source, max_edge, "", &[], |cached| {
             fs::read(cached).map_err(|_| "图片缓存读取失败".to_owned())
-        })?;
-        return Ok(format!("data:image/png;base64,{}", STANDARD.encode(png)));
+        });
     }
     let _permit = crate::preview_runtime::acquire(source.len())?;
-    let png = render_png(source, path, max_edge)?;
-    Ok(format!("data:image/png;base64,{}", STANDARD.encode(png)))
+    render_png(source, path, max_edge)
 }
 
 #[tauri::command]
@@ -549,6 +585,51 @@ pub async fn load_batch_asset_preview(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[ignore = "Read-only export-resource benchmark; set PRINTFLOW_PREVIEW_FIXTURE"]
+    fn measure_export_preview_reuse() {
+        let data: serde_json::Value = serde_json::from_slice(&fs::read(std::env::var("PRINTFLOW_PREVIEW_FIXTURE").unwrap()).unwrap()).unwrap();
+        let mut sources: Vec<_> = data["assets"].as_array().unwrap().iter().filter_map(|asset| {
+            let path = PathBuf::from(asset["storagePath"].as_str()?); let size = fs::metadata(&path).ok()?.len();
+            (size<=16*1024*1024).then_some((path,size))
+        }).collect();
+        sources.sort_by_key(|(_,size)|std::cmp::Reverse(*size)); sources.truncate(8); assert_eq!(sources.len(),8);
+        for (path,_) in &sources { from_path(path,512,None).unwrap(); }
+        let start = std::time::Instant::now();
+        for (path,_) in &sources {
+            let bytes = read_bounded(path).unwrap(); let _version = hash(&bytes);
+            render_at_resolution(&bytes,path,420).unwrap();
+        }
+        let original_ms = start.elapsed().as_millis();
+        let outputs = tempfile::tempdir().unwrap();
+        let start = std::time::Instant::now();
+        for (index,(path,_)) in sources.iter().enumerate() {
+            assert!(try_stage_preview(path,None,420,&outputs.path().join(format!("{index}.png"))).unwrap());
+        }
+        println!("sources={} original_bytes={} old_prepare_ms={original_ms} reuse_prepare_ms={}",sources.len(),sources.iter().map(|(_,size)|size).sum::<u64>(),start.elapsed().as_millis());
+    }
+    #[test]
+    fn export_reuses_the_displayed_png_without_svg_decode_and_keeps_it_after_pruning() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("export-cache.svg");
+        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="red"/></svg>"#;
+        fs::write(&source,svg).unwrap();
+        let displayed = from_path(&source,512,None).unwrap();
+        let modified = fs::metadata(&source).unwrap().modified().unwrap();
+        fs::write(&source,vec![b' ';svg.len()]).unwrap();
+        fs::OpenOptions::new().write(true).open(&source).unwrap().set_times(fs::FileTimes::new().set_modified(modified)).unwrap();
+        let output = root.path().join("pinned.png");
+        assert!(try_stage_preview(&source,None,420,&output).unwrap());
+        assert_eq!(STANDARD.decode(displayed.strip_prefix("data:image/png;base64,").unwrap()).unwrap(),fs::read(&output).unwrap());
+        assert!(!try_stage_preview(&source,None,700,&root.path().join("high.png")).unwrap(),"a 512px preview must never replace larger print artwork");
+        let info = fs::metadata(&source).unwrap();
+        let stamp = info.modified().unwrap().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let key = hash(format!("bounded-preview-v3:{}:{}:{:?}:{}:{:?}",source.to_string_lossy(),info.len(),Some(stamp),512,None::<&str>).as_bytes());
+        fs::remove_file(crate::project_data_dir().join("cache/asset-previews").join(format!("{key}.png"))).unwrap();
+        assert!(tiny_skia::Pixmap::decode_png(&fs::read(&output).unwrap()).is_ok());
+        fs::write(&source,svg.replace("red","blue")).unwrap();
+        assert!(!try_stage_preview(&source,None,420,&root.path().join("changed.png")).unwrap());
+    }
     #[test]
     #[ignore = "Read-only real-artwork benchmark; set PRINTFLOW_PREVIEW_FIXTURE to a batch metadata JSON"]
     fn measure_parallel_page_previews() {

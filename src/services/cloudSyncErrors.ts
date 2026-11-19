@@ -5,6 +5,12 @@ export type CloudSyncFailure = {
   action: string
 }
 
+/** Both messages mean the shared write lock timed out before dispatch. */
+export function isSharedWriteBusy(error: unknown): boolean {
+  const message = (error instanceof Error ? error.message : String(error)).replace(/^(?:Error:\s*)+/, '').trim()
+  return /^(?:其他电脑正在保存|共享存储正忙)，请稍后重试$/.test(message)
+}
+
 /** Legacy native commands return safe Chinese messages, not structured error codes.
  * Only definite business failures stop automatic retries; ambiguous I/O stays retryable.
  */
@@ -32,7 +38,7 @@ export function classifyCloudSyncError(error: unknown): CloudSyncFailure {
   if (/图片资产格式错误|批次没有图片|图片 ID 缺失或重复|缺少或无效字段|历史批次不存在|历史批次已删除|共享资源标识无效|共享资源路径无效|超出存储目录|共享资源内容冲突|共享图片校验失败/.test(message)) {
     return failure('data', false, '请核对批次和图片数据后重试；待同步内容不会被自动丢弃。')
   }
-  if (/连接|网络|超时|目录不可访问|其他电脑正在|无法读取存储配置|offline|network|timeout|connection/i.test(message)) {
+  if (isSharedWriteBusy(message) || /连接|网络|超时|目录不可访问|其他电脑正在|无法读取存储配置|offline|network|timeout|connection/i.test(message)) {
     return failure('connection', true, '连接恢复后会自动重试，也可以立即重试。')
   }
   return failure('unknown', true, '后台将自动重试；若持续失败，请根据失败原因检查共享目录和数据库连接。')

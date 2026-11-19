@@ -46,16 +46,16 @@ pub fn path(conn: &mut impl Queryable, env: &Environment, reference: &str) -> Re
         .ok_or("共享资源记录不存在")?;
     let path = resolve(&env.storage_root, &relative)?;
     // A junction/symlink must not redirect reads or cleanup outside the root.
-    let root =
-        fs::canonicalize(&env.storage_root).map_err(|_| "共享目录不可访问，请检查局域网连接")?;
-    let actual = fs::canonicalize(&path).map_err(|_| "共享图片文件不存在或不可访问")?;
+    let root = read_with_retry(||fs::canonicalize(&env.storage_root),std::thread::sleep)
+        .map_err(|error|format!("共享目录不可访问：{error}"))?;
+    let actual = read_with_retry(||fs::canonicalize(&path),std::thread::sleep)?;
     if !actual.starts_with(root) {
         return Err("共享图片路径超出存储目录".into());
     }
     Ok(path)
 }
 pub fn read(conn: &mut impl Queryable, env: &Environment, reference: &str) -> Result<Vec<u8>> {
-    let bytes = fs::read(path(conn, env, reference)?).map_err(|_| "读取共享图片失败")?;
+    let bytes = read_shared(&path(conn, env, reference)?)?;
     let id = reference
         .strip_prefix(FILE)
         .or_else(|| reference.strip_prefix(TEXT))
@@ -64,6 +64,41 @@ pub fn read(conn: &mut impl Queryable, env: &Environment, reference: &str) -> Re
         return Err("共享图片校验失败，文件可能被外部修改".into());
     }
     Ok(bytes)
+}
+
+fn read_with_retry<T>(mut read: impl FnMut()->std::io::Result<T>, mut pause: impl FnMut(std::time::Duration)) -> Result<T> {
+    for attempt in 0..3 {
+        match read() {
+            Ok(bytes)=>return Ok(bytes),
+            Err(error)=>{
+                let transient = matches!(error.kind(),std::io::ErrorKind::Interrupted|std::io::ErrorKind::WouldBlock|std::io::ErrorKind::TimedOut|std::io::ErrorKind::ConnectionReset|std::io::ErrorKind::ConnectionAborted|std::io::ErrorKind::NotConnected)
+                    || matches!(error.raw_os_error(),Some(32|33|53|64|121|1231));
+                if transient && attempt<2 { pause(std::time::Duration::from_millis(100*(attempt+1))); continue; }
+                let code = error.raw_os_error().map_or_else(||"未知".into(),|code|code.to_string());
+                log::warn!(target:"printflow::shared_io","operation=read os_code={code} kind={:?} attempts={}",error.kind(),attempt+1);
+                let advice = if transient { "请在共享连接恢复或文件占用解除后重试保存" }
+                    else if error.kind()==std::io::ErrorKind::PermissionDenied { "请检查共享目录的读取权限后重试保存" }
+                    else if error.kind()==std::io::ErrorKind::OutOfMemory || matches!(error.raw_os_error(),Some(8|14|1450|1455)) { "请在内存恢复后重试保存审核记录" }
+                    else { "请检查源文件和共享目录后重试保存" };
+                return Err(format!("读取共享图片失败（{:?}，系统错误 {code}），{advice}",error.kind()));
+            }
+        }
+    }
+    unreachable!()
+}
+fn read_shared(path: &Path) -> Result<Vec<u8>> { read_with_retry(||fs::read(path),std::thread::sleep) }
+
+/// Immutable shared resources were hash-verified when published. Attaching a
+/// review needs a valid, readable resource and its own reference, not its bytes.
+pub fn check_reference(conn: &mut impl Queryable, env: &Environment, reference: &str) -> Result<String> {
+    let id = reference.strip_prefix(FILE).or_else(||reference.strip_prefix(TEXT)).ok_or("不是共享资源引用")?;
+    valid_id(id)?;
+    let expected: u64 = conn.exec_first("SELECT bytes FROM pf_resources WHERE hash=?",(id,)).map_err(error)?.ok_or("共享资源记录不存在")?;
+    let source = path(conn,env,reference)?;
+    let metadata = read_with_retry(||fs::metadata(&source),std::thread::sleep)?;
+    if !metadata.is_file() || (expected>0 && metadata.len()!=expected) || metadata.len()==0 { return Err("共享图片大小不符，文件可能被外部修改".into()); }
+    read_with_retry(||fs::File::open(&source),std::thread::sleep)?;
+    Ok(id.to_owned())
 }
 pub fn put(
     conn: &mut impl Queryable,
@@ -278,14 +313,14 @@ fn read_manifest_text(
     path: &Path,
 ) -> Result<String> {
     if canonical_root.is_none() {
-        *canonical_root =
-            Some(fs::canonicalize(root).map_err(|_| "共享目录不可访问，请检查局域网连接")?);
+        *canonical_root = Some(read_with_retry(||fs::canonicalize(root),std::thread::sleep)
+            .map_err(|error|format!("共享目录不可访问：{error}"))?);
     }
-    let actual = fs::canonicalize(path).map_err(|_| "共享图片文件不存在或不可访问")?;
+    let actual = read_with_retry(||fs::canonicalize(path),std::thread::sleep)?;
     if !actual.starts_with(canonical_root.as_ref().unwrap()) {
         return Err("共享图片路径超出存储目录".into());
     }
-    let bytes = fs::read(path).map_err(|_| "读取共享图片失败")?;
+    let bytes = read_shared(path)?;
     if hash(&bytes) != id {
         return Err("共享图片校验失败，文件可能被外部修改".into());
     }
@@ -545,6 +580,15 @@ pub fn safe_name(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn transient_shared_reads_retry_without_masking_permanent_errors() {
+        let mut reads = 0; let mut pauses = 0;
+        let data = read_with_retry(|| { reads+=1; if reads<3 { Err(std::io::Error::from_raw_os_error(32)) } else { Ok(vec![1,2,3]) } }, |_|pauses+=1).unwrap();
+        assert_eq!((reads,pauses),(3,2)); assert_eq!(data,vec![1,2,3]);
+        reads = 0;
+        let error = read_with_retry(|| {reads+=1; Err::<Vec<u8>,_>(std::io::Error::from_raw_os_error(5))}, |_|panic!("permanent permission errors must not loop")).unwrap_err();
+        assert_eq!(reads,1); assert!(error.contains("系统错误 5"));
+    }
     #[test]
     fn paths_cannot_escape_root() {
         for path in ["../secret", "C:/outside", "/outside", "a/../b"] {

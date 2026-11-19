@@ -1,7 +1,7 @@
 use super::{
     config::Environment,
     resources,
-    store::{self, error, required, text, Record, Result},
+    store::{self, error, required, Record, Result},
 };
 use mysql::prelude::Queryable;
 use serde_json::{json, Value};
@@ -153,7 +153,7 @@ fn artwork_bytes(
     }
 }
 
-fn recovery_reference(
+pub(super) fn recovery_reference(
     asset: &crate::assets::Asset,
     previous: Option<&Value>,
     failure: std::io::ErrorKind,
@@ -348,8 +348,12 @@ pub fn thumbnails(
         .flatten()
         .take(4)
     {
-        let path = resources::path(conn, env, text(asset, "storagePath"))?;
-        let url = crate::batch_thumbnails::load_path(&path).unwrap_or_default();
+        let reference = required(asset, "storagePath")?;
+        let path = resources::path(conn, env, reference)?;
+        let expected = reference.strip_prefix(resources::FILE).or_else(||reference.strip_prefix(resources::TEXT)).ok_or("不是共享资源引用")?;
+        let url = if path.extension().is_some_and(|extension|extension.eq_ignore_ascii_case("svg")) {
+            crate::asset_previews::history_preview_from_path(&path, Some(expected))
+        } else { crate::batch_thumbnails::load_path(&path) }.unwrap_or_default();
         result.push(json!({"assetId":asset["id"],"name":asset["name"],"url":url}));
     }
     Ok(json!(result))

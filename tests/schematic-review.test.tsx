@@ -699,17 +699,62 @@ it('reports record failure independently from file export and permits retrying t
   expect(String(result.error)).toContain('数据库不可写')
 })
 
+it('a failed review save retains the same staged manifest for retry and cleans it only after confirmation', async () => {
+  const record = fixture()
+  record.assets[0].svg = `<svg><!--${'x'.repeat(100_000)}--></svg>`
+  let saves = 0
+  mocks.invoke.mockImplementation(async command => { if (command === 'save_schematic_review' && ++saves===1) throw new Error('读取共享图片失败') })
+  await expect(saveReviewRecord(record)).rejects.toThrow('读取共享图片失败')
+  const first = mocks.invoke.mock.calls.find(([command])=>command==='save_schematic_review')![1].record
+  expect(first.assets[0].svg).toMatch(/^printflow-export:/)
+  const writes = mocks.invoke.mock.calls.filter(([command])=>command==='write_export_resource_chunk').length
+  expect(mocks.invoke.mock.calls.some(([command])=>command==='clear_pdf_pages')).toBe(false)
+  await saveReviewRecord(record)
+  const second = mocks.invoke.mock.calls.filter(([command])=>command==='save_schematic_review')[1][1].record
+  expect(second).toEqual(first)
+  expect(mocks.invoke.mock.calls.filter(([command])=>command==='write_export_resource_chunk')).toHaveLength(writes)
+  expect(mocks.invoke.mock.calls.some(([command])=>command==='clear_pdf_pages')).toBe(true)
+  expect(mocks.exportPdf).not.toHaveBeenCalled()
+})
+
+it('saving current edits after a failed export save dismisses the obsolete retry snapshot', async () => {
+  let attempts = 0
+  mocks.invoke.mockImplementation(async command => {
+    if (command === 'save_schematic_review' && attempts++ === 0) throw new Error('读取共享图片失败')
+  })
+  const saved = vi.fn()
+  render(<ConfigProvider theme={{ token: { motion: false } }}><SchematicPage initialRecord={fixture()} onRecordSaved={saved}/></ConfigProvider>)
+  fireEvent.click(screen.getByText('导出测试 PDF'))
+  fireEvent.click(await screen.findByRole('button', { name: '生成新记录并导出' }))
+  await screen.findByRole('button', { name: '重试保存记录' })
+  fireEvent.click(screen.getByText('移动主图'))
+  fireEvent.click(screen.getByText('保存测试布局'))
+  await waitFor(() => expect(saved).toHaveBeenCalledOnce())
+  await waitFor(() => expect(screen.queryByRole('button', { name: '重试保存记录' })).toBeNull())
+  const records = mocks.invoke.mock.calls.filter(([command]) => command === 'save_schematic_review').map(([, args]) => args.record)
+  expect(records[1].id).toBe(records[0].id)
+  expect(records[1].pages[0].items[0].x).toBe(123)
+  expect(mocks.exportPdf).toHaveBeenCalledOnce()
+})
+
 it('retries record persistence without exporting the file again', async () => {
   let attempts = 0
+  let complete!: () => void
   mocks.invoke.mockImplementation(async command => {
     if (command === 'list_batches') return { records: [], total: 0, page: 1, pageSize: 12 }
     if (command === 'save_schematic_review' && attempts++ === 0) throw new Error('数据库暂时不可写')
+    if (command === 'save_schematic_review') await new Promise<void>(resolve => { complete = resolve })
   })
   const onRecordSaved = vi.fn()
   render(<SchematicPage initialRecord={fixture()} onRecordSaved={onRecordSaved}/> )
   fireEvent.click(await screen.findByText('导出测试 PDF'))
   fireEvent.click(await screen.findByRole('button', { name: '生成新记录并导出' }))
   fireEvent.click(await screen.findByRole('button', { name: '重试保存记录' }))
+  await waitFor(() => expect(complete).toBeDefined())
+  expect(latestArrange().exporting).toBe(false)
+  expect(latestArrange().savingReview).toBe(true)
+  expect(mocks.save).toHaveBeenCalledOnce()
+  await act(async () => complete())
   await waitFor(() => expect(onRecordSaved).toHaveBeenCalledOnce())
   expect(mocks.exportPdf).toHaveBeenCalledOnce()
   const records = mocks.invoke.mock.calls.filter(call => call[0] === 'save_schematic_review')

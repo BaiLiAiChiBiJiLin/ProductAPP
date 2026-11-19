@@ -84,7 +84,7 @@ type Props = {
 export default function ArrangePage({ processingLabel, onChangePage, onReorderPages, onDeletePage, onDeleteAsset, onBackgroundChange, onHorizontalGroup, onShowBack, onResizeGroup, displayState, onDisplayStateChange, context, assets, batchId, pages, activePage, selectedItem, selectedGroupIds, onSelectPage, onSelectItem, onSelectGroup, onChangeItem, onReplaceArtwork, replacingArtwork = false, onChangeRulers, onChangeRuler = () => {}, onEditText = () => {}, onDropAsset, onUpload, uploadDropActive = false, poolFocusAssetId, onDeleteGroups, onDeleteItems, onConfirmAssetAttributes, onAddPage, onRefresh, onCombine, onBack, onBackToHistory, onSave = () => {}, onExport, exporting = false, savingReview = false, exportProgress = { phase: 'rendering', completed: 0, total: 1 }, metadata = {}, onMetadataChange, layoutBounds, onBoundsChange, onAddHeaderBlock, onChangeHeaderBlock, onRemoveHeaderBlock }: Props) {
   const workspaceRef = useRef<HTMLElement>(null)
   const [artworkMenu, setArtworkMenu] = useState<ArtworkMenuTarget | null>(null)
-  useEffect(() => { setArtworkMenu(null) }, [activePage, exporting, replacingArtwork])
+  useEffect(() => { setArtworkMenu(null) }, [activePage, exporting, savingReview, replacingArtwork])
   const [exportFormat, setExportFormat] = useState<'jpg' | 'png' | 'svg' | 'pdf'>('pdf')
   const [pdfQuality, setPdfQuality] = useState<PdfExportQuality>('standard')
   const [canvasMode, setCanvasMode] = useState<CanvasTool>('select')
@@ -227,7 +227,7 @@ export default function ArrangePage({ processingLabel, onChangePage, onReorderPa
   useEffect(() => { setVisualScaleInput(String(Math.round(selectedVisualScale * 100))) }, [selectedVisualScale, visualSelectionKey])
   useEffect(() => {
     const remove = (event: KeyboardEvent) => {
-      if (event.key !== 'Delete' || event.repeat || exporting || replacingArtwork || artworkMenu || canvasMode !== 'select') return
+      if (event.key !== 'Delete' || event.repeat || exporting || savingReview || replacingArtwork || artworkMenu || canvasMode !== 'select') return
       const target = event.target
       if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [role="dialog"], .ant-modal, .ant-select'))) return
       if (document.querySelector('.ant-modal-wrap:not([style*="display: none"])')) return
@@ -254,7 +254,7 @@ export default function ArrangePage({ processingLabel, onChangePage, onReorderPa
     }
     window.addEventListener('keydown', remove)
     return () => window.removeEventListener('keydown', remove)
-  }, [page, boxSelection, selectedGroupIds, selectedItem, exporting, replacingArtwork, artworkMenu, canvasMode, onDeleteGroups, onDeleteItems, editorSelection, onChangePage])
+  }, [page, boxSelection, selectedGroupIds, selectedItem, exporting, savingReview, replacingArtwork, artworkMenu, canvasMode, onDeleteGroups, onDeleteItems, editorSelection, onChangePage])
   const updateVisualScale = (value: number) => {
     const scale = clampCanvasDisplayScale(value)
     if (selectedAccessoryKey) {
@@ -289,7 +289,7 @@ export default function ArrangePage({ processingLabel, onChangePage, onReorderPa
     const workspace = workspaceRef.current
     const wheel = (event: WheelEvent) => {
       if (!event.altKey || event.ctrlKey || event.metaKey || !Number.isFinite(event.deltaY) || event.deltaY === 0
-        || !hasVisualSelection || exporting || replacingArtwork || artworkMenu || canvasMode !== 'select' || textEdit || rulerEdit) return
+        || !hasVisualSelection || exporting || savingReview || replacingArtwork || artworkMenu || canvasMode !== 'select' || textEdit || rulerEdit) return
       const target = event.target
       if (!(target instanceof Element) || !target.closest('.stage-wrap, .visual-scale-controls')) return
       const editingText = (element: Element | null) => element instanceof HTMLElement
@@ -321,7 +321,7 @@ export default function ArrangePage({ processingLabel, onChangePage, onReorderPa
     }
     workspace?.addEventListener('wheel', wheel, { passive: false, capture: true })
     return () => workspace?.removeEventListener('wheel', wheel, true)
-  }, [hasVisualSelection, exporting, replacingArtwork, artworkMenu, canvasMode, textEdit, rulerEdit, selectedAccessoryKey, selectedVisualItemIds, onDisplayStateChange])
+  }, [hasVisualSelection, exporting, savingReview, replacingArtwork, artworkMenu, canvasMode, textEdit, rulerEdit, selectedAccessoryKey, selectedVisualItemIds, onDisplayStateChange])
   const updateDimensionOverride = (patch: Partial<DimensionDisplayOverride>) => {
     if (manualRuler) { changeAnnotation({ ...manualRuler, ...patch }); return }
     if (!rulerItems.length) return
@@ -343,6 +343,7 @@ export default function ArrangePage({ processingLabel, onChangePage, onReorderPa
   }
   const progressPercent = exportProgress.total > 0 ? Math.min(100, Math.round(exportProgress.completed / exportProgress.total * 100)) : 0
   return <main ref={workspaceRef} className="workspace arrange-page-enter">{context}{exporting && <div className="pdf-export-overlay" role="status" aria-live="polite"><div className="pdf-export-dialog"><Loading size="large"/><strong>正在导出 PDF</strong><div className="pdf-export-progress-track"><div className={`pdf-export-progress-value ${progressPercent === 0 ? 'is-preparing' : ''}`} style={{ width: `${progressPercent}%` }}/></div><span>{pdfProgressText(exportProgress)} {progressPercent}%</span><small>请稍候，导出期间不能重复操作</small></div></div>}
+    {savingReview && !exporting && <div className="pdf-export-overlay" role="status" aria-live="polite"><div className="pdf-export-dialog"><Loading size="large"/><strong>正在保存审核记录</strong><span>正在保存当前示意图，请稍候</span></div></div>}
     {replacingArtwork && <div className="pdf-export-overlay" role="status" aria-live="polite"><div className="pdf-export-dialog"><Loading size="large"/><strong>{processingLabel ?? '正在更换图片'}</strong><span>{processingLabel ? '正在后台计算布局，请稍候' : '正在读取 SVG 图片…'}</span></div></div>}
     <aside className="pages-panel" inert={replacingArtwork}>
       <div className="panel-title"><span>示意图缩略图 <em>{pages.length}</em></span><button className="icon-btn" onClick={onAddPage} title="新建页面"><Plus size={17}/></button></div>

@@ -225,7 +225,7 @@ export default function SchematicPage({ active = true, initialRecord, onRecordSa
   useEffect(() => {
     const undo = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'z' || event.shiftKey || event.repeat || screen !== 'arrange') return
-      if (exporting || reflowing || busy || savingBatch || transferring || confirmingReview || classifying) return
+      if (exporting || savingReview || reflowing || busy || savingBatch || transferring || confirmingReview || classifying) return
       const target = event.target
       if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [role="dialog"], .ant-modal, .ant-select'))) return
       if (document.querySelector('.ant-modal-wrap:not([style*="display: none"])')) return
@@ -235,7 +235,7 @@ export default function SchematicPage({ active = true, initialRecord, onRecordSa
     }
     window.addEventListener('keydown', undo)
     return () => window.removeEventListener('keydown', undo)
-  }, [screen, exporting, reflowing, busy, savingBatch, transferring, confirmingReview, classifying, undoArrangement])
+  }, [screen, exporting, savingReview, reflowing, busy, savingBatch, transferring, confirmingReview, classifying, undoArrangement])
   useEffect(() => { assetsRef.current = assets; setSelectedAssetIds(current => new Set([...current].filter(id => assets.some(asset => asset.id === id)))) }, [assets])
   useEffect(() => { currentBatchIdRef.current = currentBatchId }, [currentBatchId])
   useEffect(() => { batchMetadataRef.current = batchMetadata }, [batchMetadata])
@@ -902,6 +902,8 @@ export default function SchematicPage({ active = true, initialRecord, onRecordSa
       reviewOutput.current = record.output
       reviewFormat.current = record.format
       await saveReviewRecord(record)
+      exportGeneration.current++
+      closeReviewSaveNotice()
       onRecordSaved?.()
       toast.success('示意图排列已保存到示意图审核')
     } catch (error) { toast.error(`示意图保存失败：${String(error)}`) }
@@ -922,9 +924,12 @@ export default function SchematicPage({ active = true, initialRecord, onRecordSa
       closeReviewSaveNotice()
       toast.destroy('review-save')
       const record = createReviewRecord({ assets, pages, activePage, metadata: batchMetadataRef.current, layoutBounds, arrangementSort, defaultArrangementIds, sourceBatchId: currentBatchIdRef.current ?? undefined }, displayState, format, output, recordMode === 'new' ? undefined : reviewIdentity.current)
-      const result = await exportAndRecord(record, () => format === 'pdf'
-        ? exportPdf(pages, assets, output, batchMetadataRef.current, setExportProgress, displayOverrides, layoutBounds, displayState.accessoryVisuals, displayState.visualScales, quality, currentBatchIdRef.current ?? undefined)
-        : exportPage({ ...page, id: pages.findIndex(candidate => candidate.id === page.id) + 1 }, assets, output, format, batchMetadataRef.current, pages.length, displayOverrides, layoutBounds, displayState.accessoryVisuals, displayState.visualScales, currentBatchIdRef.current ?? undefined))
+      const result = await exportAndRecord(record, async () => {
+        if (format === 'pdf') await exportPdf(pages, assets, output, batchMetadataRef.current, setExportProgress, displayOverrides, layoutBounds, displayState.accessoryVisuals, displayState.visualScales, quality, currentBatchIdRef.current ?? undefined)
+        else await exportPage({ ...page, id: pages.findIndex(candidate => candidate.id === page.id) + 1 }, assets, output, format, batchMetadataRef.current, pages.length, displayOverrides, layoutBounds, displayState.accessoryVisuals, displayState.visualScales, currentBatchIdRef.current ?? undefined)
+        setExporting(false)
+        setSavingReview(true)
+      })
       reviewIdentity.current = { id: record.id, sourceRecordId: record.sourceRecordId, paymentStatus: record.paymentStatus }
       reviewOutput.current = output
       reviewFormat.current = format
@@ -933,17 +938,17 @@ export default function SchematicPage({ active = true, initialRecord, onRecordSa
         toast.success('导出完成，已保存到示意图审核')
       } else {
         const retry = async () => {
-          if (exportLock.current || generation !== exportGeneration.current) return
-          exportLock.current = true
-          setExporting(true)
+          if (exportLock.current || reviewSaveLock.current || generation !== exportGeneration.current) return
+          reviewSaveLock.current = true
+          setSavingReview(true)
           try { await saveReviewRecord(record); onRecordSaved?.(); closeReviewSaveNotice(); toast.success('审核记录已保存') }
           catch (error) { toast.error(`审核记录保存失败：${String(error)}`) }
-          finally { exportLock.current = false; setExporting(false) }
+          finally { reviewSaveLock.current = false; setSavingReview(false) }
         }
         reviewSaveNotice.current = toast.error({ key: 'review-save', duration: 0, content: <span>文件已导出，审核记录保存失败：{String(result.error)} <Button size="small" onClick={() => void retry()}>重试保存记录</Button></span> })
       }
     } catch (error) { toast.error(String(error)) }
-    finally { exportLock.current = false; setExporting(false) }
+    finally { exportLock.current = false; setExporting(false); setSavingReview(false) }
   }
   const choosePdfRecord = (mode: 'new' | 'overwrite') => {
     const choice = pdfRecordChoice

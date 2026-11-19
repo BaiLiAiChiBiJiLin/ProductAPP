@@ -130,6 +130,15 @@ pub(super) fn read_asset(conn: &Connection, batch_id: &str, asset_id: &str) -> R
     serde_json::from_str(&value).map_err(|error|format!("历史图片读取失败：{error}"))
 }
 
+/// Resolve a preview/export file without returning any inline legacy SVG.
+pub(super) fn asset_file(conn: &Connection, batch_id: &str, asset_id: &str) -> Result<Option<String>,String> {
+    let payload_bytes: usize = conn.query_row("SELECT length(CAST(payload AS BLOB)) FROM batches WHERE id=?1",[batch_id],|row|row.get(0)).map_err(|_|"历史批次不存在")?;
+    let _legacy = if payload_bytes>1024*1024 { Some(crate::preview_runtime::acquire(payload_bytes)?) } else { None };
+    let (path,inline): (String,usize) = conn.query_row("SELECT COALESCE(json_extract(image.value,'$.storagePath'),''), COALESCE(length(json_extract(image.value,'$.svg')),0) FROM batches,json_each(batches.payload) image WHERE batches.id=?1 AND json_extract(image.value,'$.id')=?2 LIMIT 1",
+        params![batch_id,asset_id],|row|Ok((row.get(0)?,row.get(1)?))).optional().map_err(|e|e.to_string())?.ok_or("图片不属于当前历史批次")?;
+    Ok((inline==0 && !path.is_empty()).then_some(path))
+}
+
 /// Never hydrate an entire batch into one WebView IPC response. Original SVGs
 /// are read separately so native serialization does not multiply batch memory.
 pub(super) fn manifest(conn: &Connection, id: &str) -> Result<BatchRecord, String> {
@@ -444,6 +453,8 @@ mod tests {
         let selected = read_asset(&conn,"ds","target").unwrap();
         assert_eq!(selected.id,"target");
         assert_eq!(selected.note,"保留备注");
+        assert_eq!(asset_file(&conn,"ds","target").unwrap().as_deref(),Some("missing.svg"));
+        assert_eq!(asset_file(&database(json!([{ "id":"inline", "svg":"<svg>legacy</svg>", "storagePath":"old.svg" }])),"ds","inline").unwrap(),None);
         assert!(read_asset(&conn,"other-batch","target").is_err());
         assert!(read_asset(&conn,"ds","unknown").is_err());
     }

@@ -1,5 +1,5 @@
 import { CloudWriteJournal, type PendingCloudWrite } from './cloudWriteJournal'
-import { classifyCloudSyncError } from './cloudSyncErrors'
+import { classifyCloudSyncError, isSharedWriteBusy } from './cloudSyncErrors'
 import { trackDiagnosticEvent, type DiagnosticEvent } from './diagnosticEvents'
 import { invoke as nativeInvoke, isTauri } from '@tauri-apps/api/core'
 
@@ -26,6 +26,7 @@ type CloudSession = {
   listedVersions: Map<string, number>
   tails: Map<string, Promise<unknown>>
   flights: Map<string, Promise<unknown>>
+  writeTail?: Promise<unknown>
 }
 const sessions = new Map<string, CloudSession>()
 let userRequest: Promise<unknown> | undefined
@@ -82,10 +83,21 @@ async function sendWrite(state: CloudSession, key: string, pending: PendingCloud
   let response: { result: unknown }
   writeDiagnostic(key, pending, 'submit', { replayed })
   try {
-    response = await nativeInvoke('cloud_operation', {
-      command: pending.command, args: pending.args,
-      expectedVersion: pending.expectedVersion, requestId: pending.requestId,
-    })
+    for (let attempt = 0; ; attempt++) {
+      try {
+        response = await nativeInvoke('cloud_operation', {
+          command: pending.command, args: pending.args,
+          expectedVersion: pending.expectedVersion, requestId: pending.requestId,
+        })
+        break
+      } catch (error) {
+        if (pending.command !== 'save_schematic_review' || !isSharedWriteBusy(error) || attempt >= 2) throw error
+        writeDiagnostic(key, pending, 'error', { stage: 'request', attempts: attempt + 1, errorKind: 'connection', retryable: true })
+        // Keep the same snapshot and request ID. This only retries persistence;
+        // the PDF has already been written and must never be exported again.
+        await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)))
+      }
+    }
   } catch (error) {
     const failure = classifyCloudSyncError(error)
     writeDiagnostic(key, pending, 'error', { stage: 'request', errorKind: failure.kind, retryable: failure.retryable })
@@ -114,6 +126,16 @@ async function sendWrite(state: CloudSession, key: string, pending: PendingCloud
     throw error
   }
   writeDiagnostic(key, pending, 'committed', { stage: 'journal', resultVersion: result?.version })
+  if (pending.command === 'save_schematic_review') {
+    const ids = new Set<string>()
+    const collect = (value: unknown) => {
+      if (typeof value === 'string' && /^printflow-export:[a-f\d-]+$/i.test(value)) ids.add(value.slice('printflow-export:'.length))
+      else if (Array.isArray(value)) value.forEach(collect)
+      else if (value && typeof value === 'object') Object.values(value).forEach(collect)
+    }
+    collect(pending.args)
+    if (ids.size) await nativeInvoke('clear_pdf_pages', { ids: [...ids] }).catch(error => console.warn('已保存审核记录的临时资源清理失败', error))
+  }
   if (removed) state.listedVersions.delete(key)
   else if (typeof result?.version === 'number') rememberListed(state, key, result.version)
   return response.result
@@ -126,7 +148,9 @@ function write(state: CloudSession, key: string, command: string, args: Args): P
   if (active && state.tails.get(key) === active) return active
   // Capture edits now: a queued call must not observe later caller mutations.
   const snapshot = JSON.parse(JSON.stringify(args)) as Args
-  const previous = state.tails.get(key) ?? Promise.resolve()
+  // Native storage has one shared write lock for batches and reviews alike.
+  // Queue local writes across records so our own uploads cannot time out a save.
+  const previous = state.writeTail ?? Promise.resolve()
   const operation = previous.catch(() => {}).then(async () => {
     const pending = state.journal.pending(key)
     if (pending) {
@@ -148,7 +172,9 @@ function write(state: CloudSession, key: string, command: string, args: Args): P
   })
   state.tails.set(key, operation)
   state.flights.set(flightKey, operation)
+  state.writeTail = operation
   const clear = () => {
+    if (state.writeTail === operation) state.writeTail = undefined
     if (state.tails.get(key) === operation) state.tails.delete(key)
     if (state.flights.get(flightKey) === operation) state.flights.delete(flightKey)
   }

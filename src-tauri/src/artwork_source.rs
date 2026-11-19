@@ -3,7 +3,9 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
+    collections::VecDeque,
     fs,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::{Duration, Instant, UNIX_EPOCH},
 };
@@ -55,6 +57,125 @@ pub struct Source {
     pub asset_id: String,
     #[serde(default)]
     pub variant: Option<Variant>,
+}
+
+static PREVIEWS: Mutex<VecDeque<(String, u32, PathBuf)>> = Mutex::new(VecDeque::new());
+fn preview_key(app: &tauri::AppHandle, source: &Source) -> Result<String, String> {
+    preview_cache_key(&crate::cloud::artwork_cache_scope(app)?, source)
+}
+fn preview_cache_key(scope: &str, source: &Source) -> Result<String, String> {
+    let stamp = source
+        .path
+        .as_ref()
+        .filter(|path| Path::new(path).is_absolute())
+        .map(|path| {
+            fs::metadata(path).ok().map(|info| {
+                (
+                    info.len(),
+                    info.modified()
+                        .ok()
+                        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+                        .map(|value| value.as_nanos()),
+                )
+            })
+        });
+    Ok(format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&(scope, source, stamp)).map_err(|e| e.to_string())?)
+    ))
+}
+fn remember_preview(key: String, edge: u32, path: &Path) {
+    if let Ok(mut entries) = PREVIEWS.lock() {
+        if let Some(index) = entries.iter().position(|entry| entry.0 == key) {
+            if entries[index].1 > edge {
+                return;
+            }
+            entries.remove(index);
+        }
+        entries.push_back((key, edge, path.to_path_buf()));
+        while entries.len() > 128 {
+            entries.pop_front();
+        }
+    }
+}
+fn stage_remembered_preview(key: &str, edge: u32, output: &Path) -> Result<bool, String> {
+    let path = PREVIEWS
+        .lock()
+        .map_err(|_| "图片缓存暂不可用")?
+        .iter()
+        .find(|entry| entry.0 == key && entry.1 >= edge)
+        .map(|entry| entry.2.clone());
+    // Release the index before acquiring CACHE_LOCK; preview publication takes
+    // these locks in the opposite direction while returning its PNG.
+    if let Some(path) = path {
+        return crate::preview_runtime::pin_preview(&path, edge, output);
+    }
+    Ok(false)
+}
+
+/// Validate the source's ownership/membership without reading its SVG bytes.
+fn source_file(
+    app: &tauri::AppHandle,
+    source: &Source,
+) -> Result<Option<(PathBuf, Option<String>)>, String> {
+    if source.svg.starts_with(crate::staged_artwork::PREFIX) {
+        return Ok(Some((
+            crate::staged_artwork::path(
+                source
+                    .svg
+                    .strip_prefix(crate::staged_artwork::PREFIX)
+                    .unwrap(),
+            )?,
+            None,
+        )));
+    }
+    if source.svg.starts_with(SNAPSHOT_PREFIX) {
+        let reference = snapshot(&source.svg)?;
+        if crate::cloud::config::load()?.is_some() {
+            let (path, hash) = crate::cloud::snapshot_artwork_path(app, &reference)?;
+            return Ok(Some((path, Some(hash))));
+        }
+        let conn = crate::database(app)?;
+        let exists: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM schematic_review_resources WHERE record_id=?1 AND (resource_id=?2 OR resource_id=(SELECT resource_id FROM schematic_review_resource_aliases WHERE record_id=?1 AND alias=?2)))",
+            rusqlite::params![reference.id,reference.resource_id],|row|row.get(0)).map_err(|e|e.to_string())?;
+        if !exists {
+            return Err("示意图原始图片不存在".into());
+        }
+        return Ok(None);
+    }
+    if !source.svg.is_empty() {
+        return Ok(None);
+    }
+    if let Some(path) = &source.path {
+        if let (Ok(root), Ok(actual)) = (
+            fs::canonicalize(crate::project_data_dir().join("temp-assets")),
+            fs::canonicalize(path),
+        ) {
+            if actual.starts_with(root) && actual.is_file() {
+                return Ok(Some((actual, None)));
+            }
+        }
+    }
+    if let Some(batch) = &source.batch_id {
+        if crate::cloud::config::load()?.is_some() {
+            let (path, hash) = crate::cloud::source_artwork_path(app, batch, &source.asset_id)?;
+            return Ok(Some((path, Some(hash))));
+        }
+        return Ok(crate::batch_history::asset_file(
+            &crate::database(app)?,
+            batch,
+            &source.asset_id,
+        )?
+        .map(|path| (PathBuf::from(path), None)));
+    }
+    let root = fs::canonicalize(crate::project_data_dir().join("temp-assets"))
+        .map_err(|_| "临时图片目录不可访问")?;
+    let path = fs::canonicalize(source.path.as_ref().ok_or("图片缺少原图引用")?)
+        .map_err(|_| "原始图片文件不可访问")?;
+    if !path.starts_with(root) {
+        return Err("原始图片路径无效".into());
+    }
+    Ok(Some((path, None)))
 }
 
 struct LayerSource {
@@ -510,6 +631,7 @@ pub async fn load_artwork_preview(
         } else {
             crate::preview_runtime::acquire_unknown()?
         };
+        let key = preview_key(&app, &source)?;
         let (svg, version) = selected(&app, &source)?;
         let variant = format!("{:?}", source.variant);
         crate::schematic_raster::with_cached(
@@ -518,6 +640,7 @@ pub async fn load_artwork_preview(
             &version,
             &[variant],
             |path| {
+                remember_preview(key, max_edge_px.clamp(128, 512), path);
                 Ok(format!(
                     "data:image/png;base64,{}",
                     STANDARD.encode(fs::read(path).map_err(|_| "预览缓存读取失败")?)
@@ -537,6 +660,40 @@ pub async fn stage_asset_artwork(
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let output = crate::staged_artwork::path(&id)?;
+        // Most schematic products need fewer than 512 pixels at 200 DPI.
+        // Reuse the exact displayed selection without reopening/decoding SVG.
+        let file = source_file(&app, &source)?;
+        let preview_identity = if max_edge_px.is_some_and(|edge| edge <= 512) {
+            Some(preview_key(&app, &source)?)
+        } else {
+            None
+        };
+        if let Some(edge) = max_edge_px.filter(|edge| *edge <= 512) {
+            if source.variant.is_none() {
+                if let Some((path, hash)) = &file {
+                    if crate::asset_previews::try_stage_preview(
+                        path,
+                        hash.as_deref(),
+                        edge,
+                        &output,
+                    )? {
+                        return Ok(());
+                    }
+                }
+            }
+            if stage_remembered_preview(preview_identity.as_ref().unwrap(), edge, &output)? {
+                return Ok(());
+            }
+        }
+        let bytes = file
+            .as_ref()
+            .and_then(|(path, _)| fs::metadata(path).ok())
+            .map(|info| info.len() as usize);
+        let _permit = if let Some(bytes) = bytes {
+            crate::preview_runtime::acquire(bytes)?
+        } else {
+            crate::preview_runtime::acquire_unknown()?
+        };
         let (svg, version) = selected(&app, &source)?;
         if let Some(edge) = max_edge_px {
             crate::schematic_raster::with_cached(
@@ -545,6 +702,9 @@ pub async fn stage_asset_artwork(
                 &version,
                 &[format!("{:?}", source.variant)],
                 |png| {
+                    if let Some(key) = preview_identity {
+                        remember_preview(key, edge, png);
+                    }
                     if fs::hard_link(png, &output).is_err() {
                         fs::copy(png, &output).map_err(|_| "导出图片准备失败")?;
                     }
@@ -562,6 +722,57 @@ pub async fn stage_asset_artwork(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cached_layer_export_keeps_source_version_selection_and_resolution() {
+        let directory = tempfile::tempdir().unwrap();
+        let image_path = directory.path().join("layer.png");
+        let mut image = tiny_skia::Pixmap::new(512, 512).unwrap();
+        image.fill(tiny_skia::Color::from_rgba8(0, 0, 255, 255));
+        fs::write(&image_path, image.encode_png().unwrap()).unwrap();
+        let source = Source {
+            asset_id: directory.path().to_string_lossy().into_owned(),
+            svg: "printflow-snapshot:version-one".into(),
+            variant: Some(Variant {
+                back: true,
+                roles: vec!["back".into(), "window".into(), "front".into()],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let key = preview_cache_key("user-one", &source).unwrap();
+        remember_preview(key.clone(), 512, &image_path);
+        let output = directory.path().join("export.png");
+        assert!(stage_remembered_preview(&key, 420, &output).unwrap());
+        assert_eq!(fs::read(&output).unwrap(), fs::read(&image_path).unwrap());
+        let mut other = source.clone();
+        other.variant = None;
+        assert!(!stage_remembered_preview(
+            &preview_cache_key("user-one", &other).unwrap(),
+            420,
+            &directory.path().join("wrong-layer.png")
+        )
+        .unwrap());
+        other = source.clone();
+        other.svg = "printflow-snapshot:version-two".into();
+        assert!(!stage_remembered_preview(
+            &preview_cache_key("user-one", &other).unwrap(),
+            420,
+            &directory.path().join("wrong-version.png")
+        )
+        .unwrap());
+        assert!(!stage_remembered_preview(
+            &preview_cache_key("user-two", &source).unwrap(),
+            420,
+            &directory.path().join("other-user.png")
+        )
+        .unwrap());
+        assert!(!stage_remembered_preview(&key, 700, &directory.path().join("high.png")).unwrap());
+        fs::remove_file(&image_path).unwrap();
+        assert!(tiny_skia::Pixmap::decode_png(&fs::read(&output).unwrap()).is_ok());
+        assert!(
+            !stage_remembered_preview(&key, 420, &directory.path().join("evicted.png")).unwrap()
+        );
+    }
     #[test]
     fn layer_previews_reuse_one_original_and_source_changes_invalidate_it() {
         let reads = std::sync::atomic::AtomicUsize::new(0);

@@ -11,6 +11,30 @@ use std::{
 
 const MIB: usize = 1024 * 1024;
 pub(crate) static CACHE_LOCK: Mutex<()> = Mutex::new(());
+/// Pin a sufficiently detailed UI PNG before pruning can remove its cache file.
+pub(crate) fn pin_preview(path: &Path, required_edge: u32, output: &Path) -> Result<bool, String> {
+    if required_edge > 512 {
+        return Ok(false);
+    }
+    let _cache = CACHE_LOCK.lock().map_err(|_| "图片缓存暂不可用")?;
+    if !std::fs::metadata(path).is_ok_and(|info| info.len() <= 4 * 1024 * 1024) {
+        return Ok(false);
+    }
+    let dimensions = image::ImageReader::open(path)
+        .ok()
+        .and_then(|reader| reader.with_guessed_format().ok())
+        .filter(|reader| reader.format() == Some(image::ImageFormat::Png))
+        .and_then(|reader| reader.into_dimensions().ok());
+    if !dimensions
+        .is_some_and(|(w, h)| w > 0 && h > 0 && w <= 512 && h <= 512 && w.max(h) >= required_edge)
+    {
+        return Ok(false);
+    }
+    if std::fs::hard_link(path, output).is_err() {
+        std::fs::copy(path, output).map_err(|_| "导出缓存图片准备失败")?;
+    }
+    Ok(true)
+}
 static GATE: Gate = Gate::new();
 thread_local! { static DEPTH: Cell<(usize,usize)> = const { Cell::new((0,0)) }; }
 

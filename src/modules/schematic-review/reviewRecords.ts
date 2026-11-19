@@ -73,14 +73,28 @@ function loadReviewResource(id: string, savedAt: string, resourceId: string, dec
   void pending.catch(() => { if (reviewResourceCache.get(key) === pending) reviewResourceCache.delete(key) })
   return pending
 }
+type ReviewSaveAttempt = { resources: StagedArtwork; manifest: SchematicReviewRecord; written: boolean; running?: Promise<void> }
+const reviewSaveAttempts = new WeakMap<SchematicReviewRecord, ReviewSaveAttempt>()
 export async function saveReviewRecord(record: SchematicReviewRecord): Promise<void> {
-  const resources = new StagedArtwork()
-  try {
-    const manifest = stageLargeWorkspaceValues(record, resources)
-    await resources.write()
-    await invoke<void>('save_schematic_review', { record: manifest })
+  let attempt = reviewSaveAttempts.get(record)
+  if (!attempt) {
+    const resources = new StagedArtwork()
+    attempt = { resources, manifest: stageLargeWorkspaceValues(record, resources), written: false }
+    reviewSaveAttempts.set(record, attempt)
+  }
+  if (attempt.running) return attempt.running
+  const current = attempt
+  current.running = (async () => {
+    if (!current.written) { await current.resources.write(); current.written = true }
+    await invoke<void>('save_schematic_review', { record: current.manifest })
     invalidateReviewResources(record.id)
-  } finally { await resources.dispose() }
+    reviewSaveAttempts.delete(record)
+    await current.resources.dispose()
+  })()
+  try { await current.running }
+  finally { current.running = undefined }
+  // Keep staging files and the identical manifest after a failed/uncertain
+  // save. The cloud journal must be able to replay that exact request safely.
 }
 export async function loadReviewRecord(id: string): Promise<SchematicReviewRecord> {
   const record = copyWorkspaceValue(await invoke<SchematicReviewRecord>('load_schematic_review', { id }))

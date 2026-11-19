@@ -1,6 +1,6 @@
 use super::{
     config::Environment,
-    resources,
+    resources, review_snapshot::{self,Artwork},
     store::{self, required, text, Record, Result},
 };
 use mysql::prelude::Queryable;
@@ -58,48 +58,59 @@ pub fn save(
             return Err("此审核已进入生产拼版，请先退回后再编辑".into());
         }
     }
-    // This is the same domain validator/normalizer as local mode, but the
-    // disposable in-memory database is never a data source or a sync replica.
-    resources::hydrate(conn, env, &mut value, true)?;
     if let Some(old) = &old {
         value["paymentStatus"] = old.value["paymentStatus"].clone();
     }
-    let db = memory()?;
-    crate::schematic_review::save_record(&db, value)?;
-    let mut value = crate::schematic_review::load_record(&db, &id)?;
-    expand_local(&db, &id, &mut value)?;
+    let mut summary = serde_json::to_value(crate::schematic_review::review_summary(&value,None)?).map_err(|e|e.to_string())?;
+    let source_batch = store::read(conn, "batch", text(&value, "sourceBatchId"), false)?;
     let folder =
-        if let Some(batch) = store::read(conn, "batch", text(&value, "sourceBatchId"), false)? {
+        if let Some(batch) = &source_batch {
             text(&batch.value, "directory").to_owned()
         } else {
             format!("审核_{}", &resources::hash(id.as_bytes())[..16])
         };
-    // Every snapshot keeps its own version of original and derived/back artwork.
-    // Canonical SVGs can share immutable bytes with the batch without sharing mutable metadata.
-    for asset in value["assets"].as_array_mut().into_iter().flatten() {
-        let content = if text(asset, "svg").starts_with(crate::staged_artwork::PREFIX) {
-            crate::staged_artwork::read(text(asset, "svg"))?
-        } else {
-            text(asset, "svg").to_owned()
+    let mut checked = std::collections::BTreeSet::new();
+    let mut snapshots = std::collections::HashMap::new();
+    review_snapshot::prepare(&mut value,|artwork| {
+        let reference = match artwork {
+            Artwork::Reference(reference)=>reference.to_owned(),
+            Artwork::Snapshot(text)=>{
+                let source = crate::artwork_source::snapshot(text)?;
+                if !snapshots.contains_key(&source.id) {
+                    let record = get(conn,&source.id,false)?;
+                    let mut refs = std::collections::BTreeSet::new(); resources::references(&record.value,&mut refs);
+                    snapshots.insert(source.id.clone(),refs);
+                }
+                if !snapshots[&source.id].contains(&source.resource_id) { return Err("资源不属于当前审核快照".into()); }
+                format!("{}{}",resources::TEXT,source.resource_id)
+            },
+            Artwork::Svg(text)=>{
+                let content = if text.starts_with(crate::staged_artwork::PREFIX) { crate::staged_artwork::read(text)? } else { text.to_owned() };
+                if content.is_empty() { return Err("示意图图片内容为空".into()); }
+                format!("{}{}",resources::TEXT,resources::put(conn,env,&format!("{folder}/assets"),content.as_bytes(),"svg")?)
+            },
+            Artwork::File { path, asset }=>{
+                // A queued review can outlive its batch upload's temp files.
+                // Reuse only that exact saved artwork, with the same ID and
+                // source geometry; replacements and readable files take priority.
+                let saved = std::fs::metadata(path).err().and_then(|error| {
+                    let asset = serde_json::from_value::<crate::assets::Asset>(asset.clone()).ok()?;
+                    super::batches::recovery_reference(&asset,source_batch.as_ref().map(|batch|&batch.value),error.kind())
+                });
+                match saved {
+                    Some(reference)=>reference,
+                    None=>resources::file(conn,env,&format!("{folder}/assets"),path)?,
+                }
+            },
         };
-        let resource = resources::put(
-            conn,
-            env,
-            &format!("{folder}/assets"),
-            content.as_bytes(),
-            "svg",
-        )?;
-        asset["storagePath"] = json!(format!("{}{resource}", resources::FILE));
-    }
+        let hash = reference.strip_prefix(resources::TEXT).or_else(||reference.strip_prefix(resources::FILE)).ok_or("不是共享资源引用")?;
+        if checked.insert(hash.to_owned()) { resources::check_reference(conn,env,&reference)?; }
+        Ok(hash.to_owned())
+    })?;
     resources::externalize(conn, env, &format!("{folder}/reviews"), &mut value)?;
-    let summary_text: String = db
-        .query_row(
-            "SELECT summary FROM schematic_reviews WHERE id=?1",
-            [&id],
-            |r| r.get(0),
-        )
-        .map_err(|e| e.to_string())?;
-    let mut summary = store::json_value(summary_text)?;
+    let mut refs = std::collections::BTreeSet::new(); resources::references(&value,&mut refs);
+    for hash in refs { if checked.insert(hash.clone()) { resources::check_reference(conn,env,&format!("{}{hash}",resources::TEXT))?; } }
+    value["paymentStatus"] = summary["paymentStatus"].clone();
     summary["output"] = value["output"].clone();
     summary["returned"] = json!(false);
     store::write(conn, "review", &id, None, expected + 1, &value, &summary)?;

@@ -7,6 +7,7 @@ mod migration;
 mod request;
 mod resources;
 mod reviews;
+mod review_snapshot;
 mod schema_upgrade;
 pub mod store;
 use mysql::{prelude::Queryable, TxOpts};
@@ -56,6 +57,18 @@ pub(crate) fn source_artwork(app: &tauri::AppHandle, batch_id: &str, asset_id: &
     let reference = batch.value["assets"].as_array().into_iter().flatten().find(|asset| asset["id"] == asset_id)
         .and_then(|asset| asset["storagePath"].as_str()).ok_or("批次图片不存在")?;
     String::from_utf8(resources::read(&mut conn, &env, reference)?).map_err(|_| "原图编码错误".into())
+}
+
+pub(crate) fn source_artwork_path(app: &tauri::AppHandle, batch_id: &str, asset_id: &str) -> Result<(PathBuf,String)> {
+    let env = config::load()?.ok_or("未启用共享存储")?;
+    let mut conn = store::connect(&env)?;
+    let user = current_user(app, &env, &mut conn)?;
+    let batch = batches::get(&mut conn, batch_id, &user, false)?;
+    let reference = batch.value["assets"].as_array().into_iter().flatten().find(|asset|asset["id"]==asset_id)
+        .and_then(|asset|asset["storagePath"].as_str()).ok_or("批次图片不存在")?;
+    let path = resources::path(&mut conn,&env,reference)?;
+    let hash = reference.strip_prefix(resources::FILE).ok_or("不是共享资源引用")?;
+    Ok((path,hash.to_owned()))
 }
 
 pub(crate) fn snapshot_artwork(app: &tauri::AppHandle, reference: &crate::artwork_source::Snapshot) -> Result<Vec<u8>> {

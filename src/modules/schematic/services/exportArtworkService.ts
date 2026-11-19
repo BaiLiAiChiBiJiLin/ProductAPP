@@ -5,7 +5,7 @@ import { artworkVersion } from './artworkVersionService'
 import { itemForCanvasDisplay } from './canvasDisplayScaleService'
 import { StagedArtwork } from './stagedArtworkService'
 
-/** One backend resource at a time; original SVG bytes never return to WebView. */
+/** Bounded native preparation; original SVG bytes never return to WebView. */
 export class ExportArtwork {
   private staged = new StagedArtwork()
   private ids: string[] = []
@@ -42,18 +42,32 @@ export class ExportArtwork {
     }
     await this.staged.write(progress)
     let completed = 0
-    for (const request of requests.values()) {
-      let href: string
-      if (quality === 'original' && !request.native) href = request.source.svg
-      else {
-        const id = crypto.randomUUID(); this.ids.push(id)
-        if (request.native) await invoke('stage_asset_artwork', { id, source: request.source, maxEdgePx: quality === 'original' ? null : request.edge })
-        else await invoke('stage_schematic_png', { id, svg: request.source.svg, sourceVersion: request.sourceVersion, layerIds: request.layerIds, maxEdgePx: request.edge })
-        href = `${quality === 'original' ? 'printflow-export:' : 'printflow-png:'}${id}`
+    let cursor = 0
+    let failed = false
+    let failure: unknown
+    const queued = [...requests.values()]
+    const prepare = async () => {
+      while (!failed && cursor < queued.length) {
+        const request = queued[cursor++]
+        try {
+          let href: string
+          if (quality === 'original' && !request.native) href = request.source.svg
+          else {
+            const id = crypto.randomUUID(); this.ids.push(id)
+            if (request.native) await invoke('stage_asset_artwork', { id, source: request.source, maxEdgePx: quality === 'original' ? null : request.edge })
+            else await invoke('stage_schematic_png', { id, svg: request.source.svg, sourceVersion: request.sourceVersion, layerIds: request.layerIds, maxEdgePx: request.edge })
+            href = `${quality === 'original' ? 'printflow-export:' : 'printflow-png:'}${id}`
+          }
+          for (const id of request.itemIds) this.hrefs.set(id, href)
+          progress?.(++completed, requests.size)
+        } catch (error) { if (!failed) { failed = true; failure = error } }
       }
-      for (const id of request.itemIds) this.hrefs.set(id, href)
-      progress?.(++completed, requests.size)
     }
+    // Native admission also checks available memory and source size. Wait for
+    // every started task before disposing files if any one preparation fails.
+    const cores = typeof navigator === 'undefined' ? 4 : navigator.hardwareConcurrency || 4
+    await Promise.all(Array.from({ length: Math.min(queued.length, Math.max(1, Math.min(4, Math.floor(cores/2)))) }, prepare))
+    if (failed) throw failure
     if (quality !== 'original') await this.staged.dispose()
   }
   async dispose() {

@@ -154,29 +154,7 @@ fn restore_resource_contents(conn: &Connection, id: &str, value: &mut Value) -> 
     Ok(())
 }
 
-pub(super) fn save_record(conn: &Connection, mut record: Value) -> Result<(), String> {
-    ensure_store(conn)?;
-    let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)
-        .map_err(|error| error.to_string())?;
-    for asset in record["assets"].as_array().into_iter().flatten() {
-        if let Some(id) = asset["id"].as_str() { crate::shared_transfers::store::ensure_editable(&transaction,"asset",id)?; }
-    }
-    for (field, kind) in [("sourceBatchId", "batch"), ("sourceRecordId", "review")] {
-        if let Some(id) = record[field].as_str().filter(|id| !id.is_empty()) {
-            crate::shared_transfers::store::ensure_editable(&transaction,kind,id)?;
-        }
-    }
-    let id = required_text(&record, "id")?;
-    crate::production_imposition::ensure_review_editable(&transaction, &id)?;
-    let saved_payment_status: Option<String> = transaction
-        .query_row(
-            "SELECT COALESCE(p.payment_status, 'unpaid') FROM schematic_reviews r
-            LEFT JOIN schematic_review_payment_states p ON p.record_id = r.id WHERE r.id = ?1",
-            [&id],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|error| error.to_string())?;
+pub(super) fn review_summary(record: &Value, saved_payment_status: Option<&str>) -> Result<ReviewSummary,String> {
     if record["schemaVersion"].as_u64() != Some(1) {
         return Err("不支持的示意图记录版本".into());
     }
@@ -212,6 +190,33 @@ pub(super) fn save_record(conn: &Connection, mut record: Value) -> Result<(), St
         imposition_job_id: None,
         returned: false,
     };
+    Ok(summary)
+}
+
+pub(super) fn save_record(conn: &Connection, mut record: Value) -> Result<(), String> {
+    ensure_store(conn)?;
+    let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    for asset in record["assets"].as_array().into_iter().flatten() {
+        if let Some(id) = asset["id"].as_str() { crate::shared_transfers::store::ensure_editable(&transaction,"asset",id)?; }
+    }
+    for (field, kind) in [("sourceBatchId", "batch"), ("sourceRecordId", "review")] {
+        if let Some(id) = record[field].as_str().filter(|id| !id.is_empty()) {
+            crate::shared_transfers::store::ensure_editable(&transaction,kind,id)?;
+        }
+    }
+    let id = required_text(&record, "id")?;
+    crate::production_imposition::ensure_review_editable(&transaction, &id)?;
+    let saved_payment_status: Option<String> = transaction
+        .query_row(
+            "SELECT COALESCE(p.payment_status, 'unpaid') FROM schematic_reviews r
+            LEFT JOIN schematic_review_payment_states p ON p.record_id = r.id WHERE r.id = ?1",
+            [&id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    let summary = review_summary(&record, saved_payment_status.as_deref())?;
     // Store independent SVG contents so deleting or editing a source batch
     // cannot change the exported snapshot. Keep all other JSON fields.
     let assets = record["assets"]

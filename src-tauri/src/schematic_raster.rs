@@ -75,16 +75,7 @@ fn with_cached_in<T>(
     let edge = edge.clamp(1, 4096);
     // The selected SVG hash is authoritative even if a caller reuses a version
     // or layer name. Original source version invalidates unchanged selections.
-    let key_data = serde_json::to_vec(&(
-        "schematic-png-v1",
-        source_version,
-        layer_ids,
-        edge,
-        format!("{:x}", Sha256::digest(source)),
-    ))
-    .map_err(|e| e.to_string())?;
-    let key = format!("{:x}", Sha256::digest(key_data));
-    let target = cache.join(format!("{key}.png"));
+    let target = cache_path(cache,source,edge,source_version,layer_ids)?;
     {
         let _cache = crate::preview_runtime::CACHE_LOCK.lock().map_err(|_|"图片缓存暂不可用")?;
         if valid(&target, edge) { return use_png(&target); }
@@ -97,9 +88,7 @@ fn with_cached_in<T>(
         if valid(&target,edge) { return use_png(&target); }
     }
     let png = crate::asset_previews::render_at_resolution(source, Path::new(""), edge)?;
-    if png.len() as u64 > MAX_PNG_BYTES {
-        return Err("导出图片超过缓存大小限制".into());
-    }
+    if png.len() as u64 > MAX_PNG_BYTES { return Err("导出图片超过缓存大小限制".into()); }
     let _cache = crate::preview_runtime::CACHE_LOCK.lock().map_err(|_|"图片缓存暂不可用")?;
     fs::create_dir_all(cache).map_err(|e| format!("图片缓存目录创建失败：{e}"))?;
     let mut file = tempfile::NamedTempFile::new_in(cache).map_err(|e| e.to_string())?;
@@ -108,6 +97,19 @@ fn with_cached_in<T>(
     let result = use_png(&target);
     prune(cache);
     result
+}
+
+fn cache_path(cache: &Path, source: &[u8], edge: u32, source_version: &str, layer_ids: &[String]) -> Result<PathBuf,String> {
+    let key_data = serde_json::to_vec(&(
+        "schematic-png-v1",
+        source_version,
+        layer_ids,
+        edge,
+        format!("{:x}", Sha256::digest(source)),
+    ))
+    .map_err(|e| e.to_string())?;
+    let key = format!("{:x}", Sha256::digest(key_data));
+    Ok(cache.join(format!("{key}.png")))
 }
 
 pub(crate) fn with_cached<T>(
@@ -157,6 +159,10 @@ pub async fn stage_schematic_png(
             .map_err(|e| e.to_string())?;
         if bytes.len() as u64 != size {
             return Err("导出原图读取期间发生变化".into());
+        }
+        if max_edge_px<=512 {
+            let preview = cache_path(&crate::project_data_dir().join("cache/schematic-png"),&bytes,512,"",&[])?;
+            if crate::preview_runtime::pin_preview(&preview,max_edge_px,&output)? { return Ok(()); }
         }
         with_cached(&bytes, max_edge_px, &source_version, &layer_ids, |png| {
             // A hard link pins bytes without allocating/copying a large PNG. A

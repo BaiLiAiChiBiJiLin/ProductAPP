@@ -58,7 +58,7 @@ pub fn load(conn: &Connection, batch_id: &str) -> Result<Vec<BatchThumbnail>, St
             )
         })
         .collect();
-    let signature = serde_json::to_string(&(1, versions)).map_err(|error| error.to_string())?;
+    let signature = serde_json::to_string(&(2, versions)).map_err(|error| error.to_string())?;
     conn.execute_batch("CREATE TABLE IF NOT EXISTS batch_thumbnail_cache(batch_id TEXT PRIMARY KEY, signature TEXT NOT NULL, payload TEXT NOT NULL)")
         .map_err(|error| error.to_string())?;
     let cached: Option<String> = conn
@@ -84,15 +84,14 @@ pub fn load(conn: &Connection, batch_id: &str) -> Result<Vec<BatchThumbnail>, St
             // current image when needed; never hydrate the other batch images.
             let inline: String = conn.query_row("SELECT COALESCE(json_extract(image.value,'$.svg'),'') FROM batches, json_each(batches.payload) image
                 WHERE batches.id=?1 AND json_extract(image.value,'$.id')=?2 LIMIT 1", params![batch_id, id], |row| row.get(0)).map_err(|error| error.to_string())?;
-            let source = if inline.is_empty() {
-                crate::asset_previews::read_bounded(Path::new(&path))?
+            if inline.is_empty() {
+                crate::asset_previews::history_preview_from_path(Path::new(&path),None)
             } else {
-                inline.into_bytes()
-            };
-            render(&source, Path::new(&path))
+                crate::asset_previews::history_inline_preview(inline.as_bytes(),Path::new(&path))
+            }
         })();
         let url = match rendered {
-            Ok(bytes) => format!("data:image/png;base64,{}", STANDARD.encode(bytes)),
+            Ok(url) => url,
             Err(error) => {
                 complete = false;
                 log::warn!("批次缩略图生成失败 id={id}：{error}");
@@ -143,10 +142,6 @@ pub fn load_path_at_size(path: &Path, max_edge_px: u32) -> Result<String, String
     Ok(format!("data:image/png;base64,{}", STANDARD.encode(png)))
 }
 
-fn render(source: &[u8], path: &Path) -> Result<Vec<u8>, String> {
-    render_at_size(source, path, 128)
-}
-
 fn render_at_size(source: &[u8], path: &Path, edge: u32) -> Result<Vec<u8>, String> {
     crate::asset_previews::render_png(source, path, edge)
 }
@@ -167,6 +162,50 @@ pub fn remove(conn: &Connection, batch_id: &str) -> Result<(), String> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn history_preview_warms_the_canvas_png_without_reading_the_svg_again() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("history-and-canvas.svg");
+        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="200"><rect width="100" height="200" fill="red"/></svg>"#;
+        fs::write(&path,svg).unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE batches(id TEXT PRIMARY KEY,saved_at TEXT,payload TEXT)").unwrap();
+        conn.execute("INSERT INTO batches VALUES('shared-preview','now',?1)",[json!([{"id":"one","name":"图","storagePath":path.to_str().unwrap(),"svg":""}]).to_string()]).unwrap();
+        let history = load(&conn,"shared-preview").unwrap();
+        let bytes = STANDARD.decode(history[0].url.strip_prefix("data:image/png;base64,").unwrap()).unwrap();
+        assert_eq!(tiny_skia::Pixmap::decode_png(&bytes).unwrap().height(),128);
+        // Preserve the cache's file version, but make SVG decoding fail. Only
+        // an already-generated shared PNG can make the canvas request succeed.
+        let modified = fs::metadata(&path).unwrap().modified().unwrap();
+        fs::write(&path,vec![b' ';svg.len()]).unwrap();
+        fs::OpenOptions::new().write(true).open(&path).unwrap().set_times(fs::FileTimes::new().set_modified(modified)).unwrap();
+        let canvas = crate::asset_previews::from_path(&path,512,None).expect("history must populate the canvas PNG cache");
+        let bytes = STANDARD.decode(canvas.strip_prefix("data:image/png;base64,").unwrap()).unwrap();
+        let image = tiny_skia::Pixmap::decode_png(&bytes).unwrap();
+        assert_eq!(image.height(),512);
+        assert_eq!(image.pixel(50,100).unwrap().red(),255);
+    }
+
+    #[test]
+    fn history_reuses_an_existing_verified_canvas_png_and_derives_its_small_card() {
+        use sha2::{Digest,Sha256};
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("verified-preview.svg");
+        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="blue"/></svg>"#;
+        fs::write(&path,svg).unwrap();
+        let version = format!("{:x}",Sha256::digest(svg.as_bytes()));
+        crate::asset_previews::from_path(&path,512,Some(&version)).unwrap();
+        let modified = fs::metadata(&path).unwrap().modified().unwrap();
+        fs::write(&path,vec![b' ';svg.len()]).unwrap();
+        fs::OpenOptions::new().write(true).open(&path).unwrap().set_times(fs::FileTimes::new().set_modified(modified)).unwrap();
+        let history = crate::asset_previews::history_preview_from_path(&path,Some(&version)).expect("use the verified canvas cache without re-reading SVG");
+        let bytes = STANDARD.decode(history.strip_prefix("data:image/png;base64,").unwrap()).unwrap();
+        let image = tiny_skia::Pixmap::decode_png(&bytes).unwrap();
+        assert_eq!(image.height(),128);
+        assert_eq!(image.pixel(60,60).unwrap().blue(),255);
+        assert!(crate::asset_previews::history_preview_from_path(&path,Some(&"f".repeat(64))).is_err());
+    }
 
     #[test]
     #[ignore = "Set PRINTFLOW_CANVAS_PREVIEW_DIR to a directory of real SVG assets"]

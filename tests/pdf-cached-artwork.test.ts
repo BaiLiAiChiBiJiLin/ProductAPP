@@ -4,6 +4,7 @@ import { exportPdf, exportPage } from '../src/modules/schematic/services/exportS
 import { snapshotArtwork } from '../src/modules/schematic/services/artworkSourceService'
 import { createReviewRecord } from '../src/modules/schematic-review/reviewRecords'
 import { emptyArrangementDisplayState } from '../src/modules/schematic/services/arrangementDisplayState'
+import { ExportArtwork } from '../src/modules/schematic/services/exportArtworkService'
 
 const api = vi.hoisted(() => ({ invoke: vi.fn(), unlisten: vi.fn() }))
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true, invoke: api.invoke }))
@@ -14,6 +15,33 @@ const selected = original.replace('<g id="front"><rect width="80" height="100" f
 const asset: Asset = { id: 'a', name: 'a.svg', productId: 'p', width: 80, height: 100, svg: original, previewUrl: '', thumbnailUrl: '', storagePath: 'original.svg' }
 const pages: Page[] = [{ id: 3, name: 'edited', items: [{ id: 'i', assetId: 'a', x: 150, y: 230, w: 80, h: 100, rotation: 25, mirrorX: true, backSvg: selected, svgLayerIds: ['back'] }], annotations: [{ id: 't', kind: 'text', x: 30, y: 500, text: 'Vector text', fontSize: 14, color: '#123456' }] }]
 beforeEach(() => { api.invoke.mockReset().mockResolvedValue(undefined); api.unlisten.mockClear() })
+
+test('export prepares several deferred PNGs concurrently and waits for running work before cleanup on failure', async () => {
+  const cores = vi.spyOn(navigator,'hardwareConcurrency','get').mockReturnValue(8)
+  const lazy = Array.from({ length: 8 }, (_, index) => ({ ...asset, id: `a-${index}`, svg: '', storagePath: `printflow-file:${index}` }))
+  const page: Page = { ...pages[0], items: lazy.map((asset,index) => ({ ...pages[0].items[0], id: `i-${index}`, assetId: asset.id, backSvg: undefined })) }
+  const finish = new Map<string, { resolve: () => void; reject: (error: Error) => void }>()
+  api.invoke.mockImplementation((command,args)=> command === 'stage_asset_artwork' ? new Promise<void>((resolve,reject)=> { finish.set(args.source.assetId,{resolve,reject}) }) : Promise.resolve())
+  const resources = new ExportArtwork()
+  let settled = false
+  const prepared = resources.prepare([page],new Map(lazy.map(asset=>[asset.id,asset])),'standard','batch').then(()=>undefined,error=>error).finally(()=>{ settled = true })
+  try {
+    await vi.waitFor(()=>expect(finish.size).toBeGreaterThan(1),{timeout:500})
+    expect(finish.size).toBeLessThanOrEqual(4)
+    finish.get('a-0')!.reject(new Error('failed'))
+    await new Promise(resolve=>setTimeout(resolve,0))
+    expect(settled).toBe(false)
+    for (const task of finish.values()) task.resolve()
+    expect(await prepared).toBeInstanceOf(Error)
+    expect(finish.size).toBeLessThanOrEqual(4)
+  } finally {
+    api.invoke.mockResolvedValue(undefined)
+    for (const task of finish.values()) task.resolve()
+    await prepared
+    await resources.dispose()
+    cores.mockRestore()
+  }
+})
 
 test.each(['standard', 'high', 'original'] as const)('%s PDF retains deferred manual layer selection and its independent review data', async quality => {
   const reference = snapshotArtwork({ id: 'old-review', resourceId: 'source-hash', savedAt: 'now' })

@@ -46,6 +46,110 @@ test('retry after lost reply retains request ID and original timestamp', async (
   const second = api.invoke.mock.calls.at(-1)?.[1]
   expect(second.requestId).toBe(first.requestId); expect(second.args.savedAt).toBe('first')
 })
+
+test('a background batch save and review save on this computer wait in one write queue while reads remain available', async () => {
+  let release!: () => void
+  let batchRunning = false
+  let overlap = false
+  shared(command => {
+    if (command === 'save_batch') {
+      batchRunning = true
+      return new Promise(resolve => { release = () => { batchRunning = false; resolve({ result: { version: 1 } }) } })
+    }
+    if (command === 'save_schematic_review') {
+      overlap = batchRunning
+      if (overlap) throw new Error('其他电脑正在保存，请稍后重试')
+      return { result: { version: 1 } }
+    }
+    if (command === 'list_schematic_reviews') return { records: [] }
+    throw new Error(`unexpected cloud command: ${command}`)
+  })
+  const { invoke } = await import('../src/services/backend')
+  const batch = invoke('save_batch', { id: 'background', assets: [] })
+  await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+  const review = invoke('save_schematic_review', { record: { id: 'review', savedAt: 'first' } }).then(result => ({ result }), error => ({ error }))
+  await expect(invoke('list_schematic_reviews')).resolves.toEqual({ records: [] })
+  await new Promise(resolve => setTimeout(resolve, 0))
+  const reviewSubmittedBeforeBatchFinished = api.invoke.mock.calls.some(([, args]) => args?.command === 'save_schematic_review')
+  release()
+  await batch
+  const outcome = await review
+  expect(reviewSubmittedBeforeBatchFinished).toBe(false)
+  expect(overlap).toBe(false)
+  expect(outcome).toEqual({ result: { version: 1 } })
+})
+
+test.each(['其他电脑正在保存，请稍后重试', '共享存储正忙，请稍后重试'])('temporary shared write contention retries review persistence with the exact same request: %s', async busy => {
+  let attempts = 0
+  shared(command => {
+    if (command !== 'save_schematic_review') throw new Error(`unexpected cloud command: ${command}`)
+    if (++attempts < 3) throw new Error(busy)
+    return { result: { version: 1 } }
+  })
+  const { invoke } = await import('../src/services/backend')
+  await expect(invoke('save_schematic_review', { record: { id: 'busy-review', savedAt: 'first', assets: [{ svg: '<svg/>' }] } })).resolves.toEqual({ version: 1 })
+  const saves = api.invoke.mock.calls.filter(([, args]) => args?.command === 'save_schematic_review').map(([, args]) => args)
+  expect(saves).toHaveLength(3)
+  expect(saves[1]).toEqual(saves[0])
+  expect(saves[2]).toEqual(saves[0])
+})
+
+test('persistent shared contention stops after three attempts and manual retry keeps the original request', async () => {
+  let attempts = 0
+  shared(() => {
+    if (++attempts <= 3) throw new Error('共享存储正忙，请稍后重试')
+    return { result: { version: 1 } }
+  })
+  const { invoke } = await import('../src/services/backend')
+  const args = { record: { id: 'busy-until-retry', savedAt: 'first' } }
+  await expect(invoke('save_schematic_review', args)).rejects.toThrow('共享存储正忙')
+  expect(attempts).toBe(3)
+  await expect(invoke('save_schematic_review', args)).resolves.toEqual({ version: 1 })
+  const saves = api.invoke.mock.calls.filter(([, args]) => args?.command === 'save_schematic_review').map(([, args]) => args)
+  expect(saves).toHaveLength(4)
+  for (const request of saves) expect(request).toEqual(saves[0])
+})
+
+test.each(['记录已被其他用户修改', '该历史批次已转移或不属于当前用户，请刷新列表', '读取共享图片失败'])('review errors are not retried as write contention and do not block later writes: %s', async message => {
+  let attempts = 0
+  shared(command => {
+    if (command === 'save_schematic_review') { attempts++; throw new Error(message) }
+    if (command === 'save_batch') return { result: { version: 1 } }
+    throw new Error(`unexpected cloud command: ${command}`)
+  })
+  const { invoke } = await import('../src/services/backend')
+  await expect(invoke('save_schematic_review', { record: { id: 'invalid-review' } })).rejects.toThrow(message)
+  expect(attempts).toBe(1)
+  await expect(invoke('save_batch', { id: 'next-batch', assets: [] })).resolves.toEqual({ version: 1 })
+})
+
+test('review staging survives a lost reply and is cleaned only after the same request is confirmed', async () => {
+  const staged = 'printflow-export:1234-abcd'
+  let attempts = 0
+  api.invoke.mockImplementation(async (command, args) => {
+    if (command === 'storage_mode') return { shared: true }
+    if (command === 'clear_pdf_pages') return
+    if (command === 'cloud_operation' && args.command === 'initialize_shared_user') return 'shared-root'
+    if (command === 'cloud_operation' && args.command === 'save_schematic_review') {
+      if (++attempts === 1) throw new Error('reply lost')
+      return { result: { version: 1 } }
+    }
+    throw new Error(`unexpected command: ${command}`)
+  })
+  const firstSession = await import('../src/services/backend')
+  const args = { record: { id: 'review-staged', savedAt: 'first', assets: [{ svg: staged }], pages: [{ backSvg: staged }] } }
+  await expect(firstSession.invoke('save_schematic_review', args)).rejects.toThrow('reply lost')
+  const first = api.invoke.mock.calls.find(([, request]) => request?.command === 'save_schematic_review')![1]
+  expect(api.invoke.mock.calls.some(([command]) => command === 'clear_pdf_pages')).toBe(false)
+
+  await firstSession.invoke('save_schematic_review', args)
+  const saves = api.invoke.mock.calls.filter(([, request]) => request?.command === 'save_schematic_review')
+  expect(saves).toHaveLength(2)
+  expect(saves[1][1]).toEqual(first)
+  expect(api.invoke.mock.calls.filter(([command]) => command === 'clear_pdf_pages')).toEqual([
+    ['clear_pdf_pages', { ids: ['1234-abcd'] }],
+  ])
+})
 test('changed edits confirm the previous request before saving a new snapshot', async () => {
   let attempts = 0
   shared(() => {

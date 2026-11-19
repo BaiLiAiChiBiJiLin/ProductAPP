@@ -244,7 +244,7 @@ pub fn exclusive<T>(
         .query_first("SELECT GET_LOCK(CONCAT(DATABASE(), ':printflow-write'),10)")
         .map_err(error)?;
     if locked != Some(1) {
-        return Err("其他电脑正在保存，请稍后重试".into());
+        return Err("共享存储正忙，请稍后重试".into());
     }
     let result = action(conn);
     let released = conn
