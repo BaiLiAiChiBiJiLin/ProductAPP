@@ -3,7 +3,8 @@ import Konva from 'konva'
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import ArtworkCanvas from '../src/modules/schematic/ArtworkCanvas'
-import { type Asset, type Item, type Page } from '../src/model'
+import { pageSvg, pageRasterSvg, type Asset, type Item, type Page } from '../src/model'
+import { paginateAssets } from '../src/modules/schematic/services/paginationService'
 
 const source: Asset = { id: 'a', name: 'Art', productId: 'a', width: 60, height: 80, sourceGroupWidthMm: 60, sourceGroupHeightMm: 80,
   svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 80"><rect width="60" height="80"/></svg>', previewUrl: '', thumbnailUrl: '' }
@@ -18,7 +19,11 @@ beforeEach(() => {
   previewApi.invoke.mockReset().mockResolvedValue(PNG)
   Konva.autoDrawEnabled = false
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => new Proxy({
-    measureText: (text: string) => ({ width: text.length * 4 }), getImageData: () => ({ data: new Uint8ClampedArray(4) }),
+    font: '11px Arial',
+    measureText(text: string) {
+      const fontSize = Number(this.font.match(/([\d.]+)px/)?.[1] ?? 11)
+      return { width: [...text].reduce((sum, char) => sum + (/[^\u0000-\u00ff]/.test(char) ? 1 : /[MW]/.test(char) ? .94 : .6), 0) * fontSize }
+    }, getImageData: () => ({ data: new Uint8ClampedArray(4) }),
   }, { get: (target, key) => key in target ? Reflect.get(target, key) : () => {} }) as unknown as CanvasRenderingContext2D)
   vi.stubGlobal('ResizeObserver', class {
     constructor(private callback: ResizeObserverCallback) {}
@@ -36,6 +41,132 @@ function press(node: Konva.Node) {
   act(() => { node.getStage()!.setPointersPositions(event); node.fire('mousedown', { evt: event }, true) })
   return point
 }
+
+it.each(['普通钥匙扣', '立牌', '摇摇乐', '串串'])('generated %s remarks and named note pictures are painted on the canvas as well as both export paths', async productName => {
+  vi.stubGlobal('Image', class {
+    naturalWidth = 100
+    naturalHeight = 80
+    onload?: () => void
+    onerror?: () => void
+    set src(_value: string) { queueMicrotask(() => this.onload?.()) }
+  })
+  const asset: Asset = { ...source, id: 'with-notes', productName, note: '请确认生产备注', noteImages: [{ src: PNG, name: '备注图片示例' }] }
+  const map = new Map([[asset.id, asset]])
+  const page = paginateAssets([asset])[0]
+  render(<ArtworkCanvas page={page} assets={map} selected={null} onSelect={vi.fn()} onChange={vi.fn()} onDropAsset={vi.fn()} onHeaderBlockChange={vi.fn()}/>)
+  const stage = Konva.stages.at(-1)!
+  await waitFor(() => expect(stage.find<Konva.Image>('Image').filter(node => node.getParent()?.name().includes(':note'))).toHaveLength(1))
+  const note = stage.find<Konva.Text>('.image-detail-note')
+  expect(note.map(node => node.text()).join('')).toBe(asset.note)
+  for (const text of [...note, ...stage.find<Konva.Text>('Text').filter(node => node.text() === '备注图片示例')]) {
+    expect(text.isVisible()).toBe(true)
+    expect(text.textArr.length).toBeGreaterThan(0)
+    expect(text.getClientRect().width).toBeGreaterThan(0)
+    expect(text.getClientRect().height).toBeGreaterThan(0)
+  }
+  for (const source of [pageSvg(page, map), pageRasterSvg(page, map)]) {
+    const svg = new DOMParser().parseFromString(source, 'image/svg+xml')
+    expect(svg.querySelector('[data-image-group-backgrounds]')?.textContent).toContain(asset.note)
+    expect(svg.querySelector('[data-printflow-note]')?.getAttribute('href')).toBe(PNG)
+  }
+})
+
+it('wide unbroken remarks remain drawable on the canvas when the same text is present in export', async () => {
+  const asset: Asset = { ...source, id: 'wide-note', note: 'MMMMWWWWMMMMWWWW' }
+  const map = new Map([[asset.id, asset]])
+  const page = paginateAssets([asset])[0]
+  render(<ArtworkCanvas page={page} assets={map} selected={null} onSelect={vi.fn()} onChange={vi.fn()} onDropAsset={vi.fn()} onHeaderBlockChange={vi.fn()}/>)
+  const notes = Konva.stages.at(-1)!.find<Konva.Text>('.image-detail-note')
+  expect(notes.map(node => node.text()).join('')).toBe(asset.note)
+  for (const node of notes) expect(node.textArr.length).toBeGreaterThan(0)
+  expect(new DOMParser().parseFromString(pageSvg(page, map), 'image/svg+xml').documentElement.textContent).toContain(asset.note)
+})
+
+it('retries a transient note-picture decode failure without needing to export or reopen the canvas', async () => {
+  const noteSrc = `${PNG}#transient-note`
+  let attempts = 0
+  vi.stubGlobal('Image', class {
+    naturalWidth = 100
+    naturalHeight = 80
+    onload?: () => void
+    onerror?: () => void
+    set src(value: string) {
+      const fail = value === noteSrc && ++attempts < 3
+      queueMicrotask(() => fail ? this.onerror?.() : this.onload?.())
+    }
+  })
+  const asset: Asset = { ...source, id: 'transient-note', note: '备注文字保留', noteImages: [{ src: noteSrc, name: '备注图片' }] }
+  const page = paginateAssets([asset])[0]
+  render(<ArtworkCanvas page={page} assets={new Map([[asset.id, asset]])} selected={null} onSelect={vi.fn()} onChange={vi.fn()} onDropAsset={vi.fn()} onHeaderBlockChange={vi.fn()}/>)
+  const stage = Konva.stages.at(-1)!
+  await waitFor(() => expect(stage.find<Konva.Image>('Image').filter(node => node.getParent()?.name().includes(':note'))).toHaveLength(1), { timeout: 2500 })
+  expect(attempts).toBe(3)
+  expect(stage.find<Konva.Text>('.image-detail-note').map(node => node.text()).join('')).toBe(asset.note)
+})
+
+it.each(['decode-error', 'zero-size'])('shows a retry control after repeated %s note-picture failures and loads it when clicked', async failure => {
+  const noteSrc = `${PNG}#manual-note-retry-${failure}`
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  let attempts = 0
+  let restored = false
+  vi.stubGlobal('Image', class {
+    naturalWidth = 100
+    naturalHeight = 80
+    onload?: () => void
+    onerror?: () => void
+    set src(value: string) {
+      const fail = value === noteSrc && !restored && failure === 'decode-error'
+      if (value === noteSrc && !restored && failure === 'zero-size') { this.naturalWidth = 0; this.naturalHeight = 0 }
+      if (value === noteSrc) attempts++
+      queueMicrotask(() => fail ? this.onerror?.() : this.onload?.())
+    }
+  })
+  const asset: Asset = { ...source, id: 'manual-note-retry', note: '原来的备注文字', noteImages: [{ src: noteSrc, name: '原来的图片名称' }] }
+  const page = paginateAssets([asset])[0]
+  const before = JSON.stringify(page)
+  render(<ArtworkCanvas page={page} assets={new Map([[asset.id, asset]])} selected={null} onSelect={vi.fn()} onChange={vi.fn()} onDropAsset={vi.fn()} onHeaderBlockChange={vi.fn()} onSelectAccessory={vi.fn()} onChangeAccessory={vi.fn()}/>)
+  const stage = Konva.stages.at(-1)!
+  await waitFor(() => expect(stage.find('.detail-image-retry')).toHaveLength(1), { timeout: 2500 })
+  expect(attempts).toBe(3)
+  expect(warn).toHaveBeenCalledExactlyOnceWith('配件或备注图片加载失败，可点击图片位置重试')
+  expect(stage.find<Konva.Text>('.image-detail-note').map(node => node.text()).join('')).toBe(asset.note)
+  restored = true
+  act(() => stage.findOne('.detail-image-retry')!.fire('click', { evt: new MouseEvent('click') }, true))
+  await waitFor(() => expect(stage.find<Konva.Image>('Image').filter(node => node.getParent()?.name().includes(':note'))).toHaveLength(1))
+  expect(stage.find('.detail-image-retry')).toHaveLength(0)
+  expect(attempts).toBe(4)
+  expect(JSON.stringify(page)).toBe(before)
+})
+
+it('cancels an unfinished note-picture request when leaving the canvas without clearing successful cached images', async () => {
+  const noteSrc = `${PNG}#unfinished-note`
+  const finishedSrc = `${PNG}#finished-note`
+  let started = 0
+  let aborted = 0
+  let successfulLoads = 0
+  vi.stubGlobal('Image', class {
+    naturalWidth = 100
+    naturalHeight = 80
+    onload?: () => void
+    onerror?: () => void
+    set src(value: string) {
+      if (value === noteSrc) started++
+      else if (!value) aborted++
+      else { if (value === finishedSrc) successfulLoads++; queueMicrotask(() => this.onload?.()) }
+    }
+  })
+  const asset: Asset = { ...source, id: 'unfinished-note', noteImages: [{ src: noteSrc, name: '' }, { src: finishedSrc, name: '' }] }
+  const page = paginateAssets([asset])[0]
+  const view = render(<ArtworkCanvas page={page} assets={new Map([[asset.id, asset]])} selected={null} onSelect={vi.fn()} onChange={vi.fn()} onDropAsset={vi.fn()} onHeaderBlockChange={vi.fn()}/>)
+  await waitFor(() => expect(started).toBe(1))
+  await waitFor(() => expect(Konva.stages.at(-1)!.find<Konva.Image>('Image').filter(node => node.getParent()?.name().includes(':note'))).toHaveLength(1))
+  view.unmount()
+  expect(aborted).toBe(1)
+  const reopened = { ...asset, noteImages: [{ src: finishedSrc, name: '' }] }
+  render(<ArtworkCanvas page={paginateAssets([reopened])[0]} assets={new Map([[asset.id, reopened]])} selected={null} onSelect={vi.fn()} onChange={vi.fn()} onDropAsset={vi.fn()} onHeaderBlockChange={vi.fn()}/>)
+  await waitFor(() => expect(Konva.stages.at(-1)!.find<Konva.Image>('Image').filter(node => node.getParent()?.name().includes(':note'))).toHaveLength(1))
+  expect(successfulLoads).toBe(1)
+})
 function move(point: { x: number; y: number }, buttons = 1) {
   act(() => { fireEvent.mouseMove(window, { clientX: point.x, clientY: point.y, buttons }) })
 }

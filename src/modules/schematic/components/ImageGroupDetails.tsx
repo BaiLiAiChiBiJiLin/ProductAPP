@@ -54,34 +54,57 @@ function accessoryDragBound(node: KonvaNode, position: { x: number; y: number },
 
 function AccessoryImage({ src, x, y, width, height, code, caption, captionHeight = 0, captionFontSize = 8, framed = false, selectionKey, visual = { scale: 1, x: 0, y: 0 }, selected = false, bounds, onSelect, onChange, onEditText, itemIds }: { src: string; x: number; y: number; width: number; height: number; code?: string; caption?: string; captionHeight?: number; captionFontSize?: number; framed?: boolean; selectionKey?: string; visual?: AccessoryVisual; selected?: boolean; bounds?: AccessoryBounds; onSelect?: (key: string) => void; onChange?: (key: string, patch: Partial<AccessoryVisual>) => void; onEditText?: EditImageGroupText; itemIds: string[] }) {
   const [image, setImage] = useState<HTMLImageElement>()
+  const [failed, setFailed] = useState(false)
+  const [reload, setReload] = useState(0)
   useEffect(() => {
     let cancelled = false
     let element: HTMLImageElement | undefined
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    let retry: ReturnType<typeof setTimeout> | undefined
     setImage(undefined)
-    const load = async () => {
-      const resolved = await resolveRemoteImage(src)
-      if (cancelled) return
-      const cached = imageCache.get(resolved)
-      if (cached) { imageCache.delete(resolved); imageCache.set(resolved, cached); rememberAccessoryImage(src, cached); setImage(cached); return }
-      element = new window.Image()
-      element.crossOrigin = 'anonymous'
-      element.onload = () => {
-        if (!cancelled && element) {
-          rememberAccessoryImage(src, element)
-          rememberAccessoryElement(resolved, element)
-          setImage(element)
-        }
+    setFailed(false)
+    const load = async (attempt: number) => {
+      try {
+        const resolved = await resolveRemoteImage(src)
+        if (cancelled) return
+        const cached = imageCache.get(resolved)
+        if (cached) { imageCache.delete(resolved); imageCache.set(resolved, cached); rememberAccessoryImage(src, cached); setImage(cached); return }
+        const loaded = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const current = new window.Image()
+          element = current
+          const finish = () => { clearTimeout(timeout); current.onload = null; current.onerror = null }
+          current.crossOrigin = 'anonymous'
+          current.onload = () => {
+            finish()
+            if (current.naturalWidth > 0 && current.naturalHeight > 0) resolve(current)
+            else reject(new Error('图片没有可显示的尺寸'))
+          }
+          current.onerror = () => { finish(); reject(new Error('图片解码失败')) }
+          timeout = setTimeout(() => { finish(); current.src = ''; reject(new Error('图片加载超时')) }, 10_000)
+          current.src = resolved
+        })
+        element = undefined
+        if (cancelled) return
+        rememberAccessoryImage(src, loaded)
+        rememberAccessoryElement(resolved, loaded)
+        setImage(loaded)
+      } catch {
+        if (cancelled) return
+        if (attempt < 2) retry = setTimeout(() => void load(attempt + 1), 250 * (attempt + 1))
+        else { setFailed(true); console.warn('配件或备注图片加载失败，可点击图片位置重试') }
       }
-      element.onerror = () => { if (!cancelled) console.warn('配件或备注图片解码失败') }
-      element.src = resolved
     }
-    void load().catch(error => { if (!cancelled) console.warn('配件或备注图片加载失败', error) })
-    return () => { cancelled = true; if (element) { element.onload = null; element.onerror = null } }
-  }, [src])
-  if (!image) return null
+    void load(0)
+    return () => { cancelled = true; clearTimeout(timeout); clearTimeout(retry); if (element) { element.onload = null; element.onerror = null; element.src = '' } }
+  }, [src, reload])
+  const safeScale = Number.isFinite(visual.scale) && visual.scale > 0 ? visual.scale : 1
+  if (!image) return failed && width > 0 && height > 0 ? <Group name="detail-image-retry" x={x + width / 2 + visual.x} y={y + (height - captionHeight) / 2 + visual.y} offsetX={x + width / 2} offsetY={y + (height - captionHeight) / 2} scaleX={safeScale} scaleY={safeScale} onClick={event => { event.cancelBubble = true; setReload(value => value + 1) }} onTap={event => { event.cancelBubble = true; setReload(value => value + 1) }}>
+    <Rect x={x} y={y} width={width} height={height} fill="rgba(255,255,255,0.5)" stroke="#94a3b8" strokeWidth={.6} dash={[2, 2]}/>
+    <Text x={x} y={y} width={width} height={height} text="点击重试" align="center" verticalAlign="middle" fontSize={Math.max(4, Math.min(8, width / 4))} fill="#64748b"/>
+    {caption && <Text x={x} y={y - captionHeight} width={width} height={captionHeight} text={caption} align="center" wrap="none" fontSize={captionFontSize} fill="#ff4d4f" listening={false}/>}
+  </Group> : null
   if (framed) rememberAccessoryImage(src, image)
   const interactive = Boolean(selectionKey && onSelect && onChange)
-  const safeScale = Number.isFinite(visual.scale) && visual.scale > 0 ? visual.scale : 1
   if (framed) {
     const frame = accessoryFrame(src, x, y, width, code)
     const source = accessorySourceRect(frame)
