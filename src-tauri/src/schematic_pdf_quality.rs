@@ -9,6 +9,7 @@ pub enum SchematicPdfQuality {
     #[default]
     Standard,
     High,
+    Ultra,
     Original,
 }
 
@@ -16,8 +17,9 @@ impl SchematicPdfQuality {
     pub fn conversion_options(self) -> svg2pdf::ConversionOptions {
         svg2pdf::ConversionOptions {
             raster_image_dpi: match self {
-                Self::Standard => Some(200.0),
-                Self::High => Some(300.0),
+                Self::Standard => Some(300.0),
+                Self::High => Some(400.0),
+                Self::Ultra => Some(500.0),
                 Self::Original => None,
             },
             raster_image_page_size: Some(A4_PAGE_SIZE_PT),
@@ -36,11 +38,12 @@ mod tests {
             SchematicPdfQuality::default()
                 .conversion_options()
                 .raster_image_dpi,
-            Some(200.0)
+            Some(300.0)
         );
         for (name, dpi) in [
-            ("standard", Some(200.0)),
-            ("high", Some(300.0)),
+            ("standard", Some(300.0)),
+            ("high", Some(400.0)),
+            ("ultra", Some(500.0)),
             ("original", None),
         ] {
             let quality: SchematicPdfQuality =
@@ -71,6 +74,7 @@ mod tests {
             ("original", SchematicPdfQuality::Original),
             ("standard", SchematicPdfQuality::Standard),
             ("high", SchematicPdfQuality::High),
+            ("ultra", SchematicPdfQuality::Ultra),
         ] {
             let output = std::path::Path::new(&directory).join(format!("{name}.pdf"));
             let started = std::time::Instant::now();

@@ -12,6 +12,7 @@ import { finishLabelValueReserve } from '../services/finishLabelService.ts'
 import { centerHolderContents } from './holderContentAlignment.ts'
 import type { ProductConfig } from '../services/productConfigService.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
+import { availableOptionValues } from '../services/productOptionRules.ts'
 
 type Kind = 'ordinary' | 'holder' | 'standee' | 'chain'
 type Cell = { asset: Asset; x: number; y: number; width: number; height: number; caption?: string; note?: string; back?: boolean; ruler?: boolean; base?: boolean }
@@ -93,18 +94,34 @@ function productKey(asset: Asset) {
   return name || id || 'unassigned'
 }
 
-function standeeSpan(unit: Unit) {
+function standeeSpan(unit: Unit, configs: ProductConfig[]) {
   const pictures = unit.assets.length > 1 ? unit.assets.slice(0, -1) : unit.assets
-  return pictures.some(isDifferentDesign) ? 2 : 1
+  const countOf = (value: string) => Number(value.match(/^\s*(\d+)\s*(?:件|片|pieces?|pcs?)?\s*$/i)?.[1]) || 0
+  const counts = pictures.flatMap(asset => {
+    const product = configs.find(config => config.id === asset.productId)
+    return Object.entries(asset.attributes ?? {}).flatMap(([name, selected]) => {
+      const option = product?.options.find(option => option.name === name)
+      if (!/立牌(?:数量|件数)|standee[\s_-]*(?:quantity|count|pieces)/i.test(`${name} ${option?.label ?? ''}`)) return []
+      const rawCount = countOf(selected)
+      if (rawCount) return [rawCount]
+      const value = option && availableOptionValues(option, asset.attributes ?? {}).find(value => value.name === selected)
+      if (option && !value) return []
+      return [countOf(value?.label ?? '')]
+    })
+  })
+  // Count physical main pieces, excluding the base and derived Back images.
+  // Saved quantity also applies while a group is still missing an artwork.
+  const count = Math.max(pictures.length, ...counts)
+  return count > 2 ? 3 : count === 2 || pictures.some(isDifferentDesign) ? 2 : 1
 }
 
 /** Plan complete standee rows so mixed column widths share a header and a page. */
-function planStandeeRows(units: Unit[], height: number) {
+function planStandeeRows(units: Unit[], height: number, configs: ProductConfig[]) {
   const plans = new Map<Unit, { spans: number[]; height: number }>()
   let row: Unit[] = []
   const finish = () => {
     if (!row.length) return
-    const spans = row.map(standeeSpan)
+    const spans = row.map(unit => standeeSpan(unit, configs))
     // Homogeneous single-column sections retain their existing three-column header.
     if (spans.every(span => span === 1)) while (spans.length < 3) spans.push(1)
     const plan = { spans, height }
@@ -115,7 +132,7 @@ function planStandeeRows(units: Unit[], height: number) {
     if (unit.kind !== 'standee') { finish(); continue }
     if (row.length && (productKey(row[0].assets[0]) !== productKey(unit.assets[0])
       || row[0].assets.some(isStickerProduct) !== unit.assets.some(isStickerProduct)
-      || row.reduce((sum, member) => sum + standeeSpan(member), 0) + standeeSpan(unit) > 3)) finish()
+      || row.reduce((sum, member) => sum + standeeSpan(member, configs), 0) + standeeSpan(unit, configs) > 3)) finish()
     row.push(unit)
   }
   finish()
@@ -147,7 +164,7 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
     pages.push(page); headerKey = key; y = contentTop; column = 0; rowHeight = 0
   }
   const units = unitsFor(assets)
-  const standeeRows = planStandeeRows(units, (bottom - area.top) / 3)
+  const standeeRows = planStandeeRows(units, (bottom - area.top) / 3, configs)
   for (const unit of units) {
     const leader = unit.assets[0]
     const shaker = unit.assets.some(asset => /shaker|摇摇乐/i.test(`${asset.productName ?? ''} ${asset.productId}`))
@@ -189,7 +206,7 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
       rowHeight = 0
       rowProductKey = undefined
     }
-    const span = standeeRow ? standeeSpan(unit) : 1
+    const span = standeeRow ? standeeSpan(unit, configs) : 1
     const groupWidth = slotWidth * span + GAP * (span - 1)
     const detailWidth = groupWidth * (unit.kind === 'holder' ? HOLDER_DETAIL_AREA_RATIO : DETAIL_AREA_RATIO)
     // Holders own a full row. Their narrower property column is also the
@@ -296,7 +313,17 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
           chainScaleCap = chainNearEqual ? largest / smallest : 1
         }
       }
-      pictures.forEach((asset, index) => {
+      if (unit.kind === 'standee') {
+        // The base is artwork, not a property-panel section. Put every main
+        // face and the base in one proportional image row so a small base can
+        // never be enlarged simply because the old details cell was wide.
+        const faces = pictures.flatMap(asset => isDifferentDesign(asset)
+          ? [{ asset, back: false }, { asset, back: true }]
+          : [{ asset, back: false }])
+        const cellWidth = imageWidth / Math.max(1, faces.length + (base ? 1 : 0))
+        faces.forEach(({ asset, back }, index) => cells.push({ asset, x: index * cellWidth, y: 0, width: cellWidth, height, back, ruler: back ? false : undefined }))
+        if (base) cells.push({ asset: base, x: faces.length * cellWidth, y: 0, width: cellWidth, height, caption: 'base', base: true })
+      } else pictures.forEach((asset, index) => {
         const x = index % perRow * imageWidth / perRow, yy = Math.floor(index / perRow) * rowH
         const w = imageWidth / perRow
         const back = isDifferentDesign(asset)
@@ -306,8 +333,6 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
           const faceWidth = chainHasBackColumn ? w / 2 : w
           cells.push({ asset, x, y: yy, width: faceWidth, height: rowH })
           if (back) cells.push({ asset, x: x + faceWidth, y: yy, width: faceWidth, height: rowH, back: true, ruler: false })
-        } else if (back && unit.kind === 'standee') {
-          cells.push({ asset, x, y: yy, width: w / 2, height: rowH }, { asset, x: x + w / 2, y: yy, width: w / 2, height: rowH, back: true, ruler: false })
         } else if (back) {
           cells.push({ asset, x, y: yy, width: w, height: rowH / 2, caption: 'Front' }, { asset, x, y: yy + rowH / 2, width: w, height: rowH / 2, caption: 'Back', back: true, ruler: false })
         } else cells.push({ asset, x, y: yy, width: w, height: rowH })
@@ -330,14 +355,6 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
           return Math.max(physical.width, physical.height) * PAPER_WIDTH / 210
         }))
         chainScaleCap = Math.min(chainScaleCap, chainTargetLongest / smallestLongest)
-      }
-      // A standee base belongs in the right-hand property area. Reserve the
-      // lower part of that panel for it so the size/QT fields stay readable,
-      // then let the normal proportional fitting make the base as large as
-      // the remaining panel allows.
-      if (base) {
-        const baseY = height * 0.48
-        cells.push({ asset: base, x: imageWidth, y: baseY, width: detailWidth, height: height - baseY, caption: 'base', base: true })
       }
     }
     if (unit.kind === 'chain') {
@@ -387,9 +404,8 @@ export function paginateThreeColumns(assets: Asset[], bounds: LayoutBounds = def
     }
     if (height > available + 1e-7) throw new Error('排列区域太小，无法容纳产品组，请增大排列区域。')
     const x = area.left + spans.slice(0, column).reduce((sum, span) => sum + span, 0) * (slotWidth + GAP)
-    const standeeHasBase = unit.kind === 'standee' && unit.assets.length > 1
     const protectPageFill = unit.assets.some(isStickerProduct)
-    const group: ImageGroup = { id: `group-${leader.id}`, productGroupId: leader.productGroupId, productKey: currentProductKey, itemIds: [], x, y, width: groupWidth, height, detailsX: x + imageWidth, detailWidth, details: detailsForAsset(leader, configs), detailsHeight: standeeHasBase ? height * 0.48 : undefined, imageCells: [], emptyExample: emptyExampleMerged, emptyExampleMerged, preventRowFill: protectPageFill, protectPageFill }
+    const group: ImageGroup = { id: `group-${leader.id}`, productGroupId: leader.productGroupId, productKey: currentProductKey, itemIds: [], x, y, width: groupWidth, height, detailsX: x + imageWidth, detailWidth, details: detailsForAsset(leader, configs), imageCells: [], emptyExample: emptyExampleMerged, emptyExampleMerged, preventRowFill: protectPageFill, protectPageFill }
     group.details = groupDetails
     // The full-width role row starts below Example. Keep all property content
     // in the upper-right panel so accessories/notes cannot cover Back.

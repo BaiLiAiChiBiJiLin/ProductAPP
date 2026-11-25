@@ -86,7 +86,12 @@ export default function ArrangePage({ processingLabel, onChangePage, onReorderPa
   const [artworkMenu, setArtworkMenu] = useState<ArtworkMenuTarget | null>(null)
   useEffect(() => { setArtworkMenu(null) }, [activePage, exporting, savingReview, replacingArtwork])
   const [exportFormat, setExportFormat] = useState<'jpg' | 'png' | 'svg' | 'pdf'>('pdf')
-  const [pdfQuality, setPdfQuality] = useState<PdfExportQuality>('standard')
+  const [pdfQuality, setPdfQuality] = useState<PdfExportQuality>(() => {
+    try {
+      const saved = localStorage.getItem('printflow-schematic-pdf-quality')
+      return saved === 'high' || saved === 'ultra' || saved === 'original' ? saved : 'standard'
+    } catch { return 'standard' }
+  })
   const [canvasMode, setCanvasMode] = useState<CanvasTool>('select')
   const [rulerMode, setRulerMode] = useState<RulerMode>('free')
   const [editorSelection, setEditorSelection] = useState<EditorSelection | null>(null)
@@ -355,9 +360,12 @@ export default function ArrangePage({ processingLabel, onChangePage, onReorderPa
         const value = event.target.value
         if (value.startsWith('pdf:')) {
           setExportFormat('pdf')
-          setPdfQuality(value.slice(4) as PdfExportQuality)
+          const quality = value.slice(4) as PdfExportQuality
+          setPdfQuality(quality)
+          try { localStorage.setItem('printflow-schematic-pdf-quality', quality) }
+          catch (error) { console.warn('PDF 清晰度偏好保存失败', error) }
         } else setExportFormat(value as 'jpg' | 'png' | 'svg')
-      }}><optgroup label="PDF"><option value="pdf:standard">PDF · 标准 200 DPI</option><option value="pdf:high">PDF · 高清 300 DPI</option><option value="pdf:original">PDF · 原图质量</option></optgroup><option value="jpg">JPG</option><option value="png">PNG</option><option value="svg">SVG</option></select><Button type="primary" icon={exporting ? <Loading size="small" inline /> : <Download size={16}/>} disabled={exporting || savingReview} onClick={() => onExport(exportFormat, dimensionDisplayOverrides, pdfQuality)}>{exporting ? '导出中…' : '导出'}</Button><Button icon={savingReview ? <Loading size="small" inline /> : <Save size={16}/>} disabled={exporting || savingReview} onClick={onSave}>{savingReview ? '保存中…' : '保存'}</Button></div></div>
+      }}><optgroup label="PDF"><option value="pdf:standard">PDF · 标准 300 DPI</option><option value="pdf:high">PDF · 高清 400 DPI</option><option value="pdf:ultra">PDF · 超清 500 DPI</option><option value="pdf:original">PDF · 原图质量</option></optgroup><option value="jpg">JPG</option><option value="png">PNG</option><option value="svg">SVG</option></select><Button type="primary" icon={exporting ? <Loading size="small" inline /> : <Download size={16}/>} disabled={exporting || savingReview} onClick={() => onExport(exportFormat, dimensionDisplayOverrides, pdfQuality)}>{exporting ? '导出中…' : '导出'}</Button><Button icon={savingReview ? <Loading size="small" inline /> : <Save size={16}/>} disabled={exporting || savingReview} onClick={onSave}>{savingReview ? '保存中…' : '保存'}</Button></div></div>
       <div className="toolbar">
         <Button type="text" className={canvasMode === 'select' ? 'toolbar-mode-active' : ''} icon={<MousePointer2 size={15}/>} onClick={() => setCanvasMode('select')}>选择</Button>
         <Button type="text" className={canvasMode === 'pan' ? 'toolbar-mode-active' : ''} icon={<Hand size={15}/>} onClick={() => setCanvasMode('pan')}>平移</Button>

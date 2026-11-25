@@ -15,25 +15,24 @@ const standee = (id, width, height, different = false) => [
 ]
 const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-7, `${actual} != ${expected}`)
 
-test('standee main pictures use reclaimed side gutters for a 120 percent default while bases stay independent', () => {
+test('standee main pictures and bases share one physical scale in the image area', () => {
   const layout = productKey => [{ id: 1, name: 'page', items: [
     { id: 'main', assetId: 'main', x: 48, y: 100, w: 50, h: 80, rotation: 0 },
     { id: 'base', assetId: 'base', x: 118, y: 140, w: 60, h: 15, rotation: 0, caption: 'base' },
   ], imageGroups: [{ id: 'group', productKey, itemIds: ['main', 'base'], x: 10, y: 10, width: 148, height: 190,
     detailsX: 78, detailWidth: 80, details: { size: '153.0 mm', qt: '', finish: 'Epoxy' }, imageCells: [
       { itemId: 'main', x: 10, y: 10, width: 68, height: 190 },
-      { itemId: 'base', x: 78, y: 100, width: 80, height: 100 },
+      { itemId: 'base', x: 44, y: 10, width: 34, height: 190 },
     ] }] }]
   const sizes = new Map([['main', { width: 95, height: 156.4 }], ['base', { width: 85, height: 20 }]])
   const [old] = applyPhysicalImageScale(layout('Keychains'), sizes)
   for (const productKey of ['Clear Acrylic Standees', '亚克力立牌']) {
     const [page] = applyPhysicalImageScale(layout(productKey), sizes)
     const [main, base] = page.items
-    close(main.w, old.items[0].w * 1.2)
-    close(main.h, old.items[0].h * 1.2)
-    close(main.x - main.w / 2, 18)
-    close(main.x + main.w / 2, page.imageGroups[0].detailsX)
-    close(base.w, old.items[1].w); close(base.h, old.items[1].h)
+    assert.ok(base.w / sizes.get('base').width <= main.w / sizes.get('main').width + 1e-7)
+    assert.ok(base.h / sizes.get('base').height <= main.h / sizes.get('main').height + 1e-7)
+    assert.ok(base.x + base.w / 2 <= page.imageGroups[0].detailsX)
+    assert.ok(base.x - base.w / 2 >= page.imageGroups[0].x)
     close(main.y, old.items[0].y)
     const asset = source('main', 95, 156.4, productKey)
     const marker = imageDimensionMarkerLayout(dimensionGroups(page)[0], page, new Map([['main', asset]]))
@@ -70,7 +69,10 @@ test('a 151.7 mm wide standee cannot look larger than a 153 mm single-column sta
   for (const group of page.imageGroups) {
     const base = page.items.find(item => group.itemIds.includes(item.id) && item.caption === 'base')
     const cell = group.imageCells.find(cell => cell.itemId === base.id)
-    close(base.w, cell.width - 8)
+    assert.ok(base.x + base.w / 2 <= group.detailsX)
+    assert.ok(base.x - base.w / 2 >= group.x)
+    close(base.w / assets.find(asset => asset.id === base.assetId).sourceGroupWidthMm,
+      smaller.w / assets.find(asset => asset.id === smaller.assetId).sourceGroupWidthMm)
   }
 })
 

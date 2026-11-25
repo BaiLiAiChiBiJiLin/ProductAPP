@@ -97,8 +97,9 @@ test('wide standee front/back, bases, rulers and export all follow the fixed row
       const [front, back, base] = page.items.filter(item => group.itemIds.includes(item.id))
       close(front.y, back.y); close(front.w, back.w); close(front.h, back.h)
       close(front.w / front.h, 0.4)
-      assert.ok(base.y - base.h / 2 >= group.y + group.height * 0.48)
-      close(group.detailsHeight, group.height * 0.48)
+      assert.ok(base.x + base.w / 2 <= group.detailsX)
+      assert.ok(base.x - base.w / 2 >= group.x)
+      assert.equal(group.detailsHeight, undefined)
     }
     const svg = pageSvg(page, assets)
     for (const region of dimensionGroups(page)) {

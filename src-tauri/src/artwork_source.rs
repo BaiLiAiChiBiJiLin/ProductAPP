@@ -660,7 +660,7 @@ pub async fn stage_asset_artwork(
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let output = crate::staged_artwork::path(&id)?;
-        // Most schematic products need fewer than 512 pixels at 200 DPI.
+        // Most schematic products need fewer than 512 pixels at standard 300 DPI.
         // Reuse the exact displayed selection without reopening/decoding SVG.
         let file = source_file(&app, &source)?;
         let preview_identity = if max_edge_px.is_some_and(|edge| edge <= 512) {

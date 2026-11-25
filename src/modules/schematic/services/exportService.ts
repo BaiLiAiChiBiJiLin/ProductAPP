@@ -16,7 +16,7 @@ export async function exportPage(page: Page, assets: Asset[], output: string, fo
   if (format !== 'svg' || page.items.some(item => item.artworkVariant || !hasInlineArtwork(item.backSvg ?? map.get(item.assetId)?.svg ?? ''))) {
     const resources = new ExportArtwork()
     try {
-      await resources.prepare([page], map, format === 'svg' ? 'original' : 'high', batchId, visualScales)
+      await resources.prepare([page], map, format === 'svg' ? 'original' : 'standard', batchId, visualScales)
       const svg = pageRasterSvg(page, map, metadata, totalPages, displayOverrides, resources.href, layoutBounds, accessoryVisuals, visualScales)
       return await invoke('export_artwork', { output, format, svg, staged: true })
     } finally { await resources.dispose() }
@@ -26,7 +26,7 @@ export async function exportPage(page: Page, assets: Asset[], output: string, fo
   return invoke('export_artwork', { output, format, svg })
 }
 export type PdfExportProgress = { phase: 'artwork' | 'accessories' | 'prepare' | 'transfer' | 'rendering' | 'resources' | 'flatten' | 'fonts' | 'parse' | 'convert' | 'write' | 'page'; completed: number; total: number }
-export type PdfExportQuality = 'standard' | 'high' | 'original'
+export type PdfExportQuality = 'standard' | 'high' | 'ultra' | 'original'
 export function pdfProgressText(progress: PdfExportProgress) {
   const labels: Record<PdfExportProgress['phase'], string> = { artwork: '正在准备导出图片', accessories: '正在准备配件图片', prepare: '正在生成页面', transfer: '正在传输页面到导出服务', rendering: '正在初始化 PDF', resources: '正在加载配件和备注资源', flatten: '正在展开 SVG 图层', fonts: '正在准备字体', parse: '正在解析 SVG', convert: '正在转换矢量 PDF', write: '正在写入 PDF 文件', page: '已完成页面' }
   return `${labels[progress.phase]}（${progress.completed} / ${progress.total}）`

@@ -43,7 +43,7 @@ test('export prepares several deferred PNGs concurrently and waits for running w
   }
 })
 
-test.each(['standard', 'high', 'original'] as const)('%s PDF retains deferred manual layer selection and its independent review data', async quality => {
+test.each(['standard', 'high', 'ultra', 'original'] as const)('%s PDF retains deferred manual layer selection and its independent review data', async quality => {
   const reference = snapshotArtwork({ id: 'old-review', resourceId: 'source-hash', savedAt: 'now' })
   const lazy = { ...asset, svg: reference }
   const variant = { layers: { version: 'source-hash', remove: [1], reveal: [3,0] } }
@@ -56,13 +56,13 @@ test.each(['standard', 'high', 'original'] as const)('%s PDF retains deferred ma
   expect(review.assets[0].svg).toBe(reference)
 })
 
-test.each(['standard', 'high', 'original'] as const)('%s PDF resolves metadata-only originals and automatic backs entirely on the backend', async quality => {
+test.each(['standard', 'high', 'ultra', 'original'] as const)('%s PDF resolves metadata-only originals and automatic backs entirely on the backend', async quality => {
   const lazyAsset = { ...asset, svg: '', storagePath: 'printflow-file:source' }
   const page: Page = { ...pages[0], items: [{ ...pages[0].items[0], backSvg: undefined, svgLayerIds: undefined, artworkVariant: { back: true, fitFirstImage: true, roles: ['back', 'window', 'front'] } }] }
   await exportPdf([page], [lazyAsset], 'lazy.pdf', {}, undefined, undefined, defaultLayoutBounds, undefined, new Map([['i', 1.5]]), quality, 'batch')
   const staged = api.invoke.mock.calls.find(([command]) => command === 'stage_asset_artwork')![1]
   expect(staged.source).toEqual({ assetId: 'a', svg: '', path: 'printflow-file:source', batchId: 'batch', variant: page.items[0].artworkVariant })
-  expect(staged.maxEdgePx).toBe(quality === 'original' ? null : Math.ceil(150 / 500 * 210 / 25.4 * (quality === 'high' ? 300 : 200)))
+  expect(staged.maxEdgePx).toBe(quality === 'original' ? null : Math.ceil(150 / 500 * 210 / 25.4 * ({ standard: 300, high: 400, ultra: 500 } as const)[quality]))
   expect(api.invoke.mock.calls.some(([command]) => ['load_batch_asset_svg', 'load_temp_asset_svg', 'write_export_resource_chunk'].includes(command))).toBe(false)
   const pageSvg = api.invoke.mock.calls.find(([command]) => command === 'stage_pdf_page')![1].svg
   expect(pageSvg).toContain(`${quality === 'original' ? 'printflow-export:' : 'printflow-png:'}${staged.id}`)
@@ -79,7 +79,7 @@ test.each(['svg', 'png', 'jpg'])('%s export resolves a restored snapshot without
   expect(api.invoke.mock.calls.some(([command]) => command === 'load_schematic_review_resource')).toBe(false)
 })
 
-test.each([['standard', 200], ['high', 300]] as const)('%s PDF stages selected PNG at the displayed size and retains vector geometry', async (quality, dpi) => {
+test.each([['standard', 300], ['high', 400], ['ultra', 500]] as const)('%s PDF stages selected PNG at the displayed size and retains vector geometry', async (quality, dpi) => {
   const before = JSON.stringify({ pages, asset })
   await exportPdf(pages, [asset], 'test.pdf', {}, undefined, undefined, defaultLayoutBounds, undefined, new Map([['i', 1.5]]), quality)
   const raster = api.invoke.mock.calls.find(([command]) => command === 'stage_schematic_png')?.[1]
@@ -116,7 +116,7 @@ test('repeated layer selections share the largest required PNG while distinct se
   await exportPdf([page], [asset], 'test.pdf')
   const rasters = api.invoke.mock.calls.filter(([command]) => command === 'stage_schematic_png').map(([, args]) => args)
   expect(rasters).toHaveLength(2)
-  expect(rasters.find(args => args.layerIds[0] === 'back').maxEdgePx).toBe(Math.ceil(200 / 500 * 210 / 25.4 * 200))
+  expect(rasters.find(args => args.layerIds[0] === 'back').maxEdgePx).toBe(Math.ceil(200 / 500 * 210 / 25.4 * 300))
   const document = new DOMParser().parseFromString(api.invoke.mock.calls.find(([command]) => command === 'stage_pdf_page')![1].svg, 'image/svg+xml')
   const hrefs = [...document.querySelectorAll('image')].map(image => image.getAttribute('href'))
   expect(hrefs[0]).toBe(hrefs[1])

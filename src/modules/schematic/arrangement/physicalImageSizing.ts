@@ -2,7 +2,7 @@ import type { Page } from '../../../model.ts'
 import type { ImageGroup } from '../layoutTypes.ts'
 
 type PhysicalSize = { width: number; height: number }
-type ScaleReference = { largest: number; reference: number }
+type ScaleReference = { largest: number; reference: number; physicalFactor: number }
 
 /** Fit the cells, with comparable visual sizes for the same product on each page. */
 export function applyPhysicalImageScale(pages: Page[], sizes: ReadonlyMap<string, PhysicalSize>): Page[] {
@@ -13,7 +13,7 @@ export function applyPhysicalImageScale(pages: Page[], sizes: ReadonlyMap<string
     return (page.imageGroups ?? []).flatMap(group => {
       const product = group.productKey?.trim().toLowerCase()
       const key = product && product !== 'unassigned' ? product : group
-      const scale = references.get(key) ?? { largest: 0, reference: Infinity }
+      const scale = references.get(key) ?? { largest: 0, reference: Infinity, physicalFactor: Infinity }
       references.set(key, scale)
       const items = page.items.filter(item => group.itemIds.includes(item.id))
       const cells = new Map(group.imageCells?.map(cell => [cell.itemId, cell]))
@@ -22,7 +22,8 @@ export function applyPhysicalImageScale(pages: Page[], sizes: ReadonlyMap<string
         const cell = cells.get(item.id)
         if (!size || !cell || !(size.width > 0 && size.height > 0)) return []
         const base = item.caption?.toLowerCase() === 'base'
-        const standee = !base && /立牌|standees?/i.test(group.productKey ?? '')
+        const standee = /立牌|standees?/i.test(group.productKey ?? '')
+        const physicalScale = standee && !base
         const top = item.caption ? 23 : 14
         const single = items.length === 1 && !item.caption
         const bottom = (group.details?.finish && cell.y + cell.height >= group.y + group.height - 0.1 ? 16 : single ? 14 : 5)
@@ -33,7 +34,9 @@ export function applyPhysicalImageScale(pages: Page[], sizes: ReadonlyMap<string
         // A single picture uses all space up to the property column, regardless
         // of aspect ratio. Recenter it in that area so the old left half does not
         // keep limiting its width after the right-hand gutter is reclaimed.
-        const imageCenterX = fillSingle ? cell.x + left + (cell.width - left - right) / 2 : item.x
+        const standeeWidth = Math.max(1, cell.width - 8)
+        const imageCenterX = standee ? cell.x + 8 + standeeWidth / 2
+          : fillSingle ? cell.x + left + (cell.width - left - right) / 2 : item.x
         // Role/multi-picture cells retain their existing column centers.
         const width = Math.max(1, 2 * Math.min(imageCenterX - cell.x - left, cell.x + cell.width - right - imageCenterX))
         const height = Math.max(1, cell.height - top - bottom)
@@ -41,15 +44,18 @@ export function applyPhysicalImageScale(pages: Page[], sizes: ReadonlyMap<string
         // Reclaim five units on each side of portrait standees: eight on the
         // left holds the rotated ruler text plus frame clearance; the right can meet
         // the property boundary. Stop at the available cell instead of spilling.
-        const standeeWidth = Math.max(1, cell.width - 8)
         const fit = standee ? Math.min(defaultFit * 1.2, standeeWidth / size.width, height / size.height) : defaultFit
         const centerX = standee ? cell.x + 8 + standeeWidth / 2 : imageCenterX
-        return [{ item, size, base, fit, centerX, scale,
+        return [{ item, size, base, standeeBase: standee && base, physicalScale, fit, centerX, scale,
           longest: Math.max(size.width, size.height), centerY: cell.y + top + height / 2 }]
       })
     })
   })
   for (const entry of entries) {
+    if (entry.physicalScale) {
+      entry.scale.physicalFactor = Math.min(entry.scale.physicalFactor, entry.fit)
+      continue
+    }
     if (entry.base) continue
     entry.scale.largest = Math.max(entry.scale.largest, entry.longest)
   }
@@ -57,12 +63,15 @@ export function applyPhysicalImageScale(pages: Page[], sizes: ReadonlyMap<string
   // charms unreadable. The 70% floor is a visual aid, never a physical dimension.
   const weight = (longest: number, largest: number) => Math.max(0.7, Math.sqrt(longest / largest))
   for (const entry of entries) {
-    if (entry.base) continue
+    if (entry.base || entry.physicalScale) continue
     const scale = entry.scale
     scale.reference = Math.min(scale.reference, entry.longest * entry.fit / weight(entry.longest, scale.largest))
   }
-  for (const { item, size, base, fit, centerX, centerY, scale, longest } of entries) {
-    const factor = base ? fit : scale.reference * weight(longest, scale.largest) / longest
+  for (const { item, size, base, standeeBase, physicalScale, fit, centerX, centerY, scale, longest } of entries) {
+    // Standee main artwork and bases use one actual px/mm scale per product;
+    // a base may be smaller when its own cell is the limiting constraint.
+    const factor = physicalScale ? scale.physicalFactor : standeeBase
+      ? Math.min(scale.physicalFactor, fit) : base ? fit : scale.reference * weight(longest, scale.largest) / longest
     item.w = size.width * factor
     item.h = size.height * factor
     item.x = centerX

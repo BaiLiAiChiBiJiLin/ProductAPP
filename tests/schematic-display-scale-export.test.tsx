@@ -67,7 +67,7 @@ async function setPercentage(percent: number) {
   fireEvent.blur(input)
   await waitFor(() => expect(canvas().visualScales?.get(canvas().page.items[0].id)).toBe(percent / 100))
 }
-async function exportFormat(format: 'pdf' | 'svg' | 'png' | 'jpg', quality: 'standard' | 'high' | 'original' = 'standard') {
+async function exportFormat(format: 'pdf' | 'svg' | 'png' | 'jpg', quality: 'standard' | 'high' | 'ultra' | 'original' = 'standard') {
   fireEvent.change(await screen.findByRole('combobox', { name: '导出格式' }), { target: { value: format === 'pdf' ? `pdf:${quality}` : format } })
   const completed = mocks.recordSaved.mock.calls.length
   fireEvent.click(screen.getByRole('button', { name: '导出', exact: true }))
@@ -102,7 +102,7 @@ test.each(['pdf', 'svg', 'png', 'jpg'] as const)('%s exports the manually select
   expect(savedRecord().assets[0]).toMatchObject({ width: 30, height: 60, sourceGroupWidthMm: 30, sourceGroupHeightMm: 60 })
 })
 
-test.each(['standard', 'high', 'original'] as const)('passes %s PDF quality to the backend while retaining original artwork in the review record', async quality => {
+test.each(['standard', 'high', 'ultra', 'original'] as const)('passes %s PDF quality to the backend while retaining original artwork in the review record', async quality => {
   const record = fixture()
   const originalSvg = record.assets[0].svg
   render(<SchematicPage initialRecord={record} onRecordSaved={mocks.recordSaved}/>)

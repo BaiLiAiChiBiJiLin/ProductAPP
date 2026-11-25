@@ -209,13 +209,13 @@ test('v2 double sided ordinary products have a vertical mirrored back without ru
  assert.equal(front.caption,'Front'); assert.equal(back.caption,'Back'); assert.ok(back.y>front.y); assert.equal(back.mirrorX,true); assert.equal(back.derivedFrom,front.id); assert.equal(dimensionGroups(page).length,1)
  assert.match(pageSvg(page,new Map([['a',asset('a')]])),/scale\(-1 1\)/)
 })
-test('v2 standees put last base in details and mirror only different-design members horizontally', () => {
+test('v2 standees put last base beside the main artwork and mirror only different-design members horizontally', () => {
  const assets = [asset('a','Acrylic Standees',{'Print Option':'Double Sided Different Design'},'g'),asset('b','Acrylic Standees',{},'g'),asset('base','Acrylic Standees',{},'g')]
  const [page]=paginateAssets(assets); const [front,back,other,base]=page.items
- assert.equal(back.y,front.y); assert.ok(back.x>front.x); assert.equal(back.caption,undefined); assert.ok(base.x>=page.imageGroups[0].detailsX); assert.equal(other.derivedFrom,undefined)
+ assert.equal(back.y,front.y); assert.ok(back.x>front.x); assert.equal(back.caption,undefined); assert.ok(base.x<page.imageGroups[0].detailsX); assert.equal(other.derivedFrom,undefined)
  assert.equal(base.caption,'base'); assert.equal(base.captionAlign,'left'); assert.equal(base.captionFontSize,7)
- assert.ok(base.x + base.w / 2 <= page.imageGroups[0].x + page.imageGroups[0].width + 1e-7)
- assert.ok(base.y - base.h / 2 >= page.imageGroups[0].y + page.imageGroups[0].height * 0.45)
+ assert.ok(base.x + base.w / 2 <= page.imageGroups[0].detailsX + 1e-7)
+ assert.ok(base.y - base.h / 2 >= page.imageGroups[0].y - 1e-7)
 })
 test('different-design standees span two of three base columns with a matching Front/Back header through reordering', () => {
  const assets=Array.from({length:12},(_,i)=>asset(`stand-${i}`,'Broken Glass Acrylic Standees',{'Print Option':'Double Sided Different Design'}))

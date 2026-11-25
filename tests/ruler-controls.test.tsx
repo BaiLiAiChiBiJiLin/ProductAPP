@@ -11,7 +11,7 @@ import ArrangePage from '../src/modules/schematic/ArrangePage'
 import CanvasTools from '../src/modules/schematic/components/CanvasTools'
 import { annotationsSvg, manualRulerLabel } from '../src/modules/schematic/services/canvasAnnotationService'
 import { emptyArrangementDisplayState } from '../src/modules/schematic/services/arrangementDisplayState'
-afterEach(cleanup)
+afterEach(() => { cleanup(); localStorage.clear() })
 const asset={id:'a',name:'a',productId:'a',width:100,height:200,svg:'<svg/>',previewUrl:'',thumbnailUrl:''}
 const noop=()=>{}
 function Harness({ onExport = noop, exporting = false }: { onExport?: React.ComponentProps<typeof ArrangePage>['onExport']; exporting?: boolean }){
@@ -20,6 +20,17 @@ function Harness({ onExport = noop, exporting = false }: { onExport?: React.Comp
  const update=(next:Item)=>setPages([{...pages[0],items:[next]}])
  return <><button onClick={()=>setSelected(null)}>取消图片选择</button><output>{JSON.stringify(pages[0].items[0])}</output><pre aria-label="页面状态">{JSON.stringify(pages[0])}</pre><ArrangePage displayState={displayState} onDisplayStateChange={setDisplayState} context={null} assets={[asset]} pages={pages} activePage={1} selectedItem={selected} selectedGroupIds={[]} onChangePage={next => setPages(current => current.map(page => page.id === next.id ? next : page))} onSelectPage={noop} onSelectItem={setSelected} onChangeItem={update} onDropAsset={noop} onDeleteGroups={noop} onConfirmAssetAttributes={async()=>{}} onAddPage={noop} onRefresh={noop} onCombine={noop} onSelectGroup={noop} onBack={noop} onBackToHistory={noop} onExport={onExport} exporting={exporting} onMetadataChange={noop} layoutBounds={defaultLayoutBounds} onBoundsChange={noop} onAddHeaderBlock={noop} onChangeHeaderBlock={noop} onRemoveHeaderBlock={noop}/></>
 }
+it.each(['high', 'ultra', 'original', 'standard'])('remembers %s PDF quality after reopening arrangement and uses it for export', quality => {
+ const first = render(<Harness />)
+ fireEvent.change(screen.getByLabelText('导出格式'), { target: { value: `pdf:${quality}` } })
+ expect(localStorage.getItem('printflow-schematic-pdf-quality')).toBe(quality)
+ first.unmount()
+ const onExport = vi.fn()
+ render(<Harness onExport={onExport} />)
+ expect((screen.getByLabelText('导出格式') as HTMLSelectElement).value).toBe(`pdf:${quality}`)
+ fireEvent.click(screen.getByRole('button', { name: '导出' }))
+ expect(onExport).toHaveBeenCalledWith('pdf', new Map(), quality)
+})
 it('selected image unit and independent dimension controls update the item; deselection disables editing',()=>{
  render(<Harness/>);
  const width=screen.getByRole('checkbox',{name:'宽标尺'}) as HTMLInputElement
@@ -79,17 +90,17 @@ it('combines export formats and PDF quality in one selector and exports the sele
  render(<Harness onExport={onExport}/>)
  const format = screen.getByRole('combobox', { name: '导出格式' }) as HTMLSelectElement
  expect(format.value).toBe('pdf:standard')
- expect([...format.options].map(option => option.value)).toEqual(['pdf:standard', 'pdf:high', 'pdf:original', 'jpg', 'png', 'svg'])
- expect([...format.querySelectorAll('optgroup[label="PDF"] option')].map(option => option.textContent)).toEqual(['PDF · 标准 200 DPI', 'PDF · 高清 300 DPI', 'PDF · 原图质量'])
+ expect([...format.options].map(option => option.value)).toEqual(['pdf:standard', 'pdf:high', 'pdf:ultra', 'pdf:original', 'jpg', 'png', 'svg'])
+ expect([...format.querySelectorAll('optgroup[label="PDF"] option')].map(option => option.textContent)).toEqual(['PDF · 标准 300 DPI', 'PDF · 高清 400 DPI', 'PDF · 超清 500 DPI', 'PDF · 原图质量'])
  expect(screen.queryByRole('combobox', { name: 'PDF 导出质量' })).toBeNull()
- for (const quality of ['standard', 'original', 'high']) {
+ for (const quality of ['standard', 'original', 'high', 'ultra']) {
   fireEvent.change(format, { target: { value: `pdf:${quality}` } })
   fireEvent.click(screen.getByRole('button', { name: '导出' }))
   expect(onExport).toHaveBeenLastCalledWith('pdf', expect.any(Map), quality)
  }
  fireEvent.change(format, { target: { value: 'svg' } })
  fireEvent.click(screen.getByRole('button', { name: '导出' }))
- expect(onExport).toHaveBeenLastCalledWith('svg', expect.any(Map), 'high')
+ expect(onExport).toHaveBeenLastCalledWith('svg', expect.any(Map), 'ultra')
 })
 
 it('locks the combined export selector while exporting', () => {

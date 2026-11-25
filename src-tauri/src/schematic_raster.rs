@@ -297,8 +297,9 @@ mod tests {
         fs::write(crate::staged_artwork::path(&source_id).unwrap(), SVG).unwrap();
         let mut cleanup = vec![source_id.clone()];
         for (quality, dpi, label) in [
-            (crate::SchematicPdfQuality::Standard, 200, "standard"),
-            (crate::SchematicPdfQuality::High, 300, "high"),
+            (crate::SchematicPdfQuality::Standard, 300, "standard"),
+            (crate::SchematicPdfQuality::High, 400, "high"),
+            (crate::SchematicPdfQuality::Ultra, 500, "ultra"),
             (crate::SchematicPdfQuality::Original, 0, "original"),
         ] {
             let href = if dpi > 0 {

@@ -52,3 +52,25 @@ test('Stickers products are first in the default product order', () => {
   const input = [asset('keychain', 'Keychains', 'Front'), asset('sticker', 'Stickers', 'Front'), asset('贴纸-2', '贴纸', 'Back')]
   assert.deepEqual(classifyAssetsByProductAndPrint(input).map(item => item.id), ['sticker', '贴纸-2', 'keychain'])
 })
+
+test('same product keeps equal technique and film combinations adjacent before print tie breaking', () => {
+  const make = (id, print, technique, film) => ({ ...asset(id, 'A', print), attributes: { 'Print Option': print, Technique: technique, 'Holo Film': film } })
+  const input = [
+    make('epoxy-star-1', 'Front', 'Epoxy', 'Star'),
+    make('plain-clear', 'Front', 'Glossy', 'Clear'),
+    make('epoxy-star-2', 'Back', 'Epoxy', 'Star'),
+    make('plain-clear-2', 'Back', 'Glossy', 'Clear'),
+  ]
+  assert.deepEqual(classifyAssetsByProductAndPrint(input).map(item => item.id), [
+    'epoxy-star-1', 'epoxy-star-2', 'plain-clear', 'plain-clear-2',
+  ])
+})
+
+test('technique and film aliases are compared case-insensitively with whitespace normalized', () => {
+  const input = [
+    { ...asset('one', 'A', 'Front'), attributes: { Finish: '  Epoxy  ', Film: 'Star  Holo' } },
+    { ...asset('two', 'A', 'Front'), attributes: { 工艺: 'epoxy', 膜: 'star holo' } },
+    { ...asset('three', 'A', 'Front'), attributes: { Finish: 'Glossy', Film: 'Clear' } },
+  ]
+  assert.deepEqual(classifyAssetsByProductAndPrint(input).map(item => item.id), ['one', 'two', 'three'])
+})

@@ -15,7 +15,7 @@ export class ExportArtwork {
     if (!href) throw new Error('导出图片资源缺失')
     return href
   }
-  async prepare(pages: Page[], assets: Map<string, Asset>, quality: 'standard' | 'high' | 'original', batchId?: string, scales?: ReadonlyMap<string, number>, progress?: (done: number, total: number) => void) {
+  async prepare(pages: Page[], assets: Map<string, Asset>, quality: 'standard' | 'high' | 'ultra' | 'original', batchId?: string, scales?: ReadonlyMap<string, number>, progress?: (done: number, total: number) => void) {
     const versions = new Map<string, Promise<string>>()
     const versionOf = (svg: string) => {
       let version = versions.get(svg)
@@ -34,7 +34,8 @@ export class ExportArtwork {
       const layerIds = item.svgLayerIds ?? [item.svgLayerId ?? (item.backSvg ? 'derived' : 'all')]
       const key = JSON.stringify([sourceVersion, version, layerIds, source.variant])
       const display = itemForCanvasDisplay(item, scales?.get(item.id))
-      const edge = Math.max(1, Math.min(4096, Math.ceil(Math.max(display.w, display.h) / PAPER_WIDTH * 210 / 25.4 * (quality === 'high' ? 300 : 200))))
+      const dpi = quality === 'ultra' ? 500 : quality === 'high' ? 400 : 300
+      const edge = Math.max(1, Math.min(4096, Math.ceil(Math.max(display.w, display.h) / PAPER_WIDTH * 210 / 25.4 * dpi)))
       const existing = requests.get(key)
       if (existing) { existing.edge = Math.max(existing.edge, edge); existing.itemIds.push(item.id); continue }
       if (inline) source.svg = this.staged.reference(source.svg)
