@@ -26,6 +26,7 @@ import PageConfigPanel from './components/PageConfigPanel'
 import { pdfProgressText, type PdfExportProgress, type PdfExportQuality } from './services/exportService'
 import type { ProductAttributePatch } from './services/productOptionRules'
 import type { ArrangementDisplayState } from './services/arrangementDisplayState'
+import { trackDiagnosticEvent } from '../../services/diagnosticEvents'
 
 type Props = {
   processingLabel?: string
@@ -83,6 +84,39 @@ type Props = {
 
 export default function ArrangePage({ processingLabel, onChangePage, onReorderPages, onDeletePage, onDeleteAsset, onBackgroundChange, onHorizontalGroup, onShowBack, onResizeGroup, displayState, onDisplayStateChange, context, assets, batchId, pages, activePage, selectedItem, selectedGroupIds, onSelectPage, onSelectItem, onSelectGroup, onChangeItem, onReplaceArtwork, replacingArtwork = false, onChangeRulers, onChangeRuler = () => {}, onEditText = () => {}, onDropAsset, onUpload, uploadDropActive = false, poolFocusAssetId, onDeleteGroups, onDeleteItems, onConfirmAssetAttributes, onAddPage, onRefresh, onCombine, onBack, onBackToHistory, onSave = () => {}, onExport, exporting = false, savingReview = false, exportProgress = { phase: 'rendering', completed: 0, total: 1 }, metadata = {}, onMetadataChange, layoutBounds, onBoundsChange, onAddHeaderBlock, onChangeHeaderBlock, onRemoveHeaderBlock }: Props) {
   const workspaceRef = useRef<HTMLElement>(null)
+  const arrangeStartedAt = useRef(Date.now())
+  const lastReadySignature = useRef('')
+  const processingStartedAt = useRef<number | null>(null)
+  useEffect(() => {
+    const groupCount = pages.reduce((total, page) => total + (page.imageGroups?.length ?? 0), 0)
+    trackDiagnosticEvent({ event: 'arrange_enter', stage: 'enter', assetCount: assets.length, pageCount: pages.length, groupCount, selectedCount: selectedGroupIds.length + (selectedItem ? 1 : 0) })
+    let previous = performance.now()
+    const timer = window.setInterval(() => {
+      const now = performance.now()
+      const drift = now - previous - 1_000
+      if (drift > 5_000) trackDiagnosticEvent({ event: 'arrange_stall', stage: 'watchdog', stallMs: Math.round(drift), elapsedMs: Math.round(drift), assetCount: assets.length, pageCount: pages.length, groupCount })
+      previous = now
+    }, 1_000)
+    return () => window.clearInterval(timer)
+  }, [])
+  useEffect(() => {
+    if (processingLabel) {
+      processingStartedAt.current ??= Date.now()
+      return
+    }
+    if (processingStartedAt.current !== null) {
+      const elapsedMs = Date.now() - processingStartedAt.current
+      if (elapsedMs > 5_000) trackDiagnosticEvent({ event: 'render_long_task', stage: 'render', operation: 'arrange', elapsedMs, assetCount: assets.length, pageCount: pages.length })
+      processingStartedAt.current = null
+    }
+  }, [processingLabel, assets.length, pages.length])
+  useEffect(() => {
+    if (processingLabel) return
+    const signature = `${assets.length}:${pages.length}:${pages.reduce((total, page) => total + page.items.length, 0)}`
+    if (lastReadySignature.current === signature) return
+    lastReadySignature.current = signature
+    trackDiagnosticEvent({ event: 'arrange_ready', stage: 'ready', elapsedMs: Date.now() - arrangeStartedAt.current, assetCount: assets.length, pageCount: pages.length, groupCount: pages.reduce((total, page) => total + (page.imageGroups?.length ?? 0), 0) })
+  }, [assets.length, pages.length, pages, processingLabel])
   const [artworkMenu, setArtworkMenu] = useState<ArtworkMenuTarget | null>(null)
   useEffect(() => { setArtworkMenu(null) }, [activePage, exporting, savingReview, replacingArtwork])
   const [exportFormat, setExportFormat] = useState<'jpg' | 'png' | 'svg' | 'pdf'>('pdf')

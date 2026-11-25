@@ -27,9 +27,9 @@ export default function DiagnosticsPanel({ active, disabled, onBusyChange }: Pro
 
   return <section className="diagnostics-settings" hidden={!active} aria-label="诊断与反馈">
     <h3>诊断与反馈</h3>
-    <p>出现同步冲突、图片加载失败等问题时，导出诊断包并发给技术人员分析。</p>
+    <p>出现页面卡顿、白屏、图片加载失败、同步冲突等问题时，导出诊断包并发给技术人员分析。</p>
     <div className="diagnostics-settings-description">
-      <p>包含软件版本、当前用户名、同步任务与请求版本、近期启动及同步转移事件。</p>
+      <p>包含排列页耗时、卡顿心跳、页面异常、内存摘要、缺失源文件、保存耗时、同步任务与近期启动事件。</p>
       <p>默认排除数据库密码、原始图片和备注图片；断网时也可导出。</p>
     </div>
     <div><Button type="primary" icon={<Download size={16}/>} loading={exporting} disabled={disabled || exporting} onClick={() => void exportBundle()}>{exporting ? '正在导出…' : '导出诊断包'}</Button></div>

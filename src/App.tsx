@@ -22,12 +22,19 @@ import { storageMode } from './services/backend'
 import { needsCloudRegistration, confirmCloudRegistration } from './services/cloudRegistration'
 import { startCloudSyncRecovery, onCloudSyncStatus, type CloudSyncStatus } from './services/cloudSyncQueue'
 import CloudSyncStatusTag from './components/CloudSyncStatusTag'
-import { startDiagnosticTracking } from './services/diagnosticEvents'
+import { startDiagnosticTracking, trackDiagnosticEvent } from './services/diagnosticEvents'
 const modules = [orderModule, imageEditModule, schematicModule, schematicReviewModule, impositionModule, progressModule]
 // React StrictMode mounts effects twice in development. Keep the startup
 // refresh single-flight so two 9 MB responses cannot overlap and double the
 // JSON parsing/transport peak.
 let startupProductConfigRefresh: Promise<void> | undefined
+const diagnosticErrorHash = (value: unknown) => {
+  const text = String(value ?? '').slice(0, 500)
+  let hash = 2166136261
+  for (let index = 0; index < text.length; index++) hash = Math.imul(hash ^ text.charCodeAt(index), 16777619)
+  return (hash >>> 0).toString(16)
+}
+const diagnosticModule = (value: string) => value === 'schematic' ? 'arrange' : value === 'schematic-review' ? 'review' : value === 'imposition' ? 'imposition' : 'unknown'
 export default function App() {
   useEffect(() => installButtonKeyboardGuard(), [])
   useEffect(() => startDiagnosticTracking(), [])
@@ -35,6 +42,7 @@ export default function App() {
   useEffect(() => onCloudSyncStatus(setCloudSyncStatus), [])
   const [notice, noticeContext] = message.useMessage()
   const [active, setActive] = useState('schematic')
+  const appStartedAt = useState(() => Date.now())[0]
   const [reviewRevision, setReviewRevision] = useState(0)
   const [impositionRevision, setImpositionRevision] = useState(0)
   const [restoreRequest, setRestoreRequest] = useState<ReviewRestoreRequest>()
@@ -60,6 +68,42 @@ export default function App() {
   const [featureTourOpen, setFeatureTourOpen] = useState(false)
   const [featureTourRequest, setFeatureTourRequest] = useState(0)
   const [updateDialogs, setUpdateDialogs] = useState({ automatic: false, manual: false })
+  useEffect(() => {
+    if (!isTauri()) return
+    const heartbeatKey = 'printflow-diagnostic-heartbeat'
+    const shutdownKey = 'printflow-diagnostic-clean-shutdown'
+    try {
+      const previous = JSON.parse(localStorage.getItem(heartbeatKey) ?? 'null') as { timestamp?: number } | null
+      const previousShutdown = Number(localStorage.getItem(shutdownKey) ?? 0)
+      const age = previous?.timestamp ? Date.now() - previous.timestamp : 0
+      if (age > 10_000 && age < 6 * 60 * 60 * 1000 && previousShutdown < (previous?.timestamp ?? 0)) trackDiagnosticEvent({ event: 'unexpected_restart', exitReason: 'unexpected', stage: 'startup', heartbeatAgeMs: age })
+    } catch { /* malformed local heartbeat is not a business error */ }
+    const writeHeartbeat = () => {
+      const timestamp = Date.now()
+      try { localStorage.setItem(heartbeatKey, JSON.stringify({ timestamp, module: active })) } catch { /* diagnostics must never block the app */ }
+      trackDiagnosticEvent({ event: 'app_heartbeat', activeModule: diagnosticModule(active), stage: 'heartbeat', uptimeMs: timestamp - appStartedAt })
+      const memory = (performance as Performance & { memory?: { usedJSHeapSize?: number; jsHeapSizeLimit?: number } }).memory
+      if (memory?.usedJSHeapSize !== undefined) trackDiagnosticEvent({ event: 'memory_sample', activeModule: diagnosticModule(active), stage: 'heartbeat', heapUsedBytes: memory.usedJSHeapSize, heapLimitBytes: memory.jsHeapSizeLimit })
+    }
+    writeHeartbeat()
+    const timer = window.setInterval(writeHeartbeat, 10_000)
+    const onError = (event: ErrorEvent) => trackDiagnosticEvent({ event: 'window_error', activeModule: diagnosticModule(active), stage: 'render', errorHash: diagnosticErrorHash(event.message || event.error?.name), errorKind: 'unknown' })
+    const onRejection = (event: PromiseRejectionEvent) => trackDiagnosticEvent({ event: 'unhandled_rejection', activeModule: diagnosticModule(active), stage: 'render', errorHash: diagnosticErrorHash(event.reason), errorKind: 'unknown' })
+    const onBeforeUnload = () => {
+      try { localStorage.setItem(shutdownKey, String(Date.now())) } catch { /* ignore storage failures during shutdown */ }
+      trackDiagnosticEvent({ event: 'app_shutdown', exitReason: 'user', stage: 'shutdown', uptimeMs: Date.now() - appStartedAt })
+    }
+    let hiddenAt = document.visibilityState === 'hidden' ? Date.now() : 0
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') hiddenAt = Date.now()
+      else if (hiddenAt) { trackDiagnosticEvent({ event: 'visibility_recovered', activeModule: diagnosticModule(active), stage: 'heartbeat', wasHiddenMs: Date.now() - hiddenAt }); hiddenAt = 0 }
+    }
+    window.addEventListener('error', onError)
+    window.addEventListener('unhandledrejection', onRejection)
+    window.addEventListener('beforeunload', onBeforeUnload)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => { window.clearInterval(timer); window.removeEventListener('error', onError); window.removeEventListener('unhandledrejection', onRejection); window.removeEventListener('beforeunload', onBeforeUnload); document.removeEventListener('visibilitychange', onVisibility) }
+  }, [active, appStartedAt])
   const automaticUpdateChanged = useCallback((open: boolean) => setUpdateDialogs(current => ({ ...current, automatic: open })), [])
   const manualUpdateChanged = useCallback((open: boolean) => setUpdateDialogs(current => ({ ...current, manual: open })), [])
   const featureTourReady = identityReady && Boolean(accountName) && !registrationRequired && !identityError
@@ -130,6 +174,8 @@ export default function App() {
     setTransitionDirection(nextIndex >= activeIndex ? 'forward' : 'backward')
     setVisitedModules(current => new Set(current).add(id))
     setLeaving(active)
+    trackDiagnosticEvent({ event: 'module_leave', module: diagnosticModule(active), stage: 'shutdown' })
+    trackDiagnosticEvent({ event: 'module_enter', module: diagnosticModule(id), stage: 'enter' })
     setActive(id)
   }
   useEffect(() => {

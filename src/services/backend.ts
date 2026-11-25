@@ -81,6 +81,7 @@ function writeDiagnostic(key: string, pending: PendingCloudWrite, phase: 'submit
 
 async function sendWrite(state: CloudSession, key: string, pending: PendingCloudWrite, replayed = false): Promise<unknown> {
   let response: { result: unknown }
+  const startedAt = Date.now()
   writeDiagnostic(key, pending, 'submit', { replayed })
   try {
     for (let attempt = 0; ; attempt++) {
@@ -100,7 +101,7 @@ async function sendWrite(state: CloudSession, key: string, pending: PendingCloud
     }
   } catch (error) {
     const failure = classifyCloudSyncError(error)
-    writeDiagnostic(key, pending, 'error', { stage: 'request', errorKind: failure.kind, retryable: failure.retryable })
+    writeDiagnostic(key, pending, 'error', { stage: 'request', errorKind: failure.kind, retryable: failure.retryable, elapsedMs: Date.now() - startedAt })
     // Only dispatch rejections after the server's idempotency lookup prove this
     // request did not commit. Configuration, identity and request-digest failures
     // can precede that lookup even when an earlier attempt already committed.
@@ -112,20 +113,20 @@ async function sendWrite(state: CloudSession, key: string, pending: PendingCloud
     throw error
   }
   if (!response || typeof response !== 'object' || !Object.hasOwn(response, 'result')) {
-    writeDiagnostic(key, pending, 'error', { stage: 'acknowledgement', errorKind: 'data', retryable: true })
+    writeDiagnostic(key, pending, 'error', { stage: 'acknowledgement', errorKind: 'data', retryable: true, elapsedMs: Date.now() - startedAt })
     throw new Error('云端保存响应无效，请稍后重试确认保存结果')
   }
   const result = response.result as Versioned | null
-  writeDiagnostic(key, pending, 'ack', { resultVersion: result?.version })
+  writeDiagnostic(key, pending, 'ack', { resultVersion: result?.version, elapsedMs: Date.now() - startedAt })
   const removed = ['delete_batch', 'delete_schematic_review', 'send_shared_batch'].includes(pending.command)
   // The acknowledgement and new base revision are persisted together. If this
   // fails, the original pending request remains available for another replay.
   try { await state.journal.finish(key, pending.requestId, result?.version, removed) }
   catch (error) {
-    writeDiagnostic(key, pending, 'error', { stage: 'journal', errorKind: 'local-storage', retryable: false })
+    writeDiagnostic(key, pending, 'error', { stage: 'journal', errorKind: 'local-storage', retryable: false, elapsedMs: Date.now() - startedAt })
     throw error
   }
-  writeDiagnostic(key, pending, 'committed', { stage: 'journal', resultVersion: result?.version })
+  writeDiagnostic(key, pending, 'committed', { stage: 'journal', resultVersion: result?.version, elapsedMs: Date.now() - startedAt })
   if (pending.command === 'save_schematic_review') {
     const ids = new Set<string>()
     const collect = (value: unknown) => {

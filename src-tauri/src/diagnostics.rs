@@ -19,6 +19,21 @@ const MAX_PAYLOAD_BYTES: usize = 32 * 1024 * 1024;
 const MAX_SNAPSHOT_BYTES: usize = 64 * 1024 * 1024;
 const EVENTS: &[&str] = &[
     "app_started",
+    "app_shutdown",
+    "app_heartbeat",
+    "unexpected_restart",
+    "module_enter",
+    "module_leave",
+    "arrange_enter",
+    "arrange_ready",
+    "arrange_error",
+    "arrange_stall",
+    "render_long_task",
+    "window_error",
+    "unhandled_rejection",
+    "visibility_recovered",
+    "memory_sample",
+    "source_missing",
     "sync_queued",
     "sync_submit",
     "sync_ack",
@@ -60,6 +75,27 @@ const KINDS: &[&str] = &[
     "unknown",
     "local-storage",
 ];
+const MODULES: &[&str] = &[
+    "upload",
+    "arrange",
+    "review",
+    "imposition",
+    "history",
+    "settings",
+    "unknown",
+];
+const OPERATIONS: &[&str] = &[
+    "arrange",
+    "render",
+    "preview",
+    "save_batch",
+    "save_schematic_review",
+    "export_pdf",
+    "load_batch",
+    "unknown",
+];
+const LOCATIONS: &[&str] = &["temporary", "shared-reference", "network", "other"];
+const EXIT_REASONS: &[&str] = &["user", "restart", "unexpected", "watchdog", "unknown"];
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -141,6 +177,22 @@ fn sanitize_event(value: &Value) -> Option<Value> {
         insert_string(&mut out, key, display_name(&value[key]));
     }
     insert_string(&mut out, "command", enum_field(&value["command"], COMMANDS));
+    insert_string(&mut out, "module", enum_field(&value["module"], MODULES));
+    insert_string(
+        &mut out,
+        "operation",
+        enum_field(&value["operation"], OPERATIONS),
+    );
+    insert_string(
+        &mut out,
+        "location",
+        enum_field(&value["location"], LOCATIONS),
+    );
+    insert_string(
+        &mut out,
+        "exitReason",
+        enum_field(&value["exitReason"], EXIT_REASONS),
+    );
     insert_string(
         &mut out,
         "errorKind",
@@ -151,7 +203,22 @@ fn sanitize_event(value: &Value) -> Option<Value> {
         "stage",
         enum_field(
             &value["stage"],
-            &["request", "acknowledgement", "journal", "queue"],
+            &[
+                "request",
+                "acknowledgement",
+                "journal",
+                "queue",
+                "enter",
+                "ready",
+                "render",
+                "save",
+                "export",
+                "heartbeat",
+                "watchdog",
+                "startup",
+                "shutdown",
+                "source",
+            ],
         ),
     );
     insert_string(
@@ -160,12 +227,35 @@ fn sanitize_event(value: &Value) -> Option<Value> {
         enum_field(&value["result"], &["ok", "failed", "cancelled"]),
     );
     insert_string(&mut out, "appVersion", identifier(&value["appVersion"]));
+    insert_string(
+        &mut out,
+        "activeModule",
+        enum_field(&value["activeModule"], MODULES),
+    );
+    insert_string(&mut out, "errorHash", identifier(&value["errorHash"]));
+    insert_string(
+        &mut out,
+        "sourceKind",
+        enum_field(&value["sourceKind"], LOCATIONS),
+    );
     for key in [
         "expectedVersion",
         "resultVersion",
         "attempts",
         "elapsedMs",
         "assetCount",
+        "pageCount",
+        "groupCount",
+        "selectedCount",
+        "uptimeMs",
+        "rssBytes",
+        "heapUsedBytes",
+        "heapLimitBytes",
+        "wasHiddenMs",
+        "stallMs",
+        "heartbeatAgeMs",
+        "sourceCount",
+        "missingCount",
     ] {
         insert_number(&mut out, key, &value[key]);
     }
@@ -711,8 +801,8 @@ pub async fn export_diagnostic_bundle(
 
 #[cfg(test)]
 mod tests {
-    use rusqlite::params;
     use super::*;
+    use rusqlite::params;
 
     fn archive_text(path: &Path) -> String {
         let mut zip = zip::ZipArchive::new(File::open(path).unwrap()).unwrap();
@@ -863,5 +953,43 @@ mod tests {
         assert!(result.warnings.iter().any(|value| value.contains("过大")));
         assert!(result.bytes < 10_000);
         assert!(!archive_text(&path).contains("RAW_PRIVATE_ERROR"));
+    }
+
+    #[test]
+    fn runtime_and_arrangement_events_keep_only_bounded_metadata() {
+        let value = sanitize_event(&json!({
+            "event": "arrange_stall",
+            "module": "arrange",
+            "operation": "render",
+            "stage": "watchdog",
+            "activeModule": "arrange",
+            "errorHash": "0123456789abcdef0123456789abcdef",
+            "assetCount": 58,
+            "pageCount": 4,
+            "groupCount": 12,
+            "selectedCount": 3,
+            "stallMs": 12000,
+            "password": "must-not-escape",
+            "rawError": "C:\\private\\secret.svg",
+        }))
+        .unwrap();
+        assert_eq!(value["event"], "arrange_stall");
+        assert_eq!(value["module"], "arrange");
+        assert_eq!(value["operation"], "render");
+        assert_eq!(value["stage"], "watchdog");
+        assert_eq!(value["stallMs"], 12000);
+        assert!(value.get("password").is_none());
+        assert!(value.get("rawError").is_none());
+
+        let source = sanitize_event(&json!({
+            "event": "source_missing",
+            "sourceKind": "temporary",
+            "location": "temporary",
+            "sourceCount": 4,
+            "missingCount": 2,
+        }))
+        .unwrap();
+        assert_eq!(source["sourceKind"], "temporary");
+        assert_eq!(source["missingCount"], 2);
     }
 }

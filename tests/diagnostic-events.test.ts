@@ -23,6 +23,21 @@ test('only diagnostic metadata reaches IPC; payloads, fingerprints, images and c
   expect(JSON.stringify(native.invoke.mock.calls)).not.toMatch(/secret|password|<svg|fingerprint|noteImages/)
 })
 
+test('arrangement and runtime diagnostics keep bounded counters and discard raw error text', async () => {
+  const events = await import('../src/services/diagnosticEvents')
+  events.trackDiagnosticEvent({ event: 'arrange_stall', stage: 'watchdog', module: 'arrange', assetCount: 58, pageCount: 4, groupCount: 20, stallMs: 12000, errorHash: '0123456789abcdef0123456789abcdef' })
+  events.trackDiagnosticEvent({ event: 'window_error', activeModule: 'arrange', errorKind: 'unknown', errorHash: 'abcdef0123456789', stage: 'render', operation: 'render', userName: 'password=secret' })
+  events.trackDiagnosticEvent({ event: 'memory_sample', activeModule: 'arrange', heapUsedBytes: 123456, heapLimitBytes: 987654 })
+  await events.flushDiagnosticEvents()
+  const trace = native.invoke.mock.calls.filter(([command]) => command === 'append_diagnostic_event').map(([, args]) => args.event)
+  expect(trace).toEqual([
+    { event: 'arrange_stall', stage: 'watchdog', module: 'arrange', assetCount: 58, pageCount: 4, groupCount: 20, stallMs: 12000, errorHash: '0123456789abcdef0123456789abcdef' },
+    { event: 'window_error', activeModule: 'arrange', errorKind: 'unknown', errorHash: 'abcdef0123456789', stage: 'render', operation: 'render' },
+    { event: 'memory_sample', activeModule: 'arrange', heapUsedBytes: 123456, heapLimitBytes: 987654 },
+  ])
+  expect(JSON.stringify(trace)).not.toContain('password')
+})
+
 test('the application sender preserves event order without blocking the caller', async () => {
   const events = await import('../src/services/diagnosticEvents')
   let release!: () => void

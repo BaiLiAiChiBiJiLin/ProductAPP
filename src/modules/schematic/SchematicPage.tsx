@@ -514,6 +514,8 @@ export default function SchematicPage({ active = true, initialRecord, onRecordSa
     grouping.reset(); setLoadingBatchId(record.id); setHistoryTransition('forward');
     try {
       const loaded = await loadHistoryBatch(record.id, setBatchLoadProgress)
+      const missingSources = loaded.assets.filter(asset => !asset.svg && !asset.storagePath).length
+      if (missingSources) trackDiagnosticEvent({ event: 'source_missing', stage: 'source', location: 'other', sourceCount: loaded.assets.length, missingCount: missingSources })
       trackDiagnosticEvent({ event: 'history_opened', command: 'load_batch', batchId: record.id, assetCount: loaded.assets.length, elapsedMs: Math.round(performance.now() - startedAt) })
       setUploadPanelTab('upload'); setCategory(UNASSIGNED_PRODUCT_CATEGORY); setUploadFromArrange(false); setPages([]); resetArrangementDisplay(); setSelectedItem(null); setAssets(repairLegacyProductGroups(loaded.assets, productConfigs)); setSelectedAssetIds(new Set()); currentBatchIdRef.current = loaded.id; setCurrentBatchId(loaded.id); setBatchMetadata(initializeBatchMetadata(userName, { metadata: loaded.metadata, savedAt: loaded.savedAt })); setBatchOpen(true); toast.success('已打开历史批次')
     } catch (error) {

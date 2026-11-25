@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ImgHTMLAttributes } from 'react'
 import { loadAssetPreview } from '../services/assetPreviewService'
 import type { Item } from '../../../model'
+import { trackDiagnosticEvent } from '../../../services/diagnosticEvents'
 
 type Props = Omit<ImgHTMLAttributes<HTMLImageElement>, 'src'> & {
   svg: string; sourceSvg?: string; layerIds?: readonly string[]; artworkVariant?: Item['artworkVariant']; storagePath?: string; assetId?: string; batchId?: string; maxEdgePx?: number; previewOrder?: number; stagedInline?: boolean
@@ -35,7 +36,12 @@ export default function LazySvgImage({ svg, sourceSvg, layerIds, artworkVariant,
           setFailed(false)
           observer?.disconnect()
         })
-        .catch(error => { if (!disposed && current === generation && error?.name !== 'AbortError') setFailed(true) })
+        .catch(error => {
+          if (!disposed && current === generation && error?.name !== 'AbortError') {
+            trackDiagnosticEvent({ event: 'source_missing', stage: 'source', sourceKind: storagePath?.startsWith('printflow-file:') ? 'shared-reference' : stagedInline ? 'temporary' : 'unknown', sourceCount: 1, missingCount: 1 })
+            setFailed(true)
+          }
+        })
     }
     retry.current = () => { generation++; controller?.abort(); controller = undefined; setSrc(undefined); setFailed(false); load() }
     const observer = typeof IntersectionObserver === 'undefined' ? undefined : new IntersectionObserver(entries => {

@@ -5,6 +5,9 @@ const eventNames = new Set([
   'sync_queued', 'sync_submit', 'sync_ack', 'sync_committed', 'sync_error',
   'transfer_submit', 'transfer_ack', 'transfer_committed', 'transfer_error', 'sync_recovered',
   'history_open', 'history_opened', 'history_error',
+  'module_enter', 'module_leave', 'arrange_enter', 'arrange_ready', 'arrange_error', 'arrange_stall',
+  'render_long_task', 'window_error', 'unhandled_rejection', 'app_heartbeat', 'unexpected_restart',
+  'memory_sample', 'source_missing', 'app_shutdown', 'visibility_recovered',
 ])
 const commands = new Set([
   'save_batch', 'delete_batch', 'delete_asset', 'send_shared_batch', 'save_schematic_review',
@@ -16,6 +19,9 @@ const errorKinds = new Set<CloudSyncFailure['kind']>(['connection', 'conflict', 
 type EventName = 'sync_queued' | 'sync_submit' | 'sync_ack' | 'sync_committed' | 'sync_error'
   | 'transfer_submit' | 'transfer_ack' | 'transfer_committed' | 'transfer_error' | 'sync_recovered'
   | 'history_open' | 'history_opened' | 'history_error'
+  | 'module_enter' | 'module_leave' | 'arrange_enter' | 'arrange_ready' | 'arrange_error' | 'arrange_stall'
+  | 'render_long_task' | 'window_error' | 'unhandled_rejection' | 'app_heartbeat' | 'unexpected_restart'
+  | 'memory_sample' | 'source_missing' | 'app_shutdown' | 'visibility_recovered'
 export type DiagnosticEvent = {
   event: EventName
   batchId?: string
@@ -33,7 +39,26 @@ export type DiagnosticEvent = {
   userName?: string
   revision?: string
   recoveredBatchId?: string
-  stage?: 'request' | 'acknowledgement' | 'journal' | 'queue'
+  stage?: 'request' | 'acknowledgement' | 'journal' | 'queue' | 'enter' | 'ready' | 'render' | 'save' | 'export' | 'heartbeat' | 'watchdog' | 'startup' | 'shutdown' | 'source'
+  module?: string
+  exitReason?: 'user' | 'restart' | 'unexpected' | 'watchdog' | 'unknown'
+  errorHash?: string
+  operation?: string
+  pageCount?: number
+  groupCount?: number
+  selectedCount?: number
+  uptimeMs?: number
+  rssBytes?: number
+  heapUsedBytes?: number
+  heapLimitBytes?: number
+  wasHiddenMs?: number
+  activeModule?: string
+  sourceKind?: 'temporary' | 'shared-reference' | 'shared' | 'network' | 'unknown'
+  missingCount?: number
+  sourceCount?: number
+  stallMs?: number
+  heartbeatAgeMs?: number
+  location?: 'temporary' | 'shared-reference' | 'network' | 'other'
 }
 
 const queue: DiagnosticEvent[] = []
@@ -64,7 +89,16 @@ function safeEvent(value: DiagnosticEvent): DiagnosticEvent | undefined {
   for (const key of ['retryable', 'replayed'] as const) if (typeof value[key] === 'boolean') next[key] = value[key]
   if (value.command && commands.has(value.command)) next.command = value.command
   if (value.errorKind && errorKinds.has(value.errorKind)) next.errorKind = value.errorKind
-  if (value.stage && ['request', 'acknowledgement', 'journal', 'queue'].includes(value.stage)) next.stage = value.stage
+  if (value.stage && ['request', 'acknowledgement', 'journal', 'queue', 'enter', 'ready', 'render', 'save', 'export', 'heartbeat', 'watchdog', 'startup', 'shutdown', 'source'].includes(value.stage)) next.stage = value.stage
+  for (const key of ['module', 'errorHash', 'operation', 'activeModule', 'sourceKind', 'location'] as const) {
+    const text = value[key]
+    if (typeof text === 'string' && text.length <= 64 && /^[A-Za-z0-9_.:-]+$/.test(text)) (next as Record<string, unknown>)[key] = text
+  }
+  if (value.exitReason && ['user', 'restart', 'unexpected', 'watchdog', 'unknown'].includes(value.exitReason)) next.exitReason = value.exitReason
+  for (const key of ['pageCount', 'groupCount', 'selectedCount', 'uptimeMs', 'rssBytes', 'heapUsedBytes', 'heapLimitBytes', 'wasHiddenMs', 'missingCount', 'sourceCount', 'stallMs', 'heartbeatAgeMs'] as const) {
+    const number = value[key]
+    if (typeof number === 'number' && Number.isFinite(number) && number >= 0 && number <= Number.MAX_SAFE_INTEGER) next[key] = Math.round(number)
+  }
   return next
 }
 
@@ -91,7 +125,7 @@ function pump(): Promise<void> {
 }
 
 export function trackDiagnosticEvent(event: DiagnosticEvent) {
-  if (!isTauri()) return
+  try { if (!isTauri()) return } catch { return }
   const safe = safeEvent(event)
   if (!safe) return
   if (queue.length >= maxQueuedEvents) { queue.shift(); dropped += 1 }
